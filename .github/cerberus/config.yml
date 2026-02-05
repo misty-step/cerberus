@@ -1,0 +1,65 @@
+# Cerberus Council Configuration
+# Multi-agent AI code review system
+version: 1
+
+council:
+  name: "Cerberus Council"
+  required_check: "Council Verdict"
+  mode: parallel                      # parallel | sequential
+  cancel_in_progress: true            # Cancel stale runs on new push
+
+model:
+  default: "kimi-k2.5"
+  thinking: true
+  max_steps: 25                       # Max agentic steps per reviewer
+  timeout: 300                        # Seconds per reviewer
+
+override:
+  enabled: true
+  command: "/council override"
+  actor: pr_author                    # pr_author | write_access | maintainers_only
+  require_reason: true
+  pin_to_sha: true
+
+# Verdict rules
+verdict:
+  fail_on: "any_critical_or_2_major"  # any_critical | any_critical_or_2_major | any_major
+  warn_on: "any_major_or_3_minor"     # any_major | any_major_or_3_minor | any_minor
+
+# The five heads of Cerberus.
+# Names are cosmetic — perspective determines behavior.
+reviewers:
+  - name: APOLLO
+    perspective: correctness
+    description: "Correctness & Logic — Find the bug"
+    override: pr_author
+    tools:
+      shell: false
+
+  - name: ATHENA
+    perspective: architecture
+    description: "Architecture & Design — Zoom out"
+    override: pr_author
+    tools:
+      shell: true
+
+  - name: SENTINEL
+    perspective: security
+    description: "Security & Threat Model — Think like an attacker"
+    override: maintainers_only
+    tools:
+      shell: false
+
+  - name: VULCAN
+    perspective: performance
+    description: "Performance & Scalability — Think at runtime"
+    override: pr_author
+    tools:
+      shell: true
+
+  - name: ARTEMIS
+    perspective: maintainability
+    description: "Maintainability & DX — Think like the next developer"
+    override: pr_author
+    tools:
+      shell: true

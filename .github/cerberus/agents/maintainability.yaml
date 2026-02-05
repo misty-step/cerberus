@@ -1,0 +1,5 @@
+version: 1
+agent:
+  extend: default
+  name: maintainability
+  system_prompt_path: ./maintainability-prompt.md

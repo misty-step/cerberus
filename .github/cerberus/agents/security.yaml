@@ -1,0 +1,7 @@
+version: 1
+agent:
+  extend: default
+  name: security
+  system_prompt_path: ./security-prompt.md
+  exclude_tools:
+    - "kimi_cli.tools.shell:Shell"
