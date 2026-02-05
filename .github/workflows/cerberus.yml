@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -52,7 +56,8 @@ jobs:
 
       - name: Run ${{ matrix.reviewer }} review
         env:
-          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_BASE_URL: "https://api.moonshot.ai/v1"
           GH_PR_TITLE: ${{ steps.pr.outputs.title }}
           GH_PR_AUTHOR: ${{ steps.pr.outputs.author }}
           GH_PR_BODY: ${{ github.event.pull_request.body }}
@@ -66,10 +71,11 @@ jobs:
       - name: Parse review output
         id: parse
         run: |
-          python3 .github/cerberus/scripts/parse-review.py /tmp/${{ matrix.perspective }}-output.jsonl > /tmp/${{ matrix.perspective }}-verdict.json
+          python3 .github/cerberus/scripts/parse-review.py /tmp/${{ matrix.perspective }}-output.txt > /tmp/${{ matrix.perspective }}-verdict.json
           echo "verdict=$(jq -r .verdict /tmp/${{ matrix.perspective }}-verdict.json)" >> $GITHUB_OUTPUT
 
       - name: Post PR comment
+        if: always() && steps.parse.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -78,12 +84,14 @@ jobs:
           .github/cerberus/scripts/post-comment.sh ${{ matrix.perspective }} /tmp/${{ matrix.perspective }}-verdict.json
 
       - name: Upload verdict artifact
+        if: always() && steps.parse.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: verdict-${{ matrix.perspective }}
           path: /tmp/${{ matrix.perspective }}-verdict.json
 
       - name: Check verdict
+        if: always() && steps.parse.outcome == 'success'
         run: |
           VERDICT=$(jq -r .verdict /tmp/${{ matrix.perspective }}-verdict.json)
           if [ "$VERDICT" = "FAIL" ]; then
@@ -137,9 +145,10 @@ jobs:
           if [ "$VERDICT" = "FAIL" ]; then EMOJI="❌"; fi
           if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
 
-          BODY="## ${EMOJI} Council Verdict: ${VERDICT}\n\n${SUMMARY}\n\n---\n*Cerberus Council*"
+          MARKER="<!-- cerberus:council -->"
+          BODY="${MARKER}\n## ${EMOJI} Council Verdict: ${VERDICT}\n\n${SUMMARY}\n\n---\n*Cerberus Council*"
 
-          EXISTING=$(gh pr view $PR_NUMBER --json comments -q '.comments[] | select(.body | contains("Council Verdict")) | .id' | head -1)
+          EXISTING=$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments --jq '.[] | select(.body | contains("cerberus:council")) | .id' | head -1)
           if [ -n "$EXISTING" ]; then
             gh api repos/${{ github.repository }}/issues/comments/$EXISTING -X PATCH -f body="$(echo -e "$BODY")"
           else

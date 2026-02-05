@@ -114,7 +114,7 @@ ${marker}
 EOF
 
 existing_id="$(
-  gh pr view "$PR_NUMBER" --json comments -q ".comments[] | select(.body | contains(\"$marker\")) | .id" | head -1
+  gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"$marker\")) | .id" 2>/dev/null | head -1
 )"
 
 if [[ -n "$existing_id" ]]; then

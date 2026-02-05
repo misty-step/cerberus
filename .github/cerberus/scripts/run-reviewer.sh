@@ -85,15 +85,50 @@ PY
 
 echo "Running reviewer: $reviewer_name ($perspective)"
 
+# Create temp config with model, provider, and step limit
+cat > /tmp/kimi-config.toml <<TOML
+default_model = "moonshot/kimi-k2.5"
+
+[models."moonshot/kimi-k2.5"]
+provider = "moonshot"
+model = "kimi-k2.5"
+max_context_size = 262144
+capabilities = ["thinking"]
+
+[providers.moonshot]
+type = "kimi"
+base_url = "${KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
+api_key = "${KIMI_API_KEY}"
+
+[loop_control]
+max_steps_per_turn = ${max_steps}
+TOML
+
+echo "--- config ---"
+cat /tmp/kimi-config.toml | sed 's/api_key = ".*"/api_key = "***"/'
+echo "---"
+
 set +e
-kimi --print --thinking \
+kimi --quiet --thinking \
   --agent-file "$agent_file" \
   --prompt "$(cat /tmp/review-prompt.md)" \
-  --output-format stream-json \
-  --max-steps-per-turn "$max_steps" \
-  > "/tmp/${perspective}-output.jsonl"
+  --config-file /tmp/kimi-config.toml \
+  > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
 exit_code=$?
 set -e
+
+# Always dump diagnostics for CI visibility
+output_size=$(wc -c < "/tmp/${perspective}-output.txt" 2>/dev/null || echo "0")
+echo "kimi exit=$exit_code output=${output_size} bytes"
+
+if [[ "$exit_code" -ne 0 ]]; then
+  echo "--- stderr ---" >&2
+  cat "/tmp/${perspective}-stderr.log" >&2
+fi
+
+echo "--- output (last 40 lines) ---"
+tail -40 "/tmp/${perspective}-output.txt"
+echo "--- end output ---"
 
 echo "$exit_code" > "/tmp/${perspective}-exitcode"
 exit "$exit_code"

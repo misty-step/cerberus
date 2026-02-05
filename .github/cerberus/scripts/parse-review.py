@@ -99,10 +99,6 @@ def main() -> None:
 
     validate(obj)
     print(json.dumps(obj, indent=2, sort_keys=False))
-
-    verdict = obj.get("verdict")
-    if verdict == "FAIL":
-        sys.exit(1)
     sys.exit(0)
 
 
