@@ -48,10 +48,12 @@ runs:
   steps:
     - name: Validate perspective
       shell: bash
+      env:
+        PERSPECTIVE: ${{ inputs.perspective }}
       run: |
         VALID="correctness architecture security performance maintainability"
-        if [[ ! " $VALID " =~ " ${{ inputs.perspective }} " ]]; then
-          echo "::error::Invalid perspective: ${{ inputs.perspective }}. Must be one of: $VALID"
+        if [[ ! " $VALID " =~ " $PERSPECTIVE " ]]; then
+          echo "::error::Invalid perspective: $PERSPECTIVE. Must be one of: $VALID"
           exit 1
         fi
 
@@ -62,15 +64,26 @@ runs:
 
     - name: Install KimiCode CLI
       shell: bash
-      run: pip install kimi-cli==${{ inputs.kimi-cli-version }}
+      env:
+        KIMI_CLI_VERSION: ${{ inputs.kimi-cli-version }}
+      run: |
+        if [[ ! "$KIMI_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid kimi-cli-version format: $KIMI_CLI_VERSION"
+          exit 1
+        fi
+        pip install "kimi-cli==${KIMI_CLI_VERSION}"
 
     - name: Fetch PR context
       id: pr
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
-        PR_NUMBER="${{ github.event.pull_request.number }}"
+        if [[ -z "$PR_NUMBER" ]]; then
+          echo "::error::This action must be triggered by a pull_request event"
+          exit 1
+        fi
         gh pr diff "$PR_NUMBER" > /tmp/pr.diff
         gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
         echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
@@ -80,25 +93,28 @@ runs:
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
+        PERSPECTIVE: ${{ inputs.perspective }}
         KIMI_API_KEY: ${{ inputs.kimi-api-key }}
         KIMI_BASE_URL: ${{ inputs.kimi-base-url }}
         KIMI_MODEL: ${{ inputs.model }}
         KIMI_MAX_STEPS: ${{ inputs.max-steps }}
+        REVIEW_TIMEOUT: ${{ inputs.timeout }}
         GH_DIFF_FILE: /tmp/pr.diff
         GH_PR_CONTEXT: /tmp/pr-context.json
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
-        "$CERBERUS_ROOT/scripts/run-reviewer.sh" "${{ inputs.perspective }}"
+        "$CERBERUS_ROOT/scripts/run-reviewer.sh" "$PERSPECTIVE"
 
     - name: Parse review output
       id: parse
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
+        PERSPECTIVE: ${{ inputs.perspective }}
       run: |
-        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "/tmp/${{ inputs.perspective }}-output.txt" > "/tmp/${{ inputs.perspective }}-verdict.json"
-        echo "verdict=$(jq -r .verdict /tmp/${{ inputs.perspective }}-verdict.json)" >> "$GITHUB_OUTPUT"
-        echo "verdict-json=/tmp/${{ inputs.perspective }}-verdict.json" >> "$GITHUB_OUTPUT"
+        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "/tmp/${PERSPECTIVE}-output.txt" > "/tmp/${PERSPECTIVE}-verdict.json"
+        echo "verdict=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")" >> "$GITHUB_OUTPUT"
+        echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
       if: inputs.post-comment == 'true'
@@ -107,12 +123,14 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
+        PERSPECTIVE: ${{ inputs.perspective }}
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
-        "$CERBERUS_ROOT/scripts/post-comment.sh" "${{ inputs.perspective }}" "/tmp/${{ inputs.perspective }}-verdict.json"
+        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "/tmp/${PERSPECTIVE}-verdict.json"
 
     - name: Upload verdict artifact
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-verdict-${{ inputs.perspective }}
         path: /tmp/${{ inputs.perspective }}-verdict.json
+        retention-days: 1
