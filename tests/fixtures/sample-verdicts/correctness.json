@@ -1,0 +1,9 @@
+{
+  "reviewer": "APOLLO",
+  "perspective": "correctness",
+  "verdict": "PASS",
+  "confidence": 0.9,
+  "summary": "No correctness issues found.",
+  "findings": [],
+  "stats": {"files_reviewed": 3, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
+}
