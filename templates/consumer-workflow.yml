@@ -1,5 +1,7 @@
 # Cerberus AI Code Review Council
 # https://github.com/misty-step/cerberus
+# Fork PR security: repository secrets are unavailable to forks.
+# Keep review job gated to same-repo PRs to avoid secret access attempts.
 name: Cerberus Council
 
 on:
@@ -16,6 +18,7 @@ concurrency:
 
 jobs:
   review:
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
