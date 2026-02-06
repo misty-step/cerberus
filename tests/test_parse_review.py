@@ -1,5 +1,6 @@
 """Tests for parse-review.py"""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -8,23 +9,31 @@ SCRIPT = Path(__file__).parent.parent / "scripts" / "parse-review.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def run_parse(input_text: str) -> tuple[int, str, str]:
+def run_parse(input_text: str, env_extra: dict | None = None) -> tuple[int, str, str]:
     """Run parse-review.py with input text, return (exit_code, stdout, stderr)."""
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
     result = subprocess.run(
         [sys.executable, str(SCRIPT)],
         input=input_text,
         capture_output=True,
         text=True,
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
 
 
-def run_parse_file(path: Path) -> tuple[int, str, str]:
+def run_parse_file(path: Path, env_extra: dict | None = None) -> tuple[int, str, str]:
     """Run parse-review.py with a file argument."""
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
     result = subprocess.run(
         [sys.executable, str(SCRIPT), str(path)],
         capture_output=True,
         text=True,
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -72,19 +81,28 @@ class TestParseFail:
 
 class TestParseErrors:
     def test_no_json_block(self):
-        code, _, err = run_parse("Just some text with no json block")
-        assert code == 2
+        code, out, err = run_parse("Just some text with no json block")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.0
         assert "no" in err.lower()
 
     def test_invalid_json(self):
-        code, _, err = run_parse("```json\n{invalid json}\n```")
-        assert code == 2
+        code, out, err = run_parse("```json\n{invalid json}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.0
         assert "invalid" in err.lower() or "json" in err.lower()
 
     def test_missing_required_field(self):
         incomplete = json.dumps({"reviewer": "TEST", "verdict": "PASS"})
-        code, _, err = run_parse(f"```json\n{incomplete}\n```")
-        assert code == 2
+        code, out, err = run_parse(f"```json\n{incomplete}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.0
 
     def test_invalid_verdict_value(self):
         bad = json.dumps({
@@ -92,8 +110,11 @@ class TestParseErrors:
             "confidence": 0.5, "summary": "test", "findings": [],
             "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
         })
-        code, _, err = run_parse(f"```json\n{bad}\n```")
-        assert code == 2
+        code, out, err = run_parse(f"```json\n{bad}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.0
 
     def test_confidence_out_of_range(self):
         bad = json.dumps({
@@ -101,8 +122,11 @@ class TestParseErrors:
             "confidence": 1.5, "summary": "test", "findings": [],
             "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
         })
-        code, _, err = run_parse(f"```json\n{bad}\n```")
-        assert code == 2
+        code, out, err = run_parse(f"```json\n{bad}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.0
 
     def test_uses_last_json_block(self):
         """When multiple json blocks exist, should use the last one."""
@@ -117,3 +141,34 @@ class TestParseErrors:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "PASS"
+
+
+def test_fallback_on_no_json_block():
+    code, out, _ = run_parse(
+        "Just some text with no json block",
+        env_extra={"REVIEWER_NAME": "APOLLO"},
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "WARN"
+    assert data["confidence"] == 0.0
+    assert data["reviewer"] == "APOLLO"
+
+
+def test_fallback_on_invalid_json():
+    code, out, _ = run_parse(
+        "```json\n{invalid json}\n```",
+        env_extra={"REVIEWER_NAME": "APOLLO"},
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "WARN"
+    assert data["confidence"] == 0.0
+    assert data["reviewer"] == "APOLLO"
+
+
+def test_fallback_default_reviewer():
+    code, out, _ = run_parse("No JSON at all")
+    assert code == 0
+    data = json.loads(out)
+    assert data["reviewer"] == "UNKNOWN"

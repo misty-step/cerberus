@@ -117,12 +117,13 @@ runs:
         "$CERBERUS_ROOT/scripts/run-reviewer.sh" "$PERSPECTIVE"
 
     - name: Parse review output
-      if: steps.review.outcome == 'success'
+      if: always()
       id: parse
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
+        REVIEWER_NAME: ${{ inputs.perspective }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/parse-review.py" "/tmp/${PERSPECTIVE}-output.txt" > "/tmp/${PERSPECTIVE}-verdict.json"
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
@@ -134,7 +135,7 @@ runs:
         echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
-      if: steps.review.outcome == 'success' && inputs.post-comment == 'true'
+      if: steps.parse.outcome == 'success' && inputs.post-comment == 'true'
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
@@ -146,7 +147,7 @@ runs:
         "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "/tmp/${PERSPECTIVE}-verdict.json"
 
     - name: Upload verdict artifact
-      if: steps.review.outcome == 'success'
+      if: steps.parse.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-verdict-${{ inputs.perspective }}

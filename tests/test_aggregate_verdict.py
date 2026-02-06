@@ -16,6 +16,7 @@ def run_aggregate(verdict_dir: str, env_extra: dict | None = None) -> tuple[int,
     env.pop("GH_HEAD_SHA", None)
     env.pop("GH_PR_AUTHOR", None)
     env.pop("GH_OVERRIDE_POLICY", None)
+    env.pop("EXPECTED_REVIEWERS", None)
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(
@@ -388,3 +389,44 @@ class TestAggregateErrors:
         empty.mkdir()
         code, _, err = run_aggregate(str(empty))
         assert code == 2
+
+
+def test_warns_on_missing_reviewers(tmp_path):
+    (tmp_path / "apollo.json").write_text(
+        json.dumps({"reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS", "summary": "ok"})
+    )
+    (tmp_path / "athena.json").write_text(
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "ok"})
+    )
+
+    code, out, err = run_aggregate(
+        str(tmp_path),
+        env_extra={"EXPECTED_REVIEWERS": "APOLLO,ATHENA,SENTINEL"},
+    )
+    assert code == 0
+    assert "expected 3 reviewers (APOLLO, ATHENA, SENTINEL), got 2 verdict files" in err
+
+
+def test_detects_fallback_verdicts(tmp_path):
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "unknown",
+                "verdict": "WARN",
+                "confidence": 0.0,
+                "summary": "Review output could not be parsed: no ```json block found",
+            }
+        )
+    )
+    (tmp_path / "athena.json").write_text(
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "ok"})
+    )
+
+    code, out, err = run_aggregate(
+        str(tmp_path),
+        env_extra={"EXPECTED_REVIEWERS": "APOLLO,ATHENA"},
+    )
+    assert code == 0
+    assert "fallback verdicts detected" in err
+    assert "APOLLO" in err
