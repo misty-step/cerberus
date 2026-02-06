@@ -141,3 +141,15 @@ runs:
         name: cerberus-verdict-${{ inputs.perspective }}
         path: /tmp/${{ inputs.perspective }}-verdict.json
         retention-days: 1
+
+    - name: Enforce verdict
+      if: steps.parse.outcome == 'success'
+      shell: bash
+      env:
+        VERDICT: ${{ steps.parse.outputs.verdict }}
+        PERSPECTIVE: ${{ inputs.perspective }}
+      run: |
+        if [ "$VERDICT" = "FAIL" ]; then
+          echo "::error::${PERSPECTIVE} review verdict: FAIL"
+          exit 1
+        fi
