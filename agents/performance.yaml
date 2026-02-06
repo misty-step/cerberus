@@ -3,3 +3,5 @@ agent:
   extend: default
   name: performance
   system_prompt_path: ./performance-prompt.md
+  exclude_tools:
+    - "kimi_cli.tools.shell:Shell"
