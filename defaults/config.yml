@@ -41,7 +41,7 @@ reviewers:
     description: "Architecture & Design — Zoom out"
     override: pr_author
     tools:
-      shell: true
+      shell: false
 
   - name: SENTINEL
     perspective: security
@@ -55,11 +55,11 @@ reviewers:
     description: "Performance & Scalability — Think at runtime"
     override: pr_author
     tools:
-      shell: true
+      shell: false
 
   - name: ARTEMIS
     perspective: maintainability
     description: "Maintainability & DX — Think like the next developer"
     override: pr_author
     tools:
-      shell: true
+      shell: false
