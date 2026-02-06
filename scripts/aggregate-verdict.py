@@ -102,8 +102,13 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
 
     fails = [v for v in verdicts if v["verdict"] == "FAIL"]
     warns = [v for v in verdicts if v["verdict"] == "WARN"]
+    skips = [v for v in verdicts if v["verdict"] == "SKIP"]
+    passes = [v for v in verdicts if v["verdict"] == "PASS"]
 
-    if fails and not override_used:
+    # If ALL reviewers skipped, council verdict is SKIP (not FAIL)
+    if len(skips) == len(verdicts) and len(verdicts) > 0:
+        council_verdict = "SKIP"
+    elif fails and not override_used:
         council_verdict = "FAIL"
     elif warns:
         council_verdict = "WARN"
@@ -114,7 +119,7 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
     if override_used:
         summary += f"Override by {override['actor']} for {override['sha']}."
     else:
-        summary += f"Failures: {len(fails)}, warnings: {len(warns)}."
+        summary += f"Failures: {len(fails)}, warnings: {len(warns)}, skipped: {len(skips)}."
 
     return {
         "verdict": council_verdict,
@@ -129,6 +134,7 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
             "fail": len(fails),
             "warn": len(warns),
             "pass": len([v for v in verdicts if v["verdict"] == "PASS"]),
+            "skip": len(skips),
         },
     }
 
