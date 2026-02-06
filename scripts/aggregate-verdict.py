@@ -93,6 +93,46 @@ def is_fallback_verdict(verdict: dict) -> bool:
     return confidence_is_zero and summary.startswith(PARSE_FAILURE_PREFIX)
 
 
+def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
+    """Compute council verdict from individual reviewer verdicts.
+
+    Returns the council dict with verdict, summary, reviewers, override, and stats.
+    """
+    override_used = override is not None
+
+    fails = [v for v in verdicts if v["verdict"] == "FAIL"]
+    warns = [v for v in verdicts if v["verdict"] == "WARN"]
+
+    if fails and not override_used:
+        council_verdict = "FAIL"
+    elif warns:
+        council_verdict = "WARN"
+    else:
+        council_verdict = "PASS"
+
+    summary = f"{len(verdicts)} reviewers. "
+    if override_used:
+        summary += f"Override by {override['actor']} for {override['sha']}."
+    else:
+        summary += f"Failures: {len(fails)}, warnings: {len(warns)}."
+
+    return {
+        "verdict": council_verdict,
+        "summary": summary,
+        "reviewers": verdicts,
+        "override": {
+            "used": override_used,
+            **(override or {}),
+        },
+        "stats": {
+            "total": len(verdicts),
+            "fail": len(fails),
+            "warn": len(warns),
+            "pass": len([v for v in verdicts if v["verdict"] == "PASS"]),
+        },
+    }
+
+
 def main() -> None:
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
@@ -146,47 +186,17 @@ def main() -> None:
                 file=sys.stderr,
             )
             override = None
-    override_used = override is not None
 
-    fails = [v for v in verdicts if v["verdict"] == "FAIL"]
-    warns = [v for v in verdicts if v["verdict"] == "WARN"]
-
-    if fails and not override_used:
-        council_verdict = "FAIL"
-    elif warns:
-        council_verdict = "WARN"
-    else:
-        council_verdict = "PASS"
-
-    summary = f"{len(verdicts)} reviewers. "
-    if override_used:
-        summary += f"Override by {override['actor']} for {override['sha']}."
-    else:
-        summary += f"Failures: {len(fails)}, warnings: {len(warns)}."
-
-    council = {
-        "verdict": council_verdict,
-        "summary": summary,
-        "reviewers": verdicts,
-        "override": {
-            "used": override_used,
-            **(override or {}),
-        },
-        "stats": {
-            "total": len(verdicts),
-            "fail": len(fails),
-            "warn": len(warns),
-            "pass": len([v for v in verdicts if v["verdict"] == "PASS"]),
-        },
-    }
+    council = aggregate(verdicts, override)
 
     Path("/tmp/council-verdict.json").write_text(json.dumps(council, indent=2))
 
+    council_verdict = council["verdict"]
     lines = [f"Council Verdict: {council_verdict}", ""]
     lines.append("Reviewers:")
     for v in verdicts:
         lines.append(f"- {v['reviewer']} ({v['perspective']}): {v['verdict']}")
-    if override_used:
+    if override:
         lines.extend(
             [
                 "",
