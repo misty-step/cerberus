@@ -28,8 +28,10 @@ def run_aggregate(verdict_dir: str, env_extra: dict | None = None) -> tuple[int,
 class TestAggregateBasic:
     def test_fail_when_any_reviewer_fails(self):
         code, out, _ = run_aggregate(str(FIXTURES))
-        assert code == 1  # FAIL exits 1
-        assert "FAIL" in out
+        assert code == 0
+        verdict_path = Path("/tmp/council-verdict.json")
+        data = json.loads(verdict_path.read_text())
+        assert data["verdict"] == "FAIL"
 
     def test_council_verdict_json_created(self):
         run_aggregate(str(FIXTURES))
@@ -86,7 +88,9 @@ class TestAggregateOverride:
             str(tmp_path),
             env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234"}
         )
-        assert code == 1  # Still FAIL
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"  # Still FAIL because override SHA didn't match
 
 
 class TestAggregateAllPass:
