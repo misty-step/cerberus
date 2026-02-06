@@ -64,15 +64,15 @@ runs:
         if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
         MARKER="<!-- cerberus:council -->"
 
-        cat > /tmp/council-comment.md <<COMMENT_EOF
-${MARKER}
-## ${EMOJI} Council Verdict: ${VERDICT}
-
-${SUMMARY}
-
----
-*Cerberus Council*
-COMMENT_EOF
+        {
+          echo "$MARKER"
+          echo "## ${EMOJI} Council Verdict: ${VERDICT}"
+          echo ""
+          echo "$SUMMARY"
+          echo ""
+          echo "---"
+          echo "*Cerberus Council*"
+        } > /tmp/council-comment.md
 
         EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/dev/null | head -1)
         if [ -n "$EXISTING" ]; then
