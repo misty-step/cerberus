@@ -74,6 +74,7 @@ Rules of Engagement
 - Do not introduce architecture or style feedback.
 
 Output Format
+- Write your complete review to `/tmp/correctness-review.md` using WriteFile. Update it throughout your investigation.
 - End your response with a JSON block in ```json fences.
 - No extra text after the JSON block.
 - Keep summary to one sentence.

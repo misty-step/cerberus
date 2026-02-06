@@ -56,6 +56,7 @@ fi
 
 export PR_FILE_LIST="$file_list"
 export PR_DIFF_FILE="$diff_file"
+export PERSPECTIVE="$perspective"
 
 CERBERUS_ROOT_PY="$CERBERUS_ROOT" PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" python3 - <<'PY'
 import json
@@ -95,6 +96,7 @@ replacements = {
     "{{PR_BODY}}": pr_body,
     "{{FILE_LIST}}": os.environ.get("PR_FILE_LIST", ""),
     "{{DIFF}}": diff_text,
+    "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
 }
 
 for key, value in replacements.items():
@@ -136,7 +138,7 @@ echo "--- config ---"
 sed 's/api_key = ".*"/api_key = "***"/' "/tmp/${perspective}-kimi-config.toml"
 echo "---"
 
-review_timeout="${REVIEW_TIMEOUT:-300}"
+review_timeout="${REVIEW_TIMEOUT:-600}"
 
 set +e
 timeout "${review_timeout}" kimi --quiet --thinking \
@@ -148,17 +150,52 @@ exit_code=$?
 set -e
 
 # Always dump diagnostics for CI visibility
-output_size=$(wc -c < "/tmp/${perspective}-output.txt" 2>/dev/null || echo "0")
-echo "kimi exit=$exit_code output=${output_size} bytes"
+scratchpad="/tmp/${perspective}-review.md"
+stdout_file="/tmp/${perspective}-output.txt"
+output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
+scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+echo "kimi exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes"
 
 if [[ "$exit_code" -ne 0 ]]; then
   echo "--- stderr ---" >&2
   cat "/tmp/${perspective}-stderr.log" >&2
 fi
 
+# Scratchpad fallback chain: select best parse input
+# 1. Scratchpad with JSON block (primary)
+# 2. Stdout with JSON block (fallback)
+# 3. Scratchpad without JSON (partial review)
+# 4. Stdout (triggers existing fallback)
+parse_input="$stdout_file"
+if [[ -f "$scratchpad" ]] && grep -q '```json' "$scratchpad" 2>/dev/null; then
+  parse_input="$scratchpad"
+  echo "parse-input: scratchpad (has JSON block)"
+elif [[ -s "$stdout_file" ]] && grep -q '```json' "$stdout_file" 2>/dev/null; then
+  parse_input="$stdout_file"
+  echo "parse-input: stdout (has JSON block)"
+elif [[ -f "$scratchpad" ]] && [[ -s "$scratchpad" ]]; then
+  parse_input="$scratchpad"
+  echo "parse-input: scratchpad (partial, no JSON block)"
+else
+  echo "parse-input: stdout (fallback)"
+fi
+
+# Write selected parse input path for downstream steps
+echo "$parse_input" > "/tmp/${perspective}-parse-input"
+
 echo "--- output (last 40 lines) ---"
-tail -40 "/tmp/${perspective}-output.txt"
+tail -40 "$parse_input"
 echo "--- end output ---"
+
+# On timeout (exit 124): if we have content to parse, exit 0
+# Let parse-review.py handle the partial content
+if [[ "$exit_code" -eq 124 ]]; then
+  echo "::warning::${reviewer_name} (${perspective}) timed out after ${review_timeout}s"
+  if [[ -s "$parse_input" ]]; then
+    echo "timeout: content available, proceeding to parse"
+    exit_code=0
+  fi
+fi
 
 echo "$exit_code" > "/tmp/${perspective}-exitcode"
 exit "$exit_code"

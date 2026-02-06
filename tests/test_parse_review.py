@@ -500,3 +500,53 @@ def test_root_not_object():
     data = json.loads(out)
     assert data["verdict"] == "FAIL"
     assert data["confidence"] == 0.0
+
+
+class TestScratchpadInput:
+    """Tests for scratchpad review document handling."""
+
+    def test_extracts_json_from_scratchpad(self):
+        """parse-review.py works with scratchpad format (markdown + JSON block)."""
+        code, out, _ = run_parse_file(FIXTURES / "sample-scratchpad-complete.md")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["reviewer"] == "ATHENA"
+        assert data["confidence"] == 0.88
+
+    def test_scratchpad_findings_preserved(self):
+        """Findings from scratchpad JSON are preserved."""
+        code, out, _ = run_parse_file(FIXTURES / "sample-scratchpad-complete.md")
+        data = json.loads(out)
+        assert len(data["findings"]) == 1
+        assert data["findings"][0]["severity"] == "info"
+
+    def test_partial_scratchpad_extracts_verdict_from_header(self):
+        """Scratchpad without JSON block but with ## Verdict: PASS header extracts PASS."""
+        code, out, _ = run_parse_file(
+            FIXTURES / "sample-scratchpad-partial.md",
+            env_extra={"REVIEWER_NAME": "APOLLO"},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["reviewer"] == "APOLLO"
+        assert data["confidence"] < 0.5  # low confidence for partial
+
+    def test_partial_scratchpad_defaults_to_warn(self):
+        """Scratchpad without JSON block or verdict header defaults to WARN."""
+        # Write a scratchpad with investigation notes but no verdict header
+        partial_text = "# Review\n\n## Investigation Notes\n- Checked files\n- Found nothing yet\n"
+        code, out, _ = run_parse(partial_text, env_extra={"REVIEWER_NAME": "TEST"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+
+    def test_partial_scratchpad_includes_notes_in_summary(self):
+        """Partial scratchpad includes investigation notes in the summary."""
+        code, out, _ = run_parse_file(
+            FIXTURES / "sample-scratchpad-partial.md",
+            env_extra={"REVIEWER_NAME": "APOLLO"},
+        )
+        data = json.loads(out)
+        assert "investigation" in data["summary"].lower() or "partial" in data["summary"].lower() or "timed out" in data["summary"].lower()
