@@ -189,8 +189,6 @@ def main() -> None:
 
         validate(obj)
         enforce_verdict_consistency(obj)
-    except SystemExit:
-        raise
     except Exception as exc:
         fail(f"unexpected error: {exc}")
 

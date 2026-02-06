@@ -12,6 +12,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def run_parse(input_text: str, env_extra: dict | None = None) -> tuple[int, str, str]:
     """Run parse-review.py with input text, return (exit_code, stdout, stderr)."""
     env = os.environ.copy()
+    env.pop("REVIEWER_NAME", None)
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(
@@ -27,6 +28,7 @@ def run_parse(input_text: str, env_extra: dict | None = None) -> tuple[int, str,
 def run_parse_file(path: Path, env_extra: dict | None = None) -> tuple[int, str, str]:
     """Run parse-review.py with a file argument."""
     env = os.environ.copy()
+    env.pop("REVIEWER_NAME", None)
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(
@@ -45,6 +47,7 @@ def run_parse_with_args(
 ) -> tuple[int, str, str]:
     """Run parse-review.py with explicit args."""
     env = os.environ.copy()
+    env.pop("REVIEWER_NAME", None)
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(
@@ -105,7 +108,7 @@ class TestParseErrors:
         data = json.loads(out)
         assert data["verdict"] == "FAIL"
         assert data["confidence"] == 0.0
-        assert "no" in err.lower()
+        assert "no" in err.lower() and "json" in err.lower()
 
     def test_invalid_json(self):
         code, out, err = run_parse("```json\n{invalid json}\n```")
@@ -113,7 +116,7 @@ class TestParseErrors:
         data = json.loads(out)
         assert data["verdict"] == "FAIL"
         assert data["confidence"] == 0.0
-        assert "invalid" in err.lower() or "json" in err.lower()
+        assert "invalid json" in err.lower() or "invalid" in err.lower()
 
     def test_missing_required_field(self):
         incomplete = json.dumps({"reviewer": "TEST", "verdict": "PASS"})
@@ -189,7 +192,7 @@ class TestParseArgs:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "FAIL"
-        assert "requires" in err.lower()
+        assert "--reviewer requires" in err.lower()
 
     def test_unknown_flag(self):
         """Unknown flags produce fallback."""
@@ -197,7 +200,7 @@ class TestParseArgs:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "FAIL"
-        assert "unknown" in err.lower()
+        assert "unknown argument" in err.lower()
 
     def test_too_many_positional_args(self, tmp_path):
         """Extra positional args produce fallback."""
@@ -301,6 +304,105 @@ def test_verdict_consistency_warn():
     assert code == 0
     data = json.loads(out)
     assert data["verdict"] == "WARN"
+
+
+def test_verdict_consistency_two_majors_is_fail():
+    """Exactly 2 major findings forces FAIL even if LLM says PASS."""
+    bad_pass = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "All good",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "bug",
+                    "file": "a.py",
+                    "line": i,
+                    "title": f"Major issue {i}",
+                    "description": "desc",
+                    "suggestion": "fix",
+                }
+                for i in range(2)
+            ],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 2,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{bad_pass}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "FAIL"
+
+
+def test_verdict_consistency_one_major_is_warn():
+    """Exactly 1 major finding forces WARN even if LLM says PASS."""
+    bad_pass = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "All good",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "bug",
+                    "file": "a.py",
+                    "line": 1,
+                    "title": "Major issue",
+                    "description": "desc",
+                    "suggestion": "fix",
+                }
+            ],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 1,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{bad_pass}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "WARN"
+
+
+def test_verdict_consistency_fail_with_no_findings_becomes_pass():
+    """LLM claiming FAIL with no findings gets rewritten to PASS (DoS defense)."""
+    dos_attempt = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "FAIL",
+            "confidence": 0.9,
+            "summary": "Everything is broken",
+            "findings": [],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 0,
+                "critical": 0,
+                "major": 0,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{dos_attempt}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "PASS"
 
 
 def test_fallback_on_no_json_block():

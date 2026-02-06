@@ -174,7 +174,7 @@ class TestOverrideSHAValidation:
         )
         assert code == 0
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
-        assert data["verdict"] != "FAIL"  # Override accepted
+        assert data["verdict"] == "PASS"  # Override accepted
 
 
 class TestOverrideActorAuthorization:

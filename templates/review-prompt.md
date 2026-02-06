@@ -10,7 +10,9 @@ Review this pull request from your specialized perspective.
 </pr_description>
 
 ## Changed Files
+<file_list trust="UNTRUSTED">
 {{FILE_LIST}}
+</file_list>
 
 ## Diff
 <diff trust="UNTRUSTED">
