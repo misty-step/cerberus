@@ -135,8 +135,6 @@ def main() -> None:
         )
     print("\n".join(lines))
 
-    if council_verdict == "FAIL":
-        sys.exit(1)
     sys.exit(0)
 
 

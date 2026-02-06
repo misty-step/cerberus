@@ -7,6 +7,8 @@ if [[ -z "$perspective" ]]; then
   exit 2
 fi
 
+trap 'rm -f "/tmp/${perspective}-kimi-config.toml" "/tmp/${perspective}-review-prompt.md" "/tmp/${perspective}-agent.yaml"' EXIT
+
 # CERBERUS_ROOT must point to the action directory
 if [[ -z "${CERBERUS_ROOT:-}" ]]; then
   echo "CERBERUS_ROOT not set" >&2
@@ -55,7 +57,7 @@ fi
 export PR_FILE_LIST="$file_list"
 export PR_DIFF_FILE="$diff_file"
 
-CERBERUS_ROOT_PY="$CERBERUS_ROOT" python3 - <<'PY'
+CERBERUS_ROOT_PY="$CERBERUS_ROOT" PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -98,7 +100,7 @@ replacements = {
 for key, value in replacements.items():
     text = text.replace(key, value)
 
-Path("/tmp/review-prompt.md").write_text(text)
+Path(os.environ["PROMPT_OUTPUT"]).write_text(text)
 PY
 
 echo "Running reviewer: $reviewer_name ($perspective)"
@@ -112,7 +114,7 @@ model="${KIMI_MODEL:-kimi-k2.5}"
 base_url="${KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
 
 # Create temp config with model, provider, and step limit
-cat > /tmp/kimi-config.toml <<TOML
+cat > "/tmp/${perspective}-kimi-config.toml" <<TOML
 default_model = "moonshot/${model}"
 
 [models."moonshot/${model}"]
@@ -131,14 +133,16 @@ max_steps_per_turn = ${max_steps}
 TOML
 
 echo "--- config ---"
-sed 's/api_key = ".*"/api_key = "***"/' /tmp/kimi-config.toml
+sed 's/api_key = ".*"/api_key = "***"/' "/tmp/${perspective}-kimi-config.toml"
 echo "---"
 
+review_timeout="${REVIEW_TIMEOUT:-300}"
+
 set +e
-kimi --quiet --thinking \
+timeout "${review_timeout}" kimi --quiet --thinking \
   --agent-file "$tmp_agent" \
-  --prompt "$(cat /tmp/review-prompt.md)" \
-  --config-file /tmp/kimi-config.toml \
+  --prompt "$(cat "/tmp/${perspective}-review-prompt.md")" \
+  --config-file "/tmp/${perspective}-kimi-config.toml" \
   > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
 exit_code=$?
 set -e

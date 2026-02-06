@@ -3,5 +3,3 @@ agent:
   extend: default
   name: maintainability
   system_prompt_path: ./maintainability-prompt.md
-  exclude_tools:
-    - "kimi_cli.tools.shell:Shell"
