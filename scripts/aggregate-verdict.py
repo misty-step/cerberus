@@ -65,9 +65,7 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
 
 def validate_actor(actor: str, policy: str, pr_author: str | None) -> bool:
     if policy == "pr_author":
-        return bool(pr_author) and actor == pr_author
-    if policy in {"write_access", "maintainers_only"}:
-        return True
+        return bool(pr_author) and actor.lower() == pr_author.lower()
     return False
 
 

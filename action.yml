@@ -46,6 +46,17 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Check fork safety
+      shell: bash
+      env:
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        BASE_REPO: ${{ github.repository }}
+      run: |
+        if [[ -n "$HEAD_REPO" && "$HEAD_REPO" != "$BASE_REPO" ]]; then
+          echo "::error::Cerberus does not run on fork PRs to protect secrets. Use pull_request trigger (not pull_request_target) and gate on same-repo PRs."
+          exit 1
+        fi
+
     - name: Validate perspective
       shell: bash
       env:

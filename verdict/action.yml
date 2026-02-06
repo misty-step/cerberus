@@ -42,7 +42,11 @@ runs:
           echo "::warning::Failed to fetch override comments: $OVERRIDE"
           OVERRIDE=""
         fi
-        echo "override=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+        {
+          echo "override<<CERBERUS_OVERRIDE_EOF"
+          echo "$OVERRIDE"
+          echo "CERBERUS_OVERRIDE_EOF"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Aggregate verdicts
       id: aggregate
