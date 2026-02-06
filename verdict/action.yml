@@ -1,0 +1,92 @@
+name: 'Cerberus Council Verdict'
+description: 'Aggregate Cerberus review verdicts into a council decision'
+author: 'misty-step'
+
+inputs:
+  github-token:
+    description: 'GitHub token for PR comments'
+    required: true
+  fail-on-verdict:
+    description: 'Exit with failure if council verdict is FAIL'
+    default: 'true'
+
+outputs:
+  verdict:
+    description: 'Council verdict (PASS, WARN, FAIL)'
+    value: ${{ steps.aggregate.outputs.verdict }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download verdict artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./verdicts/
+        pattern: cerberus-verdict-*
+        merge-multiple: true
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Check for override
+      id: override
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        OVERRIDE=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body}' 2>/dev/null | tail -1)
+        echo "override=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+
+    - name: Aggregate verdicts
+      id: aggregate
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        GH_OVERRIDE_COMMENT: ${{ steps.override.outputs.override }}
+        GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
+        echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
+
+    - name: Post council verdict
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
+        SUMMARY=$(jq -r .summary /tmp/council-verdict.json)
+        EMOJI="✅"
+        if [ "$VERDICT" = "FAIL" ]; then EMOJI="❌"; fi
+        if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
+        MARKER="<!-- cerberus:council -->"
+
+        cat > /tmp/council-comment.md <<COMMENT_EOF
+${MARKER}
+## ${EMOJI} Council Verdict: ${VERDICT}
+
+${SUMMARY}
+
+---
+*Cerberus Council*
+COMMENT_EOF
+
+        EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/dev/null | head -1)
+        if [ -n "$EXISTING" ]; then
+          gh api "repos/${{ github.repository }}/issues/comments/${EXISTING}" -X PATCH -f body="$(cat /tmp/council-comment.md)" >/dev/null
+        else
+          gh pr comment "$PR_NUMBER" --body-file /tmp/council-comment.md >/dev/null
+        fi
+
+    - name: Check verdict
+      if: inputs.fail-on-verdict == 'true'
+      shell: bash
+      run: |
+        VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
+        if [ "$VERDICT" = "FAIL" ]; then
+          echo "::error::Council Verdict: FAIL"
+          exit 1
+        fi

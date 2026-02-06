@@ -1,0 +1,118 @@
+name: 'Cerberus Review'
+description: 'Run a single Cerberus code review perspective'
+author: 'misty-step'
+
+branding:
+  icon: 'eye'
+  color: 'red'
+
+inputs:
+  perspective:
+    description: 'Review perspective (correctness, architecture, security, performance, maintainability)'
+    required: true
+  github-token:
+    description: 'GitHub token for PR comments'
+    required: true
+  kimi-api-key:
+    description: 'Moonshot/Kimi API key'
+    required: true
+  kimi-base-url:
+    description: 'Kimi API base URL'
+    default: 'https://api.moonshot.ai/v1'
+  model:
+    description: 'Model name'
+    default: 'kimi-k2.5'
+  max-steps:
+    description: 'Max agentic steps per review'
+    default: '25'
+  timeout:
+    description: 'Review timeout in seconds'
+    default: '300'
+  kimi-cli-version:
+    description: 'KimiCode CLI version to install'
+    default: '1.8.0'
+  post-comment:
+    description: 'Post review comment to PR'
+    default: 'true'
+
+outputs:
+  verdict:
+    description: 'Review verdict (PASS, WARN, FAIL)'
+    value: ${{ steps.parse.outputs.verdict }}
+  verdict-json:
+    description: 'Path to verdict JSON file'
+    value: ${{ steps.parse.outputs.verdict-json }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate perspective
+      shell: bash
+      run: |
+        VALID="correctness architecture security performance maintainability"
+        if [[ ! " $VALID " =~ " ${{ inputs.perspective }} " ]]; then
+          echo "::error::Invalid perspective: ${{ inputs.perspective }}. Must be one of: $VALID"
+          exit 1
+        fi
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install KimiCode CLI
+      shell: bash
+      run: pip install kimi-cli==${{ inputs.kimi-cli-version }}
+
+    - name: Fetch PR context
+      id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        gh pr diff "$PR_NUMBER" > /tmp/pr.diff
+        gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
+        echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+    - name: Run review
+      id: review
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        KIMI_API_KEY: ${{ inputs.kimi-api-key }}
+        KIMI_BASE_URL: ${{ inputs.kimi-base-url }}
+        KIMI_MODEL: ${{ inputs.model }}
+        KIMI_MAX_STEPS: ${{ inputs.max-steps }}
+        GH_DIFF_FILE: /tmp/pr.diff
+        GH_PR_CONTEXT: /tmp/pr-context.json
+      run: |
+        chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
+        "$CERBERUS_ROOT/scripts/run-reviewer.sh" "${{ inputs.perspective }}"
+
+    - name: Parse review output
+      id: parse
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "/tmp/${{ inputs.perspective }}-output.txt" > "/tmp/${{ inputs.perspective }}-verdict.json"
+        echo "verdict=$(jq -r .verdict /tmp/${{ inputs.perspective }}-verdict.json)" >> "$GITHUB_OUTPUT"
+        echo "verdict-json=/tmp/${{ inputs.perspective }}-verdict.json" >> "$GITHUB_OUTPUT"
+
+    - name: Post PR comment
+      if: inputs.post-comment == 'true'
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
+      run: |
+        chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
+        "$CERBERUS_ROOT/scripts/post-comment.sh" "${{ inputs.perspective }}" "/tmp/${{ inputs.perspective }}-verdict.json"
+
+    - name: Upload verdict artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cerberus-verdict-${{ inputs.perspective }}
+        path: /tmp/${{ inputs.perspective }}-verdict.json

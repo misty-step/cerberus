@@ -13,12 +13,17 @@ if [[ ! -f "$verdict_file" ]]; then
   exit 2
 fi
 
+if [[ -z "${CERBERUS_ROOT:-}" ]]; then
+  echo "CERBERUS_ROOT not set" >&2
+  exit 2
+fi
+config_file="${CERBERUS_ROOT}/defaults/config.yml"
+
 if [[ -z "${PR_NUMBER:-}" ]]; then
   echo "missing PR_NUMBER env var" >&2
   exit 2
 fi
 
-config_file=".github/cerberus/config.yml"
 marker="<!-- cerberus:${perspective} -->"
 
 reviewer_info="$(

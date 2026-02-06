@@ -10,12 +10,15 @@ Multi-agent AI PR review council. Five parallel reviewers. Single council verdic
 - ARTEMIS: maintainability + DX (think like next developer)
 
 ## Key Paths
-- config: `.github/cerberus/config.yml`
-- agents: `.github/cerberus/agents/`
-- system prompts: `.github/cerberus/agents/*-prompt.md`
-- scripts: `.github/cerberus/scripts/`
-- templates: `.github/cerberus/templates/review-prompt.md`
-- workflow: `.github/workflows/cerberus.yml`
+- action: `action.yml` (review) + `verdict/action.yml` (council)
+- config: `defaults/config.yml`
+- agents: `agents/`
+- system prompts: `agents/*-prompt.md`
+- scripts: `scripts/`
+- templates: `templates/review-prompt.md`
+- consumer template: `templates/consumer-workflow.yml`
+- tests: `tests/`
+- CI: `.github/workflows/ci.yml`
 
 ## Output Schema (Reviewer JSON)
 Each reviewer ends with a JSON block in ```json fences.
@@ -36,4 +39,4 @@ Comment command: `/council override sha=<short-or-full-sha>`
 Rules:
 - reason required
 - sha must match current HEAD
-- actor requirements in `.github/cerberus/config.yml`
+- actor requirements in `defaults/config.yml`
