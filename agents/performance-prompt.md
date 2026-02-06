@@ -80,6 +80,7 @@ Review Discipline
 - Avoid premature optimizations.
 
 Output Format
+- Write your complete review to `/tmp/performance-review.md` using WriteFile. Update it throughout your investigation.
 - End your response with a JSON block in ```json fences.
 - No extra text after the JSON block.
 - Keep summary to one sentence.

@@ -8,6 +8,7 @@ from typing import NoReturn
 
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
 REVIEWER_NAME = "UNKNOWN"
+RAW_INPUT = ""
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
@@ -41,13 +42,40 @@ def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
     return input_path, reviewer
 
 
-def write_fallback(reviewer: str, error: str) -> NoReturn:
+def extract_verdict_from_markdown(text: str) -> str | None:
+    """Extract verdict from markdown header when JSON block is missing."""
+    match = re.search(r"^## Verdict:\s*(PASS|WARN|FAIL)", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def is_scratchpad(text: str) -> bool:
+    """Check if text looks like a scratchpad review document."""
+    return "## Investigation Notes" in text or "## Verdict:" in text
+
+
+def extract_notes_summary(text: str, max_len: int = 200) -> str:
+    """Extract investigation notes for inclusion in partial review summary."""
+    match = re.search(
+        r"## Investigation Notes\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL
+    )
+    if not match:
+        return ""
+    notes = match.group(1).strip()
+    if len(notes) > max_len:
+        notes = notes[:max_len] + "..."
+    return notes
+
+
+def write_fallback(
+    reviewer: str, error: str, verdict: str = "FAIL", confidence: float = 0.0,
+    summary: str | None = None,
+) -> NoReturn:
     fallback = {
         "reviewer": reviewer,
         "perspective": "unknown",
-        "verdict": "FAIL",
-        "confidence": 0.0,
-        "summary": f"{PARSE_FAILURE_PREFIX}{error}",
+        "verdict": verdict,
+        "confidence": confidence,
+        "summary": summary or f"{PARSE_FAILURE_PREFIX}{error}",
         "findings": [],
         "stats": {
             "files_reviewed": 0,
@@ -64,6 +92,12 @@ def write_fallback(reviewer: str, error: str) -> NoReturn:
 
 def fail(msg: str) -> NoReturn:
     print(f"parse-review: {msg}", file=sys.stderr)
+    if is_scratchpad(RAW_INPUT):
+        md_verdict = extract_verdict_from_markdown(RAW_INPUT)
+        verdict = md_verdict or "WARN"
+        notes = extract_notes_summary(RAW_INPUT)
+        summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
+        write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3, summary=summary)
     write_fallback(REVIEWER_NAME, msg)
 
 
@@ -162,7 +196,7 @@ def enforce_verdict_consistency(obj: dict) -> None:
 
 
 def main() -> None:
-    global REVIEWER_NAME
+    global REVIEWER_NAME, RAW_INPUT
 
     try:
         input_path, reviewer = parse_args(sys.argv[1:])
@@ -176,6 +210,8 @@ def main() -> None:
         raw = read_input(input_path)
     except Exception as exc:
         fail(f"unable to read input: {exc}")
+
+    RAW_INPUT = raw
 
     try:
         json_block = extract_json_block(raw)

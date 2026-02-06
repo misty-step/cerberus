@@ -82,6 +82,7 @@ Review Discipline
 - Do not block if there is no exploit path.
 
 Output Format
+- Write your complete review to `/tmp/security-review.md` using WriteFile. Update it throughout your investigation.
 - End your response with a JSON block in ```json fences.
 - No extra text after the JSON block.
 - Keep summary to one sentence.

@@ -27,7 +27,7 @@ inputs:
     default: '25'
   timeout:
     description: 'Review timeout in seconds'
-    default: '300'
+    default: '600'
   kimi-cli-version:
     description: 'KimiCode CLI version to install'
     default: '1.8.0'
@@ -125,7 +125,12 @@ runs:
         PERSPECTIVE: ${{ inputs.perspective }}
         REVIEWER_NAME: ${{ inputs.perspective }}
       run: |
-        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "/tmp/${PERSPECTIVE}-output.txt" > "/tmp/${PERSPECTIVE}-verdict.json"
+        # Use scratchpad if available, else stdout
+        PARSE_INPUT="/tmp/${PERSPECTIVE}-output.txt"
+        if [[ -f "/tmp/${PERSPECTIVE}-parse-input" ]]; then
+          PARSE_INPUT="$(cat "/tmp/${PERSPECTIVE}-parse-input")"
+        fi
+        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "/tmp/${PERSPECTIVE}-verdict.json"
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
         if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL)$ ]]; then
           echo "::error::Invalid verdict value from parser: $VERDICT"
@@ -153,6 +158,15 @@ runs:
         name: cerberus-verdict-${{ inputs.perspective }}
         path: /tmp/${{ inputs.perspective }}-verdict.json
         retention-days: 1
+
+    - name: Upload review document
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cerberus-review-${{ inputs.perspective }}
+        path: /tmp/${{ inputs.perspective }}-review.md
+        if-no-files-found: ignore
+        retention-days: 3
 
     - name: Enforce verdict
       if: steps.parse.outcome == 'success'
