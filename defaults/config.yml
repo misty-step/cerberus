@@ -12,7 +12,7 @@ model:
   default: "kimi-k2.5"
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
-  timeout: 300                        # Seconds per reviewer
+  timeout: 600                        # Seconds per reviewer
 
 override:
   enabled: true
