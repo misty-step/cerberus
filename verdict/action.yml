@@ -38,7 +38,10 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: |
-        OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body}] | last' 2>/dev/null || echo "")
+        if ! OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body}] | last' 2>&1); then
+          echo "::warning::Failed to fetch override comments: $OVERRIDE"
+          OVERRIDE=""
+        fi
         echo "override=${OVERRIDE}" >> "$GITHUB_OUTPUT"
 
     - name: Aggregate verdicts
@@ -62,6 +65,10 @@ runs:
       run: |
         VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
         SUMMARY=$(jq -r .summary /tmp/council-verdict.json)
+        if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
+          echo "::error::Council verdict JSON is malformed"
+          exit 1
+        fi
         EMOJI="✅"
         if [ "$VERDICT" = "FAIL" ]; then EMOJI="❌"; fi
         if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
@@ -77,7 +84,7 @@ runs:
           echo "*Cerberus Council*"
         } > /tmp/council-comment.md
 
-        EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/dev/null | head -1)
+        EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/dev/null | head -1) || true
         if [ -n "$EXISTING" ]; then
           gh api "repos/${REPO}/issues/comments/${EXISTING}" -X PATCH -f body="$(cat /tmp/council-comment.md)" >/dev/null
         else

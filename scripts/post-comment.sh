@@ -28,7 +28,7 @@ marker="<!-- cerberus:${perspective} -->"
 
 reviewer_info="$(
   awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {name=$3}
+    $1=="-" && $2=="name:" {if (found) exit; name=$3}
     $1=="perspective:" && $2==p {found=1}
     found && $1=="description:" {
       desc=$0
@@ -53,6 +53,13 @@ fi
 verdict="$(jq -r .verdict "$verdict_file")"
 confidence="$(jq -r .confidence "$verdict_file")"
 summary="$(jq -r .summary "$verdict_file")"
+
+if [[ "$verdict" == "null" || -z "$verdict" ]]; then
+  echo "malformed verdict file: missing verdict field" >&2
+  exit 2
+fi
+if [[ "$confidence" == "null" ]]; then confidence="?"; fi
+if [[ "$summary" == "null" ]]; then summary="No summary available."; fi
 
 case "$verdict" in
   PASS) verdict_emoji="✅" ;;

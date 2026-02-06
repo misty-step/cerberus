@@ -69,8 +69,10 @@ class TestAggregateOverride:
             str(tmp_path),
             env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234"}
         )
-        # With override, FAIL becomes non-FAIL (exit 0)
         assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"  # Override turned FAIL into PASS
+        assert data["override"]["used"] is True
 
     def test_override_wrong_sha_ignored(self, tmp_path):
         fail_verdict = {
@@ -100,7 +102,60 @@ class TestAggregateAllPass:
             (tmp_path / f"{name}.json").write_text(json.dumps(v))
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        assert "PASS" in out
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+
+    def test_warn_verdict_when_no_fail(self, tmp_path):
+        (tmp_path / "a.json").write_text(
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "WARN", "summary": "Minor."})
+        )
+        (tmp_path / "b.json").write_text(
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "PASS", "summary": "Good."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "WARN"
+
+
+class TestOverrideSHAValidation:
+    def test_short_sha_rejected(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "testuser",
+            "sha": "abc",
+            "reason": "Override attempt"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234567890"}
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"  # Override rejected due to short SHA
+
+    def test_prefix_sha_match_works(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "testuser",
+            "sha": "abc1234",
+            "reason": "Verified"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234567890abcdef"}
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] != "FAIL"  # Override accepted
 
 
 class TestAggregateErrors:

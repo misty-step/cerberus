@@ -49,8 +49,11 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
     if not sha or not reason:
         return None
 
+    if len(sha) < 7:
+        return None
+
     if head_sha:
-        if not (head_sha.startswith(sha) or sha.startswith(head_sha)):
+        if not head_sha.startswith(sha):
             return None
 
     return {
