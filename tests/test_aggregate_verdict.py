@@ -14,6 +14,8 @@ def run_aggregate(verdict_dir: str, env_extra: dict | None = None) -> tuple[int,
     env = os.environ.copy()
     env.pop("GH_OVERRIDE_COMMENT", None)
     env.pop("GH_HEAD_SHA", None)
+    env.pop("GH_PR_AUTHOR", None)
+    env.pop("GH_OVERRIDE_POLICY", None)
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(
@@ -67,7 +69,11 @@ class TestAggregateOverride:
         })
         code, out, _ = run_aggregate(
             str(tmp_path),
-            env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234"}
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "testuser",
+            },
         )
         assert code == 0
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
@@ -88,7 +94,11 @@ class TestAggregateOverride:
         })
         code, out, _ = run_aggregate(
             str(tmp_path),
-            env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234"}
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "testuser",
+            },
         )
         assert code == 0
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
@@ -132,7 +142,11 @@ class TestOverrideSHAValidation:
         })
         code, out, _ = run_aggregate(
             str(tmp_path),
-            env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234567890"}
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234567890",
+                "GH_PR_AUTHOR": "testuser",
+            },
         )
         assert code == 0
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
@@ -151,11 +165,142 @@ class TestOverrideSHAValidation:
         })
         code, out, _ = run_aggregate(
             str(tmp_path),
-            env_extra={"GH_OVERRIDE_COMMENT": override, "GH_HEAD_SHA": "abc1234567890abcdef"}
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234567890abcdef",
+                "GH_PR_AUTHOR": "testuser",
+            },
         )
         assert code == 0
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
         assert data["verdict"] != "FAIL"  # Override accepted
+
+
+class TestOverrideActorAuthorization:
+    def test_override_rejected_when_actor_not_pr_author(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "intruder",
+            "sha": "abc1234",
+            "reason": "Override attempt"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "trusted-author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"
+        assert data["override"]["used"] is False
+
+    def test_override_accepted_when_actor_is_pr_author(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "trusted-author",
+            "sha": "abc1234",
+            "reason": "Verified"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "trusted-author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_override_accepted_for_write_access_policy(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "random-user",
+            "sha": "abc1234",
+            "reason": "Maintainer approved"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "different-author",
+                "GH_OVERRIDE_POLICY": "write_access",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_override_accepted_for_maintainers_only_policy(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "another-user",
+            "sha": "abc1234",
+            "reason": "Maintainer approved"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "different-author",
+                "GH_OVERRIDE_POLICY": "maintainers_only",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_unknown_policy_rejects_override(self, tmp_path):
+        fail_verdict = {
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue."
+        }
+        (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
+        override = json.dumps({
+            "actor": "trusted-author",
+            "sha": "abc1234",
+            "reason": "Override attempt"
+        })
+        code, out, _ = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "trusted-author",
+                "GH_OVERRIDE_POLICY": "unknown_policy",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"
+        assert data["override"]["used"] is False
 
 
 class TestAggregateErrors:

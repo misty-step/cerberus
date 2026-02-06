@@ -51,6 +51,8 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}/..
         GH_OVERRIDE_COMMENT: ${{ steps.override.outputs.override }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GH_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        GH_OVERRIDE_POLICY: pr_author
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
         echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
