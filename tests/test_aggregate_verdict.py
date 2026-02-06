@@ -391,6 +391,14 @@ class TestAggregateErrors:
         assert code == 2
 
 
+def test_read_json_handles_corrupt_file(tmp_path):
+    """Binary/corrupt verdict file produces error, not crash."""
+    (tmp_path / "corrupt.json").write_bytes(b"\x00\x01\x02\x03")
+    code, _, err = run_aggregate(str(tmp_path))
+    assert code == 2
+    assert "invalid JSON" in err or "unable to read" in err
+
+
 def test_warns_on_missing_reviewers(tmp_path):
     (tmp_path / "apollo.json").write_text(
         json.dumps({"reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS", "summary": "ok"})
@@ -413,7 +421,7 @@ def test_detects_fallback_verdicts(tmp_path):
             {
                 "reviewer": "APOLLO",
                 "perspective": "unknown",
-                "verdict": "WARN",
+                "verdict": "FAIL",
                 "confidence": 0.0,
                 "summary": "Review output could not be parsed: no ```json block found",
             }
@@ -430,3 +438,4 @@ def test_detects_fallback_verdicts(tmp_path):
     assert code == 0
     assert "fallback verdicts detected" in err
     assert "APOLLO" in err
+    assert "Council Verdict: FAIL" in out

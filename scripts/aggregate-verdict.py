@@ -5,6 +5,8 @@ import re
 import sys
 from pathlib import Path
 
+# Prefix of the summary field in fallback verdicts produced by parse-review.py.
+# parse-review.py appends ": <error detail>" after this prefix.
 PARSE_FAILURE_PREFIX = "Review output could not be parsed"
 
 
@@ -18,6 +20,8 @@ def read_json(path: Path) -> dict:
         return json.loads(path.read_text())
     except json.JSONDecodeError as exc:
         fail(f"invalid JSON in {path}: {exc}")
+    except OSError as exc:
+        fail(f"unable to read {path}: {exc}")
 
 
 def parse_override(raw: str | None, head_sha: str | None) -> dict | None:

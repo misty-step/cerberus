@@ -4,6 +4,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
 REVIEWER_NAME = "UNKNOWN"
@@ -40,11 +41,11 @@ def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
     return input_path, reviewer
 
 
-def write_fallback(reviewer: str, error: str) -> None:
+def write_fallback(reviewer: str, error: str) -> NoReturn:
     fallback = {
         "reviewer": reviewer,
         "perspective": "unknown",
-        "verdict": "WARN",
+        "verdict": "FAIL",
         "confidence": 0.0,
         "summary": f"{PARSE_FAILURE_PREFIX}{error}",
         "findings": [],
@@ -61,7 +62,7 @@ def write_fallback(reviewer: str, error: str) -> None:
     sys.exit(0)
 
 
-def fail(msg: str, code: int = 2) -> None:
+def fail(msg: str) -> NoReturn:
     print(f"parse-review: {msg}", file=sys.stderr)
     write_fallback(REVIEWER_NAME, msg)
 
@@ -142,6 +143,24 @@ def validate(obj: dict) -> None:
             fail(f"stats field not int: {skey}")
 
 
+def enforce_verdict_consistency(obj: dict) -> None:
+    """Recompute verdict from findings to prevent LLM verdict manipulation."""
+    findings = obj.get("findings", [])
+    critical = sum(1 for f in findings if f.get("severity") == "critical")
+    major = sum(1 for f in findings if f.get("severity") == "major")
+    minor = sum(1 for f in findings if f.get("severity") == "minor")
+
+    if critical > 0 or major >= 2:
+        computed = "FAIL"
+    elif major == 1 or minor >= 3:
+        computed = "WARN"
+    else:
+        computed = "PASS"
+
+    if obj["verdict"] != computed:
+        obj["verdict"] = computed
+
+
 def main() -> None:
     global REVIEWER_NAME
 
@@ -169,6 +188,7 @@ def main() -> None:
             fail("root must be object")
 
         validate(obj)
+        enforce_verdict_consistency(obj)
     except SystemExit:
         raise
     except Exception as exc:

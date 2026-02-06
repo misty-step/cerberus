@@ -1,9 +1,9 @@
 Review this pull request from your specialized perspective.
 
 ## PR Context
-- **Title:** {{PR_TITLE}}
+- **Title:** <pr_title trust="UNTRUSTED">{{PR_TITLE}}</pr_title>
 - **Author:** {{PR_AUTHOR}}
-- **Branch:** {{HEAD_BRANCH}} → {{BASE_BRANCH}}
+- **Branch:** <branch_name trust="UNTRUSTED">{{HEAD_BRANCH}}</branch_name> → {{BASE_BRANCH}}
 - **Description:**
 <pr_description trust="UNTRUSTED">
 {{PR_BODY}}

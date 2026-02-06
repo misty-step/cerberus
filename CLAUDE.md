@@ -38,10 +38,10 @@ Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`.
 | Name | Perspective | Shell Access | Focus |
 |------|-------------|-------------|-------|
 | APOLLO | correctness | no | Logic bugs, edge cases, type mismatches |
-| ATHENA | architecture | yes | Design patterns, module boundaries |
+| ATHENA | architecture | no | Design patterns, module boundaries |
 | SENTINEL | security | no | Threat model, injection, auth flaws |
-| VULCAN | performance | yes | Runtime efficiency, scalability |
-| ARTEMIS | maintainability | yes | DX, readability, future maintenance |
+| VULCAN | performance | no | Runtime efficiency, scalability |
+| ARTEMIS | maintainability | no | DX, readability, future maintenance |
 
 Shell access is toggled per agent via `exclude_tools` in the YAML config.
 
