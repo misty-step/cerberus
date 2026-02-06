@@ -16,6 +16,7 @@ def run_aggregate(verdict_dir: str, env_extra: dict | None = None) -> tuple[int,
     env.pop("GH_HEAD_SHA", None)
     env.pop("GH_PR_AUTHOR", None)
     env.pop("GH_OVERRIDE_POLICY", None)
+    env.pop("EXPECTED_REVIEWERS", None)
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(
@@ -173,7 +174,7 @@ class TestOverrideSHAValidation:
         )
         assert code == 0
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
-        assert data["verdict"] != "FAIL"  # Override accepted
+        assert data["verdict"] == "PASS"  # Override accepted
 
 
 class TestOverrideActorAuthorization:
@@ -388,3 +389,53 @@ class TestAggregateErrors:
         empty.mkdir()
         code, _, err = run_aggregate(str(empty))
         assert code == 2
+
+
+def test_read_json_handles_corrupt_file(tmp_path):
+    """Binary/corrupt verdict file produces error, not crash."""
+    (tmp_path / "corrupt.json").write_bytes(b"\x00\x01\x02\x03")
+    code, _, err = run_aggregate(str(tmp_path))
+    assert code == 2
+    assert "invalid JSON" in err or "unable to read" in err
+
+
+def test_warns_on_missing_reviewers(tmp_path):
+    (tmp_path / "apollo.json").write_text(
+        json.dumps({"reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS", "summary": "ok"})
+    )
+    (tmp_path / "athena.json").write_text(
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "ok"})
+    )
+
+    code, out, err = run_aggregate(
+        str(tmp_path),
+        env_extra={"EXPECTED_REVIEWERS": "APOLLO,ATHENA,SENTINEL"},
+    )
+    assert code == 0
+    assert "expected 3 reviewers (APOLLO, ATHENA, SENTINEL), got 2 verdict files" in err
+
+
+def test_detects_fallback_verdicts(tmp_path):
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "unknown",
+                "verdict": "FAIL",
+                "confidence": 0.0,
+                "summary": "Review output could not be parsed: no ```json block found",
+            }
+        )
+    )
+    (tmp_path / "athena.json").write_text(
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "ok"})
+    )
+
+    code, out, err = run_aggregate(
+        str(tmp_path),
+        env_extra={"EXPECTED_REVIEWERS": "APOLLO,ATHENA"},
+    )
+    assert code == 0
+    assert "fallback verdicts detected" in err
+    assert "APOLLO" in err
+    assert "Council Verdict: FAIL" in out

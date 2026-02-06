@@ -1,18 +1,75 @@
 #!/usr/bin/env python3
 import json
+import os
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
+
+PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
+REVIEWER_NAME = "UNKNOWN"
 
 
-def fail(msg: str, code: int = 2) -> None:
+def resolve_reviewer(cli_reviewer: str | None) -> str:
+    reviewer = cli_reviewer or os.environ.get("REVIEWER_NAME") or "UNKNOWN"
+    reviewer = reviewer.strip()
+    return reviewer or "UNKNOWN"
+
+
+def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
+    input_path = None
+    reviewer = None
+    idx = 0
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg == "--reviewer":
+            if idx + 1 >= len(argv):
+                raise ValueError("--reviewer requires a value")
+            reviewer = argv[idx + 1]
+            idx += 2
+            continue
+        if arg.startswith("--reviewer="):
+            reviewer = arg.split("=", 1)[1]
+            idx += 1
+            continue
+        if arg.startswith("-"):
+            raise ValueError(f"unknown argument: {arg}")
+        if input_path is not None:
+            raise ValueError("too many positional arguments")
+        input_path = arg
+        idx += 1
+    return input_path, reviewer
+
+
+def write_fallback(reviewer: str, error: str) -> NoReturn:
+    fallback = {
+        "reviewer": reviewer,
+        "perspective": "unknown",
+        "verdict": "FAIL",
+        "confidence": 0.0,
+        "summary": f"{PARSE_FAILURE_PREFIX}{error}",
+        "findings": [],
+        "stats": {
+            "files_reviewed": 0,
+            "files_with_issues": 0,
+            "critical": 0,
+            "major": 0,
+            "minor": 0,
+            "info": 0,
+        },
+    }
+    print(json.dumps(fallback, indent=2, sort_keys=False))
+    sys.exit(0)
+
+
+def fail(msg: str) -> NoReturn:
     print(f"parse-review: {msg}", file=sys.stderr)
-    sys.exit(code)
+    write_fallback(REVIEWER_NAME, msg)
 
 
-def read_input() -> str:
-    if len(sys.argv) > 1:
-        return Path(sys.argv[1]).read_text()
+def read_input(path: str | None) -> str:
+    if path:
+        return Path(path).read_text()
     return sys.stdin.read()
 
 
@@ -86,18 +143,55 @@ def validate(obj: dict) -> None:
             fail(f"stats field not int: {skey}")
 
 
+def enforce_verdict_consistency(obj: dict) -> None:
+    """Recompute verdict from findings to prevent LLM verdict manipulation."""
+    findings = obj.get("findings", [])
+    critical = sum(1 for f in findings if f.get("severity") == "critical")
+    major = sum(1 for f in findings if f.get("severity") == "major")
+    minor = sum(1 for f in findings if f.get("severity") == "minor")
+
+    if critical > 0 or major >= 2:
+        computed = "FAIL"
+    elif major == 1 or minor >= 3:
+        computed = "WARN"
+    else:
+        computed = "PASS"
+
+    if obj["verdict"] != computed:
+        obj["verdict"] = computed
+
+
 def main() -> None:
-    raw = read_input()
-    json_block = extract_json_block(raw)
+    global REVIEWER_NAME
+
     try:
-        obj = json.loads(json_block)
-    except json.JSONDecodeError as exc:
-        fail(f"invalid JSON: {exc}")
+        input_path, reviewer = parse_args(sys.argv[1:])
+    except ValueError as exc:
+        REVIEWER_NAME = resolve_reviewer(None)
+        fail(str(exc))
 
-    if not isinstance(obj, dict):
-        fail("root must be object")
+    REVIEWER_NAME = resolve_reviewer(reviewer)
 
-    validate(obj)
+    try:
+        raw = read_input(input_path)
+    except Exception as exc:
+        fail(f"unable to read input: {exc}")
+
+    try:
+        json_block = extract_json_block(raw)
+        try:
+            obj = json.loads(json_block)
+        except json.JSONDecodeError as exc:
+            fail(f"invalid JSON: {exc}")
+
+        if not isinstance(obj, dict):
+            fail("root must be object")
+
+        validate(obj)
+        enforce_verdict_consistency(obj)
+    except Exception as exc:
+        fail(f"unexpected error: {exc}")
+
     print(json.dumps(obj, indent=2, sort_keys=False))
     sys.exit(0)
 

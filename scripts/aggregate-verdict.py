@@ -5,6 +5,10 @@ import re
 import sys
 from pathlib import Path
 
+# Prefix of the summary field in fallback verdicts produced by parse-review.py.
+# parse-review.py appends ": <error detail>" after this prefix.
+PARSE_FAILURE_PREFIX = "Review output could not be parsed"
+
 
 def fail(msg: str, code: int = 2) -> None:
     print(f"aggregate-verdict: {msg}", file=sys.stderr)
@@ -16,6 +20,8 @@ def read_json(path: Path) -> dict:
         return json.loads(path.read_text())
     except json.JSONDecodeError as exc:
         fail(f"invalid JSON in {path}: {exc}")
+    except OSError as exc:
+        fail(f"unable to read {path}: {exc}")
 
 
 def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
@@ -69,6 +75,24 @@ def validate_actor(actor: str, policy: str, pr_author: str | None) -> bool:
     return False
 
 
+def parse_expected_reviewers(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [name.strip() for name in raw.split(",") if name.strip()]
+
+
+def is_fallback_verdict(verdict: dict) -> bool:
+    summary = verdict.get("summary")
+    if not isinstance(summary, str):
+        return False
+    confidence = verdict.get("confidence")
+    try:
+        confidence_is_zero = float(confidence) == 0.0
+    except (TypeError, ValueError):
+        return False
+    return confidence_is_zero and summary.startswith(PARSE_FAILURE_PREFIX)
+
+
 def main() -> None:
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
@@ -86,8 +110,26 @@ def main() -> None:
                 "reviewer": data.get("reviewer", path.stem),
                 "perspective": data.get("perspective", path.stem),
                 "verdict": data.get("verdict", "FAIL"),
+                "confidence": data.get("confidence"),
                 "summary": data.get("summary", ""),
             }
+        )
+
+    expected_reviewers = parse_expected_reviewers(os.environ.get("EXPECTED_REVIEWERS"))
+    fallback_reviewers = [v["reviewer"] for v in verdicts if is_fallback_verdict(v)]
+    if expected_reviewers and len(verdict_files) != len(expected_reviewers):
+        warning = (
+            f"aggregate-verdict: warning: expected {len(expected_reviewers)} reviewers "
+            f"({', '.join(expected_reviewers)}), got {len(verdict_files)} verdict files"
+        )
+        if fallback_reviewers:
+            warning += f"; fallback verdicts: {', '.join(fallback_reviewers)}"
+        print(warning, file=sys.stderr)
+    elif fallback_reviewers:
+        print(
+            "aggregate-verdict: warning: fallback verdicts detected: "
+            f"{', '.join(fallback_reviewers)}",
+            file=sys.stderr,
         )
 
     head_sha = os.environ.get("GH_HEAD_SHA")
