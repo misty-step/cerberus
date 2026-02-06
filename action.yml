@@ -1,0 +1,143 @@
+name: 'Cerberus Review'
+description: 'Run a single Cerberus code review perspective'
+author: 'misty-step'
+
+branding:
+  icon: 'eye'
+  color: 'red'
+
+inputs:
+  perspective:
+    description: 'Review perspective (correctness, architecture, security, performance, maintainability)'
+    required: true
+  github-token:
+    description: 'GitHub token for PR comments'
+    required: true
+  kimi-api-key:
+    description: 'Moonshot/Kimi API key'
+    required: true
+  kimi-base-url:
+    description: 'Kimi API base URL'
+    default: 'https://api.moonshot.ai/v1'
+  model:
+    description: 'Model name'
+    default: 'kimi-k2.5'
+  max-steps:
+    description: 'Max agentic steps per review'
+    default: '25'
+  timeout:
+    description: 'Review timeout in seconds'
+    default: '300'
+  kimi-cli-version:
+    description: 'KimiCode CLI version to install'
+    default: '1.8.0'
+  post-comment:
+    description: 'Post review comment to PR'
+    default: 'true'
+
+outputs:
+  verdict:
+    description: 'Review verdict (PASS, WARN, FAIL)'
+    value: ${{ steps.parse.outputs.verdict }}
+  verdict-json:
+    description: 'Path to verdict JSON file'
+    value: ${{ steps.parse.outputs.verdict-json }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate perspective
+      shell: bash
+      env:
+        PERSPECTIVE: ${{ inputs.perspective }}
+      run: |
+        VALID="correctness architecture security performance maintainability"
+        if [[ ! " $VALID " =~ " $PERSPECTIVE " ]]; then
+          echo "::error::Invalid perspective: $PERSPECTIVE. Must be one of: $VALID"
+          exit 1
+        fi
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install KimiCode CLI
+      shell: bash
+      env:
+        KIMI_CLI_VERSION: ${{ inputs.kimi-cli-version }}
+      run: |
+        if [[ ! "$KIMI_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid kimi-cli-version format: $KIMI_CLI_VERSION"
+          exit 1
+        fi
+        pip install "kimi-cli==${KIMI_CLI_VERSION}"
+
+    - name: Fetch PR context
+      id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        if [[ -z "$PR_NUMBER" ]]; then
+          echo "::error::This action must be triggered by a pull_request event"
+          exit 1
+        fi
+        gh pr diff "$PR_NUMBER" > /tmp/pr.diff
+        gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
+        echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+    - name: Run review
+      id: review
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        PERSPECTIVE: ${{ inputs.perspective }}
+        KIMI_API_KEY: ${{ inputs.kimi-api-key }}
+        KIMI_BASE_URL: ${{ inputs.kimi-base-url }}
+        KIMI_MODEL: ${{ inputs.model }}
+        KIMI_MAX_STEPS: ${{ inputs.max-steps }}
+        REVIEW_TIMEOUT: ${{ inputs.timeout }}
+        GH_DIFF_FILE: /tmp/pr.diff
+        GH_PR_CONTEXT: /tmp/pr-context.json
+      run: |
+        chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
+        "$CERBERUS_ROOT/scripts/run-reviewer.sh" "$PERSPECTIVE"
+
+    - name: Parse review output
+      if: steps.review.outcome == 'success'
+      id: parse
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        PERSPECTIVE: ${{ inputs.perspective }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "/tmp/${PERSPECTIVE}-output.txt" > "/tmp/${PERSPECTIVE}-verdict.json"
+        VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
+        if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL)$ ]]; then
+          echo "::error::Invalid verdict value from parser: $VERDICT"
+          exit 1
+        fi
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+        echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
+
+    - name: Post PR comment
+      if: steps.review.outcome == 'success' && inputs.post-comment == 'true'
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
+        PERSPECTIVE: ${{ inputs.perspective }}
+      run: |
+        chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
+        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "/tmp/${PERSPECTIVE}-verdict.json"
+
+    - name: Upload verdict artifact
+      if: steps.review.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cerberus-verdict-${{ inputs.perspective }}
+        path: /tmp/${{ inputs.perspective }}-verdict.json
+        retention-days: 1

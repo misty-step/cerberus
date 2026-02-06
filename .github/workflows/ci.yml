@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh
+
+      - name: Python syntax
+        run: |
+          python3 -m py_compile scripts/parse-review.py
+          python3 -m py_compile scripts/aggregate-verdict.py
+
+      - name: YAML validity
+        run: |
+          pip install pyyaml
+          python3 -c "
+          import yaml, sys
+          for path in ['action.yml', 'verdict/action.yml']:
+              with open(path) as f:
+                  yaml.safe_load(f)
+              print(f'{path}: valid')
+          "
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test deps
+        run: pip install pytest
+
+      - name: Run tests
+        run: python3 -m pytest tests/ -v

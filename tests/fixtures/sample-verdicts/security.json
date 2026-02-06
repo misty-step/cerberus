@@ -1,0 +1,11 @@
+{
+  "reviewer": "SENTINEL",
+  "perspective": "security",
+  "verdict": "FAIL",
+  "confidence": 0.95,
+  "summary": "Critical SQL injection found.",
+  "findings": [
+    {"severity": "critical", "category": "injection", "file": "src/db.ts", "line": 15, "title": "SQL injection", "description": "Unsanitized input.", "suggestion": "Use parameterized queries."}
+  ],
+  "stats": {"files_reviewed": 5, "files_with_issues": 1, "critical": 1, "major": 0, "minor": 0, "info": 0}
+}

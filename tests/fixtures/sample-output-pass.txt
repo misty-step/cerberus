@@ -1,0 +1,32 @@
+I've reviewed the pull request carefully from a correctness perspective.
+
+The changes look solid. The new utility function handles edge cases properly and the test coverage is adequate.
+
+```json
+{
+  "reviewer": "APOLLO",
+  "perspective": "correctness",
+  "verdict": "PASS",
+  "confidence": 0.92,
+  "summary": "No significant correctness issues found. The implementation handles edge cases well.",
+  "findings": [
+    {
+      "severity": "info",
+      "category": "style",
+      "file": "src/utils.ts",
+      "line": 42,
+      "title": "Consider using const assertion",
+      "description": "The array could use as const for better type inference.",
+      "suggestion": "Add 'as const' to the array literal."
+    }
+  ],
+  "stats": {
+    "files_reviewed": 3,
+    "files_with_issues": 1,
+    "critical": 0,
+    "major": 0,
+    "minor": 0,
+    "info": 1
+  }
+}
+```

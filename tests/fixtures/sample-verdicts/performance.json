@@ -1,0 +1,11 @@
+{
+  "reviewer": "VULCAN",
+  "perspective": "performance",
+  "verdict": "WARN",
+  "confidence": 0.8,
+  "summary": "N+1 query detected.",
+  "findings": [
+    {"severity": "major", "category": "performance", "file": "src/api.ts", "line": 88, "title": "N+1 query", "description": "Loop issues individual queries.", "suggestion": "Batch the query."}
+  ],
+  "stats": {"files_reviewed": 4, "files_with_issues": 1, "critical": 0, "major": 1, "minor": 0, "info": 0}
+}
