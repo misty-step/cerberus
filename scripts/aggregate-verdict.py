@@ -63,6 +63,12 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
     }
 
 
+def validate_actor(actor: str, policy: str, pr_author: str | None) -> bool:
+    if policy == "pr_author":
+        return bool(pr_author) and actor.lower() == pr_author.lower()
+    return False
+
+
 def main() -> None:
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
@@ -86,6 +92,18 @@ def main() -> None:
 
     head_sha = os.environ.get("GH_HEAD_SHA")
     override = parse_override(os.environ.get("GH_OVERRIDE_COMMENT"), head_sha)
+    if override:
+        policy = os.environ.get("GH_OVERRIDE_POLICY", "pr_author")
+        pr_author = os.environ.get("GH_PR_AUTHOR")
+        if not validate_actor(override["actor"], policy, pr_author):
+            print(
+                (
+                    f"aggregate-verdict: warning: override actor '{override['actor']}' "
+                    f"rejected by policy '{policy}'"
+                ),
+                file=sys.stderr,
+            )
+            override = None
     override_used = override is not None
 
     fails = [v for v in verdicts if v["verdict"] == "FAIL"]

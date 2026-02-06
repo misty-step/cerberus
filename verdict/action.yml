@@ -47,7 +47,11 @@ runs:
           echo "::warning::Failed to fetch override comments: $OVERRIDE"
           OVERRIDE=""
         fi
-        echo "override=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+        {
+          echo "override<<CERBERUS_OVERRIDE_EOF"
+          echo "$OVERRIDE"
+          echo "CERBERUS_OVERRIDE_EOF"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Aggregate verdicts
       id: aggregate
@@ -56,6 +60,8 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}/..
         GH_OVERRIDE_COMMENT: ${{ steps.override.outputs.override }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GH_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        GH_OVERRIDE_POLICY: pr_author
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
         echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
