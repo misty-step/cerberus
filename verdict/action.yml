@@ -83,6 +83,7 @@ runs:
         EMOJI="✅"
         if [ "$VERDICT" = "FAIL" ]; then EMOJI="❌"; fi
         if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
+        if [ "$VERDICT" = "SKIP" ]; then EMOJI="⏭️"; fi
         MARKER="<!-- cerberus:council -->"
 
         {
@@ -110,4 +111,8 @@ runs:
         if [ "$VERDICT" = "FAIL" ]; then
           echo "::error::Council Verdict: FAIL"
           exit 1
+        fi
+        if [ "$VERDICT" = "SKIP" ]; then
+          echo "::notice::Council Verdict: SKIP (all reviews skipped due to API errors)"
+          exit 0
         fi

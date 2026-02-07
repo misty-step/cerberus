@@ -550,3 +550,115 @@ class TestScratchpadInput:
         )
         data = json.loads(out)
         assert "investigation" in data["summary"].lower() or "partial" in data["summary"].lower() or "timed out" in data["summary"].lower()
+
+
+class TestApiErrors:
+    def test_detects_api_key_invalid_error(self):
+        error_text = """API Error: API_KEY_INVALID
+
+The Moonshot API returned an error that prevents the review from completing:
+
+401 Unauthorized: incorrect_api_key
+
+Please check your API key and quota settings.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "SYSTEM"
+        assert "API_KEY_INVALID" in data["summary"]
+        assert data["confidence"] == 0.0
+
+    def test_detects_quota_exceeded_error(self):
+        error_text = """API Error: API_QUOTA_EXCEEDED
+
+The Moonshot API returned an error:
+
+exceeded_current_quota
+
+Please check your API key and quota settings.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_QUOTA_EXCEEDED" in data["summary"]
+
+    def test_detects_generic_api_error(self):
+        error_text = """API Error: API_ERROR
+
+The Moonshot API returned an error that prevents the review from completing.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+
+    def test_skip_verdict_has_required_fields(self):
+        error_text = """API Error: API_KEY_INVALID
+
+Error message here.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        for key in ["reviewer", "perspective", "verdict", "confidence", "summary", "findings", "stats"]:
+            assert key in data
+
+    def test_skip_verdict_has_finding_with_api_error(self):
+        error_text = """API Error: API_KEY_INVALID
+
+Error message here.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["category"] == "api_error"
+        assert finding["severity"] == "info"
+
+    def test_detects_401_in_output_without_explicit_marker(self):
+        """Should detect API errors even without explicit 'API Error:' marker."""
+        error_text = """
+Something went wrong with the API call.
+
+401 Unauthorized: invalid API key provided
+
+Please try again later.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+
+    def test_detects_rate_limit_without_explicit_marker(self):
+        """Should detect rate limit errors even without explicit 'API Error:' marker."""
+        error_text = """
+The API returned an error:
+429 rate limit exceeded
+
+Please retry after some time.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "RATE_LIMIT" in data["summary"]
+
+    def test_skip_stats_are_zero(self):
+        error_text = """API Error: API_ERROR
+
+Some error.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        stats = data["stats"]
+        assert stats["files_reviewed"] == 0
+        assert stats["files_with_issues"] == 0
+        assert stats["critical"] == 0
+        assert stats["major"] == 0
+        assert stats["minor"] == 0
+        assert stats["info"] == 1

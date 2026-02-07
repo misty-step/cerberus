@@ -755,3 +755,106 @@ class TestPipelineIntegration:
         council = _aggregate([parsed, parsed2])
         assert council["verdict"] == "FAIL"
         assert council["stats"]["fail"] == 1
+
+
+class TestSkipVerdicts:
+    def test_skip_does_not_cause_fail(self, tmp_path):
+        """A single SKIP verdict should not cause council to FAIL."""
+        skip_verdict = {
+            "reviewer": "SYSTEM", "perspective": "error",
+            "verdict": "SKIP", "summary": "API error occurred."
+        }
+        (tmp_path / "error.json").write_text(json.dumps(skip_verdict))
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "SKIP"
+
+    def test_all_skips_results_in_skip_verdict(self, tmp_path):
+        """If all reviewers skip, council verdict should be SKIP."""
+        for name in ["a", "b", "c"]:
+            v = {"reviewer": name, "perspective": name, "verdict": "SKIP", "summary": "API error."}
+            (tmp_path / f"{name}.json").write_text(json.dumps(v))
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "SKIP"
+        assert data["stats"]["skip"] == 3
+
+    def test_mixed_skip_and_pass_results_in_pass(self, tmp_path):
+        """SKIP + PASS should result in PASS (no failures or warnings)."""
+        (tmp_path / "a.json").write_text(
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+        )
+        (tmp_path / "b.json").write_text(
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "PASS", "summary": "Good."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["stats"]["skip"] == 1
+        assert data["stats"]["pass"] == 1
+
+    def test_mixed_skip_and_fail_results_in_fail(self, tmp_path):
+        """SKIP + FAIL should result in FAIL."""
+        (tmp_path / "a.json").write_text(
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+        )
+        (tmp_path / "b.json").write_text(
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "FAIL", "summary": "Bad."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"
+        assert data["stats"]["skip"] == 1
+        assert data["stats"]["fail"] == 1
+
+    def test_mixed_skip_and_warn_results_in_warn(self, tmp_path):
+        """SKIP + WARN should result in WARN (no failures)."""
+        (tmp_path / "a.json").write_text(
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+        )
+        (tmp_path / "b.json").write_text(
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "WARN", "summary": "Minor."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "WARN"
+        assert data["stats"]["skip"] == 1
+        assert data["stats"]["warn"] == 1
+
+    def test_skip_counted_in_summary(self, tmp_path):
+        """SKIP count should appear in summary text."""
+        (tmp_path / "a.json").write_text(
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert "skipped: 1" in data["summary"]
+
+    def test_all_four_verdict_types_in_stats(self, tmp_path):
+        """Stats should include all four verdict types."""
+        (tmp_path / "pass.json").write_text(
+            json.dumps({"reviewer": "P", "perspective": "p", "verdict": "PASS", "summary": "Good."})
+        )
+        (tmp_path / "warn.json").write_text(
+            json.dumps({"reviewer": "W", "perspective": "w", "verdict": "WARN", "summary": "Minor."})
+        )
+        (tmp_path / "fail.json").write_text(
+            json.dumps({"reviewer": "F", "perspective": "f", "verdict": "FAIL", "summary": "Bad."})
+        )
+        (tmp_path / "skip.json").write_text(
+            json.dumps({"reviewer": "S", "perspective": "s", "verdict": "SKIP", "summary": "Error."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["stats"]["pass"] == 1
+        assert data["stats"]["warn"] == 1
+        assert data["stats"]["fail"] == 1
+        assert data["stats"]["skip"] == 1
+        assert data["stats"]["total"] == 4

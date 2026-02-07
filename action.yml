@@ -132,7 +132,7 @@ runs:
         fi
         python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "/tmp/${PERSPECTIVE}-verdict.json"
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
-        if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL)$ ]]; then
+        if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then
           echo "::error::Invalid verdict value from parser: $VERDICT"
           exit 1
         fi
@@ -178,4 +178,7 @@ runs:
         if [ "$VERDICT" = "FAIL" ]; then
           echo "::error::${PERSPECTIVE} review verdict: FAIL"
           exit 1
+        fi
+        if [ "$VERDICT" = "SKIP" ]; then
+          echo "::warning::${PERSPECTIVE} review verdict: SKIP (API error)"
         fi
