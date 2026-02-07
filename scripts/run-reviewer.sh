@@ -204,11 +204,10 @@ while true; do
     echo "Permanent API error detected (401/quota). Writing error verdict."
 
     # Extract specific error message
-    local error_msg
     error_msg="$(cat "/tmp/${perspective}-output.txt" 2>/dev/null)$(cat "/tmp/${perspective}-stderr.log" 2>/dev/null)"
 
     # Determine specific error type for message
-    local error_type_str="API_ERROR"
+    error_type_str="API_ERROR"
     if echo "$error_msg" | grep -qiE "(401|incorrect_api_key|invalid_api_key|authentication)"; then
       error_type_str="API_KEY_INVALID"
     elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|quota exceeded|billing)"; then
