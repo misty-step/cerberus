@@ -29,11 +29,12 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v1
+      - uses: ./
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           kimi-api-key: ${{ secrets.MOONSHOT_API_KEY }}
+          timeout: '600'
 
   verdict:
     name: "Council Verdict"
@@ -41,6 +42,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/verdict@v1
+      - uses: actions/checkout@v4
+      - uses: ./verdict
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

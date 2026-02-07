@@ -99,6 +99,7 @@ runs:
 
         EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/dev/null | head -1) || true
         if [ -n "$EXISTING" ]; then
+          # Pass body via gh's @file reader to avoid shell interpolation of comment content.
           gh api "repos/${REPO}/issues/comments/${EXISTING}" -X PATCH -F body=@/tmp/council-comment.md >/dev/null
         else
           gh pr comment "$PR_NUMBER" --body-file /tmp/council-comment.md >/dev/null
