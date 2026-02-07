@@ -32,6 +32,7 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
     except json.JSONDecodeError:
         return None
 
+    # Keep backward compatibility with both normalized "actor" and legacy "author".
     actor = obj.get("actor") or obj.get("author") or "unknown"
     sha = obj.get("sha")
     reason = obj.get("reason")
