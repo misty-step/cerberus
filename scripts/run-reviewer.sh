@@ -279,8 +279,8 @@ while true; do
   set +e
   timeout "${review_timeout}" kimi --quiet --thinking \
     --agent-file "$tmp_agent" \
-    --prompt "$(cat "/tmp/${perspective}-review-prompt.md")" \
     --config-file "/tmp/${perspective}-kimi-config.toml" \
+    < "/tmp/${perspective}-review-prompt.md" \
     > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
   exit_code=$?
   set -e
