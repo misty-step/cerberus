@@ -130,6 +130,7 @@ existing_id="$(
 )"
 
 if [[ -n "$existing_id" ]]; then
+  # Pass body via gh's @file reader to avoid shell interpolation of comment content.
   gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -X PATCH -F body=@"$comment_file" >/dev/null
 else
   gh pr comment "$PR_NUMBER" --body-file "$comment_file" >/dev/null
