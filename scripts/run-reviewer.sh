@@ -54,9 +54,112 @@ else
   file_list="$(printf "%s\n" "$file_list" | sed 's/^/- /')"
 fi
 
+stack_context="$(
+  DIFF_FILE="$diff_file" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+diff_file = Path(os.environ["DIFF_FILE"])
+changed_files = []
+for line in diff_file.read_text(errors="ignore").splitlines():
+    if line.startswith("diff --git "):
+        parts = line.split()
+        if len(parts) >= 4:
+            path = parts[2]
+            if path.startswith("a/"):
+                path = path[2:]
+            changed_files.append(path)
+changed_files = sorted(set(changed_files))
+
+ext_languages = {
+    ".py": "Python",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".rb": "Ruby",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".swift": "Swift",
+    ".cs": "C#",
+    ".php": "PHP",
+    ".sh": "Shell",
+    ".yml": "YAML",
+    ".yaml": "YAML",
+}
+languages = set()
+for path in changed_files:
+    suffix = Path(path).suffix.lower()
+    if suffix in ext_languages:
+        languages.add(ext_languages[suffix])
+    if Path(path).name == "Dockerfile":
+        languages.add("Dockerfile")
+
+frameworks = set()
+root = Path(".")
+
+package_json = root / "package.json"
+if package_json.exists():
+    try:
+        pkg = json.loads(package_json.read_text())
+        deps = {}
+        for key in ("dependencies", "devDependencies", "peerDependencies"):
+            deps.update(pkg.get(key, {}) or {})
+    except Exception:
+        deps = {}
+    if "next" in deps:
+        frameworks.add("Next.js")
+    elif "react" in deps:
+        frameworks.add("React")
+    if "vue" in deps:
+        frameworks.add("Vue")
+    if "svelte" in deps:
+        frameworks.add("Svelte")
+    if "express" in deps:
+        frameworks.add("Express")
+    if "fastify" in deps:
+        frameworks.add("Fastify")
+
+pyproject = root / "pyproject.toml"
+if pyproject.exists():
+    pyproject_text = pyproject.read_text(errors="ignore").lower()
+    if "django" in pyproject_text:
+        frameworks.add("Django")
+    if "fastapi" in pyproject_text:
+        frameworks.add("FastAPI")
+    if "flask" in pyproject_text:
+        frameworks.add("Flask")
+
+if (root / "go.mod").exists():
+    frameworks.add("Go modules")
+if (root / "Cargo.toml").exists():
+    frameworks.add("Rust/Cargo")
+if (root / "Gemfile").exists():
+    gemfile_text = (root / "Gemfile").read_text(errors="ignore").lower()
+    if "rails" in gemfile_text:
+        frameworks.add("Rails")
+    else:
+        frameworks.add("Ruby")
+if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
+    frameworks.add("JVM")
+
+parts = []
+if languages:
+    parts.append("Languages: " + ", ".join(sorted(languages)))
+if frameworks:
+    parts.append("Frameworks/runtime: " + ", ".join(sorted(frameworks)))
+
+print(" | ".join(parts) if parts else "Unknown")
+PY
+)"
+
 export PR_FILE_LIST="$file_list"
 export PR_DIFF_FILE="$diff_file"
 export PERSPECTIVE="$perspective"
+export PR_STACK_CONTEXT="$stack_context"
 
 CERBERUS_ROOT_PY="$CERBERUS_ROOT" PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" python3 - <<'PY'
 import json
@@ -95,6 +198,7 @@ replacements = {
     "{{BASE_BRANCH}}": base_branch,
     "{{PR_BODY}}": pr_body,
     "{{FILE_LIST}}": os.environ.get("PR_FILE_LIST", ""),
+    "{{PROJECT_STACK}}": os.environ.get("PR_STACK_CONTEXT", "Unknown"),
     "{{DIFF}}": diff_text,
     "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
 }

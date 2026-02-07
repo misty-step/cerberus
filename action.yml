@@ -14,8 +14,8 @@ inputs:
     description: 'GitHub token for PR comments'
     required: true
   kimi-api-key:
-    description: 'Moonshot/Kimi API key'
-    required: true
+    description: 'Moonshot/Kimi API key (optional if CERBERUS_API_KEY or ANTHROPIC_API_KEY env is set)'
+    required: false
   kimi-base-url:
     description: 'Kimi API base URL'
     default: 'https://api.moonshot.ai/v1'
@@ -68,6 +68,17 @@ runs:
           exit 1
         fi
 
+    - name: Resolve API key
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        INPUT_KIMI_API_KEY: ${{ inputs.kimi-api-key }}
+        CERBERUS_API_KEY: ${{ env.CERBERUS_API_KEY }}
+        ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
+      run: |
+        chmod +x "$CERBERUS_ROOT/scripts/validate-inputs.sh"
+        "$CERBERUS_ROOT/scripts/validate-inputs.sh"
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -105,7 +116,7 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
-        KIMI_API_KEY: ${{ inputs.kimi-api-key }}
+        KIMI_API_KEY: ${{ env.KIMI_API_KEY }}
         KIMI_BASE_URL: ${{ inputs.kimi-base-url }}
         KIMI_MODEL: ${{ inputs.model }}
         KIMI_MAX_STEPS: ${{ inputs.max-steps }}

@@ -20,8 +20,6 @@ runs:
   steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        sparse-checkout: .
 
     - name: Download verdict artifacts
       uses: actions/download-artifact@v4
@@ -97,12 +95,34 @@ runs:
           echo "*Cerberus Council*"
         } > /tmp/council-comment.md
 
-        EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/dev/null | head -1) || true
+        print_permissions_help() {
+          {
+            echo "::error::Unable to post council PR comment: token lacks pull request write permission."
+            echo "Add this to your workflow:"
+            echo "permissions:"
+            echo "  contents: read"
+            echo "  pull-requests: write"
+          } >&2
+        }
+
+        EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/tmp/cerberus-council.err | head -1) || true
         if [ -n "$EXISTING" ]; then
           # Pass body via gh's @file reader to avoid shell interpolation of comment content.
-          gh api "repos/${REPO}/issues/comments/${EXISTING}" -X PATCH -F body=@/tmp/council-comment.md >/dev/null
+          if ! gh api "repos/${REPO}/issues/comments/${EXISTING}" -X PATCH -F body=@/tmp/council-comment.md >/tmp/cerberus-council.out 2>/tmp/cerberus-council.err; then
+            cat /tmp/cerberus-council.err >&2
+            if grep -qiE "403|resource not accessible by integration|insufficient" /tmp/cerberus-council.err; then
+              print_permissions_help
+            fi
+            exit 1
+          fi
         else
-          gh pr comment "$PR_NUMBER" --body-file /tmp/council-comment.md >/dev/null
+          if ! gh pr comment "$PR_NUMBER" --body-file /tmp/council-comment.md >/tmp/cerberus-council.out 2>/tmp/cerberus-council.err; then
+            cat /tmp/cerberus-council.err >&2
+            if grep -qiE "403|resource not accessible by integration|insufficient" /tmp/cerberus-council.err; then
+              print_permissions_help
+            fi
+            exit 1
+          fi
         fi
 
     - name: Check verdict
