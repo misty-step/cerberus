@@ -86,8 +86,6 @@ else:
     base_branch = os.environ.get("GH_BASE_BRANCH", "")
     pr_body = os.environ.get("GH_PR_BODY", "")
 
-diff_text = Path(os.environ["PR_DIFF_FILE"]).read_text()
-
 replacements = {
     "{{PR_TITLE}}": pr_title,
     "{{PR_AUTHOR}}": pr_author,
@@ -95,7 +93,7 @@ replacements = {
     "{{BASE_BRANCH}}": base_branch,
     "{{PR_BODY}}": pr_body,
     "{{FILE_LIST}}": os.environ.get("PR_FILE_LIST", ""),
-    "{{DIFF}}": diff_text,
+    "{{DIFF_FILE}}": os.environ.get("PR_DIFF_FILE", "/tmp/pr.diff"),
     "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
 }
 
@@ -143,8 +141,8 @@ review_timeout="${REVIEW_TIMEOUT:-600}"
 set +e
 timeout "${review_timeout}" kimi --quiet --thinking \
   --agent-file "$tmp_agent" \
-  --prompt "$(cat "/tmp/${perspective}-review-prompt.md")" \
   --config-file "/tmp/${perspective}-kimi-config.toml" \
+  < "/tmp/${perspective}-review-prompt.md" \
   > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
 exit_code=$?
 set -e
