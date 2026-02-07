@@ -98,13 +98,13 @@ runs:
         } > /tmp/council-comment.md
 
         print_permissions_help() {
-          cat >&2 <<'EOF'
-::error::Unable to post council PR comment: token lacks pull request write permission.
-Add this to your workflow:
-permissions:
-  contents: read
-  pull-requests: write
-EOF
+          {
+            echo "::error::Unable to post council PR comment: token lacks pull request write permission."
+            echo "Add this to your workflow:"
+            echo "permissions:"
+            echo "  contents: read"
+            echo "  pull-requests: write"
+          } >&2
         }
 
         EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("cerberus:council")) | .id' 2>/tmp/cerberus-council.err | head -1) || true
