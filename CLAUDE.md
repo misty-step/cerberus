@@ -61,9 +61,10 @@ Shell access is toggled per agent via `exclude_tools` in the YAML config.
 
 ## Verdict Logic
 
-Each reviewer emits: `FAIL` (any critical OR 2+ major) | `WARN` (1 major OR 3+ minor) | `PASS`.
+Each reviewer emits: `FAIL` (any critical OR 2+ major) | `WARN` (1 major OR 5+ minor OR 3+ minor in same category) | `PASS`.
+Only findings from reviews with confidence >= 0.7 count toward these thresholds.
 
-Council: `FAIL` if any reviewer FAILs (unless overridden) | `WARN` if any warns | `PASS` otherwise.
+Council: `FAIL` on a critical reviewer FAIL or 2+ reviewer FAILs (unless overridden) | `WARN` on any WARN or a single non-critical FAIL | `PASS` otherwise.
 
 Override: `/council override sha=<sha>` comment on PR with reason. SHA must match HEAD. Actor constraints per `defaults/config.yml`.
 
@@ -100,6 +101,8 @@ End-to-end testing requires pushing to a branch and having a target repo use `mi
 ## GitHub Actions Gotchas
 
 - `gh pr view --json comments` returns GraphQL node IDs - use `gh api repos/.../issues/N/comments` for REST numeric IDs
+- REST issue comment payloads expose actor as `user.login`; `author.login` is GraphQL-specific
+- When testing workflow `--jq` snippets in YAML, assert key field usage (e.g. `.user.login`) without exact full-string matching to avoid whitespace-only test failures
 - `pull-requests: write` permission is required for posting PR comments
 - Secrets are snapshotted per workflow run - push a new commit to pick up secret changes
 - `set -e` in steps means any command failure stops the step; `run-reviewer.sh` uses `set +e` around kimi invocation deliberately

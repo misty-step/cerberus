@@ -43,7 +43,8 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: |
-        if ! OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body}] | last' 2>&1); then
+        # REST issue comments use .user.login; GraphQL comments use .author.login.
+        if ! OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .user.login, body: .body}] | last' 2>&1); then
           echo "::warning::Failed to fetch override comments: $OVERRIDE"
           OVERRIDE=""
         fi
@@ -83,6 +84,7 @@ runs:
         EMOJI="✅"
         if [ "$VERDICT" = "FAIL" ]; then EMOJI="❌"; fi
         if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
+        if [ "$VERDICT" = "SKIP" ]; then EMOJI="⏭️"; fi
         MARKER="<!-- cerberus:council -->"
 
         {
@@ -110,4 +112,8 @@ runs:
         if [ "$VERDICT" = "FAIL" ]; then
           echo "::error::Council Verdict: FAIL"
           exit 1
+        fi
+        if [ "$VERDICT" = "SKIP" ]; then
+          echo "::notice::Council Verdict: SKIP (all reviews skipped due to API errors)"
+          exit 0
         fi

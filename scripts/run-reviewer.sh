@@ -140,21 +140,95 @@ echo "---"
 
 review_timeout="${REVIEW_TIMEOUT:-600}"
 
-set +e
-timeout "${review_timeout}" kimi --quiet --thinking \
-  --agent-file "$tmp_agent" \
-  --prompt "$(cat "/tmp/${perspective}-review-prompt.md")" \
-  --config-file "/tmp/${perspective}-kimi-config.toml" \
-  > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
-exit_code=$?
-set -e
+# API error patterns to detect
+# Transient errors: 429 (rate limit), 503 (service unavailable)
+# Permanent errors: 401 (bad key), quota exceeded
+detect_api_error() {
+  local output_file="$1"
+  local stderr_file="$2"
 
-# Always dump diagnostics for CI visibility
-scratchpad="/tmp/${perspective}-review.md"
-stdout_file="/tmp/${perspective}-output.txt"
-output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
-scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
-echo "kimi exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes"
+  # Combine output and stderr for error detection
+  local combined
+  combined="$(cat "$output_file" 2>/dev/null || echo "")$(cat "$stderr_file" 2>/dev/null || echo "")"
+
+  # Check for transient errors (retryable)
+  if echo "$combined" | grep -qE "(429|503|rate limit|too many requests|service unavailable|temporarily unavailable)"; then
+    echo "transient"
+    return
+  fi
+
+  # Check for permanent errors (not retryable)
+  if echo "$combined" | grep -qE "(401|403|exceeded_current_quota|incorrect_api_key|invalid_api_key|authentication|quota exceeded|billing)"; then
+    echo "permanent"
+    return
+  fi
+
+  echo "none"
+}
+
+# Run kimi with retry logic for transient errors
+max_retries=3
+retry_count=0
+backoff=5
+
+while true; do
+  set +e
+  timeout "${review_timeout}" kimi --quiet --thinking \
+    --agent-file "$tmp_agent" \
+    --prompt "$(cat "/tmp/${perspective}-review-prompt.md")" \
+    --config-file "/tmp/${perspective}-kimi-config.toml" \
+    > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
+  exit_code=$?
+  set -e
+
+  # Always dump diagnostics for CI visibility
+  scratchpad="/tmp/${perspective}-review.md"
+  stdout_file="/tmp/${perspective}-output.txt"
+  output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
+  scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+  echo "kimi exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes (attempt $((retry_count + 1))/$((max_retries + 1)))"
+
+  # Check for API errors
+  error_type=$(detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log")
+
+  if [[ "$error_type" == "transient" ]] && [[ $retry_count -lt $max_retries ]]; then
+    retry_count=$((retry_count + 1))
+    echo "Transient API error detected (429/503). Retrying in ${backoff}s... (attempt $retry_count/$max_retries)"
+    sleep "$backoff"
+    backoff=$((backoff * 3))  # Exponential backoff: 5s, 15s, 45s
+    continue
+  fi
+
+  # If it's a permanent error, write structured error JSON
+  if [[ "$error_type" == "permanent" ]]; then
+    echo "Permanent API error detected (401/quota). Writing error verdict."
+
+    # Extract specific error message
+    error_msg="$(cat "/tmp/${perspective}-output.txt" 2>/dev/null)$(cat "/tmp/${perspective}-stderr.log" 2>/dev/null)"
+
+    # Determine specific error type for message
+    error_type_str="API_ERROR"
+    if echo "$error_msg" | grep -qiE "(401|incorrect_api_key|invalid_api_key|authentication)"; then
+      error_type_str="API_KEY_INVALID"
+    elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|quota exceeded|billing)"; then
+      error_type_str="API_QUOTA_EXCEEDED"
+    fi
+
+    # Write structured error JSON
+    cat > "/tmp/${perspective}-output.txt" <<EOF
+API Error: $error_type_str
+
+The Moonshot API returned an error that prevents the review from completing:
+
+$error_msg
+
+Please check your API key and quota settings.
+EOF
+    exit_code=0  # Mark as success so parse-review.py can handle it
+  fi
+
+  break
+done
 
 if [[ "$exit_code" -ne 0 ]]; then
   echo "--- stderr ---" >&2

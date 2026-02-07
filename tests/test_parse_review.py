@@ -269,8 +269,45 @@ def test_verdict_consistency_override():
     assert data["verdict"] == "FAIL"
 
 
-def test_verdict_consistency_warn():
-    """3+ minor findings forces WARN even if LLM says PASS."""
+def test_verdict_consistency_warn_on_five_minors():
+    """5+ minor findings force WARN even if LLM says PASS."""
+    bad_pass = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "All good",
+            "findings": [
+                {
+                    "severity": "minor",
+                    "category": f"style-{i}",
+                    "file": "a.py",
+                    "line": 1,
+                    "title": f"Issue {i}",
+                    "description": "desc",
+                    "suggestion": "fix",
+                }
+                for i in range(5)
+            ],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 5,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{bad_pass}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "WARN"
+
+
+def test_verdict_consistency_warn_on_three_minors_same_category():
+    """3 minor findings in same category force WARN."""
     bad_pass = json.dumps(
         {
             "reviewer": "TEST",
@@ -304,6 +341,43 @@ def test_verdict_consistency_warn():
     assert code == 0
     data = json.loads(out)
     assert data["verdict"] == "WARN"
+
+
+def test_verdict_consistency_four_minors_without_category_cluster_is_pass():
+    """4 minor findings across categories stay PASS."""
+    bad_pass = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "All good",
+            "findings": [
+                {
+                    "severity": "minor",
+                    "category": f"cat-{i}",
+                    "file": "a.py",
+                    "line": 1,
+                    "title": f"Issue {i}",
+                    "description": "desc",
+                    "suggestion": "fix",
+                }
+                for i in range(4)
+            ],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 4,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{bad_pass}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "PASS"
 
 
 def test_verdict_consistency_two_majors_is_fail():
@@ -403,6 +477,78 @@ def test_verdict_consistency_fail_with_no_findings_becomes_pass():
     assert code == 0
     data = json.loads(out)
     assert data["verdict"] == "PASS"
+
+
+def test_verdict_consistency_low_confidence_findings_do_not_count():
+    """Findings below confidence threshold do not affect verdict."""
+    low_confidence_critical = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "FAIL",
+            "confidence": 0.69,
+            "summary": "Possible critical issue",
+            "findings": [
+                {
+                    "severity": "critical",
+                    "category": "injection",
+                    "file": "a.py",
+                    "line": 1,
+                    "title": "Potential SQL injection",
+                    "description": "desc",
+                    "suggestion": "fix",
+                }
+            ],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 1,
+                "major": 0,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{low_confidence_critical}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "PASS"
+
+
+def test_verdict_consistency_confidence_threshold_is_inclusive():
+    """Confidence threshold includes 0.70 exactly."""
+    threshold_critical = json.dumps(
+        {
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "PASS",
+            "confidence": 0.70,
+            "summary": "Critical issue",
+            "findings": [
+                {
+                    "severity": "critical",
+                    "category": "injection",
+                    "file": "a.py",
+                    "line": 1,
+                    "title": "SQL injection",
+                    "description": "desc",
+                    "suggestion": "fix",
+                }
+            ],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 1,
+                "major": 0,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+    )
+    code, out, _ = run_parse(f"```json\n{threshold_critical}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "FAIL"
 
 
 def test_fallback_on_no_json_block():
@@ -550,3 +696,115 @@ class TestScratchpadInput:
         )
         data = json.loads(out)
         assert "investigation" in data["summary"].lower() or "partial" in data["summary"].lower() or "timed out" in data["summary"].lower()
+
+
+class TestApiErrors:
+    def test_detects_api_key_invalid_error(self):
+        error_text = """API Error: API_KEY_INVALID
+
+The Moonshot API returned an error that prevents the review from completing:
+
+401 Unauthorized: incorrect_api_key
+
+Please check your API key and quota settings.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "SYSTEM"
+        assert "API_KEY_INVALID" in data["summary"]
+        assert data["confidence"] == 0.0
+
+    def test_detects_quota_exceeded_error(self):
+        error_text = """API Error: API_QUOTA_EXCEEDED
+
+The Moonshot API returned an error:
+
+exceeded_current_quota
+
+Please check your API key and quota settings.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_QUOTA_EXCEEDED" in data["summary"]
+
+    def test_detects_generic_api_error(self):
+        error_text = """API Error: API_ERROR
+
+The Moonshot API returned an error that prevents the review from completing.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+
+    def test_skip_verdict_has_required_fields(self):
+        error_text = """API Error: API_KEY_INVALID
+
+Error message here.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        for key in ["reviewer", "perspective", "verdict", "confidence", "summary", "findings", "stats"]:
+            assert key in data
+
+    def test_skip_verdict_has_finding_with_api_error(self):
+        error_text = """API Error: API_KEY_INVALID
+
+Error message here.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["category"] == "api_error"
+        assert finding["severity"] == "info"
+
+    def test_detects_401_in_output_without_explicit_marker(self):
+        """Should detect API errors even without explicit 'API Error:' marker."""
+        error_text = """
+Something went wrong with the API call.
+
+401 Unauthorized: invalid API key provided
+
+Please try again later.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+
+    def test_detects_rate_limit_without_explicit_marker(self):
+        """Should detect rate limit errors even without explicit 'API Error:' marker."""
+        error_text = """
+The API returned an error:
+429 rate limit exceeded
+
+Please retry after some time.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "RATE_LIMIT" in data["summary"]
+
+    def test_skip_stats_are_zero(self):
+        error_text = """API Error: API_ERROR
+
+Some error.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        stats = data["stats"]
+        assert stats["files_reviewed"] == 0
+        assert stats["files_with_issues"] == 0
+        assert stats["critical"] == 0
+        assert stats["major"] == 0
+        assert stats["minor"] == 0
+        assert stats["info"] == 1

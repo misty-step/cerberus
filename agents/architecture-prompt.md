@@ -86,8 +86,9 @@ Output Format
 - confidence is 0.0 to 1.0.
 - Apply verdict rules:
 - FAIL: any critical OR 2+ major findings
-- WARN: exactly 1 major OR 3+ minor findings
+- WARN: exactly 1 major OR 5+ minor findings OR 3+ minor findings in same category
 - PASS: everything else
+- Only findings from reviews with confidence >= 0.7 count toward verdict thresholds.
 - Do not report findings with confidence below 0.6.
 - Set confidence to your actual confidence level. Do not default to 0.85.
 

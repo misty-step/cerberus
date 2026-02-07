@@ -24,7 +24,11 @@ override:
 # Verdict rules
 verdict:
   fail_on: "any_critical_or_2_major"  # any_critical | any_critical_or_2_major | any_major
-  warn_on: "any_major_or_3_minor"     # any_major | any_major_or_3_minor | any_minor
+  warn_on: "any_major_or_5_minor_or_3_minor_same_category"  # any_major | any_major_or_5_minor_or_3_minor_same_category
+  confidence_min: 0.7
+
+council_verdict:
+  fail_on: "any_critical_fail_or_2_fails"  # single non-critical FAIL is downgraded to WARN
 
 # The five heads of Cerberus.
 # Names are cosmetic — perspective determines behavior.
