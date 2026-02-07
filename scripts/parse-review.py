@@ -9,6 +9,9 @@ from typing import NoReturn
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
 REVIEWER_NAME = "UNKNOWN"
 RAW_INPUT = ""
+VERDICT_CONFIDENCE_MIN = 0.7
+WARN_MINOR_THRESHOLD = 5
+WARN_SAME_CATEGORY_MINOR_THRESHOLD = 3
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
@@ -247,14 +250,35 @@ def validate(obj: dict) -> None:
 
 def enforce_verdict_consistency(obj: dict) -> None:
     """Recompute verdict from findings to prevent LLM verdict manipulation."""
+    if obj.get("verdict") == "SKIP":
+        return
+
     findings = obj.get("findings", [])
+    try:
+        confidence = float(obj.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    # Low-confidence reviews keep findings for visibility but do not gate merge.
+    if confidence < VERDICT_CONFIDENCE_MIN:
+        findings = []
+
     critical = sum(1 for f in findings if f.get("severity") == "critical")
     major = sum(1 for f in findings if f.get("severity") == "major")
     minor = sum(1 for f in findings if f.get("severity") == "minor")
+    minor_by_category: dict[str, int] = {}
+    for finding in findings:
+        if finding.get("severity") != "minor":
+            continue
+        category = str(finding.get("category", "uncategorized")).strip() or "uncategorized"
+        minor_by_category[category] = minor_by_category.get(category, 0) + 1
+    same_category_minor_cluster = any(
+        count >= WARN_SAME_CATEGORY_MINOR_THRESHOLD for count in minor_by_category.values()
+    )
 
     if critical > 0 or major >= 2:
         computed = "FAIL"
-    elif major == 1 or minor >= 3:
+    elif major == 1 or minor >= WARN_MINOR_THRESHOLD or same_category_minor_cluster:
         computed = "WARN"
     else:
         computed = "PASS"

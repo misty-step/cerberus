@@ -93,6 +93,45 @@ def is_fallback_verdict(verdict: dict) -> bool:
     return confidence_is_zero and summary.startswith(PARSE_FAILURE_PREFIX)
 
 
+def has_critical_finding(verdict: dict) -> bool:
+    stats = verdict.get("stats")
+    if isinstance(stats, dict):
+        critical = stats.get("critical")
+        try:
+            if int(critical) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    findings = verdict.get("findings")
+    if isinstance(findings, list):
+        for finding in findings:
+            if isinstance(finding, dict) and finding.get("severity") == "critical":
+                return True
+    return False
+
+
+def is_explicit_noncritical_fail(verdict: dict) -> bool:
+    if verdict.get("verdict") != "FAIL":
+        return False
+    if has_critical_finding(verdict):
+        return False
+
+    stats = verdict.get("stats")
+    if isinstance(stats, dict) and "critical" in stats:
+        try:
+            return int(stats.get("critical", 0)) == 0
+        except (TypeError, ValueError):
+            return False
+
+    findings = verdict.get("findings")
+    if isinstance(findings, list):
+        return True
+
+    # Missing evidence is treated as blocking for safety.
+    return False
+
+
 def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
     """Compute council verdict from individual reviewer verdicts.
 
@@ -103,14 +142,15 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
     fails = [v for v in verdicts if v["verdict"] == "FAIL"]
     warns = [v for v in verdicts if v["verdict"] == "WARN"]
     skips = [v for v in verdicts if v["verdict"] == "SKIP"]
-    passes = [v for v in verdicts if v["verdict"] == "PASS"]
+    noncritical_fails = [v for v in fails if is_explicit_noncritical_fail(v)]
+    blocking_fails = [v for v in fails if v not in noncritical_fails]
 
     # If ALL reviewers skipped, council verdict is SKIP (not FAIL)
     if len(skips) == len(verdicts) and len(verdicts) > 0:
         council_verdict = "SKIP"
-    elif fails and not override_used:
+    elif (blocking_fails or len(noncritical_fails) >= 2) and not override_used:
         council_verdict = "FAIL"
-    elif warns:
+    elif warns or noncritical_fails:
         council_verdict = "WARN"
     else:
         council_verdict = "PASS"
@@ -158,6 +198,8 @@ def main() -> None:
                 "verdict": data.get("verdict", "FAIL"),
                 "confidence": data.get("confidence"),
                 "summary": data.get("summary", ""),
+                "findings": data.get("findings"),
+                "stats": data.get("stats"),
             }
         )
 

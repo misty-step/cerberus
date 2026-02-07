@@ -61,9 +61,10 @@ Shell access is toggled per agent via `exclude_tools` in the YAML config.
 
 ## Verdict Logic
 
-Each reviewer emits: `FAIL` (any critical OR 2+ major) | `WARN` (1 major OR 3+ minor) | `PASS`.
+Each reviewer emits: `FAIL` (any critical OR 2+ major) | `WARN` (1 major OR 5+ minor OR 3+ minor in same category) | `PASS`.
+Only findings from reviews with confidence >= 0.7 count toward these thresholds.
 
-Council: `FAIL` if any reviewer FAILs (unless overridden) | `WARN` if any warns | `PASS` otherwise.
+Council: `FAIL` on a critical reviewer FAIL or 2+ reviewer FAILs (unless overridden) | `WARN` on any WARN or a single non-critical FAIL | `PASS` otherwise.
 
 Override: `/council override sha=<sha>` comment on PR with reason. SHA must match HEAD. Actor constraints per `defaults/config.yml`.
 
