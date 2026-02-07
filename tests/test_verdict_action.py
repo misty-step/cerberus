@@ -70,6 +70,12 @@ def test_verdict_action_avoids_heredoc_in_run_block() -> None:
     assert "cat >&2 <<'EOF'" not in content
 
 
+def test_verdict_action_does_not_use_sparse_checkout_dot() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    assert "sparse-checkout: ." not in content
+
+
 def test_review_prompt_includes_detected_stack_placeholder() -> None:
     prompt_content = REVIEW_PROMPT_TEMPLATE.read_text()
     run_reviewer_content = RUN_REVIEWER_SCRIPT.read_text()
