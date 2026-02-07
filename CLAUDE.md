@@ -101,6 +101,8 @@ End-to-end testing requires pushing to a branch and having a target repo use `mi
 ## GitHub Actions Gotchas
 
 - `gh pr view --json comments` returns GraphQL node IDs - use `gh api repos/.../issues/N/comments` for REST numeric IDs
+- REST issue comment payloads expose actor as `user.login`; `author.login` is GraphQL-specific
+- When testing workflow `--jq` snippets in YAML, assert key field usage (e.g. `.user.login`) without exact full-string matching to avoid whitespace-only test failures
 - `pull-requests: write` permission is required for posting PR comments
 - Secrets are snapshotted per workflow run - push a new commit to pick up secret changes
 - `set -e` in steps means any command failure stops the step; `run-reviewer.sh` uses `set +e` around kimi invocation deliberately

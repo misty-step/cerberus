@@ -43,7 +43,8 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: |
-        if ! OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body}] | last' 2>&1); then
+        # REST issue comments use .user.login; GraphQL comments use .author.login.
+        if ! OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .user.login, body: .body}] | last' 2>&1); then
           echo "::warning::Failed to fetch override comments: $OVERRIDE"
           OVERRIDE=""
         fi
