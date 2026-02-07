@@ -72,7 +72,7 @@ jobs:
 2. KimiCode CLI (Kimi K2.5) analyzes the PR diff from each perspective
 3. Each reviewer posts a structured comment with findings
 4. The verdict job aggregates all reviews into a council decision
-5. Council verdict: **FAIL** if any reviewer fails, **WARN** if any warns, **PASS** otherwise
+5. Council verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
 
 ## Inputs
 ### Review Action (`misty-step/cerberus@v1`)
@@ -97,12 +97,13 @@ jobs:
 ## Verdict Rules
 Each reviewer emits:
 - **FAIL**: any critical finding OR 2+ major findings
-- **WARN**: exactly 1 major OR 3+ minor findings
+- **WARN**: exactly 1 major OR 5+ minor findings OR 3+ minor findings in the same category
 - **PASS**: otherwise
+- Only findings from reviews with confidence **>= 0.7** count toward verdict thresholds.
 
 Council:
-- **FAIL**: any reviewer FAILs (unless overridden)
-- **WARN**: any reviewer WARNs
+- **FAIL**: any critical reviewer FAIL OR 2+ reviewer FAILs (unless overridden)
+- **WARN**: any reviewer WARN OR a single non-critical reviewer FAIL
 - **PASS**: all reviewers pass
 
 ## Override Protocol
