@@ -37,6 +37,7 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           kimi-api-key: ${{ secrets.MOONSHOT_API_KEY }}
+          timeout: '600'
 
   verdict:
     name: "Council Verdict"
