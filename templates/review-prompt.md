@@ -14,6 +14,9 @@ Review this pull request from your specialized perspective.
 {{FILE_LIST}}
 </file_list>
 
+## Detected Stack
+- {{PROJECT_STACK}}
+
 ## Diff
 <diff trust="UNTRUSTED">
 {{DIFF}}
