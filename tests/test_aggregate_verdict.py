@@ -439,3 +439,319 @@ def test_detects_fallback_verdicts(tmp_path):
     assert "fallback verdicts detected" in err
     assert "APOLLO" in err
     assert "Council Verdict: FAIL" in out
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Unit tests via importlib (no subprocess)
+# ---------------------------------------------------------------------------
+
+from tests.conftest import aggregate_verdict
+
+_parse_override = aggregate_verdict.parse_override
+_aggregate = aggregate_verdict.aggregate
+_validate_actor = aggregate_verdict.validate_actor
+_is_fallback_verdict = aggregate_verdict.is_fallback_verdict
+_parse_expected_reviewers = aggregate_verdict.parse_expected_reviewers
+
+
+def _verdict(name: str, result: str = "PASS", **extra) -> dict:
+    """Helper to build a minimal verdict dict."""
+    return {"reviewer": name, "perspective": name.lower(), "verdict": result, "summary": "ok", **extra}
+
+
+# --- parse_override unit tests ---
+
+class TestParseOverrideUnit:
+    def test_none_input(self):
+        assert _parse_override(None, "abc1234") is None
+
+    def test_empty_string(self):
+        assert _parse_override("", "abc1234") is None
+
+    def test_null_string(self):
+        assert _parse_override("null", "abc1234") is None
+
+    def test_none_string(self):
+        assert _parse_override("None", "abc1234") is None
+
+    def test_whitespace_only(self):
+        assert _parse_override("   ", "abc1234") is None
+
+    def test_invalid_json(self):
+        assert _parse_override("{not json}", "abc1234") is None
+
+    def test_missing_sha(self):
+        raw = json.dumps({"actor": "user", "reason": "good reason"})
+        assert _parse_override(raw, "abc1234") is None
+
+    def test_missing_reason(self):
+        raw = json.dumps({"actor": "user", "sha": "abc1234"})
+        assert _parse_override(raw, "abc1234") is None
+
+    def test_sha_too_short(self):
+        raw = json.dumps({"actor": "user", "sha": "abc", "reason": "ok"})
+        assert _parse_override(raw, "abc1234") is None
+
+    def test_sha_mismatch(self):
+        raw = json.dumps({"actor": "user", "sha": "def7890", "reason": "ok"})
+        assert _parse_override(raw, "abc1234") is None
+
+    def test_valid_override(self):
+        raw = json.dumps({"actor": "user", "sha": "abc1234", "reason": "verified"})
+        result = _parse_override(raw, "abc1234567890")
+        assert result == {"actor": "user", "sha": "abc1234", "reason": "verified"}
+
+    def test_no_head_sha_skips_check(self):
+        raw = json.dumps({"actor": "user", "sha": "abc1234", "reason": "ok"})
+        result = _parse_override(raw, None)
+        assert result is not None
+        assert result["sha"] == "abc1234"
+
+    def test_body_parsing_extracts_sha_and_reason(self):
+        raw = json.dumps({
+            "actor": "user",
+            "body": "/council override sha=abc1234\nReason: False positive confirmed",
+        })
+        result = _parse_override(raw, "abc1234567890")
+        assert result is not None
+        assert result["sha"] == "abc1234"
+        assert result["reason"] == "False positive confirmed"
+
+    def test_body_parsing_remainder_as_reason(self):
+        raw = json.dumps({
+            "actor": "user",
+            "body": "/council override sha=abc1234\nThis is a false positive and safe to merge",
+        })
+        result = _parse_override(raw, "abc1234567890")
+        assert result is not None
+        assert result["reason"] == "This is a false positive and safe to merge"
+
+    def test_body_sha_does_not_override_explicit_sha(self):
+        raw = json.dumps({
+            "actor": "user",
+            "sha": "explicit1",
+            "body": "/council override sha=body1234\nReason: test",
+        })
+        result = _parse_override(raw, "explicit1234567890")
+        assert result is not None
+        assert result["sha"] == "explicit1"
+
+    def test_author_field_fallback(self):
+        raw = json.dumps({"author": "alt-user", "sha": "abc1234", "reason": "ok"})
+        result = _parse_override(raw, "abc1234")
+        assert result["actor"] == "alt-user"
+
+    def test_actor_defaults_to_unknown(self):
+        raw = json.dumps({"sha": "abc1234", "reason": "ok"})
+        result = _parse_override(raw, "abc1234")
+        assert result["actor"] == "unknown"
+
+
+# --- aggregate() unit tests ---
+
+class TestAggregateUnit:
+    def test_all_pass(self):
+        verdicts = [_verdict("A"), _verdict("B"), _verdict("C")]
+        result = _aggregate(verdicts)
+        assert result["verdict"] == "PASS"
+        assert result["stats"]["pass"] == 3
+        assert result["stats"]["fail"] == 0
+
+    def test_any_fail_means_fail(self):
+        verdicts = [_verdict("A"), _verdict("B", "FAIL"), _verdict("C")]
+        result = _aggregate(verdicts)
+        assert result["verdict"] == "FAIL"
+        assert result["stats"]["fail"] == 1
+
+    def test_warn_without_fail(self):
+        verdicts = [_verdict("A"), _verdict("B", "WARN")]
+        result = _aggregate(verdicts)
+        assert result["verdict"] == "WARN"
+        assert result["stats"]["warn"] == 1
+
+    def test_fail_overrides_warn(self):
+        verdicts = [_verdict("A", "FAIL"), _verdict("B", "WARN")]
+        result = _aggregate(verdicts)
+        assert result["verdict"] == "FAIL"
+
+    def test_override_turns_fail_to_pass(self):
+        verdicts = [_verdict("A", "FAIL")]
+        override = {"actor": "user", "sha": "abc1234", "reason": "ok"}
+        result = _aggregate(verdicts, override)
+        assert result["verdict"] == "PASS"
+        assert result["override"]["used"] is True
+
+    def test_override_with_warn_stays_warn(self):
+        verdicts = [_verdict("A", "FAIL"), _verdict("B", "WARN")]
+        override = {"actor": "user", "sha": "abc1234", "reason": "ok"}
+        result = _aggregate(verdicts, override)
+        assert result["verdict"] == "WARN"
+
+    def test_no_override_marks_unused(self):
+        verdicts = [_verdict("A")]
+        result = _aggregate(verdicts)
+        assert result["override"]["used"] is False
+
+    def test_summary_includes_counts(self):
+        verdicts = [_verdict("A"), _verdict("B", "FAIL")]
+        result = _aggregate(verdicts)
+        assert "2 reviewers" in result["summary"]
+        assert "Failures: 1" in result["summary"]
+
+    def test_summary_includes_override_info(self):
+        verdicts = [_verdict("A", "FAIL")]
+        override = {"actor": "user", "sha": "abc1234", "reason": "ok"}
+        result = _aggregate(verdicts, override)
+        assert "Override by user" in result["summary"]
+
+    def test_empty_verdicts(self):
+        result = _aggregate([])
+        assert result["verdict"] == "PASS"
+        assert result["stats"]["total"] == 0
+
+    def test_reviewers_preserved_in_output(self):
+        verdicts = [_verdict("APOLLO"), _verdict("ATHENA")]
+        result = _aggregate(verdicts)
+        assert len(result["reviewers"]) == 2
+        assert result["reviewers"][0]["reviewer"] == "APOLLO"
+
+
+# --- validate_actor unit tests ---
+
+class TestValidateActorUnit:
+    def test_pr_author_match(self):
+        assert _validate_actor("user", "pr_author", "user") is True
+
+    def test_pr_author_case_insensitive(self):
+        assert _validate_actor("User", "pr_author", "user") is True
+
+    def test_pr_author_mismatch(self):
+        assert _validate_actor("other", "pr_author", "user") is False
+
+    def test_pr_author_none(self):
+        assert _validate_actor("user", "pr_author", None) is False
+
+    def test_unknown_policy_rejects(self):
+        assert _validate_actor("user", "unknown", "user") is False
+
+
+# --- is_fallback_verdict unit tests ---
+
+class TestIsFallbackVerdictUnit:
+    def test_detects_fallback(self):
+        v = {"summary": "Review output could not be parsed: error", "confidence": 0.0}
+        assert _is_fallback_verdict(v) is True
+
+    def test_normal_verdict_not_fallback(self):
+        v = {"summary": "All good", "confidence": 0.9}
+        assert _is_fallback_verdict(v) is False
+
+    def test_zero_confidence_wrong_prefix(self):
+        v = {"summary": "Something else", "confidence": 0.0}
+        assert _is_fallback_verdict(v) is False
+
+    def test_right_prefix_nonzero_confidence(self):
+        v = {"summary": "Review output could not be parsed: err", "confidence": 0.5}
+        assert _is_fallback_verdict(v) is False
+
+    def test_missing_summary(self):
+        assert _is_fallback_verdict({"confidence": 0.0}) is False
+
+    def test_non_string_summary(self):
+        assert _is_fallback_verdict({"summary": 42, "confidence": 0.0}) is False
+
+
+# --- parse_expected_reviewers unit tests ---
+
+class TestParseExpectedReviewersUnit:
+    def test_none(self):
+        assert _parse_expected_reviewers(None) == []
+
+    def test_empty(self):
+        assert _parse_expected_reviewers("") == []
+
+    def test_single(self):
+        assert _parse_expected_reviewers("APOLLO") == ["APOLLO"]
+
+    def test_multiple(self):
+        assert _parse_expected_reviewers("APOLLO,ATHENA,SENTINEL") == ["APOLLO", "ATHENA", "SENTINEL"]
+
+    def test_strips_whitespace(self):
+        assert _parse_expected_reviewers(" APOLLO , ATHENA ") == ["APOLLO", "ATHENA"]
+
+    def test_ignores_empty_segments(self):
+        assert _parse_expected_reviewers("APOLLO,,ATHENA,") == ["APOLLO", "ATHENA"]
+
+
+# --- Integration: parse → aggregate pipeline ---
+
+class TestPipelineIntegration:
+    """End-to-end: parse raw reviewer output, then aggregate verdicts."""
+
+    def test_parse_then_aggregate_pass(self, tmp_path):
+        from tests.conftest import parse_review
+        # Simulate three PASS reviews
+        for name in ["APOLLO", "ATHENA", "SENTINEL"]:
+            raw = json.dumps({
+                "reviewer": name, "perspective": name.lower(), "verdict": "PASS",
+                "confidence": 0.9, "summary": "Looks good.",
+                "findings": [],
+                "stats": {"files_reviewed": 3, "files_with_issues": 0,
+                          "critical": 0, "major": 0, "minor": 0, "info": 0},
+            })
+            text = f"Review notes.\n```json\n{raw}\n```\n"
+            # Use subprocess to parse (mirrors real pipeline)
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).parent.parent / "scripts" / "parse-review.py"),
+                 "--reviewer", name],
+                input=text, capture_output=True, text=True,
+            )
+            assert result.returncode == 0
+            (tmp_path / f"{name.lower()}.json").write_text(result.stdout)
+
+        # Aggregate
+        council = _aggregate([json.loads((tmp_path / f).read_text()) for f in ["apollo.json", "athena.json", "sentinel.json"]])
+        assert council["verdict"] == "PASS"
+        assert council["stats"]["total"] == 3
+
+    def test_parse_then_aggregate_with_critical(self, tmp_path):
+        # One reviewer finds a critical issue
+        raw_fail = json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security", "verdict": "PASS",
+            "confidence": 0.95, "summary": "Critical found.",
+            "findings": [{
+                "severity": "critical", "category": "injection", "file": "a.py",
+                "line": 10, "title": "SQL injection", "description": "d", "suggestion": "s",
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0},
+        })
+        text = f"```json\n{raw_fail}\n```"
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parent.parent / "scripts" / "parse-review.py"),
+             "--reviewer", "SENTINEL"],
+            input=text, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        parsed = json.loads(result.stdout)
+        # Verdict consistency should have rewritten PASS → FAIL
+        assert parsed["verdict"] == "FAIL"
+
+        # Pass reviewer
+        raw_pass = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "ok",
+            "findings": [],
+            "stats": {"files_reviewed": 1, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 0},
+        })
+        result2 = subprocess.run(
+            [sys.executable, str(Path(__file__).parent.parent / "scripts" / "parse-review.py"),
+             "--reviewer", "APOLLO"],
+            input=f"```json\n{raw_pass}\n```", capture_output=True, text=True,
+        )
+        parsed2 = json.loads(result2.stdout)
+
+        council = _aggregate([parsed, parsed2])
+        assert council["verdict"] == "FAIL"
+        assert council["stats"]["fail"] == 1

@@ -436,6 +436,72 @@ def test_fallback_default_reviewer():
     assert data["reviewer"] == "UNKNOWN"
 
 
+def test_string_line_coerced_to_int():
+    """String line numbers (e.g. "42") are coerced to int."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok",
+        "findings": [{
+            "severity": "info", "category": "style", "file": "a.py",
+            "line": "42", "title": "t", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, _ = run_parse(f"```json\n{review}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["findings"][0]["line"] == 42
+    assert isinstance(data["findings"][0]["line"], int)
+
+
+def test_non_numeric_line_produces_fallback():
+    """Non-numeric line value (e.g. "unknown") triggers fallback."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok",
+        "findings": [{
+            "severity": "info", "category": "style", "file": "a.py",
+            "line": "not-a-number", "title": "t", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, _ = run_parse(f"```json\n{review}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "FAIL"
+    assert data["confidence"] == 0.0
+
+
+def test_invalid_finding_severity():
+    """Invalid severity on a finding triggers fallback."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok",
+        "findings": [{
+            "severity": "extreme", "category": "style", "file": "a.py",
+            "line": 1, "title": "t", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, _ = run_parse(f"```json\n{review}\n```")
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "FAIL"
+    assert data["confidence"] == 0.0
+
+
+def test_root_not_object():
+    """JSON array at root triggers fallback."""
+    code, out, _ = run_parse('```json\n[1, 2, 3]\n```')
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "FAIL"
+    assert data["confidence"] == 0.0
+
+
 class TestScratchpadInput:
     """Tests for scratchpad review document handling."""
 
