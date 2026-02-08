@@ -18,7 +18,7 @@ inputs:
     required: false
   kimi-base-url:
     description: 'Kimi API base URL'
-    default: 'https://api.moonshot.ai/v1'
+    default: 'https://openrouter.ai/api/v1'
   model:
     description: 'Model name'
     default: 'kimi-k2.5'

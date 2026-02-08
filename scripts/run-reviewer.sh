@@ -217,19 +217,19 @@ tmp_agent="/tmp/${perspective}-agent.yaml"
 sed "s|system_prompt_path: \./|system_prompt_path: ${agent_dir}/|" "$agent_file" > "$tmp_agent"
 
 model="${KIMI_MODEL:-kimi-k2.5}"
-base_url="${KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
+base_url="${KIMI_BASE_URL:-https://openrouter.ai/api/v1}"
 
 # Create temp config with model, provider, and step limit
 cat > "/tmp/${perspective}-kimi-config.toml" <<TOML
-default_model = "moonshot/${model}"
+default_model = "openrouter/moonshotai/${model}"
 
-[models."moonshot/${model}"]
-provider = "moonshot"
+[models."openrouter/moonshotai/${model}"]
+provider = "openrouter"
 model = "${model}"
 max_context_size = 262144
 capabilities = ["thinking"]
 
-[providers.moonshot]
+[providers.openrouter]
 type = "kimi"
 base_url = "${base_url}"
 api_key = "${KIMI_API_KEY}"
