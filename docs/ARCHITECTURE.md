@@ -32,6 +32,15 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 2. Manual: comment command (`/cerberus triage`) triggers triage
 3. Scheduled: periodic triage of open PRs with unresolved findings
 
+**Current implementation status (baseline):**
+- Separate triage composite action (`triage/action.yml`) with runtime in `scripts/triage.py`
+- Supported modes: `off`, `diagnose`, `fix`
+- Circuit breakers implemented:
+  - commit-tag guard (`[triage]`)
+  - max attempts per PR+SHA via triage comment markers
+  - global kill switch (`CERBERUS_TRIAGE=off`)
+- Trigger routing implemented for `pull_request`, `issue_comment`, and `schedule`
+
 ### Module 3: Health Check Monitors — **v2.0**
 **What:** Agentic uptime monitoring. Goes beyond "is it responding?" to "is it working correctly?"
 

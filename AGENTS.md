@@ -10,7 +10,7 @@ Multi-agent AI PR review council. Five parallel reviewers. Single council verdic
 - ARTEMIS: maintainability + DX (think like next developer)
 
 ## Key Paths
-- action: `action.yml` (review) + `verdict/action.yml` (council)
+- action: `action.yml` (review) + `verdict/action.yml` (council) + `triage/action.yml` (auto-triage)
 - config: `defaults/config.yml`
 - agents: `agents/`
 - system prompts: `agents/*-prompt.md`
