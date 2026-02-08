@@ -62,14 +62,44 @@ def test_count_attempts_for_sha() -> None:
     triage = load_triage_module()
 
     comments = [
-        {"body": "<!-- cerberus:triage sha=abc1234 run=1 -->"},
-        {"body": "<!-- cerberus:triage sha=abc1234 run=2 -->"},
-        {"body": "<!-- cerberus:triage sha=def5678 run=3 -->"},
-        {"body": "plain comment"},
+        {"user": {"login": "github-actions[bot]"}, "body": "<!-- cerberus:triage sha=abc1234 run=1 -->"},
+        {"user": {"login": "github-actions[bot]"}, "body": "<!-- cerberus:triage sha=abc1234 run=2 -->"},
+        {"user": {"login": "github-actions[bot]"}, "body": "<!-- cerberus:triage sha=def5678 run=3 -->"},
+        {"user": {"login": "github-actions[bot]"}, "body": "plain comment"},
     ]
-    assert triage.count_attempts_for_sha(comments, "abc1234deadbeef") == 2
-    assert triage.count_attempts_for_sha(comments, "def5678cafebabe") == 1
-    assert triage.count_attempts_for_sha(comments, "0000000") == 0
+    assert triage.count_attempts_for_sha(comments, "abc1234deadbeef", "github-actions[bot]") == 2
+    assert triage.count_attempts_for_sha(comments, "def5678cafebabe", "github-actions[bot]") == 1
+    assert triage.count_attempts_for_sha(comments, "0000000", "github-actions[bot]") == 0
+
+
+def test_count_attempts_ignores_untrusted_comments() -> None:
+    triage = load_triage_module()
+
+    comments = [
+        {"user": {"login": "external-user"}, "body": "<!-- cerberus:triage sha=abc1234 run=1 -->"},
+        {"user": {"login": "github-actions[bot]"}, "body": "<!-- cerberus:triage sha=abc1234 run=2 -->"},
+    ]
+    assert triage.count_attempts_for_sha(comments, "abc1234deadbeef", "github-actions[bot]") == 1
+
+
+def test_latest_council_comment_ignores_untrusted_spoof() -> None:
+    triage = load_triage_module()
+
+    comments = [
+        {
+            "user": {"login": "external-user"},
+            "updated_at": "2026-02-08T02:00:00Z",
+            "body": "<!-- cerberus:council -->\n## ❌ Council Verdict: FAIL",
+        },
+        {
+            "user": {"login": "github-actions[bot]"},
+            "updated_at": "2026-02-08T01:00:00Z",
+            "body": "<!-- cerberus:council -->\n## ✅ Council Verdict: PASS",
+        },
+    ]
+    latest = triage.find_latest_council_comment(comments, "github-actions[bot]")
+    assert latest is not None
+    assert triage.extract_council_verdict(latest["body"]) == "PASS"
 
 
 def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:

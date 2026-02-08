@@ -23,6 +23,23 @@ TRIAGE_MARKER = "cerberus:triage"
 TRIAGE_COMMAND = "/cerberus triage"
 
 
+def trusted_login() -> str:
+    return os.environ.get("CERBERUS_BOT_LOGIN", "github-actions[bot]").strip().lower()
+
+
+def comment_login(comment: dict) -> str:
+    user = comment.get("user")
+    if isinstance(user, dict):
+        login = user.get("login")
+        if isinstance(login, str):
+            return login.strip().lower()
+    return ""
+
+
+def is_trusted_comment(comment: dict, trusted: str) -> bool:
+    return comment_login(comment) == trusted
+
+
 def fail(message: str, code: int = 2) -> None:
     print(f"triage: {message}", file=sys.stderr)
     sys.exit(code)
@@ -74,9 +91,11 @@ def has_triage_commit_tag(message: str) -> bool:
     return "[triage]" in message.lower()
 
 
-def count_attempts_for_sha(comments: list[dict], head_sha: str) -> int:
+def count_attempts_for_sha(comments: list[dict], head_sha: str, trusted: str) -> int:
     count = 0
     for comment in comments:
+        if not is_trusted_comment(comment, trusted):
+            continue
         body = str(comment.get("body", ""))
         match = re.search(r"cerberus:triage sha=([0-9a-fA-F]+)", body)
         if not match:
@@ -110,8 +129,10 @@ def should_schedule_pr(
     return now - updated_at >= timedelta(hours=stale_hours)
 
 
-def find_latest_council_comment(comments: list[dict]) -> dict | None:
-    council_comments = [c for c in comments if COUNCIL_MARKER in str(c.get("body", ""))]
+def find_latest_council_comment(comments: list[dict], trusted: str) -> dict | None:
+    council_comments = [
+        c for c in comments if is_trusted_comment(c, trusted) and COUNCIL_MARKER in str(c.get("body", ""))
+    ]
     if not council_comments:
         return None
     return max(council_comments, key=lambda c: str(c.get("updated_at", "")))
@@ -336,10 +357,11 @@ def triage_pr(
 
     comments_obj = gh_json([f"repos/{repo}/issues/{pr_number}/comments?per_page=100"])
     comments = comments_obj if isinstance(comments_obj, list) else []
-    latest_council = find_latest_council_comment(comments)
+    trusted = trusted_login()
+    latest_council = find_latest_council_comment(comments, trusted)
     council_body = str(latest_council.get("body", "")) if latest_council else None
     verdict = extract_council_verdict(council_body or "")
-    attempts = count_attempts_for_sha(comments, head_sha)
+    attempts = count_attempts_for_sha(comments, head_sha, trusted)
 
     if trigger == "scheduled":
         updated_at = str(latest_council.get("updated_at")) if latest_council else None

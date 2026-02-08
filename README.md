@@ -85,6 +85,7 @@ Cerberus ships a separate triage module for council failures:
 - Loop protection:
   - skips if head commit message contains `[triage]`
   - caps attempts per PR + SHA (`max-attempts`, default `1`)
+  - trusts only bot-authored council/triage marker comments for gating
   - supports global kill switch: `CERBERUS_TRIAGE=off`
 
 Use `templates/triage-workflow.yml` to enable:

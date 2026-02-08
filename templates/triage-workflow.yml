@@ -54,22 +54,41 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-  triage:
-    name: "Cerberus Triage"
+  triage-auto:
+    name: "Cerberus Triage (Auto)"
     needs: verdict
-    if: >
-      always() &&
-      (
-        github.event_name == 'issue_comment' ||
-        github.event_name == 'schedule' ||
-        (github.event_name == 'pull_request' && needs.verdict.outputs.verdict == 'FAIL')
-      )
+    if: github.event_name == 'pull_request' && needs.verdict.outputs.verdict == 'FAIL'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        if: github.event_name == 'pull_request'
         with:
           ref: ${{ github.event.pull_request.head.ref }}
+      - uses: misty-step/cerberus/triage@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: ${{ vars.CERBERUS_TRIAGE_MODE || 'diagnose' }}
+          max-attempts: '1'
+          stale-hours: '24'
+          fix-command: ${{ vars.CERBERUS_TRIAGE_FIX_COMMAND }}
+
+  triage-manual:
+    name: "Cerberus Triage (Manual)"
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/triage@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: ${{ vars.CERBERUS_TRIAGE_MODE || 'diagnose' }}
+          max-attempts: '1'
+          stale-hours: '24'
+          fix-command: ${{ vars.CERBERUS_TRIAGE_FIX_COMMAND }}
+
+  triage-scheduled:
+    name: "Cerberus Triage (Scheduled)"
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
       - uses: misty-step/cerberus/triage@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
