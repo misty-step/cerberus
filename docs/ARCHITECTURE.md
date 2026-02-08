@@ -102,9 +102,9 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 - [ ] README with quick start, configuration reference, examples
 
 ### Phase 4: Testing & Stability (P1)
-- [ ] Unit tests for parse-review.py, aggregate-verdict.py
-- [ ] Integration test: mock API responses, verify end-to-end
-- [ ] Edge case coverage: empty diffs, huge diffs, binary files, no reviewers available
+- [x] Unit tests for parse-review.py, aggregate-verdict.py
+- [x] Integration test: mock API responses, verify end-to-end
+- [x] Edge case coverage: empty diffs, huge diffs, binary files, no reviewers available
 - [ ] CI on cerberus repo itself (dogfooding)
 
 ### Phase 5: Documentation (P2)
