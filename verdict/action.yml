@@ -85,14 +85,41 @@ runs:
         if [ "$VERDICT" = "SKIP" ]; then EMOJI="⏭️"; fi
         MARKER="<!-- cerberus:council -->"
 
+        # Detect SKIP reasons across all reviewer verdicts using structured fields
+        SKIP_BANNER=""
+        for f in ./verdicts/*.json; do
+          [ -f "$f" ] || continue
+          v_verdict=$(jq -r '.verdict // empty' "$f")
+          [ "$v_verdict" = "SKIP" ] || continue
+          v_category=$(jq -r '.findings[0].category // empty' "$f")
+          v_title=$(jq -r '.findings[0].title // empty' "$f")
+          if [ "$v_category" = "api_error" ]; then
+            if printf '%s' "$v_title" | grep -qiE "CREDITS_DEPLETED|QUOTA_EXCEEDED"; then
+              SKIP_BANNER="> **⛔ API credits depleted for one or more reviewers.** Some reviews were skipped because the API provider has no remaining credits. Top up credits or configure a fallback provider."
+            elif printf '%s' "$v_title" | grep -qiE "KEY_INVALID"; then
+              SKIP_BANNER="> **🔑 API key error for one or more reviewers.** Some reviews were skipped due to authentication failures. Check that the API key is valid."
+            else
+              SKIP_BANNER="> **⚠️ API error for one or more reviewers.** Some reviews were skipped due to API errors."
+            fi
+            break
+          elif [ "$v_category" = "timeout" ]; then
+            SKIP_BANNER="> **⏱️ One or more reviewers timed out.** Some reviews were skipped because they exceeded the configured runtime limit."
+            break
+          fi
+        done
+
         {
-          echo "$MARKER"
-          echo "## ${EMOJI} Council Verdict: ${VERDICT}"
-          echo ""
-          echo "$SUMMARY"
-          echo ""
-          echo "---"
-          echo "*Cerberus Council*"
+          printf '%s\n' "$MARKER"
+          printf '%s\n' "## ${EMOJI} Council Verdict: ${VERDICT}"
+          printf '\n'
+          if [ -n "$SKIP_BANNER" ]; then
+            printf '%s\n' "$SKIP_BANNER"
+            printf '\n'
+          fi
+          printf '%s\n' "$SUMMARY"
+          printf '\n'
+          printf '%s\n' "---"
+          printf '%s\n' "*Cerberus Council*"
         } > /tmp/council-comment.md
 
         print_permissions_help() {

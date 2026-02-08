@@ -245,8 +245,9 @@ echo "---"
 review_timeout="${REVIEW_TIMEOUT:-600}"
 
 # API error patterns to detect
-# Transient errors: 429 (rate limit), 503 (service unavailable)
-# Permanent errors: 401 (bad key), quota exceeded
+# Permanent errors (not retryable): 401/402/403, bad key, quota exhaustion
+# Transient errors (retryable): 429 (rate limit), 503 (service unavailable)
+# Permanent checked first — non-recoverable errors should not waste retries.
 detect_api_error() {
   local output_file="$1"
   local stderr_file="$2"
@@ -255,15 +256,24 @@ detect_api_error() {
   local combined
   combined="$(cat "$output_file" 2>/dev/null || echo "")$(cat "$stderr_file" 2>/dev/null || echo "")"
 
-  # Check for transient errors (retryable)
-  if echo "$combined" | grep -qE "(429|503|rate limit|too many requests|service unavailable|temporarily unavailable)"; then
-    echo "transient"
+  # Check permanent errors first (not retryable, should not waste retry budget)
+  # Patterns use error-context anchoring to avoid false positives on review prose.
+  if echo "$combined" | grep -qiE "(incorrect_api_key|invalid_api_key|exceeded_current_quota|insufficient_quota|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
+    echo "permanent"
+    return
+  fi
+  if echo "$combined" | grep -qE "\"(status|code)\":\s*40[123]|error.*(401|402|403)|HTTP [45][0-9]{2}.*(auth|pay|quota|key)"; then
+    echo "permanent"
     return
   fi
 
-  # Check for permanent errors (not retryable)
-  if echo "$combined" | grep -qE "(401|403|exceeded_current_quota|incorrect_api_key|invalid_api_key|authentication|quota exceeded|billing)"; then
-    echo "permanent"
+  # Check for transient errors (retryable)
+  if echo "$combined" | grep -qiE "(rate.limit|too many requests|service.unavailable|temporarily.unavailable)"; then
+    echo "transient"
+    return
+  fi
+  if echo "$combined" | grep -qE "\"(status|code)\":\s*(429|503)|error.*(429|503)"; then
+    echo "transient"
     return
   fi
 
@@ -305,20 +315,25 @@ while true; do
 
   # If it's a permanent error, write structured error JSON
   if [[ "$error_type" == "permanent" ]]; then
-    echo "Permanent API error detected (401/quota). Writing error verdict."
+    echo "Permanent API error detected. Writing error verdict."
+
+    # Preserve stderr for debugging before we override the output
+    echo "--- stderr (permanent error) ---" >&2
+    cat "/tmp/${perspective}-stderr.log" >&2 2>/dev/null || true
+    echo "--- end stderr ---" >&2
 
     # Extract specific error message
     error_msg="$(cat "/tmp/${perspective}-output.txt" 2>/dev/null)$(cat "/tmp/${perspective}-stderr.log" 2>/dev/null)"
 
     # Determine specific error type for message
     error_type_str="API_ERROR"
-    if echo "$error_msg" | grep -qiE "(401|incorrect_api_key|invalid_api_key|authentication)"; then
+    if echo "$error_msg" | grep -qiE "(incorrect_api_key|invalid_api_key|authentication|unauthorized)"; then
       error_type_str="API_KEY_INVALID"
-    elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|quota exceeded|billing)"; then
-      error_type_str="API_QUOTA_EXCEEDED"
+    elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|insufficient_quota|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
+      error_type_str="API_CREDITS_DEPLETED"
     fi
 
-    # Write structured error JSON
+    # Write structured error marker for parse-review.py
     cat > "/tmp/${perspective}-output.txt" <<EOF
 API Error: $error_type_str
 

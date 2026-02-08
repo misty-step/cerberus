@@ -717,6 +717,7 @@ Please check your API key and quota settings.
         assert data["confidence"] == 0.0
 
     def test_detects_quota_exceeded_error(self):
+        """Legacy API_QUOTA_EXCEEDED marker is unified to API_CREDITS_DEPLETED."""
         error_text = """API Error: API_QUOTA_EXCEEDED
 
 The Moonshot API returned an error:
@@ -729,7 +730,7 @@ Please check your API key and quota settings.
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
-        assert "API_QUOTA_EXCEEDED" in data["summary"]
+        assert "credits depleted" in data["summary"].lower()
 
     def test_detects_generic_api_error(self):
         error_text = """API Error: API_ERROR
@@ -821,3 +822,122 @@ Some error.
         assert stats["major"] == 0
         assert stats["minor"] == 0
         assert stats["info"] == 1
+
+
+class TestCreditExhaustion:
+    """Tests for 402 Payment Required and credit exhaustion detection."""
+
+    def test_detects_402_with_explicit_marker(self):
+        error_text = """API Error: API_CREDITS_DEPLETED
+
+The Moonshot API returned an error:
+
+402 Payment Required
+
+Please check your API key and quota settings.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_CREDITS_DEPLETED" in data["summary"]
+        assert "credits depleted" in data["summary"].lower()
+
+    def test_detects_402_without_explicit_marker(self):
+        """402 in raw output (no 'API Error:' prefix) should still produce SKIP."""
+        error_text = """
+The API returned an error:
+402 Payment Required
+
+Your account has insufficient credits.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_detects_payment_required_text(self):
+        """'payment required' phrase triggers credit depletion detection."""
+        error_text = """
+Error: payment required - please add credits to your account.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_detects_insufficient_quota(self):
+        """'insufficient_quota' error code triggers credit depletion."""
+        error_text = """
+API call failed: insufficient_quota
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_credit_error_suggestion_mentions_fallback(self):
+        """Credit exhaustion suggestion should mention fallback provider."""
+        error_text = """API Error: API_CREDITS_DEPLETED
+
+402 Payment Required
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        finding = data["findings"][0]
+        assert "fallback" in finding["suggestion"].lower()
+
+    def test_quota_exceeded_also_gets_credit_message(self):
+        """API_QUOTA_EXCEEDED should also get the 'credits depleted' summary."""
+        error_text = """API Error: API_QUOTA_EXCEEDED
+
+exceeded_current_quota
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert "credits depleted" in data["summary"].lower()
+
+    def test_credits_depleted_takes_priority_over_quota(self):
+        """When both credit and quota signals present, CREDITS_DEPLETED wins."""
+        error_text = """API Error: API_CREDITS_DEPLETED
+
+Your quota has been exceeded. billing issue detected.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_CREDITS_DEPLETED" in data["summary"]
+
+    def test_exceeded_current_quota_without_marker(self):
+        """exceeded_current_quota without API Error prefix maps to CREDITS_DEPLETED."""
+        error_text = "\nError from API: exceeded_current_quota\n"
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_billing_error_without_marker(self):
+        """billing error without API Error prefix maps to CREDITS_DEPLETED."""
+        error_text = "\nError: billing issue with your account.\n"
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_non_credit_error_keeps_generic_suggestion(self):
+        """API_KEY_INVALID should get generic suggestion, not credit-specific."""
+        error_text = "API Error: API_KEY_INVALID\n401 Unauthorized\n"
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        finding = data["findings"][0]
+        assert "Check API key" in finding["suggestion"]
+        assert "fallback" not in finding["suggestion"].lower()

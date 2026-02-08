@@ -75,8 +75,27 @@ case "$verdict" in
   PASS) verdict_emoji="✅" ;;
   WARN) verdict_emoji="⚠️" ;;
   FAIL) verdict_emoji="❌" ;;
+  SKIP) verdict_emoji="⏭️" ;;
   *) verdict_emoji="❔" ;;
 esac
+
+# Detect SKIP reason for prominent banner using structured verdict fields
+skip_banner=""
+if [[ "$verdict" == "SKIP" ]]; then
+  finding_category="$(jq -r '.findings[0].category // empty' "$verdict_file")"
+  finding_title="$(jq -r '.findings[0].title // empty' "$verdict_file")"
+  if [[ "$finding_category" == "api_error" ]]; then
+    if printf '%s' "$finding_title" | grep -qiE "CREDITS_DEPLETED|QUOTA_EXCEEDED"; then
+      skip_banner="> **⛔ API credits depleted.** This reviewer was skipped because the API provider has no remaining credits. Top up credits or configure a fallback provider."
+    elif printf '%s' "$finding_title" | grep -qiE "KEY_INVALID"; then
+      skip_banner="> **🔑 API key error.** This reviewer was skipped due to an authentication failure. Check that the API key is valid."
+    else
+      skip_banner="> **⚠️ API error.** This reviewer was skipped due to an API error."
+    fi
+  elif [[ "$finding_category" == "timeout" ]]; then
+    skip_banner="> **⏱️ Timeout.** This reviewer exceeded the configured runtime limit."
+  fi
+fi
 
 findings_file="/tmp/${perspective}-findings.md"
 findings_count="$(
@@ -120,20 +139,24 @@ PY
 sha_short="$(git rev-parse --short HEAD)"
 
 comment_file="/tmp/${perspective}-comment.md"
-cat > "$comment_file" <<EOF
-## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}
-**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}
-
-### Summary
-${summary}
-
-### Findings (${findings_count})
-$(cat "$findings_file")
-
----
-*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*
-${marker}
-EOF
+{
+  printf '%s\n' "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
+  printf '%s\n' "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}"
+  printf '\n'
+  if [[ -n "$skip_banner" ]]; then
+    printf '%s\n' "$skip_banner"
+    printf '\n'
+  fi
+  printf '%s\n' "### Summary"
+  printf '%s\n' "${summary}"
+  printf '\n'
+  printf '%s\n' "### Findings (${findings_count})"
+  cat "$findings_file"
+  printf '\n'
+  printf '%s\n' "---"
+  printf '%s\n' "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
+  printf '%s\n' "${marker}"
+} > "$comment_file"
 
 comments_query=".[] | select(.body | contains(\"$marker\")) | .id"
 if ! existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --jq "$comments_query" 2>/tmp/cerberus-comment.err | head -1)"; then
