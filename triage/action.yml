@@ -1,0 +1,63 @@
+name: 'Cerberus Triage'
+description: 'Diagnose and optionally auto-fix failing council verdicts with loop protection'
+author: 'misty-step'
+
+inputs:
+  github-token:
+    description: 'GitHub token for reading/writing PR comments and optional pushes'
+    required: true
+  mode:
+    description: 'Triage mode: off, diagnose, or fix'
+    default: 'off'
+  max-attempts:
+    description: 'Max triage attempts per PR + head SHA'
+    default: '1'
+  stale-hours:
+    description: 'Scheduled triage only: minimum age (hours) of unresolved FAIL before triage runs'
+    default: '24'
+  fix-command:
+    description: 'Optional command to run in fix mode'
+    default: ''
+
+outputs:
+  status:
+    description: 'Final triage status (skipped/diagnosed/fixed/fix_failed/no_changes)'
+    value: ${{ steps.triage.outputs.status }}
+  attempted:
+    description: 'Whether triage attempted diagnosis/fix on at least one PR'
+    value: ${{ steps.triage.outputs.attempted }}
+  reason:
+    description: 'Last reason string emitted by triage runtime'
+    value: ${{ steps.triage.outputs.reason }}
+  processed:
+    description: 'Number of PR targets evaluated'
+    value: ${{ steps.triage.outputs.processed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate mode
+      shell: bash
+      env:
+        TRIAGE_MODE: ${{ inputs.mode }}
+      run: |
+        case "$TRIAGE_MODE" in
+          off|diagnose|fix) ;;
+          *)
+            echo "::error::Invalid triage mode: $TRIAGE_MODE (expected off|diagnose|fix)"
+            exit 1
+            ;;
+        esac
+
+    - name: Run triage
+      id: triage
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        TRIAGE_MODE: ${{ inputs.mode }}
+        TRIAGE_MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+        TRIAGE_STALE_HOURS: ${{ inputs.stale-hours }}
+        TRIAGE_FIX_COMMAND: ${{ inputs.fix-command }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/triage.py"

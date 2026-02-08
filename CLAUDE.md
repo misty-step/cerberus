@@ -27,6 +27,13 @@ consumer workflow (.github/workflows/cerberus.yml)
             ├── download verdict artifacts
             ├── aggregate-verdict.py  (override handling + council decision)
             └── post council comment + optional fail on FAIL
+
+    └── triage job (optional, separate workflow/job)
+        └── uses: misty-step/cerberus/triage@v1  (triage/action.yml)
+            ├── read council verdict/comment state
+            ├── enforce loop guards (`[triage]`, per-SHA attempt cap)
+            ├── post diagnosis
+            └── optional fix command + `[triage]` commit push
 ```
 
 The consumer defines the reviewer matrix in its own workflow. This repository provides only the reusable actions and support files.
@@ -49,6 +56,7 @@ Shell access is toggled per agent via `exclude_tools` in the YAML config.
 
 - `action.yml` - review composite action entrypoint
 - `verdict/action.yml` - council verdict composite action entrypoint
+- `triage/action.yml` - triage composite action entrypoint
 - `defaults/config.yml` - council settings, reviewer list, verdict thresholds, override rules
 - `agents/<perspective>.yaml` - KimiCode agent config (extends default, sets system prompt path, tool restrictions)
 - `agents/<perspective>-prompt.md` - system prompt defining identity, focus areas, anti-patterns, and JSON output schema
@@ -58,6 +66,7 @@ Shell access is toggled per agent via `exclude_tools` in the YAML config.
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
 - `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes council verdict
+- `scripts/triage.py` - triage trigger router + circuit breaker + diagnosis/fix runtime
 
 ## Verdict Logic
 

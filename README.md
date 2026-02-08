@@ -78,6 +78,21 @@ jobs:
 4. The verdict job aggregates all reviews into a council decision
 5. Council verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
 
+## Auto-Triage (v1.1)
+Cerberus ships a separate triage module for council failures:
+- Action: `misty-step/cerberus/triage@v1`
+- Modes: `off`, `diagnose`, `fix`
+- Loop protection:
+  - skips if head commit message contains `[triage]`
+  - caps attempts per PR + SHA (`max-attempts`, default `1`)
+  - trusts only bot-authored council/triage marker comments for gating
+  - supports global kill switch: `CERBERUS_TRIAGE=off`
+
+Use `templates/triage-workflow.yml` to enable:
+- automatic triage on council `FAIL`
+- manual triage via PR comment: `/cerberus triage` (optional `mode=fix`)
+- scheduled triage for stale unresolved council failures
+
 ## Inputs
 ### Review Action (`misty-step/cerberus@v1`)
 | Input | Required | Default | Description |
