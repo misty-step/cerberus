@@ -717,6 +717,7 @@ Please check your API key and quota settings.
         assert data["confidence"] == 0.0
 
     def test_detects_quota_exceeded_error(self):
+        """Legacy API_QUOTA_EXCEEDED marker is unified to API_CREDITS_DEPLETED."""
         error_text = """API Error: API_QUOTA_EXCEEDED
 
 The Moonshot API returned an error:
@@ -729,7 +730,7 @@ Please check your API key and quota settings.
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
-        assert "API_QUOTA_EXCEEDED" in data["summary"]
+        assert "credits depleted" in data["summary"].lower()
 
     def test_detects_generic_api_error(self):
         error_text = """API Error: API_ERROR
@@ -900,3 +901,43 @@ exceeded_current_quota
         assert code == 0
         data = json.loads(out)
         assert "credits depleted" in data["summary"].lower()
+
+    def test_credits_depleted_takes_priority_over_quota(self):
+        """When both credit and quota signals present, CREDITS_DEPLETED wins."""
+        error_text = """API Error: API_CREDITS_DEPLETED
+
+Your quota has been exceeded. billing issue detected.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_CREDITS_DEPLETED" in data["summary"]
+
+    def test_exceeded_current_quota_without_marker(self):
+        """exceeded_current_quota without API Error prefix maps to CREDITS_DEPLETED."""
+        error_text = "\nError from API: exceeded_current_quota\n"
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_billing_error_without_marker(self):
+        """billing error without API Error prefix maps to CREDITS_DEPLETED."""
+        error_text = "\nError: billing issue with your account.\n"
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "CREDITS_DEPLETED" in data["summary"]
+
+    def test_non_credit_error_keeps_generic_suggestion(self):
+        """API_KEY_INVALID should get generic suggestion, not credit-specific."""
+        error_text = "API Error: API_KEY_INVALID\n401 Unauthorized\n"
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        finding = data["findings"][0]
+        assert "Check API key" in finding["suggestion"]
+        assert "fallback" not in finding["suggestion"].lower()

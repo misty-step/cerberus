@@ -113,12 +113,14 @@ def read_input(path: str | None) -> str:
 def detect_api_error(text: str) -> tuple[bool, str]:
     """Detect if the text contains an API error. Returns (is_error, error_type)."""
     if "API Error:" in text:
-        if "API_KEY_INVALID" in text or "401" in text or "authentication" in text.lower():
+        if "API_KEY_INVALID" in text or "authentication" in text.lower():
             return True, "API_KEY_INVALID"
-        if "API_CREDITS_DEPLETED" in text or "402" in text or "payment required" in text.lower():
+        if "API_CREDITS_DEPLETED" in text or "API_QUOTA_EXCEEDED" in text:
             return True, "API_CREDITS_DEPLETED"
-        if "API_QUOTA_EXCEEDED" in text or "quota" in text.lower() or "billing" in text.lower():
-            return True, "API_QUOTA_EXCEEDED"
+        if "402" in text or "payment required" in text.lower():
+            return True, "API_CREDITS_DEPLETED"
+        if "quota" in text.lower() or "billing" in text.lower():
+            return True, "API_CREDITS_DEPLETED"
         return True, "API_ERROR"
     return False, ""
 
@@ -136,14 +138,9 @@ def detect_timeout(text: str) -> tuple[bool, int | None]:
     return False, None
 
 
-_CREDIT_ERROR_TYPES = {"API_CREDITS_DEPLETED", "API_QUOTA_EXCEEDED"}
-
-
 def generate_skip_verdict(error_type: str, text: str) -> dict:
     """Generate a SKIP verdict for API errors."""
-    is_credit_error = error_type in _CREDIT_ERROR_TYPES
-
-    if is_credit_error:
+    if error_type == "API_CREDITS_DEPLETED":
         summary = f"Review skipped: API credits depleted ({error_type})"
         suggestion = "Top up API credits or configure a fallback provider."
     else:

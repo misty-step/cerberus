@@ -79,15 +79,21 @@ case "$verdict" in
   *) verdict_emoji="❔" ;;
 esac
 
-# Detect credit exhaustion for prominent warning
-credit_warning=""
+# Detect SKIP reason for prominent banner using structured verdict fields
+skip_banner=""
 if [[ "$verdict" == "SKIP" ]]; then
-  if echo "$summary" | grep -qiE "(credits depleted|quota exceeded|CREDITS_DEPLETED|QUOTA_EXCEEDED)"; then
-    credit_warning="> **⛔ API credits depleted.** This reviewer was skipped because the API provider has no remaining credits. Top up credits or configure a fallback provider."
-  elif echo "$summary" | grep -qiE "(API_KEY_INVALID|invalid.*key|authentication)"; then
-    credit_warning="> **🔑 API key error.** This reviewer was skipped due to an authentication failure. Check that the API key is valid."
-  elif echo "$summary" | grep -qiE "(timeout)"; then
-    credit_warning="> **⏱️ Timeout.** This reviewer exceeded the configured runtime limit."
+  finding_category="$(jq -r '.findings[0].category // empty' "$verdict_file")"
+  finding_title="$(jq -r '.findings[0].title // empty' "$verdict_file")"
+  if [[ "$finding_category" == "api_error" ]]; then
+    if printf '%s' "$finding_title" | grep -qiE "CREDITS_DEPLETED|QUOTA_EXCEEDED"; then
+      skip_banner="> **⛔ API credits depleted.** This reviewer was skipped because the API provider has no remaining credits. Top up credits or configure a fallback provider."
+    elif printf '%s' "$finding_title" | grep -qiE "KEY_INVALID"; then
+      skip_banner="> **🔑 API key error.** This reviewer was skipped due to an authentication failure. Check that the API key is valid."
+    else
+      skip_banner="> **⚠️ API error.** This reviewer was skipped due to an API error."
+    fi
+  elif [[ "$finding_category" == "timeout" ]]; then
+    skip_banner="> **⏱️ Timeout.** This reviewer exceeded the configured runtime limit."
   fi
 fi
 
@@ -134,22 +140,22 @@ sha_short="$(git rev-parse --short HEAD)"
 
 comment_file="/tmp/${perspective}-comment.md"
 {
-  echo "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
-  echo "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}"
-  echo ""
-  if [[ -n "$credit_warning" ]]; then
-    echo "$credit_warning"
-    echo ""
+  printf '%s\n' "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
+  printf '%s\n' "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}"
+  printf '\n'
+  if [[ -n "$skip_banner" ]]; then
+    printf '%s\n' "$skip_banner"
+    printf '\n'
   fi
-  echo "### Summary"
-  echo "${summary}"
-  echo ""
-  echo "### Findings (${findings_count})"
+  printf '%s\n' "### Summary"
+  printf '%s\n' "${summary}"
+  printf '\n'
+  printf '%s\n' "### Findings (${findings_count})"
   cat "$findings_file"
-  echo ""
-  echo "---"
-  echo "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
-  echo "${marker}"
+  printf '\n'
+  printf '%s\n' "---"
+  printf '%s\n' "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
+  printf '%s\n' "${marker}"
 } > "$comment_file"
 
 comments_query=".[] | select(.body | contains(\"$marker\")) | .id"
