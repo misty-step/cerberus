@@ -13,14 +13,17 @@ if [[ -z "$resolved_key" ]]; then
   cat >&2 <<'EOF'
 ::error::Missing API key for Cerberus review.
 Provide one of:
-1) with: kimi-api-key
-2) env: CERBERUS_API_KEY
-3) env: ANTHROPIC_API_KEY
+1) with: kimi-api-key  (recommended)
+2) env: CERBERUS_API_KEY  (job-level env only)
+3) env: ANTHROPIC_API_KEY  (job-level env only)
 
-One-file workflow example:
+Note: step-level env: does NOT propagate into composite actions.
+Use 'with: kimi-api-key' or set env at the job level.
+
+Example:
 - uses: misty-step/cerberus@v1
-  env:
-    CERBERUS_API_KEY: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}
+  with:
+    kimi-api-key: ${{ secrets.CERBERUS_API_KEY }}
 EOF
   exit 1
 fi

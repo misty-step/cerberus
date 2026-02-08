@@ -42,11 +42,10 @@ def test_action_uses_api_key_fallback_validator() -> None:
     assert "required: false" in match.group(0)
 
 
-def test_consumer_template_uses_single_secret_env_fallback() -> None:
+def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
-    assert "CERBERUS_API_KEY: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}" in content
-    assert "kimi-api-key:" not in content
+    assert "kimi-api-key: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}" in content
 
 
 def test_readme_quick_start_uses_cerberus_secret_name() -> None:
