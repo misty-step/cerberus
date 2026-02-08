@@ -121,6 +121,19 @@ def detect_api_error(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def detect_timeout(text: str) -> tuple[bool, int | None]:
+    """Detect explicit timeout markers from run-reviewer.sh output."""
+    timeout_match = re.search(r"Review Timeout:\s*timeout after\s*(\d+)s", text, re.IGNORECASE)
+    if timeout_match:
+        return True, int(timeout_match.group(1))
+
+    generic_timeout_match = re.search(r"timeout after\s*(\d+)s", text, re.IGNORECASE)
+    if generic_timeout_match:
+        return True, int(generic_timeout_match.group(1))
+
+    return False, None
+
+
 def generate_skip_verdict(error_type: str, text: str) -> dict:
     """Generate a SKIP verdict for API errors."""
     return {
@@ -138,6 +151,36 @@ def generate_skip_verdict(error_type: str, text: str) -> dict:
                 "title": f"API Error: {error_type}",
                 "description": text.strip(),
                 "suggestion": "Check API key and quota settings.",
+            }
+        ],
+        "stats": {
+            "files_reviewed": 0,
+            "files_with_issues": 0,
+            "critical": 0,
+            "major": 0,
+            "minor": 0,
+            "info": 1,
+        },
+    }
+
+
+def generate_timeout_skip_verdict(reviewer: str, timeout_seconds: int | None) -> dict:
+    timeout_suffix = f" after {timeout_seconds}s" if timeout_seconds is not None else ""
+    return {
+        "reviewer": reviewer,
+        "perspective": "timeout",
+        "verdict": "SKIP",
+        "confidence": 0.0,
+        "summary": f"Review skipped due to timeout{timeout_suffix}.",
+        "findings": [
+            {
+                "severity": "info",
+                "category": "timeout",
+                "file": "N/A",
+                "line": 0,
+                "title": f"Reviewer timeout{timeout_suffix}",
+                "description": "Reviewer exceeded the configured runtime limit before completing.",
+                "suggestion": "Increase timeout for this reviewer or reduce prompt/diff size.",
             }
         ],
         "stats": {
@@ -305,7 +348,14 @@ def main() -> None:
 
     RAW_INPUT = raw
 
-    # Check for explicit API errors first (from run-reviewer.sh)
+    # Check for explicit timeout markers first (from run-reviewer.sh)
+    is_timeout, timeout_seconds = detect_timeout(raw)
+    if is_timeout:
+        timeout_verdict = generate_timeout_skip_verdict(REVIEWER_NAME, timeout_seconds)
+        print(json.dumps(timeout_verdict, indent=2, sort_keys=False))
+        sys.exit(0)
+
+    # Check for explicit API errors next (from run-reviewer.sh)
     is_api_error, error_type = detect_api_error(raw)
     if is_api_error:
         skip_verdict = generate_skip_verdict(error_type, raw)

@@ -94,6 +94,15 @@ def is_fallback_verdict(verdict: dict) -> bool:
     return confidence_is_zero and summary.startswith(PARSE_FAILURE_PREFIX)
 
 
+def is_timeout_skip(verdict: dict) -> bool:
+    if verdict.get("verdict") != "SKIP":
+        return False
+    summary = verdict.get("summary")
+    if not isinstance(summary, str):
+        return False
+    return "timeout after" in summary.lower()
+
+
 def has_critical_finding(verdict: dict) -> bool:
     stats = verdict.get("stats")
     if isinstance(stats, dict):
@@ -143,6 +152,13 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
     fails = [v for v in verdicts if v["verdict"] == "FAIL"]
     warns = [v for v in verdicts if v["verdict"] == "WARN"]
     skips = [v for v in verdicts if v["verdict"] == "SKIP"]
+    timed_out_reviewers = sorted(
+        {
+            str(v.get("reviewer") or v.get("perspective") or "unknown")
+            for v in skips
+            if is_timeout_skip(v)
+        }
+    )
     noncritical_fails = [v for v in fails if is_explicit_noncritical_fail(v)]
     blocking_fails = [v for v in fails if v not in noncritical_fails]
 
@@ -161,6 +177,8 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
         summary += f"Override by {override['actor']} for {override['sha']}."
     else:
         summary += f"Failures: {len(fails)}, warnings: {len(warns)}, skipped: {len(skips)}."
+        if timed_out_reviewers:
+            summary += f" Timed out reviewers: {', '.join(timed_out_reviewers)}."
 
     return {
         "verdict": council_verdict,

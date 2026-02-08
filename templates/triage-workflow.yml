@@ -39,7 +39,7 @@ jobs:
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          timeout: '600'
+          timeout: '120'
 
   verdict:
     name: "Council Verdict"

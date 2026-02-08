@@ -340,22 +340,37 @@ if [[ "$exit_code" -ne 0 ]]; then
 fi
 
 # Scratchpad fallback chain: select best parse input
-# 1. Scratchpad with JSON block (primary)
-# 2. Stdout with JSON block (fallback)
-# 3. Scratchpad without JSON (partial review)
-# 4. Stdout (triggers existing fallback)
-parse_input="$stdout_file"
-if [[ -f "$scratchpad" ]] && grep -q '```json' "$scratchpad" 2>/dev/null; then
-  parse_input="$scratchpad"
-  echo "parse-input: scratchpad (has JSON block)"
-elif [[ -s "$stdout_file" ]] && grep -q '```json' "$stdout_file" 2>/dev/null; then
-  parse_input="$stdout_file"
-  echo "parse-input: stdout (has JSON block)"
-elif [[ -f "$scratchpad" ]] && [[ -s "$scratchpad" ]]; then
-  parse_input="$scratchpad"
-  echo "parse-input: scratchpad (partial, no JSON block)"
+# 1. Timeout marker (when reviewer exceeded timeout)
+# 2. Scratchpad with JSON block (primary)
+# 3. Stdout with JSON block (fallback)
+# 4. Scratchpad without JSON (partial review)
+# 5. Stdout (triggers existing fallback)
+timeout_marker="/tmp/${perspective}-timeout-marker.txt"
+if [[ "$exit_code" -eq 124 ]]; then
+  echo "::warning::${reviewer_name} (${perspective}) timed out after ${review_timeout}s"
+  cat > "$timeout_marker" <<EOF
+Review Timeout: timeout after ${review_timeout}s
+
+${reviewer_name} (${perspective}) exceeded the configured timeout.
+EOF
+  parse_input="$timeout_marker"
+  echo "parse-input: timeout marker"
+  echo "timeout: forcing SKIP parse path"
+  exit_code=0
 else
-  echo "parse-input: stdout (fallback)"
+  parse_input="$stdout_file"
+  if [[ -f "$scratchpad" ]] && grep -q '```json' "$scratchpad" 2>/dev/null; then
+    parse_input="$scratchpad"
+    echo "parse-input: scratchpad (has JSON block)"
+  elif [[ -s "$stdout_file" ]] && grep -q '```json' "$stdout_file" 2>/dev/null; then
+    parse_input="$stdout_file"
+    echo "parse-input: stdout (has JSON block)"
+  elif [[ -f "$scratchpad" ]] && [[ -s "$scratchpad" ]]; then
+    parse_input="$scratchpad"
+    echo "parse-input: scratchpad (partial, no JSON block)"
+  else
+    echo "parse-input: stdout (fallback)"
+  fi
 fi
 
 # Write selected parse input path for downstream steps
@@ -364,16 +379,6 @@ echo "$parse_input" > "/tmp/${perspective}-parse-input"
 echo "--- output (last 40 lines) ---"
 tail -40 "$parse_input"
 echo "--- end output ---"
-
-# On timeout (exit 124): if we have content to parse, exit 0
-# Let parse-review.py handle the partial content
-if [[ "$exit_code" -eq 124 ]]; then
-  echo "::warning::${reviewer_name} (${perspective}) timed out after ${review_timeout}s"
-  if [[ -s "$parse_input" ]]; then
-    echo "timeout: content available, proceeding to parse"
-    exit_code=0
-  fi
-fi
 
 echo "$exit_code" > "/tmp/${perspective}-exitcode"
 exit "$exit_code"
