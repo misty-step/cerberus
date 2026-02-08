@@ -294,6 +294,18 @@ def gather_diagnosis(council_body: str | None) -> str:
     return "- " + "\n- ".join(interesting[:6])
 
 
+def fix_mode_block_reason(*, mode: str, trigger: str, repo: str, head_repo_name: str, git_exists: bool) -> str | None:
+    if mode != "fix":
+        return None
+    if trigger != "automatic":
+        return "Fix mode is limited to automatic pull_request runs. Falling back to diagnosis."
+    if repo != head_repo_name:
+        return "Head branch comes from a fork; skipping fix push for safety."
+    if not git_exists:
+        return "No git checkout available in workspace; cannot apply fix."
+    return None
+
+
 def run_fix_command(command: str) -> tuple[str, str]:
     if not command.strip():
         return "no_changes", "No fix command configured (`fix-command` input is empty)."
@@ -392,29 +404,32 @@ def triage_pr(
     details = "Diagnosis completed. No code changes requested in current mode."
     attempted = True
 
-    if mode == "fix":
-        if trigger != "automatic":
-            details = "Fix mode is limited to automatic pull_request runs. Falling back to diagnosis."
-        elif repo != head_repo_name:
-            details = "Head branch comes from a fork; skipping fix push for safety."
-        elif not Path(".git").exists():
-            details = "No git checkout available in workspace; cannot apply fix."
-        else:
-            outcome, details = run_fix_command(fix_command)
-            if outcome == "fixed":
-                push_result = subprocess.run(
-                    ["git", "push", "origin", f"HEAD:{head_ref}"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
+    block_reason = fix_mode_block_reason(
+        mode=mode,
+        trigger=trigger,
+        repo=repo,
+        head_repo_name=head_repo_name,
+        git_exists=Path(".git").exists(),
+    )
+    if block_reason:
+        details = block_reason
+    elif mode == "fix":
+        outcome, details = run_fix_command(fix_command)
+        if outcome == "fixed":
+            push_result = subprocess.run(
+                ["git", "push", "origin", f"HEAD:{head_ref}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if push_result.returncode != 0:
+                # Keep local commit for post-mortem visibility in runner logs.
+                outcome = "fix_failed"
+                details = (
+                    "Fix commit created locally but push failed.\n\n```text\n"
+                    + tail((push_result.stderr or "") + "\n" + (push_result.stdout or ""))
+                    + "\n```"
                 )
-                if push_result.returncode != 0:
-                    outcome = "fix_failed"
-                    details = (
-                        "Fix commit created locally but push failed.\n\n```text\n"
-                        + tail((push_result.stderr or "") + "\n" + (push_result.stdout or ""))
-                        + "\n```"
-                    )
 
     post_triage_comment(
         repo=repo,

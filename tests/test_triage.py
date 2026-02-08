@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import pytest
+
 
 def load_triage_module():
+    # `scripts/triage.py` is an executable script (not package module), so load directly.
     script = Path(__file__).parent.parent / "scripts" / "triage.py"
     spec = spec_from_file_location("triage", script)
     assert spec is not None
@@ -142,3 +146,225 @@ def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:
         stale_hours=24,
         now=now,
     )
+
+
+def test_run_fix_command_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    triage = load_triage_module()
+
+    def fake_subprocess_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(triage.subprocess, "run", fake_subprocess_run)
+
+    outcome, details = triage.run_fix_command("make nope")
+    assert outcome == "fix_failed"
+    assert "boom" in details
+
+
+def test_run_fix_command_reports_no_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    triage = load_triage_module()
+
+    def fake_subprocess_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr="")
+
+    def fake_run(argv, **kwargs):
+        assert argv == ["git", "status", "--porcelain"]
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(triage.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(triage, "run", fake_run)
+
+    outcome, details = triage.run_fix_command("echo hi")
+    assert outcome == "no_changes"
+    assert "no file changes" in details.lower()
+
+
+def test_run_fix_command_commits_when_changes_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    triage = load_triage_module()
+    seen = []
+
+    def fake_subprocess_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr="")
+
+    def fake_run(argv, **kwargs):
+        seen.append(tuple(argv))
+        if argv == ["git", "status", "--porcelain"]:
+            return subprocess.CompletedProcess(args=argv, returncode=0, stdout="M file.py\n", stderr="")
+        if argv == ["git", "rev-parse", "--short", "HEAD"]:
+            return subprocess.CompletedProcess(args=argv, returncode=0, stdout="abc123\n", stderr="")
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(triage.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(triage, "run", fake_run)
+
+    outcome, details = triage.run_fix_command("echo hi")
+    assert outcome == "fixed"
+    assert "abc123" in details
+    assert ("git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com") in seen
+    assert ("git", "config", "user.name", "github-actions[bot]") in seen
+    assert ("git", "add", "-A") in seen
+    assert ("git", "commit", "-m", "[triage] auto-fix from Cerberus") in seen
+
+
+def test_triage_pr_skips_when_verdict_not_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    triage = load_triage_module()
+
+    pull_payload = {
+        "head": {
+            "sha": "abc123456789",
+            "ref": "feature/branch",
+            "repo": {"full_name": "misty-step/cerberus"},
+        }
+    }
+    comments_payload = [
+        {
+            "user": {"login": "github-actions[bot]"},
+            "updated_at": "2026-02-08T01:00:00Z",
+            "body": "<!-- cerberus:council -->\n## ✅ Council Verdict: PASS",
+        }
+    ]
+    commit_payload = {"commit": {"message": "normal commit"}}
+
+    def fake_gh_json(args):
+        endpoint = args[0]
+        if endpoint.endswith("/pulls/60"):
+            return pull_payload
+        if endpoint.endswith("/issues/60/comments?per_page=100"):
+            return comments_payload
+        if endpoint.endswith("/commits/abc123456789"):
+            return commit_payload
+        raise AssertionError(endpoint)
+
+    def fail_if_called(**kwargs):
+        raise AssertionError("post_triage_comment should not run for skipped verdicts")
+
+    monkeypatch.setattr(triage, "gh_json", fake_gh_json)
+    monkeypatch.setattr(triage, "post_triage_comment", fail_if_called)
+
+    result = triage.triage_pr(
+        repo="misty-step/cerberus",
+        pr_number=60,
+        mode="diagnose",
+        trigger="automatic",
+        max_attempts=1,
+        stale_hours=24,
+        run_id="1",
+        now=datetime(2026, 2, 8, 3, 0, tzinfo=UTC),
+    )
+    assert result.status == "skipped"
+    assert result.reason == "pr_60_verdict_pass"
+    assert result.attempted is False
+
+
+def test_triage_pr_diagnose_posts_comment(monkeypatch: pytest.MonkeyPatch) -> None:
+    triage = load_triage_module()
+    posted = {}
+
+    pull_payload = {
+        "head": {
+            "sha": "abc123456789",
+            "ref": "feature/branch",
+            "repo": {"full_name": "misty-step/cerberus"},
+        }
+    }
+    comments_payload = [
+        {
+            "user": {"login": "github-actions[bot]"},
+            "updated_at": "2026-02-08T01:00:00Z",
+            "body": "<!-- cerberus:council -->\n## ❌ Council Verdict: FAIL\ncouncil details",
+        }
+    ]
+    commit_payload = {"commit": {"message": "normal commit"}}
+
+    def fake_gh_json(args):
+        endpoint = args[0]
+        if endpoint.endswith("/pulls/60"):
+            return pull_payload
+        if endpoint.endswith("/issues/60/comments?per_page=100"):
+            return comments_payload
+        if endpoint.endswith("/commits/abc123456789"):
+            return commit_payload
+        raise AssertionError(endpoint)
+
+    def fake_post(**kwargs):
+        posted.update(kwargs)
+
+    monkeypatch.setattr(triage, "gh_json", fake_gh_json)
+    monkeypatch.setattr(triage, "post_triage_comment", fake_post)
+
+    result = triage.triage_pr(
+        repo="misty-step/cerberus",
+        pr_number=60,
+        mode="diagnose",
+        trigger="automatic",
+        max_attempts=1,
+        stale_hours=24,
+        run_id="1",
+        now=datetime(2026, 2, 8, 3, 0, tzinfo=UTC),
+    )
+    assert result.status == "diagnosed"
+    assert result.attempted is True
+    assert posted["outcome"] == "diagnosed"
+    assert posted["verdict"] == "FAIL"
+
+
+def test_triage_pr_fix_push_failure_reports_fix_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    triage = load_triage_module()
+    posted = {}
+
+    pull_payload = {
+        "head": {
+            "sha": "abc123456789",
+            "ref": "feature/branch",
+            "repo": {"full_name": "misty-step/cerberus"},
+        }
+    }
+    comments_payload = [
+        {
+            "user": {"login": "github-actions[bot]"},
+            "updated_at": "2026-02-08T01:00:00Z",
+            "body": "<!-- cerberus:council -->\n## ❌ Council Verdict: FAIL",
+        }
+    ]
+    commit_payload = {"commit": {"message": "normal commit"}}
+
+    def fake_gh_json(args):
+        endpoint = args[0]
+        if endpoint.endswith("/pulls/60"):
+            return pull_payload
+        if endpoint.endswith("/issues/60/comments?per_page=100"):
+            return comments_payload
+        if endpoint.endswith("/commits/abc123456789"):
+            return commit_payload
+        raise AssertionError(endpoint)
+
+    def fake_post(**kwargs):
+        posted.update(kwargs)
+
+    def fake_fix(command):
+        return "fixed", "commit made"
+
+    def fake_subprocess_run(argv, **kwargs):
+        assert argv[:3] == ["git", "push", "origin"]
+        return subprocess.CompletedProcess(args=argv, returncode=1, stdout="", stderr="network fail")
+
+    monkeypatch.setattr(triage, "gh_json", fake_gh_json)
+    monkeypatch.setattr(triage, "post_triage_comment", fake_post)
+    monkeypatch.setattr(triage, "run_fix_command", fake_fix)
+    monkeypatch.setattr(triage.Path, "exists", lambda self: True)
+    monkeypatch.setattr(triage.subprocess, "run", fake_subprocess_run)
+
+    result = triage.triage_pr(
+        repo="misty-step/cerberus",
+        pr_number=60,
+        mode="fix",
+        trigger="automatic",
+        max_attempts=1,
+        stale_hours=24,
+        run_id="1",
+        now=datetime(2026, 2, 8, 3, 0, tzinfo=UTC),
+    )
+    assert result.status == "fix_failed"
+    assert result.attempted is True
+    assert posted["outcome"] == "fix_failed"
+    assert "push failed" in posted["details"].lower()
