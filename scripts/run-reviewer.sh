@@ -262,7 +262,7 @@ detect_api_error() {
   fi
 
   # Check for permanent errors (not retryable)
-  if echo "$combined" | grep -qE "(401|403|exceeded_current_quota|incorrect_api_key|invalid_api_key|authentication|quota exceeded|billing)"; then
+  if echo "$combined" | grep -qE "(401|402|403|payment required|exceeded_current_quota|incorrect_api_key|invalid_api_key|authentication|quota exceeded|insufficient_quota|billing|credits)"; then
     echo "permanent"
     return
   fi
@@ -314,8 +314,8 @@ while true; do
     error_type_str="API_ERROR"
     if echo "$error_msg" | grep -qiE "(401|incorrect_api_key|invalid_api_key|authentication)"; then
       error_type_str="API_KEY_INVALID"
-    elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|quota exceeded|billing)"; then
-      error_type_str="API_QUOTA_EXCEEDED"
+    elif echo "$error_msg" | grep -qiE "(402|payment required|exceeded_current_quota|insufficient_quota|quota exceeded|billing|credits)"; then
+      error_type_str="API_CREDITS_DEPLETED"
     fi
 
     # Write structured error JSON

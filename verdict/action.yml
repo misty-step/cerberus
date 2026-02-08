@@ -85,10 +85,26 @@ runs:
         if [ "$VERDICT" = "SKIP" ]; then EMOJI="⏭️"; fi
         MARKER="<!-- cerberus:council -->"
 
+        # Detect credit exhaustion in any reviewer verdict
+        CREDIT_WARNING=""
+        for f in ./verdicts/*.json; do
+          [ -f "$f" ] || continue
+          v_verdict=$(jq -r '.verdict // empty' "$f")
+          v_summary=$(jq -r '.summary // empty' "$f")
+          if [ "$v_verdict" = "SKIP" ] && echo "$v_summary" | grep -qiE "(credits depleted|quota exceeded|CREDITS_DEPLETED|QUOTA_EXCEEDED)"; then
+            CREDIT_WARNING="> **⛔ API credits depleted for one or more reviewers.** Some reviews were skipped because the API provider has no remaining credits. Top up credits or configure a fallback provider."
+            break
+          fi
+        done
+
         {
           echo "$MARKER"
           echo "## ${EMOJI} Council Verdict: ${VERDICT}"
           echo ""
+          if [ -n "$CREDIT_WARNING" ]; then
+            echo "$CREDIT_WARNING"
+            echo ""
+          fi
           echo "$SUMMARY"
           echo ""
           echo "---"

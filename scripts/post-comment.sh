@@ -75,8 +75,21 @@ case "$verdict" in
   PASS) verdict_emoji="✅" ;;
   WARN) verdict_emoji="⚠️" ;;
   FAIL) verdict_emoji="❌" ;;
+  SKIP) verdict_emoji="⏭️" ;;
   *) verdict_emoji="❔" ;;
 esac
+
+# Detect credit exhaustion for prominent warning
+credit_warning=""
+if [[ "$verdict" == "SKIP" ]]; then
+  if echo "$summary" | grep -qiE "(credits depleted|quota exceeded|CREDITS_DEPLETED|QUOTA_EXCEEDED)"; then
+    credit_warning="> **⛔ API credits depleted.** This reviewer was skipped because the API provider has no remaining credits. Top up credits or configure a fallback provider."
+  elif echo "$summary" | grep -qiE "(API_KEY_INVALID|invalid.*key|authentication)"; then
+    credit_warning="> **🔑 API key error.** This reviewer was skipped due to an authentication failure. Check that the API key is valid."
+  elif echo "$summary" | grep -qiE "(timeout)"; then
+    credit_warning="> **⏱️ Timeout.** This reviewer exceeded the configured runtime limit."
+  fi
+fi
 
 findings_file="/tmp/${perspective}-findings.md"
 findings_count="$(
@@ -120,20 +133,24 @@ PY
 sha_short="$(git rev-parse --short HEAD)"
 
 comment_file="/tmp/${perspective}-comment.md"
-cat > "$comment_file" <<EOF
-## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}
-**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}
-
-### Summary
-${summary}
-
-### Findings (${findings_count})
-$(cat "$findings_file")
-
----
-*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*
-${marker}
-EOF
+{
+  echo "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
+  echo "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}"
+  echo ""
+  if [[ -n "$credit_warning" ]]; then
+    echo "$credit_warning"
+    echo ""
+  fi
+  echo "### Summary"
+  echo "${summary}"
+  echo ""
+  echo "### Findings (${findings_count})"
+  cat "$findings_file"
+  echo ""
+  echo "---"
+  echo "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
+  echo "${marker}"
+} > "$comment_file"
 
 comments_query=".[] | select(.body | contains(\"$marker\")) | .id"
 if ! existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --jq "$comments_query" 2>/tmp/cerberus-comment.err | head -1)"; then
