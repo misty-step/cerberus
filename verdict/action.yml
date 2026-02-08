@@ -135,6 +135,6 @@ runs:
           exit 1
         fi
         if [ "$VERDICT" = "SKIP" ]; then
-          echo "::notice::Council Verdict: SKIP (all reviews skipped due to API errors)"
+          echo "::notice::Council Verdict: SKIP (all reviews skipped due to timeout/API errors)"
           exit 0
         fi

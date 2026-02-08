@@ -1012,6 +1012,25 @@ class TestSkipVerdicts:
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
         assert "skipped: 1" in data["summary"]
 
+    def test_timeout_skips_are_named_in_summary(self, tmp_path):
+        (tmp_path / "apollo.json").write_text(
+            json.dumps(
+                {
+                    "reviewer": "APOLLO",
+                    "perspective": "correctness",
+                    "verdict": "SKIP",
+                    "summary": "Review skipped due to timeout after 120s.",
+                }
+            )
+        )
+        (tmp_path / "athena.json").write_text(
+            json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "Good."})
+        )
+        code, out, _ = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert "Timed out reviewers: APOLLO." in data["summary"]
+
     def test_all_four_verdict_types_in_stats(self, tmp_path):
         """Stats should include all four verdict types."""
         (tmp_path / "pass.json").write_text(

@@ -61,7 +61,7 @@ def write_simple_diff(path: Path) -> None:
 @pytest.fixture(autouse=True)
 def cleanup_tmp_outputs() -> None:
     """Keep /tmp artifacts from one test from leaking into others."""
-    suffixes = ("parse-input", "output.txt", "stderr.log", "exitcode", "review.md")
+    suffixes = ("parse-input", "output.txt", "stderr.log", "exitcode", "review.md", "timeout-marker.txt")
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
             Path(f"/tmp/{perspective}-{suffix}").unlink(missing_ok=True)
@@ -239,4 +239,9 @@ def test_timeout_with_partial_output_exits_zero(tmp_path: Path) -> None:
         timeout=30,
     )
     assert result.returncode == 0
-    assert "timeout: content available, proceeding to parse" in result.stdout
+    assert "timeout: forcing SKIP parse path" in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
+    parse_file = Path(parse_input_ref.read_text().strip())
+    content = parse_file.read_text()
+    assert "Review Timeout: timeout after 5s" in content

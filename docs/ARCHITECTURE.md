@@ -90,7 +90,7 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 ## v1.0 Game Plan (Council Review Polish)
 
 ### Phase 1: Resilience (P0)
-- [ ] Timeout handling: per-reviewer timeouts with graceful degradation
+- [x] Timeout handling: per-reviewer timeouts with graceful degradation
 - [ ] API failure handling: retry with backoff, skip reviewer on persistent failure
 - [ ] Credit/token exhaustion: detect 402/429 errors, degrade gracefully, alert
 - [ ] Multi-provider fallback: if primary API fails, try secondary

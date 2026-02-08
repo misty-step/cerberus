@@ -793,6 +793,19 @@ Please retry after some time.
         assert data["verdict"] == "SKIP"
         assert "RATE_LIMIT" in data["summary"]
 
+    def test_detects_timeout_marker(self):
+        timeout_text = """Review Timeout: timeout after 120s
+
+APOLLO (correctness) exceeded the configured timeout.
+"""
+        code, out, err = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "APOLLO"
+        assert "timeout after 120s" in data["summary"]
+        assert data["findings"][0]["category"] == "timeout"
+
     def test_skip_stats_are_zero(self):
         error_text = """API Error: API_ERROR
 
