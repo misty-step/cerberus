@@ -516,6 +516,25 @@ def test_detects_fallback_verdicts(tmp_path):
     assert "Council Verdict: FAIL" in out
 
 
+def test_preserves_reviewer_runtime_seconds(tmp_path):
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "summary": "ok",
+                "runtime_seconds": 37,
+            }
+        )
+    )
+
+    code, out, err = run_aggregate(str(tmp_path))
+    assert code == 0
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    assert data["reviewers"][0]["runtime_seconds"] == 37
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: Unit tests via importlib (no subprocess)
 # ---------------------------------------------------------------------------

@@ -125,7 +125,14 @@ runs:
         GH_PR_CONTEXT: /tmp/pr-context.json
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
+        review_started_at=$(date +%s)
+        set +e
         "$CERBERUS_ROOT/scripts/run-reviewer.sh" "$PERSPECTIVE"
+        review_exit=$?
+        review_finished_at=$(date +%s)
+        runtime_seconds=$((review_finished_at - review_started_at))
+        printf '%s\n' "$runtime_seconds" > "/tmp/${PERSPECTIVE}-runtime-seconds"
+        exit "$review_exit"
 
     - name: Parse review output
       if: always()
@@ -142,6 +149,15 @@ runs:
           PARSE_INPUT="$(cat "/tmp/${PERSPECTIVE}-parse-input")"
         fi
         python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "/tmp/${PERSPECTIVE}-verdict.json"
+        RUNTIME_FILE="/tmp/${PERSPECTIVE}-runtime-seconds"
+        if [[ -f "$RUNTIME_FILE" ]]; then
+          runtime_seconds="$(cat "$RUNTIME_FILE")"
+          if [[ "$runtime_seconds" =~ ^[0-9]+$ ]]; then
+            tmp_json="/tmp/${PERSPECTIVE}-verdict.runtime.json"
+            jq --argjson runtime_seconds "$runtime_seconds" '.runtime_seconds = $runtime_seconds' "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+            mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
+          fi
+        fi
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
         if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then
           echo "::error::Invalid verdict value from parser: $VERDICT"

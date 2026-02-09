@@ -219,6 +219,7 @@ def main() -> None:
                 "summary": data.get("summary", ""),
                 "findings": data.get("findings"),
                 "stats": data.get("stats"),
+                "runtime_seconds": data.get("runtime_seconds"),
             }
         )
 

@@ -97,11 +97,11 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 - [ ] Rate limit handling: respect GitHub API secondary rate limits
 
 ### Phase 2: Report Quality (P0)
-- [ ] Redesign PR comment format: clear verdict header, collapsible sections, severity indicators
-- [ ] Per-reviewer summary with pass/fail/skip status and key findings
-- [ ] Actionable findings: file + line references, suggested fixes
-- [ ] Diff size context: show what was reviewed (files changed, lines)
-- [ ] Timing info: how long each reviewer took
+- [x] Redesign PR comment format: clear verdict header, collapsible sections, severity indicators
+- [x] Per-reviewer summary with pass/fail/skip status and key findings
+- [x] Actionable findings: file + line references, suggested fixes
+- [x] Diff size context: show what was reviewed (files changed, lines)
+- [x] Timing info: how long each reviewer took
 
 ### Phase 3: Installation & DX (P1)
 - [ ] One-file installation: single workflow YAML, one secret
