@@ -28,9 +28,6 @@ inputs:
   timeout:
     description: 'Review timeout in seconds'
     default: '600'
-  kimi-cli-version:
-    description: 'KimiCode CLI version to install'
-    default: '1.8.0'
   post-comment:
     description: 'Post review comment to PR'
     default: 'true'
@@ -79,21 +76,15 @@ runs:
         chmod +x "$CERBERUS_ROOT/scripts/validate-inputs.sh"
         "$CERBERUS_ROOT/scripts/validate-inputs.sh"
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
       with:
-        python-version: '3.12'
+        node-version: '20'
 
-    - name: Install KimiCode CLI
+    - name: Install Claude Code
       shell: bash
-      env:
-        KIMI_CLI_VERSION: ${{ inputs.kimi-cli-version }}
       run: |
-        if [[ ! "$KIMI_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid kimi-cli-version format: $KIMI_CLI_VERSION"
-          exit 1
-        fi
-        pip install "kimi-cli==${KIMI_CLI_VERSION}"
+        npm install -g @anthropic-ai/claude-code
 
     - name: Fetch PR context
       id: pr
@@ -116,10 +107,12 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
-        KIMI_API_KEY: ${{ env.KIMI_API_KEY }}
+        ANTHROPIC_AUTH_TOKEN: ${{ env.KIMI_API_KEY }}
+        ANTHROPIC_BASE_URL: https://api.moonshot.ai/anthropic
+        ANTHROPIC_MODEL: kimi-k2-thinking-turbo
         KIMI_BASE_URL: ${{ inputs.kimi-base-url }}
         KIMI_MODEL: ${{ inputs.model }}
-        KIMI_MAX_STEPS: ${{ inputs.max-steps }}
+        MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}
         GH_DIFF_FILE: /tmp/pr.diff
         GH_PR_CONTEXT: /tmp/pr-context.json
@@ -133,6 +126,11 @@ runs:
         runtime_seconds=$((review_finished_at - review_started_at))
         printf '%s\n' "$runtime_seconds" > "/tmp/${PERSPECTIVE}-runtime-seconds"
         exit "$review_exit"
+
+    - name: Setup Python for parsing
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
 
     - name: Parse review output
       if: always()
