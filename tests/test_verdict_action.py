@@ -80,6 +80,13 @@ def test_verdict_action_avoids_heredoc_in_run_block() -> None:
     assert "cat >&2 <<'EOF'" not in content
 
 
+def test_verdict_action_uses_python_renderer_for_council_comment() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    assert "scripts/render-council-comment.py" in content
+    assert "--output /tmp/council-comment.md" in content
+
+
 def test_verdict_action_does_not_use_sparse_checkout_dot() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 

@@ -75,7 +75,7 @@ jobs:
 2. KimiCode CLI (Kimi K2.5) analyzes the PR diff from each perspective
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
 4. Each reviewer posts a structured comment with findings
-5. The verdict job aggregates all reviews into a council decision
+5. The verdict job aggregates all reviews into a verdict-first council comment with collapsible reviewer sections, severity-tagged findings, file/line references, review scope, and per-reviewer timing
 6. Council verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
 
 ## Auto-Triage (v1.1)
