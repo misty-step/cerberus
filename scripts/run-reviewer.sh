@@ -7,7 +7,45 @@ if [[ -z "$perspective" ]]; then
   exit 2
 fi
 
-trap 'rm -f "/tmp/${perspective}-review-prompt.md"' EXIT
+cerberus_staging_backup_dir=""
+cerberus_staging_had_opencode_json=0
+cerberus_staging_had_opencode_dir=0
+cerberus_staging_had_agents_dir=0
+cerberus_staging_had_agent_file=0
+cerberus_staging_agent_dest=""
+
+cerberus_cleanup() {
+  rm -f "/tmp/${perspective}-review-prompt.md" || true
+
+  if [[ -z "$cerberus_staging_backup_dir" ]]; then
+    return
+  fi
+
+  if [[ "$cerberus_staging_had_opencode_json" -eq 1 ]]; then
+    cp "$cerberus_staging_backup_dir/opencode.json" "opencode.json"
+  else
+    rm -f "opencode.json"
+  fi
+
+  if [[ -n "$cerberus_staging_agent_dest" ]]; then
+    if [[ "$cerberus_staging_had_agent_file" -eq 1 ]]; then
+      cp "$cerberus_staging_backup_dir/agent.md" "$cerberus_staging_agent_dest"
+    else
+      rm -f "$cerberus_staging_agent_dest"
+    fi
+  fi
+
+  if [[ "$cerberus_staging_had_agents_dir" -eq 0 ]]; then
+    rmdir ".opencode/agents" 2>/dev/null || true
+  fi
+  if [[ "$cerberus_staging_had_opencode_dir" -eq 0 ]]; then
+    rmdir ".opencode" 2>/dev/null || true
+  fi
+
+  rm -rf "$cerberus_staging_backup_dir" || true
+}
+
+trap cerberus_cleanup EXIT
 
 # CERBERUS_ROOT must point to the action directory
 if [[ -z "${CERBERUS_ROOT:-}" ]]; then
@@ -29,29 +67,74 @@ fi
 #
 # In GitHub Actions, composite actions execute in the consumer repo workspace
 # ($GITHUB_WORKSPACE), not in $CERBERUS_ROOT. Stage Cerberus' OpenCode config
-# into the workspace so `opencode run --agent <perspective>` is deterministic.
+# into the workspace so `opencode run --agent <perspective>` uses trusted
+# config + prompts, not repo-provided overrides. Restore the original workspace
+# on exit to avoid surprising downstream steps.
 stage_opencode_project_config() {
-  local staged_any=0
+  local cerberus_root_abs
+  cerberus_root_abs="$(cd "$CERBERUS_ROOT" && pwd -P)"
 
-  if [[ ! -f "opencode.json" ]]; then
-    cp "$CERBERUS_ROOT/opencode.json" "opencode.json"
-    staged_any=1
+  # No staging needed when running directly inside the Cerberus repo.
+  if [[ "$cerberus_root_abs" == "$(pwd -P)" ]]; then
+    return
   fi
 
-  if [[ ! -d ".opencode" ]]; then
-    cp -R "$CERBERUS_ROOT/.opencode" ".opencode"
-    staged_any=1
-  else
-    mkdir -p ".opencode/agents"
-    if [[ ! -f ".opencode/agents/${perspective}.md" ]]; then
-      cp "$agent_file" ".opencode/agents/${perspective}.md"
-      staged_any=1
+  case "$perspective" in
+    (*/*|*..*) echo "invalid perspective: $perspective" >&2; exit 2 ;;
+  esac
+
+  if [[ ! -f "$CERBERUS_ROOT/opencode.json" ]]; then
+    echo "missing opencode.json in CERBERUS_ROOT: $CERBERUS_ROOT/opencode.json" >&2
+    exit 2
+  fi
+
+  if [[ -e "opencode.json" ]]; then
+    if [[ -L "opencode.json" || ! -f "opencode.json" ]]; then
+      echo "refusing to overwrite non-regular file: opencode.json" >&2
+      exit 2
     fi
+    cerberus_staging_had_opencode_json=1
   fi
 
-  if [[ "$staged_any" -eq 1 ]]; then
-    echo "Staged Cerberus OpenCode config into workspace (opencode.json + .opencode/agents)." >&2
+  if [[ -e ".opencode" ]]; then
+    if [[ -L ".opencode" || ! -d ".opencode" ]]; then
+      echo "refusing to write into non-directory: .opencode" >&2
+      exit 2
+    fi
+    cerberus_staging_had_opencode_dir=1
   fi
+
+  if [[ -e ".opencode/agents" ]]; then
+    if [[ -L ".opencode/agents" || ! -d ".opencode/agents" ]]; then
+      echo "refusing to write into non-directory: .opencode/agents" >&2
+      exit 2
+    fi
+    cerberus_staging_had_agents_dir=1
+  fi
+
+  cerberus_staging_agent_dest=".opencode/agents/${perspective}.md"
+  if [[ -e "$cerberus_staging_agent_dest" ]]; then
+    if [[ -L "$cerberus_staging_agent_dest" || ! -f "$cerberus_staging_agent_dest" ]]; then
+      echo "refusing to overwrite non-regular file: $cerberus_staging_agent_dest" >&2
+      exit 2
+    fi
+    cerberus_staging_had_agent_file=1
+  fi
+
+  cerberus_staging_backup_dir="$(mktemp -d "/tmp/cerberus-opencode-backup.XXXXXX")"
+
+  if [[ "$cerberus_staging_had_opencode_json" -eq 1 ]]; then
+    cp "opencode.json" "$cerberus_staging_backup_dir/opencode.json"
+  fi
+  if [[ "$cerberus_staging_had_agent_file" -eq 1 ]]; then
+    cp "$cerberus_staging_agent_dest" "$cerberus_staging_backup_dir/agent.md"
+  fi
+
+  mkdir -p ".opencode/agents"
+  cp "$CERBERUS_ROOT/opencode.json" "opencode.json"
+  cp "$agent_file" "$cerberus_staging_agent_dest"
+
+  echo "Staged Cerberus OpenCode config into workspace (restored on exit)." >&2
 }
 
 stage_opencode_project_config
