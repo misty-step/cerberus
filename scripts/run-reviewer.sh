@@ -45,6 +45,103 @@ else
   exit 2
 fi
 
+DIFF_FILE="$diff_file" python3 - <<'PY'
+import fnmatch
+import os
+import shlex
+from pathlib import Path
+
+diff_file = Path(os.environ["DIFF_FILE"])
+original_diff = diff_file.read_text(errors="ignore")
+lines = original_diff.splitlines(keepends=True)
+
+prefix_lines = []
+file_hunks = []
+current_hunk = None
+
+for line in lines:
+    if line.startswith("diff --git "):
+        if current_hunk is not None:
+            file_hunks.append(current_hunk)
+        current_hunk = [line]
+        continue
+    if current_hunk is None:
+        prefix_lines.append(line)
+    else:
+        current_hunk.append(line)
+
+if current_hunk is not None:
+    file_hunks.append(current_hunk)
+
+if not file_hunks:
+    raise SystemExit(0)
+
+skip_filenames = {
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "Gemfile.lock",
+    "Cargo.lock",
+    "go.sum",
+    "composer.lock",
+    "poetry.lock",
+}
+skip_globs = ("*.generated.*", "*.min.js", "*.min.css")
+
+
+def normalize_path(token: str) -> str:
+    if token.startswith("a/") or token.startswith("b/"):
+        return token[2:]
+    return token
+
+
+def extract_path(diff_header: str) -> str:
+    try:
+        parts = shlex.split(diff_header.strip())
+    except ValueError:
+        parts = diff_header.strip().split()
+    if len(parts) < 4:
+        return ""
+
+    before_path = normalize_path(parts[2])
+    after_path = normalize_path(parts[3])
+    if after_path and after_path != "/dev/null":
+        return after_path
+    return before_path
+
+
+def should_filter(path: str) -> bool:
+    filename = Path(path).name
+    if filename in skip_filenames:
+        return True
+    return any(fnmatch.fnmatch(filename, pattern) for pattern in skip_globs)
+
+
+filtered_count = 0
+filtered_hunks = []
+
+for hunk in file_hunks:
+    file_path = extract_path(hunk[0])
+    if file_path and should_filter(file_path):
+        filtered_count += 1
+        continue
+    filtered_hunks.append(hunk)
+
+if filtered_count == 0:
+    raise SystemExit(0)
+
+if not filtered_hunks:
+    print(
+        f"Filtered {filtered_count} lockfile/generated files from diff "
+        "(all files matched filter, keeping original diff)"
+    )
+    raise SystemExit(0)
+
+filtered_diff = "".join(prefix_lines + [line for hunk in filtered_hunks for line in hunk])
+diff_file.write_text(filtered_diff)
+print(f"Filtered {filtered_count} lockfile/generated files from diff")
+PY
+
 file_list="$(grep -E '^diff --git' "$diff_file" | awk '{print $3}' | sed 's|^a/||' | sort -u || true)"
 if [[ -z "$file_list" ]]; then
   file_list="(none)"

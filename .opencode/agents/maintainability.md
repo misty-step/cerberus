@@ -73,6 +73,7 @@ Anti-Patterns (Do Not Flag)
 - Security or performance unless they affect maintainability
 - Changes that are already canonical in the repo
 - "Would be nice" suggestions without impact
+- Test-only PRs: if the diff contains ONLY test files (files matching `test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`, `tests/`, `spec/`), PASS with summary "Test-only change, no maintainability concerns." and empty findings.
 
 Knowledge Boundaries
 Your training data has a cutoff date. You WILL encounter valid code that post-dates your knowledge:
