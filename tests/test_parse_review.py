@@ -574,7 +574,6 @@ class TestStaleKnowledgeDowngrade:
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "info"
         assert "[stale-knowledge]" in data["findings"][0]["title"]
-        # With critical downgraded to info, verdict should be PASS
         assert data["verdict"] == "PASS"
 
     def test_downgrades_not_yet_released(self):
@@ -623,8 +622,8 @@ class TestStaleKnowledgeDowngrade:
         assert data["findings"][0]["severity"] == "info"
         assert data["verdict"] == "PASS"
 
-    def test_preserves_real_version_conflict_findings(self):
-        """Genuine version conflict findings are NOT downgraded."""
+    def test_preserves_real_version_conflict_with_invalid_version_text(self):
+        """'invalid version' + version-conflict category is NOT downgraded."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Version mismatch",
@@ -633,8 +632,8 @@ class TestStaleKnowledgeDowngrade:
                 "category": "version-conflict",
                 "file": "package.json",
                 "line": 10,
-                "title": "Declared Node engine conflicts with .nvmrc",
-                "description": "package.json requires node >= 20 but .nvmrc says 18.17.0. This will cause CI failures.",
+                "title": "Invalid version range in engines field",
+                "description": "package.json declares an invalid version range that conflicts with .nvmrc 18.17.0.",
                 "suggestion": "Align the versions."
             }],
             "stats": {"files_reviewed": 1, "files_with_issues": 1,
@@ -691,6 +690,162 @@ class TestStaleKnowledgeDowngrade:
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+
+    def test_stats_recomputed_after_downgrade(self):
+        """Stats object is updated to reflect downgraded severities."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Bad version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": "go.mod",
+                "line": 3,
+                "title": "Go 1.25 does not exist",
+                "description": "go 1.25 does not exist.",
+                "suggestion": "Use Go 1.23."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["critical"] == 0
+        assert data["stats"]["info"] == 1
+
+    def test_mixed_stale_and_real_findings(self):
+        """Only stale finding is downgraded; real finding keeps verdict at FAIL."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Mixed findings",
+            "findings": [
+                {
+                    "severity": "critical",
+                    "category": "invalid-version",
+                    "file": "go.mod",
+                    "line": 3,
+                    "title": "Go 1.25 does not exist",
+                    "description": "go 1.25 does not exist.",
+                    "suggestion": "Use Go 1.23."
+                },
+                {
+                    "severity": "critical",
+                    "category": "null-pointer",
+                    "file": "main.go",
+                    "line": 42,
+                    "title": "Nil pointer dereference",
+                    "description": "resp.Body accessed without nil check after error.",
+                    "suggestion": "Check error first."
+                },
+            ],
+            "stats": {"files_reviewed": 2, "files_with_issues": 2,
+                      "critical": 2, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][1]["severity"] == "critical"
+        assert data["stats"]["critical"] == 1
+        assert data["stats"]["info"] == 1
+        assert data["verdict"] == "FAIL"
+
+    def test_short_context_term_requires_version_number(self):
+        """'go' alone + 'does not exist' is NOT enough — needs a version number."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Missing binary",
+            "findings": [{
+                "severity": "critical",
+                "category": "build-failure",
+                "file": "Dockerfile",
+                "line": 5,
+                "title": "Go binary does not exist in PATH",
+                "description": "The go binary does not exist in the container PATH. Build will fail.",
+                "suggestion": "Add go to PATH."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        # Must NOT be downgraded — this is a real build issue
+        assert data["findings"][0]["severity"] == "critical"
+        assert data["verdict"] == "FAIL"
+
+    def test_release_claim_requires_version_number(self):
+        """'latest version is' without a version number is NOT downgraded."""
+        review = json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Vulnerable dependency",
+            "findings": [{
+                "severity": "critical",
+                "category": "dependency-vulnerability",
+                "file": "package.json",
+                "line": 15,
+                "title": "Known RCE in lodash",
+                "description": "lodash has CVE-2020-8203. The latest version is patched.",
+                "suggestion": "Upgrade lodash."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        # Must NOT be downgraded — this is a real vulnerability
+        assert data["findings"][0]["severity"] == "critical"
+        assert data["verdict"] == "FAIL"
+
+    def test_invalid_version_without_conflict_category_is_downgraded(self):
+        """'invalid version' in text without version-conflict category IS downgraded."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Invalid version claimed",
+            "findings": [{
+                "severity": "major",
+                "category": "invalid-version",
+                "file": ".tool-versions",
+                "line": 1,
+                "title": "Invalid version specified",
+                "description": "golang 1.25 is an invalid version number.",
+                "suggestion": "Use golang 1.23."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+
+    def test_normalized_category_variants_all_protect(self):
+        """All separator variants of version-conflict category protect findings."""
+        for cat in ("version_conflict", "version mismatch", "dependency-conflict",
+                    "dependency_mismatch", "dependency mismatch"):
+            review = json.dumps({
+                "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+                "confidence": 0.9, "summary": "Conflict",
+                "findings": [{
+                    "severity": "critical",
+                    "category": cat,
+                    "file": "go.mod",
+                    "line": 1,
+                    "title": "Invalid version range",
+                    "description": "Declared an invalid version that conflicts.",
+                    "suggestion": "Fix it."
+                }],
+                "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                          "critical": 1, "major": 0, "minor": 0, "info": 0}
+            })
+            code, out, _ = run_parse(f"```json\n{review}\n```")
+            assert code == 0, f"Failed for category: {cat}"
+            data = json.loads(out)
+            assert data["findings"][0]["severity"] == "critical", \
+                f"Finding wrongly downgraded for category: {cat}"
 
 
 def test_fallback_on_no_json_block():

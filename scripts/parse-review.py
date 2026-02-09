@@ -344,58 +344,48 @@ def enforce_verdict_consistency(obj: dict) -> None:
         obj["verdict"] = computed
 
 
+def _has_version_reference(text: str) -> bool:
+    """Check if text contains a numeric version pattern (e.g., 1.25, v3, 24.x)."""
+    import re
+    return bool(re.search(r'\d+\.\d+|\bv\d+\b|\d+\.x\b', text))
+
+
+def _is_version_category(category: str) -> bool:
+    """Check if category indicates a version/dependency topic (normalized)."""
+    normalized = category.replace("-", " ").replace("_", " ")
+    return any(
+        marker in normalized
+        for marker in ("version conflict", "version mismatch",
+                       "dependency conflict", "dependency mismatch")
+    )
+
+
+# Long context terms are unambiguous; short ones ("go", "node") need a version
+# number nearby to avoid matching ordinary English.
+_LONG_CONTEXT_TERMS = [
+    "golang", "python", "nodejs", "javascript", "typescript", "kotlin",
+    "swift", "ruby", "rails", "rust", "php", "dotnet", ".net",
+    "next.js", "nextjs", "react", "vue", "angular", "django", "flask",
+    "fastapi",
+]
+_SHORT_CONTEXT_TERMS = ["go", "node", "java"]
+
+_RELEASE_CLAIM_PATTERNS = [
+    "is not released",
+    "has not been released",
+    "not yet released",
+    "latest stable is",
+    "latest version is",
+    "no such version",
+]
+
+
 def downgrade_stale_knowledge_findings(obj: dict) -> None:
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
         return
 
-    context_terms = [
-        "version",
-        "go",
-        "golang",
-        "python",
-        "node",
-        "nodejs",
-        "javascript",
-        "typescript",
-        "java",
-        "kotlin",
-        "swift",
-        "ruby",
-        "rails",
-        "rust",
-        "php",
-        "dotnet",
-        ".net",
-        "next.js",
-        "nextjs",
-        "react",
-        "vue",
-        "angular",
-        "django",
-        "flask",
-        "fastapi",
-    ]
-    release_claim_patterns = [
-        "is not released",
-        "has not been released",
-        "not yet released",
-        "latest stable is",
-        "latest version is",
-        "no such version",
-    ]
-    version_conflict_category_markers = [
-        "version-conflict",
-        "version_conflict",
-        "version conflict",
-        "version-mismatch",
-        "version_mismatch",
-        "version mismatch",
-        "dependency-conflict",
-        "dependency_conflict",
-        "dependency mismatch",
-    ]
-
+    downgraded = 0
     for finding in findings:
         if not isinstance(finding, dict):
             continue
@@ -405,14 +395,24 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
         ).lower()
         category = str(finding.get("category", "")).lower()
 
-        has_does_not_exist_claim = (
-            "does not exist" in text and any(term in text for term in context_terms)
+        has_version_num = _has_version_reference(text)
+
+        # "does not exist" requires BOTH a context term AND a version reference
+        # to avoid matching "the go binary does not exist"
+        has_does_not_exist_claim = "does not exist" in text and (
+            "version" in text
+            or any(term in text for term in _LONG_CONTEXT_TERMS)
+            or (any(term in text for term in _SHORT_CONTEXT_TERMS) and has_version_num)
         )
-        has_release_claim = any(pattern in text for pattern in release_claim_patterns)
+
+        # Release claims also require a version reference for safety
+        has_release_claim = (
+            any(pattern in text for pattern in _RELEASE_CLAIM_PATTERNS)
+            and has_version_num
+        )
+
         has_invalid_version_claim = "invalid version" in text
-        is_version_conflict = any(
-            marker in category for marker in version_conflict_category_markers
-        )
+        is_version_conflict = _is_version_category(category)
 
         should_downgrade = (
             has_does_not_exist_claim
@@ -427,6 +427,17 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
         title = str(finding.get("title", ""))
         if not title.startswith("[stale-knowledge] "):
             finding["title"] = f"[stale-knowledge] {title}"
+        downgraded += 1
+
+    # Recompute stats to stay consistent with modified severities
+    if downgraded > 0:
+        stats = obj.get("stats")
+        if isinstance(stats, dict):
+            for sev in ("critical", "major", "minor", "info"):
+                stats[sev] = sum(
+                    1 for f in findings
+                    if isinstance(f, dict) and f.get("severity") == sev
+                )
 
 
 def main() -> None:
