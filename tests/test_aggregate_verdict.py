@@ -1204,7 +1204,7 @@ class TestPerReviewerOverrideIntegration:
             "actor": "pr-author", "sha": "abc1234", "reason": "False positive"
         })
         policies = json.dumps({"SENTINEL": "maintainers_only", "APOLLO": "pr_author"})
-        code, out, err = run_aggregate(
+        code, _out, err = run_aggregate(
             str(tmp_path),
             env_extra={
                 "GH_OVERRIDE_COMMENT": override,
@@ -1230,7 +1230,7 @@ class TestPerReviewerOverrideIntegration:
             "actor": "pr-author", "sha": "abc1234", "reason": "Verified manually"
         })
         policies = json.dumps({"SENTINEL": "maintainers_only", "APOLLO": "pr_author"})
-        code, out, err = run_aggregate(
+        code, _out, _err = run_aggregate(
             str(tmp_path),
             env_extra={
                 "GH_OVERRIDE_COMMENT": override,
@@ -1255,7 +1255,7 @@ class TestPerReviewerOverrideIntegration:
             "actor": "maintainer", "sha": "abc1234", "reason": "Verified"
         })
         policies = json.dumps({"SENTINEL": "maintainers_only"})
-        code, out, err = run_aggregate(
+        code, _out, _err = run_aggregate(
             str(tmp_path),
             env_extra={
                 "GH_OVERRIDE_COMMENT": override,
@@ -1279,7 +1279,7 @@ class TestPerReviewerOverrideIntegration:
         override = json.dumps({
             "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
         })
-        code, out, err = run_aggregate(
+        code, _out, _err = run_aggregate(
             str(tmp_path),
             env_extra={
                 "GH_OVERRIDE_COMMENT": override,
@@ -1289,6 +1289,57 @@ class TestPerReviewerOverrideIntegration:
             },
         )
         assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_malformed_policies_json_warns_and_falls_back(self, tmp_path):
+        """Malformed GH_REVIEWER_POLICIES should warn and fall back to global policy."""
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "FAIL", "summary": "Issue.",
+        }))
+        override = json.dumps({
+            "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
+        })
+        code, _out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "pr-author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+                "GH_REVIEWER_POLICIES": "{not valid json}",
+            },
+        )
+        assert code == 0
+        assert "invalid GH_REVIEWER_POLICIES" in err
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        # Falls back to global pr_author, so override succeeds
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_non_dict_policies_warns_and_falls_back(self, tmp_path):
+        """Non-dict GH_REVIEWER_POLICIES should warn and fall back to global policy."""
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "FAIL", "summary": "Issue.",
+        }))
+        override = json.dumps({
+            "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
+        })
+        code, _out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "pr-author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+                "GH_REVIEWER_POLICIES": '["not","a","dict"]',
+            },
+        )
+        assert code == 0
+        assert "invalid GH_REVIEWER_POLICIES" in err
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True

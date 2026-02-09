@@ -283,9 +283,16 @@ def main() -> None:
         reviewer_policies: dict[str, str] = {}
         if reviewer_policies_raw:
             try:
-                reviewer_policies = json.loads(reviewer_policies_raw)
-            except json.JSONDecodeError:
-                pass
+                parsed = json.loads(reviewer_policies_raw)
+                if not isinstance(parsed, dict):
+                    raise ValueError("GH_REVIEWER_POLICIES must be a JSON object")
+                reviewer_policies = parsed
+            except (json.JSONDecodeError, ValueError) as exc:
+                print(
+                    f"aggregate-verdict: warning: invalid GH_REVIEWER_POLICIES ({exc}); "
+                    "falling back to global policy",
+                    file=sys.stderr,
+                )
         policy = determine_effective_policy(verdicts, reviewer_policies, global_policy)
         pr_author = os.environ.get("GH_PR_AUTHOR")
         actor_permission = os.environ.get("GH_OVERRIDE_ACTOR_PERMISSION")

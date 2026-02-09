@@ -43,19 +43,25 @@ runs:
         python3 - "$CONFIG" <<'PYEOF'
         import json, os, re, sys
         config_path = sys.argv[1]
-        text = open(config_path).read()
+        with open(config_path) as fh:
+            raw = fh.read()
+        # Strip comment-only lines to prevent matching commented-out entries.
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("#")
+        )
         # Extract global override actor policy.
-        m = re.search(r'^override:\s*\n(?:.*\n)*?\s+actor:\s*(\S+)', text, re.MULTILINE)
-        global_policy = m.group(1) if m else "pr_author"
+        m = re.search(r'^\s*override:\s*\n(?:.*\n)*?^\s+actor:\s*(\S+)', text, re.MULTILINE)
+        global_policy = m.group(1).strip("\"'") if m else "pr_author"
         # Extract per-reviewer override policies from reviewers list.
         policies = {}
         for block in re.finditer(
-            r'-\s+name:\s*(\S+).*?(?=\n\s*-\s+name:|\Z)', text, re.DOTALL
+            r'^\s*-\s+name:\s*(\S+).*?(?=^\s*-\s+name:|\Z)', text, re.DOTALL | re.MULTILINE
         ):
-            name = block.group(1)
-            om = re.search(r'override:\s*(\S+)', block.group(0))
+            name = block.group(1).strip("\"'")
+            om = re.search(r'^\s*override:\s*(\S+)', block.group(0), re.MULTILINE)
             if om:
-                policies[name] = om.group(1)
+                policies[name] = om.group(1).strip("\"'")
             else:
                 policies[name] = global_policy
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
