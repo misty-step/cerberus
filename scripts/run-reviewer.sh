@@ -14,7 +14,7 @@ cerberus_staging_had_agents_dir=0
 cerberus_staging_had_agent_file=0
 cerberus_staging_agent_dest=""
 
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 # Invoked via `trap`.
 cerberus_cleanup() {
   rm -f "/tmp/${perspective}-review-prompt.md" || true
