@@ -42,6 +42,17 @@ def test_action_uses_api_key_fallback_validator() -> None:
     assert "required: false" in match.group(0)
 
 
+def test_action_pins_kimi_cli_install_version() -> None:
+    content = ACTION_FILE.read_text()
+
+    match = re.search(r"kimi-cli-version:\n(?:\s+.+\n)+", content)
+    assert match is not None
+    assert "default: '1.8.0'" in match.group(0)
+    assert "Invalid kimi-cli-version format" in content
+    assert 'pip install "kimi-cli==${KIMI_CLI_VERSION}"' in content
+    assert 'pip install "kimi-cli"' not in content
+
+
 def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
