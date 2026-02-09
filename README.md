@@ -51,12 +51,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: misty-step/cerberus@v1
-        env:
-          CERBERUS_API_KEY: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          timeout: '120'
+          kimi-api-key: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          timeout: '600'
 
   verdict:
     name: "Council Verdict"
@@ -103,7 +102,7 @@ Use `templates/triage-workflow.yml` to enable:
 | `kimi-base-url` | no | `https://api.moonshot.ai/v1` | API base URL |
 | `model` | no | `kimi-k2.5` | Model name |
 | `max-steps` | no | `25` | Max agentic steps |
-| `timeout` | no | `120` | Review timeout in seconds (per reviewer job) |
+| `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
 | `kimi-cli-version` | no | `1.8.0` | KimiCode CLI version |
 | `post-comment` | no | `true` | Post review comment |
 

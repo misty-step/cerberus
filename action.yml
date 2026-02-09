@@ -27,7 +27,7 @@ inputs:
     default: '25'
   timeout:
     description: 'Review timeout in seconds'
-    default: '120'
+    default: '600'
   kimi-cli-version:
     description: 'KimiCode CLI version to install'
     default: '1.8.0'

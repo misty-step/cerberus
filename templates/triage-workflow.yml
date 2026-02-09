@@ -34,12 +34,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: misty-step/cerberus@v1
-        env:
-          CERBERUS_API_KEY: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          timeout: '120'
+          kimi-api-key: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          timeout: '600'
 
   verdict:
     name: "Council Verdict"
