@@ -23,9 +23,8 @@ def build_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
     env["GH_DIFF_FILE"] = str(diff_file)
-    env["KIMI_API_KEY"] = "test-key-not-real"
-    env["KIMI_BASE_URL"] = "https://api.example.com/v1"
-    env["KIMI_MAX_STEPS"] = "5"
+    env["OPENROUTER_API_KEY"] = "test-key-not-real"
+    env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "5"
     return env
 
@@ -35,10 +34,9 @@ def test_all_reviewers_fail_end_to_end(tmp_path: Path) -> None:
     bin_dir.mkdir()
 
     make_executable(
-        bin_dir / "kimi",
+        bin_dir / "opencode",
         (
             "#!/usr/bin/env bash\n"
-            "cat > /dev/null\n"
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"security","verdict":"FAIL",'

@@ -999,7 +999,7 @@ class TestApiErrors:
     def test_detects_api_key_invalid_error(self):
         error_text = """API Error: API_KEY_INVALID
 
-The Moonshot API returned an error that prevents the review from completing:
+The OpenRouter API returned an error that prevents the review from completing:
 
 401 Unauthorized: incorrect_api_key
 
@@ -1017,7 +1017,7 @@ Please check your API key and quota settings.
         """Legacy API_QUOTA_EXCEEDED marker is unified to API_CREDITS_DEPLETED."""
         error_text = """API Error: API_QUOTA_EXCEEDED
 
-The Moonshot API returned an error:
+The OpenRouter API returned an error:
 
 exceeded_current_quota
 
@@ -1032,7 +1032,7 @@ Please check your API key and quota settings.
     def test_detects_generic_api_error(self):
         error_text = """API Error: API_ERROR
 
-The Moonshot API returned an error that prevents the review from completing.
+The OpenRouter API returned an error that prevents the review from completing.
 """
         code, out, err = run_parse(error_text)
         assert code == 0
@@ -1127,7 +1127,7 @@ class TestCreditExhaustion:
     def test_detects_402_with_explicit_marker(self):
         error_text = """API Error: API_CREDITS_DEPLETED
 
-The Moonshot API returned an error:
+The OpenRouter API returned an error:
 
 402 Payment Required
 

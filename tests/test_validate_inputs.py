@@ -8,9 +8,9 @@ SCRIPT = ROOT / "scripts" / "validate-inputs.sh"
 
 def run_validator(env_extra: dict[str, str], github_env: Path) -> tuple[int, str, str, str]:
     env = os.environ.copy()
-    env.pop("INPUT_KIMI_API_KEY", None)
+    env.pop("INPUT_API_KEY", None)
     env.pop("CERBERUS_API_KEY", None)
-    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("OPENROUTER_API_KEY", None)
     env.update(env_extra)
 
     github_env.write_text("")
@@ -28,15 +28,15 @@ def run_validator(env_extra: dict[str, str], github_env: Path) -> tuple[int, str
 def test_prefers_explicit_input_key(tmp_path: Path) -> None:
     code, _out, _err, github_env = run_validator(
         {
-            "INPUT_KIMI_API_KEY": "input-key",
+            "INPUT_API_KEY": "input-key",
             "CERBERUS_API_KEY": "cerberus-key",
-            "ANTHROPIC_API_KEY": "anthropic-key",
+            "OPENROUTER_API_KEY": "openrouter-key",
         },
         tmp_path / "github.env",
     )
 
     assert code == 0
-    assert "KIMI_API_KEY=input-key" in github_env
+    assert "OPENROUTER_API_KEY=input-key" in github_env
 
 
 def test_uses_cerberus_env_fallback(tmp_path: Path) -> None:
@@ -46,17 +46,17 @@ def test_uses_cerberus_env_fallback(tmp_path: Path) -> None:
     )
 
     assert code == 0
-    assert "KIMI_API_KEY=cerberus-key" in github_env
+    assert "OPENROUTER_API_KEY=cerberus-key" in github_env
 
 
-def test_uses_anthropic_env_fallback(tmp_path: Path) -> None:
+def test_uses_openrouter_env_fallback(tmp_path: Path) -> None:
     code, _out, _err, github_env = run_validator(
-        {"ANTHROPIC_API_KEY": "anthropic-key"},
+        {"OPENROUTER_API_KEY": "openrouter-key"},
         tmp_path / "github.env",
     )
 
     assert code == 0
-    assert "KIMI_API_KEY=anthropic-key" in github_env
+    assert "OPENROUTER_API_KEY=openrouter-key" in github_env
 
 
 def test_fails_with_clear_message_when_no_key(tmp_path: Path) -> None:
@@ -65,3 +65,4 @@ def test_fails_with_clear_message_when_no_key(tmp_path: Path) -> None:
     assert code != 0
     assert "Missing API key for Cerberus review" in err
     assert "CERBERUS_API_KEY" in err
+    assert "OPENROUTER_API_KEY" in err

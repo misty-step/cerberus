@@ -15,8 +15,7 @@ Five specialized reviewers analyze every pull request in parallel, then a counci
 
 ## Quick Start
 1. Add one secret to your repository (Settings -> Secrets -> Actions):
-   - Preferred: `CERBERUS_API_KEY`
-   - Backward-compatible alias: `ANTHROPIC_API_KEY`
+   - `OPENROUTER_API_KEY` — get one at [openrouter.ai](https://openrouter.ai)
 
 2. Create `.github/workflows/cerberus.yml`:
 
@@ -50,11 +49,11 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v1
+      - uses: misty-step/cerberus@v2
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          kimi-api-key: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
           timeout: '600'
 
   verdict:
@@ -63,7 +62,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/verdict@v1
+      - uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -72,7 +71,7 @@ jobs:
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
-2. KimiCode CLI (Kimi K2.5) analyzes the PR diff from each perspective
+2. OpenCode CLI (Kimi K2.5 via OpenRouter) analyzes the PR diff from each perspective
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
 4. Each reviewer posts a structured comment with findings
 5. The verdict job aggregates all reviews into a verdict-first council comment with collapsible reviewer sections, severity-tagged findings, file/line references, review scope, and per-reviewer timing
@@ -80,7 +79,7 @@ jobs:
 
 ## Auto-Triage (v1.1)
 Cerberus ships a separate triage module for council failures:
-- Action: `misty-step/cerberus/triage@v1`
+- Action: `misty-step/cerberus/triage@v2`
 - Modes: `off`, `diagnose`, `fix`
 - Loop protection:
   - skips if head commit message contains `[triage]`
@@ -94,20 +93,19 @@ Use `templates/triage-workflow.yml` to enable:
 - scheduled triage for stale unresolved council failures
 
 ## Inputs
-### Review Action (`misty-step/cerberus@v1`)
+### Review Action (`misty-step/cerberus@v2`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `perspective` | yes | - | Review perspective |
 | `github-token` | yes | - | GitHub token for PR comments |
-| `kimi-api-key` | no | - | Moonshot API key (optional if `CERBERUS_API_KEY` or `ANTHROPIC_API_KEY` env is set) |
-| `kimi-base-url` | no | `https://api.moonshot.ai/v1` | API base URL |
-| `model` | no | `kimi-k2.5` | Model name |
+| `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY` or `OPENROUTER_API_KEY` env is set) |
+| `model` | no | `openrouter/moonshotai/kimi-k2.5` | Model name |
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
-| `kimi-cli-version` | no | `1.8.0` | KimiCode CLI version |
+| `opencode-version` | no | `1.1.49` | OpenCode CLI version |
 | `post-comment` | no | `true` | Post review comment |
 
-### Verdict Action (`misty-step/cerberus/verdict@v1`)
+### Verdict Action (`misty-step/cerberus/verdict@v2`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | - | GitHub token for PR comments |
@@ -156,7 +154,7 @@ matrix:
 
 ### Non-blocking reviews
 ```yaml
-- uses: misty-step/cerberus/verdict@v1
+- uses: misty-step/cerberus/verdict@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-verdict: 'false'
@@ -164,7 +162,7 @@ matrix:
 
 ## Requirements
 - GitHub repository with Actions enabled
-- One secret: `CERBERUS_API_KEY` (or `ANTHROPIC_API_KEY` alias) with your Moonshot key (get one at [moonshot.ai](https://platform.moonshot.cn))
+- One secret: `OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
 - `pull-requests: write` permission
 
 ## License

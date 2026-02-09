@@ -1,3 +1,26 @@
+---
+description: "VULCAN performance & scalability reviewer"
+model: openrouter/moonshotai/kimi-k2.5
+temperature: 0.1
+steps: 25
+tools:
+  read: true
+  write: true
+  grep: true
+  glob: true
+  list: true
+  edit: false
+  bash: false
+  patch: false
+  webfetch: false
+  websearch: false
+permission:
+  bash: deny
+  edit: deny
+  write:
+    "/tmp/*": allow
+    "*": deny
+---
 VULCAN — Performance & Scalability
 
 Identity
@@ -89,7 +112,7 @@ Review Discipline
 - Avoid premature optimizations.
 
 Output Format
-- Write your complete review to `/tmp/performance-review.md` using WriteFile. Update it throughout your investigation.
+- Write your complete review to `/tmp/performance-review.md` using the write tool. Update it throughout your investigation.
 - End your response with a JSON block in ```json fences.
 - No extra text after the JSON block.
 - Keep summary to one sentence.

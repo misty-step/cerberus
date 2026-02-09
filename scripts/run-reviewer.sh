@@ -7,7 +7,7 @@ if [[ -z "$perspective" ]]; then
   exit 2
 fi
 
-trap 'rm -f "/tmp/${perspective}-kimi-config.toml" "/tmp/${perspective}-review-prompt.md" "/tmp/${perspective}-agent.yaml"' EXIT
+trap 'rm -f "/tmp/${perspective}-review-prompt.md"' EXIT
 
 # CERBERUS_ROOT must point to the action directory
 if [[ -z "${CERBERUS_ROOT:-}" ]]; then
@@ -16,7 +16,7 @@ if [[ -z "${CERBERUS_ROOT:-}" ]]; then
 fi
 
 config_file="${CERBERUS_ROOT}/defaults/config.yml"
-agent_file="${CERBERUS_ROOT}/agents/${perspective}.yaml"
+agent_file="${CERBERUS_ROOT}/.opencode/agents/${perspective}.md"
 
 if [[ ! -f "$agent_file" ]]; then
   echo "missing agent file: $agent_file" >&2
@@ -33,8 +33,6 @@ if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2
 fi
-
-max_steps="${KIMI_MAX_STEPS:-25}"
 
 diff_file=""
 if [[ -n "${GH_DIFF_FILE:-}" && -f "${GH_DIFF_FILE:-}" ]]; then
@@ -212,36 +210,7 @@ PY
 
 echo "Running reviewer: $reviewer_name ($perspective)"
 
-# Rewrite system_prompt_path in agent YAML to absolute path
-agent_dir="$(cd "$(dirname "$agent_file")" && pwd)"
-tmp_agent="/tmp/${perspective}-agent.yaml"
-sed "s|system_prompt_path: \./|system_prompt_path: ${agent_dir}/|" "$agent_file" > "$tmp_agent"
-
-model="${KIMI_MODEL:-kimi-k2.5}"
-base_url="${KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
-
-# Create temp config with model, provider, and step limit
-cat > "/tmp/${perspective}-kimi-config.toml" <<TOML
-default_model = "moonshot/${model}"
-
-[models."moonshot/${model}"]
-provider = "moonshot"
-model = "${model}"
-max_context_size = 262144
-capabilities = ["thinking"]
-
-[providers.moonshot]
-type = "kimi"
-base_url = "${base_url}"
-api_key = "${KIMI_API_KEY}"
-
-[loop_control]
-max_steps_per_turn = ${max_steps}
-TOML
-
-echo "--- config ---"
-sed 's/api_key = ".*"/api_key = "***"/' "/tmp/${perspective}-kimi-config.toml"
-echo "---"
+model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
 
 review_timeout="${REVIEW_TIMEOUT:-600}"
 
@@ -281,7 +250,7 @@ detect_api_error() {
     }
   )"
 
-  if echo "$combined" | grep -qiE "(incorrect_api_key|invalid_api_key|exceeded_current_quota|insufficient_quota|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
+  if echo "$combined" | grep -qiE "(incorrect_api_key|invalid_api_key|invalid.api.key|exceeded_current_quota|insufficient_quota|insufficient.credits|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
     DETECTED_ERROR_TYPE="permanent"
     DETECTED_ERROR_CLASS="auth_or_quota"
     return
@@ -322,15 +291,17 @@ default_backoff_seconds() {
   esac
 }
 
-# Run kimi with retry logic for transient errors
+# Run opencode with retry logic for transient errors
 max_retries=3
 retry_count=0
 
 while true; do
   set +e
-  timeout "${review_timeout}" kimi --quiet --thinking \
-    --agent-file "$tmp_agent" \
-    --config-file "/tmp/${perspective}-kimi-config.toml" \
+  OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+  OPENCODE_DISABLE_AUTOUPDATE=true \
+  timeout "${review_timeout}" opencode run \
+    -m "${model}" \
+    --agent "${perspective}" \
     < "/tmp/${perspective}-review-prompt.md" \
     > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
   exit_code=$?
@@ -341,7 +312,7 @@ while true; do
   stdout_file="/tmp/${perspective}-output.txt"
   output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
   scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
-  echo "kimi exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes (attempt $((retry_count + 1))/$((max_retries + 1)))"
+  echo "opencode exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes (attempt $((retry_count + 1))/$((max_retries + 1)))"
 
   if [[ "$exit_code" -eq 0 ]]; then
     break
@@ -378,9 +349,9 @@ while true; do
 
     # Determine specific error type for message
     error_type_str="API_ERROR"
-    if echo "$error_msg" | grep -qiE "(incorrect_api_key|invalid_api_key|authentication|unauthorized)"; then
+    if echo "$error_msg" | grep -qiE "(incorrect_api_key|invalid_api_key|invalid.api.key|authentication|unauthorized)"; then
       error_type_str="API_KEY_INVALID"
-    elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|insufficient_quota|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
+    elif echo "$error_msg" | grep -qiE "(exceeded_current_quota|insufficient_quota|insufficient.credits|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
       error_type_str="API_CREDITS_DEPLETED"
     fi
 
@@ -388,7 +359,7 @@ while true; do
     cat > "/tmp/${perspective}-output.txt" <<EOF
 API Error: $error_type_str
 
-The Moonshot API returned an error that prevents the review from completing:
+The OpenRouter API returned an error that prevents the review from completing:
 
 $error_msg
 

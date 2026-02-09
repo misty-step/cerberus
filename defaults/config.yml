@@ -9,7 +9,8 @@ council:
   cancel_in_progress: true            # Cancel stale runs on new push
 
 model:
-  default: "kimi-k2.5"
+  default: "openrouter/moonshotai/kimi-k2.5"
+  cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
   timeout: 600                        # Seconds per reviewer

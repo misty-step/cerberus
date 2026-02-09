@@ -36,33 +36,33 @@ def test_action_uses_api_key_fallback_validator() -> None:
 
     assert "scripts/validate-inputs.sh" in content
     assert "CERBERUS_API_KEY" in content
-    assert "ANTHROPIC_API_KEY" in content
-    match = re.search(r"kimi-api-key:\n(?:\s+.+\n)+", content)
+    assert "OPENROUTER_API_KEY" in content
+    match = re.search(r"api-key:\n(?:\s+.+\n)+", content)
     assert match is not None
     assert "required: false" in match.group(0)
 
 
-def test_action_pins_kimi_cli_install_version() -> None:
+def test_action_pins_opencode_install_version() -> None:
     content = ACTION_FILE.read_text()
 
-    match = re.search(r"kimi-cli-version:\n(?:\s+.+\n)+", content)
+    match = re.search(r"opencode-version:\n(?:\s+.+\n)+", content)
     assert match is not None
-    assert "default: '1.8.0'" in match.group(0)
-    assert "Invalid kimi-cli-version format" in content
-    assert 'pip install "kimi-cli==${KIMI_CLI_VERSION}"' in content
-    assert 'pip install "kimi-cli"' not in content
+    assert "default: '1.1.49'" in match.group(0)
+    assert "Invalid opencode-version format" in content
+    assert 'npm i -g "opencode-ai@${OPENCODE_VERSION}"' in content
+    assert "pip install" not in content
 
 
 def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
-    assert "kimi-api-key: ${{ secrets.CERBERUS_API_KEY || secrets.ANTHROPIC_API_KEY }}" in content
+    assert "api-key: ${{ secrets.OPENROUTER_API_KEY }}" in content
 
 
-def test_readme_quick_start_uses_cerberus_secret_name() -> None:
+def test_readme_quick_start_uses_openrouter_secret_name() -> None:
     content = README_FILE.read_text()
 
-    assert "CERBERUS_API_KEY" in content
+    assert "OPENROUTER_API_KEY" in content
     assert "MOONSHOT_API_KEY" not in content
 
 

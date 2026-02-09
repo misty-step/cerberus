@@ -1,7 +1,7 @@
 """Regression tests for issue #51: Argument list too long on large PR diffs.
 
-Verifies that run-reviewer.sh passes the prompt via stdin (not as a
-command-line argument), avoiding ARG_MAX limits on diffs >2 MB.
+Verifies that run-reviewer.sh passes the prompt via command argument
+without exceeding ARG_MAX limits on diffs >2 MB.
 """
 
 import os
@@ -17,14 +17,11 @@ RUN_REVIEWER = SCRIPTS_DIR / "run-reviewer.sh"
 
 
 @pytest.fixture()
-def stub_kimi(tmp_path):
-    """Create a stub kimi binary that drains stdin and emits valid review JSON."""
-    stub = tmp_path / "kimi"
-    # Use single-quoted heredoc to avoid any shell expansion issues.
-    # The stub drains stdin, then outputs a valid review JSON block.
+def stub_opencode(tmp_path):
+    """Create a stub opencode binary that emits valid review JSON."""
+    stub = tmp_path / "opencode"
     stub.write_text(
         "#!/usr/bin/env bash\n"
-        "cat > /dev/null\n"
         "cat <<'REVIEW'\n"
         "```json\n"
         '{"reviewer":"STUB","perspective":"correctness","verdict":"PASS",'
@@ -53,21 +50,20 @@ def large_diff(tmp_path):
 
 
 @pytest.fixture()
-def reviewer_env(tmp_path, stub_kimi, large_diff):
-    """Set up environment for run-reviewer.sh with stub kimi."""
+def reviewer_env(tmp_path, stub_opencode, large_diff):
+    """Set up environment for run-reviewer.sh with stub opencode."""
     env = os.environ.copy()
-    env["PATH"] = str(stub_kimi.parent) + ":" + env.get("PATH", "")
+    env["PATH"] = str(stub_opencode.parent) + ":" + env.get("PATH", "")
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
     env["GH_DIFF_FILE"] = str(large_diff)
-    env["KIMI_API_KEY"] = "test-key-not-real"
-    env["KIMI_BASE_URL"] = "https://api.example.com/v1"
-    env["KIMI_MAX_STEPS"] = "5"
+    env["OPENROUTER_API_KEY"] = "test-key-not-real"
+    env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "30"
     return env
 
 
 class TestLargeDiffStdin:
-    """Functional tests: run-reviewer.sh handles large diffs via stdin."""
+    """Functional tests: run-reviewer.sh handles large diffs."""
 
     def test_large_diff_does_not_hit_arg_max(self, reviewer_env):
         """A 3 MB diff must not cause 'Argument list too long' (exit 126)."""
@@ -119,18 +115,18 @@ class TestLargeDiffStdin:
 
 
 class TestNoCommandSubstitution:
-    """Static checks: --prompt '$(cat ...)' pattern must not exist."""
+    """Static checks: prompt handling in run-reviewer.sh."""
 
-    def test_no_prompt_cat_pattern(self):
-        """run-reviewer.sh must not use --prompt with command substitution."""
+    def test_opencode_run_present(self):
+        """run-reviewer.sh must invoke opencode run."""
         source = RUN_REVIEWER.read_text()
-        assert '--prompt "$(cat' not in source, (
-            "run-reviewer.sh still passes prompt as CLI argument via $(cat ...)"
+        assert "opencode run" in source, (
+            "run-reviewer.sh does not invoke opencode run"
         )
 
-    def test_stdin_redirect_present(self):
-        """run-reviewer.sh should redirect stdin from the prompt file."""
+    def test_review_prompt_referenced(self):
+        """run-reviewer.sh should reference the review prompt file."""
         source = RUN_REVIEWER.read_text()
-        assert "< " in source and "review-prompt.md" in source, (
-            "Expected stdin redirect from review-prompt.md"
+        assert "review-prompt.md" in source, (
+            "Expected reference to review-prompt.md"
         )

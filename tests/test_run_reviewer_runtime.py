@@ -28,19 +28,17 @@ def make_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
     env["GH_DIFF_FILE"] = str(diff_file)
-    env["KIMI_API_KEY"] = "test-key-not-real"
-    env["KIMI_BASE_URL"] = "https://api.example.com/v1"
-    env["KIMI_MAX_STEPS"] = "5"
+    env["OPENROUTER_API_KEY"] = "test-key-not-real"
+    env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "5"
     return env
 
 
-def write_stub_kimi(path: Path, verdict: str = "PASS") -> None:
+def write_stub_opencode(path: Path, verdict: str = "PASS") -> None:
     make_executable(
         path,
         (
             "#!/usr/bin/env bash\n"
-            "cat > /dev/null\n"
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"security","verdict":"'
@@ -74,7 +72,7 @@ def cleanup_tmp_outputs() -> None:
 def test_empty_diff_file_is_handled(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    write_stub_kimi(bin_dir / "kimi")
+    write_stub_opencode(bin_dir / "opencode")
 
     diff_file = tmp_path / "empty.diff"
     diff_file.write_text("")
@@ -97,7 +95,7 @@ def test_empty_diff_file_is_handled(tmp_path: Path) -> None:
 def test_binary_diff_file_is_handled(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    write_stub_kimi(bin_dir / "kimi")
+    write_stub_opencode(bin_dir / "opencode")
 
     diff_file = tmp_path / "binary.diff"
     diff_file.write_text(
@@ -144,7 +142,7 @@ def test_transient_server_error_retries_then_succeeds(tmp_path: Path) -> None:
     retry_counter.write_text("0")
 
     make_executable(
-        bin_dir / "kimi",
+        bin_dir / "opencode",
         (
             "#!/usr/bin/env bash\n"
             "count=$(cat '" + str(retry_counter) + "')\n"
@@ -154,7 +152,6 @@ def test_transient_server_error_retries_then_succeeds(tmp_path: Path) -> None:
             "  echo 'HTTP 500 Internal Server Error' >&2\n"
             "  exit 1\n"
             "fi\n"
-            "cat > /dev/null\n"
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
@@ -188,7 +185,7 @@ def test_transient_network_error_retries_then_succeeds(tmp_path: Path) -> None:
     retry_counter.write_text("0")
 
     make_executable(
-        bin_dir / "kimi",
+        bin_dir / "opencode",
         (
             "#!/usr/bin/env bash\n"
             "count=$(cat '" + str(retry_counter) + "')\n"
@@ -198,7 +195,6 @@ def test_transient_network_error_retries_then_succeeds(tmp_path: Path) -> None:
             "  echo 'network timeout while connecting to provider' >&2\n"
             "  exit 1\n"
             "fi\n"
-            "cat > /dev/null\n"
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
@@ -234,7 +230,7 @@ def test_rate_limit_retry_after_header_overrides_default_backoff(tmp_path: Path)
     sleep_arg_file.write_text("")
 
     make_executable(
-        bin_dir / "kimi",
+        bin_dir / "opencode",
         (
             "#!/usr/bin/env bash\n"
             "count=$(cat '" + str(retry_counter) + "')\n"
@@ -245,7 +241,6 @@ def test_rate_limit_retry_after_header_overrides_default_backoff(tmp_path: Path)
             "  echo 'Retry-After: 9' >&2\n"
             "  exit 1\n"
             "fi\n"
-            "cat > /dev/null\n"
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
@@ -283,7 +278,7 @@ def test_permanent_api_error_is_written_for_parser(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     make_executable(
-        bin_dir / "kimi",
+        bin_dir / "opencode",
         (
             "#!/usr/bin/env bash\n"
             "echo '401 incorrect_api_key' >&2\n"
@@ -315,7 +310,7 @@ def test_non_transient_4xx_error_does_not_retry(tmp_path: Path) -> None:
     attempt_counter.write_text("0")
 
     make_executable(
-        bin_dir / "kimi",
+        bin_dir / "opencode",
         (
             "#!/usr/bin/env bash\n"
             "count=$(cat '" + str(attempt_counter) + "')\n"
@@ -349,7 +344,7 @@ def test_non_transient_4xx_error_does_not_retry(tmp_path: Path) -> None:
 def test_timeout_with_partial_output_exits_zero(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    write_stub_kimi(bin_dir / "kimi")
+    write_stub_opencode(bin_dir / "opencode")
     make_executable(
         bin_dir / "timeout",
         (

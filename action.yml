@@ -13,24 +13,21 @@ inputs:
   github-token:
     description: 'GitHub token for PR comments'
     required: true
-  kimi-api-key:
-    description: 'Moonshot/Kimi API key (optional if CERBERUS_API_KEY or ANTHROPIC_API_KEY env is set)'
+  api-key:
+    description: 'OpenRouter API key (optional if CERBERUS_API_KEY or OPENROUTER_API_KEY env is set)'
     required: false
-  kimi-base-url:
-    description: 'Kimi API base URL'
-    default: 'https://api.moonshot.ai/v1'
   model:
     description: 'Model name'
-    default: 'kimi-k2.5'
+    default: 'openrouter/moonshotai/kimi-k2.5'
   max-steps:
     description: 'Max agentic steps per review'
     default: '25'
   timeout:
     description: 'Review timeout in seconds'
     default: '600'
-  kimi-cli-version:
-    description: 'KimiCode CLI version to install'
-    default: '1.8.0'
+  opencode-version:
+    description: 'OpenCode CLI version to install'
+    default: '1.1.49'
   post-comment:
     description: 'Post review comment to PR'
     default: 'true'
@@ -72,9 +69,9 @@ runs:
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
-        INPUT_KIMI_API_KEY: ${{ inputs.kimi-api-key }}
+        INPUT_API_KEY: ${{ inputs.api-key }}
         CERBERUS_API_KEY: ${{ env.CERBERUS_API_KEY }}
-        ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
+        OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/validate-inputs.sh"
         "$CERBERUS_ROOT/scripts/validate-inputs.sh"
@@ -84,16 +81,21 @@ runs:
       with:
         python-version: '3.12'
 
-    - name: Install KimiCode CLI
+    - name: Setup Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+
+    - name: Install OpenCode CLI
       shell: bash
       env:
-        KIMI_CLI_VERSION: ${{ inputs.kimi-cli-version }}
+        OPENCODE_VERSION: ${{ inputs.opencode-version }}
       run: |
-        if [[ ! "$KIMI_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid kimi-cli-version format: $KIMI_CLI_VERSION"
+        if [[ ! "$OPENCODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid opencode-version format: $OPENCODE_VERSION"
           exit 1
         fi
-        pip install "kimi-cli==${KIMI_CLI_VERSION}"
+        npm i -g "opencode-ai@${OPENCODE_VERSION}"
 
     - name: Fetch PR context
       id: pr
@@ -116,10 +118,9 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
-        KIMI_API_KEY: ${{ env.KIMI_API_KEY }}
-        KIMI_BASE_URL: ${{ inputs.kimi-base-url }}
-        KIMI_MODEL: ${{ inputs.model }}
-        KIMI_MAX_STEPS: ${{ inputs.max-steps }}
+        OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
+        OPENCODE_MODEL: ${{ inputs.model }}
+        OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}
         GH_DIFF_FILE: /tmp/pr.diff
         GH_PR_CONTEXT: /tmp/pr-context.json
