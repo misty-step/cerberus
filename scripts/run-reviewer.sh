@@ -245,45 +245,85 @@ echo "---"
 review_timeout="${REVIEW_TIMEOUT:-600}"
 
 # API error patterns to detect
-# Permanent errors (not retryable): 401/402/403, bad key, quota exhaustion
-# Transient errors (retryable): 429 (rate limit), 503 (service unavailable)
-# Permanent checked first — non-recoverable errors should not waste retries.
+# Permanent errors (not retryable): non-429 4xx, bad key/auth/quota failures
+# Transient errors (retryable): 429 (rate limit), 5xx, and network transport errors
+extract_retry_after_seconds() {
+  local text="$1"
+  local retry_after
+  retry_after="$(
+    printf "%s\n" "$text" \
+      | grep -iEo 'retry[-_ ]after[" ]*[:=][ ]*[0-9]+' \
+      | tail -n1 \
+      | grep -Eo '[0-9]+' \
+      | tail -n1 || true
+  )"
+
+  if [[ "$retry_after" =~ ^[0-9]+$ ]] && [[ "$retry_after" -gt 0 ]]; then
+    echo "$retry_after"
+  fi
+}
+
 detect_api_error() {
   local output_file="$1"
   local stderr_file="$2"
 
-  # Combine output and stderr for error detection
+  DETECTED_ERROR_TYPE="none"
+  DETECTED_ERROR_CLASS="none"
+  DETECTED_RETRY_AFTER_SECONDS=""
+
   local combined
-  combined="$(cat "$output_file" 2>/dev/null || echo "")$(cat "$stderr_file" 2>/dev/null || echo "")"
+  combined="$(
+    {
+      cat "$output_file" 2>/dev/null || true
+      printf '\n'
+      cat "$stderr_file" 2>/dev/null || true
+    }
+  )"
 
-  # Check permanent errors first (not retryable, should not waste retry budget)
-  # Patterns use error-context anchoring to avoid false positives on review prose.
   if echo "$combined" | grep -qiE "(incorrect_api_key|invalid_api_key|exceeded_current_quota|insufficient_quota|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
-    echo "permanent"
-    return
-  fi
-  if echo "$combined" | grep -qE "\"(status|code)\":\s*40[123]|error.*(401|402|403)|HTTP [45][0-9]{2}.*(auth|pay|quota|key)"; then
-    echo "permanent"
+    DETECTED_ERROR_TYPE="permanent"
+    DETECTED_ERROR_CLASS="auth_or_quota"
     return
   fi
 
-  # Check for transient errors (retryable)
-  if echo "$combined" | grep -qiE "(rate.limit|too many requests|service.unavailable|temporarily.unavailable)"; then
-    echo "transient"
-    return
-  fi
-  if echo "$combined" | grep -qE "\"(status|code)\":\s*(429|503)|error.*(429|503)"; then
-    echo "transient"
+  if echo "$combined" | grep -qiE "(rate.limit|too many requests|retry-after|\"(status|code)\"[[:space:]]*:[[:space:]]*429|http[^0-9]*429|error[^0-9]*429)"; then
+    DETECTED_ERROR_TYPE="transient"
+    DETECTED_ERROR_CLASS="rate_limit"
+    DETECTED_RETRY_AFTER_SECONDS="$(extract_retry_after_seconds "$combined")"
     return
   fi
 
-  echo "none"
+  if echo "$combined" | grep -qiE "(\"(status|code)\"[[:space:]]*:[[:space:]]*5[0-9]{2}|http[^0-9]*5[0-9]{2}|error[^0-9]*5[0-9]{2}|service.unavailable|temporarily.unavailable)"; then
+    DETECTED_ERROR_TYPE="transient"
+    DETECTED_ERROR_CLASS="server_5xx"
+    return
+  fi
+
+  if echo "$combined" | grep -qiE "(network.*(error|timeout|unreachable)|timed out|timeout while|connection (reset|refused|aborted)|temporary failure|tls handshake timeout|econn(reset|refused)|enotfound|broken pipe|remote end closed connection)"; then
+    DETECTED_ERROR_TYPE="transient"
+    DETECTED_ERROR_CLASS="network"
+    return
+  fi
+
+  if echo "$combined" | grep -qiE "(\"(status|code)\"[[:space:]]*:[[:space:]]*4([0-1][0-9]|2[0-8]|[3-9][0-9])|http[^0-9]*4([0-1][0-9]|2[0-8]|[3-9][0-9])|error[^0-9]*4([0-1][0-9]|2[0-8]|[3-9][0-9]))"; then
+    DETECTED_ERROR_TYPE="permanent"
+    DETECTED_ERROR_CLASS="client_4xx"
+    return
+  fi
+}
+
+default_backoff_seconds() {
+  local retry_attempt="$1"
+  case "$retry_attempt" in
+    1) echo "2" ;;
+    2) echo "4" ;;
+    *) echo "8" ;;
+  esac
 }
 
 # Run kimi with retry logic for transient errors
 max_retries=3
 retry_count=0
-backoff=5
 
 while true; do
   set +e
@@ -302,19 +342,29 @@ while true; do
   scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
   echo "kimi exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes (attempt $((retry_count + 1))/$((max_retries + 1)))"
 
-  # Check for API errors
-  error_type=$(detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log")
+  if [[ "$exit_code" -eq 0 ]]; then
+    break
+  fi
 
-  if [[ "$error_type" == "transient" ]] && [[ $retry_count -lt $max_retries ]]; then
+  if [[ "$exit_code" -eq 124 ]]; then
+    break
+  fi
+
+  detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log"
+
+  if [[ "$DETECTED_ERROR_TYPE" == "transient" ]] && [[ $retry_count -lt $max_retries ]]; then
     retry_count=$((retry_count + 1))
-    echo "Transient API error detected (429/503). Retrying in ${backoff}s... (attempt $retry_count/$max_retries)"
-    sleep "$backoff"
-    backoff=$((backoff * 3))  # Exponential backoff: 5s, 15s, 45s
+    wait_seconds="$(default_backoff_seconds "$retry_count")"
+    if [[ "$DETECTED_ERROR_CLASS" == "rate_limit" ]] && [[ "$DETECTED_RETRY_AFTER_SECONDS" =~ ^[0-9]+$ ]] && [[ "$DETECTED_RETRY_AFTER_SECONDS" -gt 0 ]]; then
+      wait_seconds="$DETECTED_RETRY_AFTER_SECONDS"
+    fi
+    echo "Retrying after transient error (class=${DETECTED_ERROR_CLASS}) attempt ${retry_count}/${max_retries}; wait=${wait_seconds}s"
+    sleep "$wait_seconds"
     continue
   fi
 
   # If it's a permanent error, write structured error JSON
-  if [[ "$error_type" == "permanent" ]]; then
+  if [[ "$DETECTED_ERROR_TYPE" == "permanent" ]]; then
     echo "Permanent API error detected. Writing error verdict."
 
     # Preserve stderr for debugging before we override the output
