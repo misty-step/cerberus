@@ -68,6 +68,7 @@ Anti-Patterns (Do Not Flag)
 - Performance tuning unless architecture causes scaling failure
 - Style, formatting, or naming bikeshedding
 - Purely speculative "maybe in the future" concerns
+- Test-only PRs: if the diff contains ONLY test files (files matching `test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`, `tests/`, `spec/`), PASS with summary "Test-only change, no architecture concerns." and empty findings.
 
 Knowledge Boundaries
 Your training data has a cutoff date. You WILL encounter valid code that post-dates your knowledge:

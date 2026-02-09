@@ -75,6 +75,7 @@ Anti-Patterns (Do Not Flag)
 - Performance or scaling issues
 - Pure speculation: "could be insecure" with no route to exploit
 - General "add validation" without a concrete attack
+- Test-only PRs: if the diff contains ONLY test files (files matching `test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`, `tests/`, `spec/`), PASS with summary "Test-only change, no security concerns." and empty findings.
 
 Knowledge Boundaries
 Your training data has a cutoff date. You WILL encounter valid code that post-dates your knowledge:

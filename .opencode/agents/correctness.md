@@ -66,6 +66,7 @@ Anti-Patterns (Do Not Flag)
 - Security or threat modeling unless it causes logic bugs
 - Speculation without a concrete failing path
 - "Could be better" suggestions without a correctness risk
+- Test-only PRs: if the diff contains ONLY test files (files matching `test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`, `tests/`, `spec/`), PASS with summary "Test-only change, no correctness concerns." and empty findings.
 
 Knowledge Boundaries
 Your training data has a cutoff date. You WILL encounter valid code that post-dates your knowledge:
