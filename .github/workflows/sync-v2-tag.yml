@@ -1,4 +1,4 @@
-name: Sync v1 Tag
+name: Sync v2 Tag
 
 on:
   workflow_run:
@@ -9,11 +9,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-v1-tag
+  group: sync-v2-tag
   cancel-in-progress: true
 
 jobs:
-  sync-v1:
+  sync-v2:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -25,21 +25,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Move v1 to latest green default-branch commit
+      - name: Move v2 to latest green default-branch commit
         env:
           TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           git fetch origin --tags --force
 
-          current_tag_sha="$(git rev-parse -q --verify refs/tags/v1 || true)"
+          current_tag_sha="$(git rev-parse -q --verify refs/tags/v2 || true)"
           if [[ "$current_tag_sha" == "$TARGET_SHA" ]]; then
-            echo "v1 already points to ${TARGET_SHA}"
+            echo "v2 already points to ${TARGET_SHA}"
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git tag -fa v1 "$TARGET_SHA" -m "Move v1 to ${TARGET_SHA}"
-          git push origin refs/tags/v1 --force
+          git tag -fa v2 "$TARGET_SHA" -m "Move v2 to ${TARGET_SHA}"
+          git push origin refs/tags/v2 --force
