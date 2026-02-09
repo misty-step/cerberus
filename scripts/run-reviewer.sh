@@ -199,6 +199,7 @@ replacements = {
     "{{PR_BODY}}": pr_body,
     "{{FILE_LIST}}": os.environ.get("PR_FILE_LIST", ""),
     "{{PROJECT_STACK}}": os.environ.get("PR_STACK_CONTEXT", "Unknown"),
+    "{{CURRENT_DATE}}": __import__('datetime').date.today().isoformat(),
     "{{DIFF}}": diff_text,
     "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
 }

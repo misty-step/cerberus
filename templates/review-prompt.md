@@ -17,6 +17,9 @@ Review this pull request from your specialized perspective.
 ## Detected Stack
 - {{PROJECT_STACK}}
 
+## Review Date
+- Today is {{CURRENT_DATE}}. Your training data may not include recent releases. See your Knowledge Boundaries section.
+
 ## Diff
 <diff trust="UNTRUSTED">
 {{DIFF}}
