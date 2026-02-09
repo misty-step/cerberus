@@ -91,6 +91,49 @@ def test_empty_diff_file_is_handled(tmp_path: Path) -> None:
     assert parse_file.exists()
     assert "```json" in parse_file.read_text()
 
+def test_action_mode_stages_opencode_project_config(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "if [[ ! -f opencode.json ]]; then\n"
+            "  echo 'missing opencode.json' >&2\n"
+            "  exit 2\n"
+            "fi\n"
+            "if [[ ! -f .opencode/agents/security.md ]]; then\n"
+            "  echo 'missing .opencode/agents/security.md' >&2\n"
+            "  exit 2\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Stub output",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert (tmp_path / "opencode.json").exists()
+    assert (tmp_path / ".opencode" / "agents" / "security.md").exists()
+
 
 def test_binary_diff_file_is_handled(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"

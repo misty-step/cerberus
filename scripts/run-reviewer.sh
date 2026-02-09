@@ -23,6 +23,39 @@ if [[ ! -f "$agent_file" ]]; then
   exit 2
 fi
 
+# OpenCode discovers project config from the current working directory:
+# - opencode.json
+# - .opencode/agents/<agent>.md
+#
+# In GitHub Actions, composite actions execute in the consumer repo workspace
+# ($GITHUB_WORKSPACE), not in $CERBERUS_ROOT. Stage Cerberus' OpenCode config
+# into the workspace so `opencode run --agent <perspective>` is deterministic.
+stage_opencode_project_config() {
+  local staged_any=0
+
+  if [[ ! -f "opencode.json" ]]; then
+    cp "$CERBERUS_ROOT/opencode.json" "opencode.json"
+    staged_any=1
+  fi
+
+  if [[ ! -d ".opencode" ]]; then
+    cp -R "$CERBERUS_ROOT/.opencode" ".opencode"
+    staged_any=1
+  else
+    mkdir -p ".opencode/agents"
+    if [[ ! -f ".opencode/agents/${perspective}.md" ]]; then
+      cp "$agent_file" ".opencode/agents/${perspective}.md"
+      staged_any=1
+    fi
+  fi
+
+  if [[ "$staged_any" -eq 1 ]]; then
+    echo "Staged Cerberus OpenCode config into workspace (opencode.json + .opencode/agents)." >&2
+  fi
+}
+
+stage_opencode_project_config
+
 reviewer_name="$(
   awk -v p="$perspective" '
     $1=="-" && $2=="name:" {name=$3}
@@ -408,7 +441,10 @@ while true; do
   scratchpad="/tmp/${perspective}-review.md"
   stdout_file="/tmp/${perspective}-output.txt"
   output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
-  scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+  scratchpad_size="0"
+  if [[ -f "$scratchpad" ]]; then
+    scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+  fi
   echo "opencode exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes (attempt $((retry_count + 1))/$((max_retries + 1)))"
 
   if [[ "$exit_code" -eq 0 ]]; then
