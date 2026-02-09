@@ -344,6 +344,91 @@ def enforce_verdict_consistency(obj: dict) -> None:
         obj["verdict"] = computed
 
 
+def downgrade_stale_knowledge_findings(obj: dict) -> None:
+    findings = obj.get("findings", [])
+    if not isinstance(findings, list):
+        return
+
+    context_terms = [
+        "version",
+        "go",
+        "golang",
+        "python",
+        "node",
+        "nodejs",
+        "javascript",
+        "typescript",
+        "java",
+        "kotlin",
+        "swift",
+        "ruby",
+        "rails",
+        "rust",
+        "php",
+        "dotnet",
+        ".net",
+        "next.js",
+        "nextjs",
+        "react",
+        "vue",
+        "angular",
+        "django",
+        "flask",
+        "fastapi",
+    ]
+    release_claim_patterns = [
+        "is not released",
+        "has not been released",
+        "not yet released",
+        "latest stable is",
+        "latest version is",
+        "no such version",
+    ]
+    version_conflict_category_markers = [
+        "version-conflict",
+        "version_conflict",
+        "version conflict",
+        "version-mismatch",
+        "version_mismatch",
+        "version mismatch",
+        "dependency-conflict",
+        "dependency_conflict",
+        "dependency mismatch",
+    ]
+
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+
+        text = " ".join(
+            str(finding.get(key, "")) for key in ("title", "description", "suggestion")
+        ).lower()
+        category = str(finding.get("category", "")).lower()
+
+        has_does_not_exist_claim = (
+            "does not exist" in text and any(term in text for term in context_terms)
+        )
+        has_release_claim = any(pattern in text for pattern in release_claim_patterns)
+        has_invalid_version_claim = "invalid version" in text
+        is_version_conflict = any(
+            marker in category for marker in version_conflict_category_markers
+        )
+
+        should_downgrade = (
+            has_does_not_exist_claim
+            or has_release_claim
+            or (has_invalid_version_claim and not is_version_conflict)
+        )
+        if not should_downgrade:
+            continue
+
+        finding["severity"] = "info"
+        finding["_stale_knowledge_downgraded"] = True
+        title = str(finding.get("title", ""))
+        if not title.startswith("[stale-knowledge] "):
+            finding["title"] = f"[stale-knowledge] {title}"
+
+
 def main() -> None:
     global REVIEWER_NAME, RAW_INPUT
 
@@ -397,6 +482,7 @@ def main() -> None:
             fail("root must be object")
 
         validate(obj)
+        downgrade_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:
         fail(f"unexpected error: {exc}")

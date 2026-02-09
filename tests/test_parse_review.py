@@ -551,6 +551,148 @@ def test_verdict_consistency_confidence_threshold_is_inclusive():
     assert data["verdict"] == "FAIL"
 
 
+class TestStaleKnowledgeDowngrade:
+    def test_downgrades_version_does_not_exist(self):
+        """Finding claiming a version 'does not exist' is downgraded to info."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Non-existent Go version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": "go.mod",
+                "line": 3,
+                "title": "Non-existent Go version breaks all builds",
+                "description": "The go.mod file declares go 1.25 which does not exist as of January 2025.",
+                "suggestion": "Use Go 1.23.x instead."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert "[stale-knowledge]" in data["findings"][0]["title"]
+        # With critical downgraded to info, verdict should be PASS
+        assert data["verdict"] == "PASS"
+
+    def test_downgrades_not_yet_released(self):
+        """Finding claiming something is 'not yet released' is downgraded."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Unreleased Python version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": "pyproject.toml",
+                "line": 5,
+                "title": "Python 3.14 is not yet released",
+                "description": "requires-python >= 3.14 but Python 3.14 is not yet released.",
+                "suggestion": "Use Python 3.12 or 3.13."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert data["verdict"] == "PASS"
+
+    def test_downgrades_latest_stable_is(self):
+        """Finding asserting 'latest stable is X' is downgraded."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Invalid Node version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": ".node-version",
+                "line": 1,
+                "title": "Node 24 does not exist",
+                "description": "The latest stable is Node 22.x. Node 24 has not been released.",
+                "suggestion": "Use Node 22 LTS."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert data["verdict"] == "PASS"
+
+    def test_preserves_real_version_conflict_findings(self):
+        """Genuine version conflict findings are NOT downgraded."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Version mismatch",
+            "findings": [{
+                "severity": "critical",
+                "category": "version-conflict",
+                "file": "package.json",
+                "line": 10,
+                "title": "Declared Node engine conflicts with .nvmrc",
+                "description": "package.json requires node >= 20 but .nvmrc says 18.17.0. This will cause CI failures.",
+                "suggestion": "Align the versions."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "critical"
+        assert "[stale-knowledge]" not in data["findings"][0]["title"]
+        assert data["verdict"] == "FAIL"
+
+    def test_preserves_non_version_critical_findings(self):
+        """Critical findings unrelated to versions are NOT downgraded."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "SQL injection found",
+            "findings": [{
+                "severity": "critical",
+                "category": "sql-injection",
+                "file": "src/db.py",
+                "line": 42,
+                "title": "User input in SQL query",
+                "description": "req.query.id is concatenated into the SQL string.",
+                "suggestion": "Use parameterized queries."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "critical"
+        assert data["verdict"] == "FAIL"
+
+    def test_downgrade_marker_is_set(self):
+        """Downgraded findings have _stale_knowledge_downgraded flag."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Bad version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": "go.mod",
+                "line": 3,
+                "title": "Go 1.25 does not exist",
+                "description": "go 1.25 does not exist. Latest stable is Go 1.23.",
+                "suggestion": "Use Go 1.23."
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+
+
 def test_fallback_on_no_json_block():
     code, out, _ = run_parse(
         "Just some text with no json block",
