@@ -91,6 +91,82 @@ def test_empty_diff_file_is_handled(tmp_path: Path) -> None:
     assert parse_file.exists()
     assert "```json" in parse_file.read_text()
 
+def make_env_with_cerberus_root(bin_dir: Path, diff_file: Path, cerberus_root: Path) -> dict[str, str]:
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_ROOT"] = str(cerberus_root)
+    return env
+
+
+def write_fake_cerberus_root(root: Path, perspective: str = "security") -> None:
+    (root / "defaults").mkdir(parents=True)
+    (root / "templates").mkdir(parents=True)
+    (root / ".opencode" / "agents").mkdir(parents=True)
+
+    (root / "defaults" / "config.yml").write_text(
+        "\n".join(
+            [
+                "- name: SENTINEL",
+                f"  perspective: {perspective}",
+                "",
+            ]
+        )
+    )
+    (root / "templates" / "review-prompt.md").write_text("{{DIFF}}\n")
+    (root / "opencode.json").write_text("CERBERUS_OPENCODE_JSON\n")
+    (root / ".opencode" / "agents" / f"{perspective}.md").write_text("CERBERUS_AGENT\n")
+
+
+def test_stages_trusted_opencode_config_then_restores_workspace(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(cerberus_root, perspective="security")
+
+    # Workspace contains attacker-controlled config that must not be used.
+    (tmp_path / "opencode.json").write_text("WORKSPACE_OPENCODE_JSON\n")
+    (tmp_path / ".opencode" / "agents").mkdir(parents=True)
+    (tmp_path / ".opencode" / "agents" / "security.md").write_text("WORKSPACE_AGENT\n")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "if [[ \"$(cat opencode.json)\" != \"CERBERUS_OPENCODE_JSON\" ]]; then\n"
+            "  echo 'expected staged opencode.json' >&2\n"
+            "  exit 2\n"
+            "fi\n"
+            "if [[ \"$(cat .opencode/agents/security.md)\" != \"CERBERUS_AGENT\" ]]; then\n"
+            "  echo 'expected staged agent file' >&2\n"
+            "  exit 2\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Stub output",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert (tmp_path / "opencode.json").read_text() == "WORKSPACE_OPENCODE_JSON\n"
+    assert (tmp_path / ".opencode" / "agents" / "security.md").read_text() == "WORKSPACE_AGENT\n"
+
 
 def test_binary_diff_file_is_handled(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
