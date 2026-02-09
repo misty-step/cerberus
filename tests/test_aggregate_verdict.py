@@ -1072,3 +1072,223 @@ class TestSkipVerdicts:
         assert data["stats"]["fail"] == 1
         assert data["stats"]["skip"] == 1
         assert data["stats"]["total"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Per-reviewer override policies (Issue #24)
+# ---------------------------------------------------------------------------
+
+_determine_effective_policy = aggregate_verdict.determine_effective_policy
+
+
+class TestDetermineEffectivePolicy:
+    """Unit tests for determine_effective_policy()."""
+
+    def test_no_failing_reviewers_returns_global(self):
+        verdicts = [_verdict("APOLLO"), _verdict("ATHENA")]
+        policies = {"APOLLO": "pr_author", "ATHENA": "pr_author"}
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "pr_author"
+
+    def test_single_fail_uses_reviewer_policy(self):
+        verdicts = [_verdict("SENTINEL", "FAIL"), _verdict("APOLLO")]
+        policies = {"SENTINEL": "maintainers_only", "APOLLO": "pr_author"}
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "maintainers_only"
+
+    def test_strictest_policy_wins(self):
+        verdicts = [
+            _verdict("SENTINEL", "FAIL"),
+            _verdict("APOLLO", "FAIL"),
+        ]
+        policies = {"SENTINEL": "maintainers_only", "APOLLO": "pr_author"}
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "maintainers_only"
+
+    def test_write_access_stricter_than_pr_author(self):
+        verdicts = [
+            _verdict("VULCAN", "FAIL"),
+            _verdict("APOLLO", "FAIL"),
+        ]
+        policies = {"VULCAN": "write_access", "APOLLO": "pr_author"}
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "write_access"
+
+    def test_maintainers_only_stricter_than_write_access(self):
+        verdicts = [
+            _verdict("SENTINEL", "FAIL"),
+            _verdict("VULCAN", "FAIL"),
+        ]
+        policies = {"SENTINEL": "maintainers_only", "VULCAN": "write_access"}
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "maintainers_only"
+
+    def test_missing_reviewer_policy_falls_back_to_global(self):
+        verdicts = [_verdict("UNKNOWN", "FAIL")]
+        policies = {"SENTINEL": "maintainers_only"}
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "pr_author"
+
+    def test_warn_reviewer_not_considered(self):
+        verdicts = [
+            _verdict("SENTINEL", "WARN"),
+            _verdict("APOLLO", "FAIL"),
+        ]
+        policies = {"SENTINEL": "maintainers_only", "APOLLO": "pr_author"}
+        # SENTINEL is WARN, not FAIL — only APOLLO's policy applies
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "pr_author"
+
+    def test_noncritical_fail_reviewer_included(self):
+        verdicts = [
+            _verdict("SENTINEL", "FAIL", stats={"critical": 0, "major": 2, "minor": 0}),
+        ]
+        policies = {"SENTINEL": "maintainers_only"}
+        # Even noncritical FAILs contribute to policy determination
+        assert _determine_effective_policy(verdicts, policies, "pr_author") == "maintainers_only"
+
+    def test_empty_policies_returns_global(self):
+        verdicts = [_verdict("SENTINEL", "FAIL")]
+        assert _determine_effective_policy(verdicts, {}, "pr_author") == "pr_author"
+
+
+class TestValidateActorWriteAccess:
+    """validate_actor with write_access policy."""
+
+    def test_write_permission_accepted(self):
+        assert _validate_actor("user", "write_access", "other", "write") is True
+
+    def test_admin_permission_accepted(self):
+        assert _validate_actor("user", "write_access", "other", "admin") is True
+
+    def test_maintain_permission_accepted(self):
+        assert _validate_actor("user", "write_access", "other", "maintain") is True
+
+    def test_read_permission_rejected(self):
+        assert _validate_actor("user", "write_access", "other", "read") is False
+
+    def test_none_permission_rejected(self):
+        assert _validate_actor("user", "write_access", "other", "none") is False
+
+    def test_missing_permission_rejected(self):
+        assert _validate_actor("user", "write_access", "other", None) is False
+
+
+class TestValidateActorMaintainersOnly:
+    """validate_actor with maintainers_only policy."""
+
+    def test_admin_accepted(self):
+        assert _validate_actor("user", "maintainers_only", "other", "admin") is True
+
+    def test_maintain_accepted(self):
+        assert _validate_actor("user", "maintainers_only", "other", "maintain") is True
+
+    def test_write_rejected(self):
+        assert _validate_actor("user", "maintainers_only", "other", "write") is False
+
+    def test_read_rejected(self):
+        assert _validate_actor("user", "maintainers_only", "other", "read") is False
+
+    def test_none_rejected(self):
+        assert _validate_actor("user", "maintainers_only", "other", "none") is False
+
+
+class TestPerReviewerOverrideIntegration:
+    """Subprocess integration tests for per-reviewer override policies."""
+
+    def test_sentinel_fail_blocks_pr_author_override(self, tmp_path):
+        """SENTINEL (maintainers_only) FAIL should block override from pr_author."""
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Critical security issue.",
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }))
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "summary": "ok",
+        }))
+        override = json.dumps({
+            "actor": "pr-author", "sha": "abc1234", "reason": "False positive"
+        })
+        policies = json.dumps({"SENTINEL": "maintainers_only", "APOLLO": "pr_author"})
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "pr-author",
+                "GH_REVIEWER_POLICIES": policies,
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"
+        assert data["override"]["used"] is False
+        assert "rejected by policy" in err
+
+    def test_apollo_fail_allows_pr_author_override(self, tmp_path):
+        """APOLLO (pr_author) FAIL should allow override from pr_author."""
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "FAIL", "summary": "Logic issue.",
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }))
+        override = json.dumps({
+            "actor": "pr-author", "sha": "abc1234", "reason": "Verified manually"
+        })
+        policies = json.dumps({"SENTINEL": "maintainers_only", "APOLLO": "pr_author"})
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "pr-author",
+                "GH_REVIEWER_POLICIES": policies,
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_sentinel_fail_allows_maintainer_override(self, tmp_path):
+        """SENTINEL (maintainers_only) FAIL should allow override from maintainer."""
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Security issue.",
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }))
+        override = json.dumps({
+            "actor": "maintainer", "sha": "abc1234", "reason": "Verified"
+        })
+        policies = json.dumps({"SENTINEL": "maintainers_only"})
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "other-user",
+                "GH_REVIEWER_POLICIES": policies,
+                "GH_OVERRIDE_ACTOR_PERMISSION": "maintain",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+    def test_no_policies_env_uses_global_fallback(self, tmp_path):
+        """Without GH_REVIEWER_POLICIES, falls back to GH_OVERRIDE_POLICY (backward compat)."""
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "FAIL", "summary": "Issue.",
+        }))
+        override = json.dumps({
+            "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
+        })
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENT": override,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "pr-author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True

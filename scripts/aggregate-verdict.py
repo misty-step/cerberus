@@ -70,10 +70,45 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
     }
 
 
-def validate_actor(actor: str, policy: str, pr_author: str | None) -> bool:
+POLICY_STRICTNESS = {
+    "pr_author": 0,
+    "write_access": 1,
+    "maintainers_only": 2,
+}
+
+
+def validate_actor(
+    actor: str,
+    policy: str,
+    pr_author: str | None,
+    actor_permission: str | None = None,
+) -> bool:
     if policy == "pr_author":
         return bool(pr_author) and actor.lower() == pr_author.lower()
+    if policy == "write_access":
+        return actor_permission in ("write", "maintain", "admin")
+    if policy == "maintainers_only":
+        return actor_permission in ("maintain", "admin")
     return False
+
+
+def determine_effective_policy(
+    verdicts: list[dict],
+    reviewer_policies: dict[str, str],
+    global_policy: str,
+) -> str:
+    """Pick the strictest override policy among failing reviewers."""
+    failing = [v for v in verdicts if v.get("verdict") == "FAIL"]
+    if not failing:
+        return global_policy
+
+    strictest = global_policy
+    for v in failing:
+        reviewer = v.get("reviewer", "")
+        policy = reviewer_policies.get(reviewer, global_policy)
+        if POLICY_STRICTNESS.get(policy, -1) > POLICY_STRICTNESS.get(strictest, -1):
+            strictest = policy
+    return strictest
 
 
 def parse_expected_reviewers(raw: str | None) -> list[str]:
@@ -243,9 +278,18 @@ def main() -> None:
     head_sha = os.environ.get("GH_HEAD_SHA")
     override = parse_override(os.environ.get("GH_OVERRIDE_COMMENT"), head_sha)
     if override:
-        policy = os.environ.get("GH_OVERRIDE_POLICY", "pr_author")
+        global_policy = os.environ.get("GH_OVERRIDE_POLICY", "pr_author")
+        reviewer_policies_raw = os.environ.get("GH_REVIEWER_POLICIES")
+        reviewer_policies: dict[str, str] = {}
+        if reviewer_policies_raw:
+            try:
+                reviewer_policies = json.loads(reviewer_policies_raw)
+            except json.JSONDecodeError:
+                pass
+        policy = determine_effective_policy(verdicts, reviewer_policies, global_policy)
         pr_author = os.environ.get("GH_PR_AUTHOR")
-        if not validate_actor(override["actor"], policy, pr_author):
+        actor_permission = os.environ.get("GH_OVERRIDE_ACTOR_PERMISSION")
+        if not validate_actor(override["actor"], policy, pr_author, actor_permission):
             print(
                 (
                     f"aggregate-verdict: warning: override actor '{override['actor']}' "
