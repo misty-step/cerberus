@@ -1,0 +1,50 @@
+name: Sync v1 Tag
+
+on:
+  push:
+    tags:
+      - 'v1.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-v1-tag
+  cancel-in-progress: true
+
+jobs:
+  sync-v1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move v1 to latest v1.x.x tag
+        run: |
+          set -euo pipefail
+          git fetch origin --tags --force
+
+          # Get the latest v1.x.x tag by version sort
+          latest_v1_tag=$(git tag -l 'v1.*' | grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          
+          if [[ -z "$latest_v1_tag" ]]; then
+            echo "No v1.x.x tags found"
+            exit 0
+          fi
+
+          target_sha=$(git rev-list -n1 "$latest_v1_tag")
+          current_tag_sha=$(git rev-parse -q --verify refs/tags/v1 || true)
+          
+          if [[ "$current_tag_sha" == "$target_sha" ]]; then
+            echo "v1 already points to ${target_sha} (${latest_v1_tag})"
+            exit 0
+          fi
+
+          echo "Updating v1 tag from ${current_tag_sha:-none} to ${target_sha} (${latest_v1_tag})"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -fa v1 "$target_sha" -m "Move v1 to ${latest_v1_tag} (${target_sha})"
+          git push origin refs/tags/v1 --force
