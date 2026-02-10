@@ -9,10 +9,13 @@ inputs:
   fail-on-verdict:
     description: 'Exit with failure if council verdict is FAIL'
     default: 'true'
+  fail-on-skip:
+    description: 'Exit with failure if council verdict is SKIP (all reviews skipped)'
+    default: 'false'
 
 outputs:
   verdict:
-    description: 'Council verdict (PASS, WARN, FAIL)'
+    description: 'Council verdict (PASS, WARN, FAIL, SKIP)'
     value: ${{ steps.aggregate.outputs.verdict }}
 
 runs:
@@ -169,15 +172,21 @@ runs:
         fi
 
     - name: Check verdict
-      if: always() && steps.aggregate.outcome == 'success' && inputs.fail-on-verdict == 'true'
+      if: always() && steps.aggregate.outcome == 'success' && (inputs.fail-on-verdict == 'true' || inputs.fail-on-skip == 'true')
       shell: bash
+      env:
+        FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
+        FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
       run: |
         VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
-        if [ "$VERDICT" = "FAIL" ]; then
+        if [ "$VERDICT" = "FAIL" ] && [ "$FAIL_ON_VERDICT" = "true" ]; then
           echo "::error::Council Verdict: FAIL"
           exit 1
         fi
         if [ "$VERDICT" = "SKIP" ]; then
+          if [ "$FAIL_ON_SKIP" = "true" ]; then
+            echo "::error::Council Verdict: SKIP (all reviews skipped due to timeout/API errors)"
+            exit 1
+          fi
           echo "::notice::Council Verdict: SKIP (all reviews skipped due to timeout/API errors)"
-          exit 0
         fi

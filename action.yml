@@ -31,10 +31,13 @@ inputs:
   post-comment:
     description: 'Post review comment to PR'
     default: 'true'
+  fail-on-skip:
+    description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
+    default: 'false'
 
 outputs:
   verdict:
-    description: 'Review verdict (PASS, WARN, FAIL)'
+    description: 'Review verdict (PASS, WARN, FAIL, SKIP)'
     value: ${{ steps.parse.outputs.verdict }}
   verdict-json:
     description: 'Path to verdict JSON file'
@@ -202,11 +205,16 @@ runs:
       env:
         VERDICT: ${{ steps.parse.outputs.verdict }}
         PERSPECTIVE: ${{ inputs.perspective }}
+        FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
       run: |
         if [ "$VERDICT" = "FAIL" ]; then
           echo "::error::${PERSPECTIVE} review verdict: FAIL"
           exit 1
         fi
         if [ "$VERDICT" = "SKIP" ]; then
+          if [ "$FAIL_ON_SKIP" = "true" ]; then
+            echo "::error::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"
+            exit 1
+          fi
           echo "::warning::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"
         fi

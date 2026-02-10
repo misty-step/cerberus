@@ -104,12 +104,14 @@ Use `templates/triage-workflow.yml` to enable:
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
 | `opencode-version` | no | `1.1.49` | OpenCode CLI version |
 | `post-comment` | no | `true` | Post review comment |
+| `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
 
 ### Verdict Action (`misty-step/cerberus/verdict@v2`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | - | GitHub token for PR comments |
 | `fail-on-verdict` | no | `true` | Exit 1 if council fails |
+| `fail-on-skip` | no | `false` | Exit 1 if council verdict is SKIP (all reviews skipped) |
 
 ## Verdict Rules
 Each reviewer emits:
@@ -135,11 +137,11 @@ The SHA must match the current HEAD commit. Override downgrades FAIL to non-bloc
 
 ## Outputs
 ### Review Action
-- `verdict`: PASS, WARN, or FAIL
+- `verdict`: PASS, WARN, FAIL, or SKIP
 - `verdict-json`: Path to the verdict JSON file
 
 ### Verdict Action
-- `verdict`: Council verdict (PASS, WARN, FAIL)
+- `verdict`: Council verdict (PASS, WARN, FAIL, SKIP)
 
 ## Customization
 ### Run fewer reviewers
@@ -158,6 +160,14 @@ matrix:
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-verdict: 'false'
+```
+
+### Fail when no review happened (SKIP)
+```yaml
+- uses: misty-step/cerberus/verdict@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    fail-on-skip: 'true'
 ```
 
 ## Requirements

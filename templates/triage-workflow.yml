@@ -33,12 +33,13 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v1
+      - uses: misty-step/cerberus@v2
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           timeout: '600'
+          # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
   verdict:
     name: "Council Verdict"
@@ -48,10 +49,11 @@ jobs:
     outputs:
       verdict: ${{ steps.council.outputs.verdict }}
     steps:
-      - uses: misty-step/cerberus/verdict@v1
+      - uses: misty-step/cerberus/verdict@v2
         id: council
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
 
   triage-auto:
     name: "Cerberus Triage (Auto)"
@@ -62,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-      - uses: misty-step/cerberus/triage@v1
+      - uses: misty-step/cerberus/triage@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: ${{ vars.CERBERUS_TRIAGE_MODE || 'diagnose' }}
@@ -75,7 +77,7 @@ jobs:
     if: github.event_name == 'issue_comment'
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/triage@v1
+      - uses: misty-step/cerberus/triage@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: ${{ vars.CERBERUS_TRIAGE_MODE || 'diagnose' }}
@@ -88,7 +90,7 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/triage@v1
+      - uses: misty-step/cerberus/triage@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: ${{ vars.CERBERUS_TRIAGE_MODE || 'diagnose' }}
