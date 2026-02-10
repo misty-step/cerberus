@@ -93,6 +93,19 @@ def test_verdict_action_does_not_use_sparse_checkout_dot() -> None:
     assert "sparse-checkout: ." not in content
 
 
+def test_fail_on_skip_is_wired_in_actions() -> None:
+    verdict_content = VERDICT_ACTION_FILE.read_text()
+    review_content = ACTION_FILE.read_text()
+
+    assert "fail-on-skip:" in verdict_content
+    assert "inputs.fail-on-skip" in verdict_content
+    assert "FAIL_ON_SKIP" in verdict_content
+
+    assert "fail-on-skip:" in review_content
+    assert "inputs.fail-on-skip" in review_content
+    assert "FAIL_ON_SKIP" in review_content
+
+
 def test_review_prompt_includes_detected_stack_placeholder() -> None:
     prompt_content = REVIEW_PROMPT_TEMPLATE.read_text()
     run_reviewer_content = RUN_REVIEWER_SCRIPT.read_text()

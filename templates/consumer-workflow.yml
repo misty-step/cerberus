@@ -38,6 +38,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           timeout: '600'
+          # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
   verdict:
     name: "Council Verdict"
@@ -48,3 +49,4 @@ jobs:
       - uses: misty-step/cerberus/verdict@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
