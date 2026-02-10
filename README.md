@@ -26,16 +26,15 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: write
-
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
+    permissions:
+      contents: read
+      pull-requests: read
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
@@ -54,12 +53,16 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          post-comment: 'false'
           timeout: '600'
 
   verdict:
     name: "Council Verdict"
     needs: review
     if: always()
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - uses: misty-step/cerberus/verdict@v2
@@ -173,7 +176,7 @@ matrix:
 ## Requirements
 - GitHub repository with Actions enabled
 - One secret: `OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
-- `pull-requests: write` permission
+- Permissions: `pull-requests: read` on review jobs, `pull-requests: write` on verdict job only
 
 ## License
 MIT
