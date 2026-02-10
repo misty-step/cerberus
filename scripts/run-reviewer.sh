@@ -465,7 +465,7 @@ detect_api_error() {
     }
   )"
 
-  if echo "$combined" | grep -qiE "(incorrect_api_key|invalid_api_key|invalid.api.key|exceeded_current_quota|insufficient_quota|insufficient.credits|payment.required|quota.exceeded|credits.depleted|credits.exhausted)"; then
+  if echo "$combined" | grep -qiE "(incorrect_api_key|invalid_api_key|invalid.api.key|exceeded_current_quota|insufficient_quota|insufficient.credits|payment.required|quota.exceeded|credits.depleted|credits.exhausted|no.cookie.auth|no.*credentials.*found|no.*auth.*credentials)"; then
     DETECTED_ERROR_TYPE="permanent"
     DETECTED_ERROR_CLASS="auth_or_quota"
     return
@@ -594,23 +594,34 @@ if [[ "$exit_code" -ne 0 ]]; then
   cat "/tmp/${perspective}-stderr.log" >&2
 fi
 
-# Scratchpad fallback chain: select best parse input
-# 1. Timeout marker (when reviewer exceeded timeout)
-# 2. Scratchpad with JSON block (primary)
-# 3. Stdout with JSON block (fallback)
-# 4. Scratchpad without JSON (partial review)
-# 5. Stdout (triggers existing fallback)
+# Parse input selection:
+# - Primary: any file containing a ```json block (scratchpad first, then stdout)
+# - Fallback: partial scratchpad/stdout (lets parse-review.py emit a partial verdict)
+# - Timeout marker only when timed out AND no output exists to salvage
 timeout_marker="/tmp/${perspective}-timeout-marker.txt"
 if [[ "$exit_code" -eq 124 ]]; then
   echo "::warning::${reviewer_name} (${perspective}) timed out after ${review_timeout}s"
-  cat > "$timeout_marker" <<EOF
+  # Try to salvage output before falling back to SKIP
+  if [[ -f "$scratchpad" ]] && grep -q '```json' "$scratchpad" 2>/dev/null; then
+    parse_input="$scratchpad"
+    echo "parse-input: scratchpad (timeout, but has JSON block)"
+  elif [[ -s "$stdout_file" ]] && grep -q '```json' "$stdout_file" 2>/dev/null; then
+    parse_input="$stdout_file"
+    echo "parse-input: stdout (timeout, but has JSON block)"
+  elif [[ -f "$scratchpad" ]] && [[ -s "$scratchpad" ]]; then
+    parse_input="$scratchpad"
+    echo "parse-input: scratchpad (timeout, partial review)"
+  elif [[ -s "$stdout_file" ]]; then
+    parse_input="$stdout_file"
+    echo "parse-input: stdout (timeout, partial review)"
+  else
+    cat > "$timeout_marker" <<EOF
 Review Timeout: timeout after ${review_timeout}s
-
 ${reviewer_name} (${perspective}) exceeded the configured timeout.
 EOF
-  parse_input="$timeout_marker"
-  echo "parse-input: timeout marker"
-  echo "timeout: forcing SKIP parse path"
+    parse_input="$timeout_marker"
+    echo "parse-input: timeout marker (no output to salvage)"
+  fi
   exit_code=0
 else
   parse_input="$stdout_file"

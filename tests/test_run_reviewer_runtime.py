@@ -446,9 +446,59 @@ def test_timeout_with_partial_output_exits_zero(tmp_path: Path) -> None:
         timeout=30,
     )
     assert result.returncode == 0
-    assert "timeout: forcing SKIP parse path" in result.stdout
+    assert "parse-input: stdout (timeout, partial review)" in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
+    parse_file = Path(parse_input_ref.read_text().strip())
+    assert parse_file == Path("/tmp/security-output.txt")
+    content = parse_file.read_text()
+    assert "## Investigation Notes" in content
+    assert "## Verdict: WARN" in content
+    assert "Review Timeout:" not in content
+
+
+@pytest.mark.parametrize(
+    "stderr_line",
+    [
+        "No cookie auth credentials found",
+        "error: no credentials found for authentication",
+        "No auth credentials available",
+    ],
+)
+def test_auth_credential_errors_are_permanent_api_errors(tmp_path: Path, stderr_line: str) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(attempt_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(attempt_counter) + "'\n"
+            "echo '" + stderr_line + "' >&2\n"
+            "exit 1\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert attempt_counter.read_text() == "1"
+    assert "Permanent API error detected. Writing error verdict." in result.stdout
+
     parse_input_ref = Path("/tmp/security-parse-input")
     assert parse_input_ref.exists()
     parse_file = Path(parse_input_ref.read_text().strip())
     content = parse_file.read_text()
-    assert "Review Timeout: timeout after 5s" in content
+    assert "API Error:" in content
+    assert stderr_line in content

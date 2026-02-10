@@ -164,6 +164,45 @@ class TestParseErrors:
         data = json.loads(out)
         assert data["verdict"] == "PASS"
 
+    def test_timeout_recovery_with_json_block_is_not_skip(self, tmp_path):
+        """Salvaged timeout output containing a JSON block should parse as normal review."""
+        salvaged = tmp_path / "salvaged.txt"
+        review = json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.95,
+                "summary": "Stub output",
+                "findings": [],
+                "stats": {
+                    "files_reviewed": 1,
+                    "files_with_issues": 0,
+                    "critical": 0,
+                    "major": 0,
+                    "minor": 0,
+                    "info": 0,
+                },
+            }
+        )
+        salvaged.write_text(f"```json\n{review}\n```\n")
+        code, out, _ = run_parse_file(salvaged)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["verdict"] != "SKIP"
+
+    def test_timeout_marker_produces_skip(self, tmp_path):
+        """Explicit timeout marker should produce SKIP verdict."""
+        timeout_marker = tmp_path / "timeout.txt"
+        timeout_marker.write_text("Review Timeout: timeout after 600s\n")
+        code, out, _ = run_parse_file(timeout_marker, env_extra={"REVIEWER_NAME": "SENTINEL"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "SENTINEL"
+        assert data["perspective"] == "timeout"
+
 
 class TestParseArgs:
     def test_reviewer_flag_space(self, tmp_path):
