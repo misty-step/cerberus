@@ -457,6 +457,7 @@ def main() -> None:
         # If we can't read the parse input file, this is almost always a prior-step failure
         # (e.g., the reviewer never produced output). Treat as SKIP so we don't block the PR
         # with a misleading maintainability/correctness failure.
+        print(f"parse-review: unable to read input: {exc}", file=sys.stderr)
         write_fallback(
             REVIEWER_NAME,
             f"unable to read input: {exc}",
@@ -491,6 +492,8 @@ def main() -> None:
                 skip_verdict = generate_skip_verdict(err_type, raw)
                 print(json.dumps(skip_verdict, indent=2, sort_keys=False))
                 sys.exit(0)
+
+            print("parse-review: no ```json block found", file=sys.stderr)
 
             # The model sometimes exits 0 but produces empty/non-JSON output.
             # Check if it's a scratchpad (has investigation notes or verdict header)
