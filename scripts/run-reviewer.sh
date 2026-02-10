@@ -152,6 +152,7 @@ if [[ -z "$reviewer_name" ]]; then
   exit 2
 fi
 
+# Input file handling
 diff_file=""
 if [[ -n "${GH_DIFF_FILE:-}" && -f "${GH_DIFF_FILE:-}" ]]; then
   diff_file="$GH_DIFF_FILE"
@@ -163,6 +164,7 @@ else
   exit 2
 fi
 
+# Filter lockfiles and generated files from diff
 DIFF_FILE="$diff_file" python3 - <<'PY'
 import fnmatch
 import os
@@ -260,6 +262,13 @@ diff_file.write_text(filtered_diff)
 print(f"Filtered {filtered_count} lockfile/generated files from diff")
 PY
 
+# Build context bundle
+context_bundle_dir="/tmp/cerberus-context-${perspective}"
+rm -rf "$context_bundle_dir"
+
+python3 "$CERBERUS_ROOT/scripts/build-context.py" "$context_bundle_dir" "${GH_PR_CONTEXT:-}" "$diff_file"
+
+# Extract file list for template
 file_list="$(grep -E '^diff --git' "$diff_file" | awk '{print $3}' | sed 's|^a/||' | sort -u || true)"
 if [[ -z "$file_list" ]]; then
   file_list="(none)"
@@ -267,6 +276,7 @@ else
   file_list="$(printf "%s\n" "$file_list" | sed 's/^/- /')"
 fi
 
+# Detect stack context
 stack_context="$(
   DIFF_FILE="$diff_file" python3 - <<'PY'
 import json
@@ -369,17 +379,24 @@ print(" | ".join(parts) if parts else "Unknown")
 PY
 )"
 
-export PR_FILE_LIST="$file_list"
-export PR_DIFF_FILE="$diff_file"
 export PERSPECTIVE="$perspective"
+export PR_FILE_LIST="$file_list"
 export PR_STACK_CONTEXT="$stack_context"
+export CONTEXT_BUNDLE_PATH="$context_bundle_dir"
 
 CERBERUS_ROOT_PY="$CERBERUS_ROOT" PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" python3 - <<'PY'
 import json
 import os
+import sys
 from pathlib import Path
 
+# Add scripts directory to path to import sanitize module
 cerberus_root = os.environ["CERBERUS_ROOT_PY"]
+scripts_dir = Path(cerberus_root) / "scripts"
+sys.path.insert(0, str(scripts_dir))
+
+from sanitize import sanitize_pr_field
+
 template_path = Path(cerberus_root) / "templates" / "review-prompt.md"
 text = template_path.read_text()
 
@@ -393,27 +410,24 @@ if pr_context_file and Path(pr_context_file).exists():
         pr_author = pr_author.get("login", "")
     head_branch = ctx.get("headRefName", "")
     base_branch = ctx.get("baseRefName", "")
-    pr_body = ctx.get("body", "") or ""
 else:
     # Fallback to individual env vars (legacy mode)
     pr_title = os.environ.get("GH_PR_TITLE", "")
     pr_author = os.environ.get("GH_PR_AUTHOR", "")
     head_branch = os.environ.get("GH_HEAD_BRANCH", "")
     base_branch = os.environ.get("GH_BASE_BRANCH", "")
-    pr_body = os.environ.get("GH_PR_BODY", "")
 
-diff_text = Path(os.environ["PR_DIFF_FILE"]).read_text()
-
+# Sanitize untrusted PR fields to prevent prompt injection
+# Trusted fields (CONTEXT_BUNDLE_PATH, PROJECT_STACK, CURRENT_DATE, PERSPECTIVE) don't need sanitization
 replacements = {
-    "{{PR_TITLE}}": pr_title,
-    "{{PR_AUTHOR}}": pr_author,
-    "{{HEAD_BRANCH}}": head_branch,
-    "{{BASE_BRANCH}}": base_branch,
-    "{{PR_BODY}}": pr_body,
-    "{{FILE_LIST}}": os.environ.get("PR_FILE_LIST", ""),
+    "{{CONTEXT_BUNDLE_PATH}}": os.environ.get("CONTEXT_BUNDLE_PATH", "/tmp/cerberus-context"),
+    "{{PR_TITLE}}": sanitize_pr_field(pr_title),
+    "{{PR_AUTHOR}}": sanitize_pr_field(pr_author),
+    "{{HEAD_BRANCH}}": sanitize_pr_field(head_branch),
+    "{{BASE_BRANCH}}": sanitize_pr_field(base_branch),
+    "{{FILE_LIST}}": sanitize_pr_field(os.environ.get("PR_FILE_LIST", "")),
     "{{PROJECT_STACK}}": os.environ.get("PR_STACK_CONTEXT", "Unknown"),
     "{{CURRENT_DATE}}": __import__('datetime').date.today().isoformat(),
-    "{{DIFF}}": diff_text,
     "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
 }
 
@@ -424,6 +438,7 @@ Path(os.environ["PROMPT_OUTPUT"]).write_text(text)
 PY
 
 echo "Running reviewer: $reviewer_name ($perspective)"
+echo "Context bundle: $context_bundle_dir"
 
 model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
 

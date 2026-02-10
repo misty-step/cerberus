@@ -190,6 +190,15 @@ runs:
         path: /tmp/${{ inputs.perspective }}-verdict.json
         retention-days: 1
 
+    - name: Upload context bundle
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cerberus-context-${{ inputs.perspective }}
+        path: /tmp/cerberus-context-${{ inputs.perspective }}
+        if-no-files-found: ignore
+        retention-days: 1
+
     - name: Upload review document
       if: always()
       uses: actions/upload-artifact@v4
