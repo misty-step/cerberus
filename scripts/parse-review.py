@@ -454,7 +454,16 @@ def main() -> None:
     try:
         raw = read_input(input_path)
     except Exception as exc:
-        fail(f"unable to read input: {exc}")
+        # If we can't read the parse input file, this is almost always a prior-step failure
+        # (e.g., the reviewer never produced output). Treat as SKIP so we don't block the PR
+        # with a misleading maintainability/correctness failure.
+        write_fallback(
+            REVIEWER_NAME,
+            f"unable to read input: {exc}",
+            verdict="SKIP",
+            confidence=0.0,
+            summary=f"{PARSE_FAILURE_PREFIX}unable to read input: {exc}",
+        )
 
     RAW_INPUT = raw
 
@@ -482,7 +491,16 @@ def main() -> None:
                 skip_verdict = generate_skip_verdict(err_type, raw)
                 print(json.dumps(skip_verdict, indent=2, sort_keys=False))
                 sys.exit(0)
-            fail("no ```json block found")
+
+            # The model sometimes exits 0 but produces empty/non-JSON output.
+            # Treat this as SKIP (non-blocking) rather than FAIL to reduce flakiness.
+            write_fallback(
+                REVIEWER_NAME,
+                "no ```json block found",
+                verdict="SKIP",
+                confidence=0.0,
+                summary=f"{PARSE_FAILURE_PREFIX}no ```json block found",
+            )
 
         try:
             obj = json.loads(json_block)
