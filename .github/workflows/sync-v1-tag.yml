@@ -1,0 +1,46 @@
+name: Sync v1 Tag
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-v1-tag
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run sync-v1-tag tests
+        run: |
+          chmod +x scripts/tests/sync-v1-tag.test.sh
+          scripts/tests/sync-v1-tag.test.sh
+
+  sync-v1:
+    needs: test
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       (github.event.workflow_run.head_branch == 'master' || github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync v1 tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x scripts/sync-v1-tag.sh
+          scripts/sync-v1-tag.sh
