@@ -23,4 +23,4 @@ def test_triage_template_supports_all_triggers() -> None:
     assert "triage-auto:" in content
     assert "triage-manual:" in content
     assert "triage-scheduled:" in content
-    assert "misty-step/cerberus/triage@v1" in content
+    assert "misty-step/cerberus/triage@v2" in content

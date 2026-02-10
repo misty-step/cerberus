@@ -7,6 +7,7 @@ VERDICT_ACTION_FILE = ROOT / "verdict" / "action.yml"
 POST_COMMENT_SCRIPT = ROOT / "scripts" / "post-comment.sh"
 RUN_REVIEWER_SCRIPT = ROOT / "scripts" / "run-reviewer.sh"
 CONSUMER_WORKFLOW_TEMPLATE = ROOT / "templates" / "consumer-workflow.yml"
+TRIAGE_WORKFLOW_TEMPLATE = ROOT / "templates" / "triage-workflow.yml"
 REVIEW_PROMPT_TEMPLATE = ROOT / "templates" / "review-prompt.md"
 README_FILE = ROOT / "README.md"
 
@@ -57,6 +58,21 @@ def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
     assert "api-key: ${{ secrets.OPENROUTER_API_KEY }}" in content
+
+
+def test_workflow_templates_use_current_major_version() -> None:
+    consumer = CONSUMER_WORKFLOW_TEMPLATE.read_text()
+    triage = TRIAGE_WORKFLOW_TEMPLATE.read_text()
+
+    assert "@v1" not in consumer
+    assert "@v1" not in triage
+
+    assert "uses: misty-step/cerberus@v2" in consumer
+    assert "uses: misty-step/cerberus/verdict@v2" in consumer
+
+    assert "uses: misty-step/cerberus@v2" in triage
+    assert "uses: misty-step/cerberus/verdict@v2" in triage
+    assert "uses: misty-step/cerberus/triage@v2" in triage
 
 
 def test_readme_quick_start_uses_openrouter_secret_name() -> None:
