@@ -62,6 +62,20 @@ Secondary Focus (check if relevant)
 - Integration boundaries: external services wrapped behind stable interface
 - Evolution path: can this design survive 10x feature growth
 
+Incremental Delivery (Recognize Intentional Building Blocks)
+Some PRs intentionally deliver utilities and building blocks without full integration. This is a VALID pattern when:
+- The utility is tested and documented
+- The code is designed as a reusable building block (clear interfaces, single responsibility)
+- The PR description or context indicates follow-up integration work is planned
+- The utility solves a concrete, understood problem even if not yet wired into the full system
+
+Do NOT flag "orphan code" or "unused code" for well-designed utilities that are clearly intended as building blocks. The absence of immediate callers is not an architecture problem when the code is designed for future use.
+
+DO flag orphan code when:
+- It appears abandoned or incomplete (no tests, no docs, unclear purpose)
+- It's dead code that should have been removed
+- It's a partial implementation that doesn't stand alone
+
 Anti-Patterns (Do Not Flag)
 - Individual bugs or edge cases (Apollo's job)
 - Security issues (Sentinel's job)
