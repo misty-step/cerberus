@@ -41,7 +41,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install test deps
-        run: pip install pytest
+        run: pip install pytest pyyaml
 
       - name: Run tests
         run: python3 -m pytest tests/ -v
