@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Restrictive umask: temp files readable only by owner.
+umask 077
+
 perspective="${1:-}"
 if [[ -z "$perspective" ]]; then
   echo "usage: run-reviewer.sh <perspective>" >&2
@@ -18,6 +21,7 @@ cerberus_staging_agent_dest=""
 # Invoked via `trap`.
 cerberus_cleanup() {
   rm -f "/tmp/${perspective}-review-prompt.md" || true
+  rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
   if [[ -z "$cerberus_staging_backup_dir" ]]; then
     return
@@ -213,6 +217,13 @@ for key, value in replacements.items():
 Path(os.environ["PROMPT_OUTPUT"]).write_text(text)
 PY
 
+# Create an isolated HOME for the opencode process.  This confines any
+# file writes (caches, config) to a disposable directory and keeps them
+# away from the real runner HOME and workspace.
+CERBERUS_ISOLATED_HOME="$(mktemp -d "/tmp/cerberus-home-${perspective}.XXXXXX")"
+mkdir -p "${CERBERUS_ISOLATED_HOME}/.config" "${CERBERUS_ISOLATED_HOME}/.local/share" "${CERBERUS_ISOLATED_HOME}/tmp"
+export CERBERUS_ISOLATED_HOME
+
 echo "Running reviewer: $reviewer_name ($perspective)"
 
 model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
@@ -302,8 +313,20 @@ retry_count=0
 
 while true; do
   set +e
-  OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-  OPENCODE_DISABLE_AUTOUPDATE=true \
+  # Run opencode with a sanitized environment.  Only explicitly-allowed
+  # variables are forwarded.  This prevents the model/CLI from seeing
+  # GITHUB_TOKEN, GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other
+  # secrets that leak via the Actions runner environment.
+  env -i \
+    PATH="${PATH}" \
+    HOME="${CERBERUS_ISOLATED_HOME}" \
+    XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
+    XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
+    TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
+    OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+    OPENCODE_DISABLE_AUTOUPDATE=true \
+    ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
+    ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
   timeout "${review_timeout}" opencode run \
     -m "${model}" \
     --agent "${perspective}" \
