@@ -111,7 +111,7 @@ def write_fake_cerberus_root(root: Path, perspective: str = "security") -> None:
             ]
         )
     )
-    (root / "templates" / "review-prompt.md").write_text("{{DIFF}}\n")
+    (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
     (root / "opencode.json").write_text("CERBERUS_OPENCODE_JSON\n")
     (root / ".opencode" / "agents" / f"{perspective}.md").write_text("CERBERUS_AGENT\n")
 

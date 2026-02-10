@@ -122,9 +122,9 @@ def test_fail_on_skip_is_wired_in_actions() -> None:
     assert "FAIL_ON_SKIP" in review_content
 
 
-def test_review_prompt_includes_detected_stack_placeholder() -> None:
+def test_review_prompt_references_diff_file_placeholder() -> None:
     prompt_content = REVIEW_PROMPT_TEMPLATE.read_text()
     run_reviewer_content = RUN_REVIEWER_SCRIPT.read_text()
 
-    assert "{{PROJECT_STACK}}" in prompt_content
-    assert '"{{PROJECT_STACK}}"' in run_reviewer_content
+    assert "{{DIFF_FILE}}" in prompt_content
+    assert "DIFF_FILE" in run_reviewer_content

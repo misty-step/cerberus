@@ -163,218 +163,13 @@ else
   exit 2
 fi
 
-DIFF_FILE="$diff_file" python3 - <<'PY'
-import fnmatch
-import os
-import shlex
-from pathlib import Path
-
-diff_file = Path(os.environ["DIFF_FILE"])
-original_diff = diff_file.read_text(errors="ignore")
-lines = original_diff.splitlines(keepends=True)
-
-prefix_lines = []
-file_hunks = []
-current_hunk = None
-
-for line in lines:
-    if line.startswith("diff --git "):
-        if current_hunk is not None:
-            file_hunks.append(current_hunk)
-        current_hunk = [line]
-        continue
-    if current_hunk is None:
-        prefix_lines.append(line)
-    else:
-        current_hunk.append(line)
-
-if current_hunk is not None:
-    file_hunks.append(current_hunk)
-
-if not file_hunks:
-    raise SystemExit(0)
-
-skip_filenames = {
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "Gemfile.lock",
-    "Cargo.lock",
-    "go.sum",
-    "composer.lock",
-    "poetry.lock",
-}
-skip_globs = ("*.generated.*", "*.min.js", "*.min.css")
-
-
-def normalize_path(token: str) -> str:
-    if token.startswith("a/") or token.startswith("b/"):
-        return token[2:]
-    return token
-
-
-def extract_path(diff_header: str) -> str:
-    try:
-        parts = shlex.split(diff_header.strip())
-    except ValueError:
-        parts = diff_header.strip().split()
-    if len(parts) < 4:
-        return ""
-
-    before_path = normalize_path(parts[2])
-    after_path = normalize_path(parts[3])
-    if after_path and after_path != "/dev/null":
-        return after_path
-    return before_path
-
-
-def should_filter(path: str) -> bool:
-    filename = Path(path).name
-    if filename in skip_filenames:
-        return True
-    return any(fnmatch.fnmatch(filename, pattern) for pattern in skip_globs)
-
-
-filtered_count = 0
-filtered_hunks = []
-
-for hunk in file_hunks:
-    file_path = extract_path(hunk[0])
-    if file_path and should_filter(file_path):
-        filtered_count += 1
-        continue
-    filtered_hunks.append(hunk)
-
-if filtered_count == 0:
-    raise SystemExit(0)
-
-if not filtered_hunks:
-    print(
-        f"Filtered {filtered_count} lockfile/generated files from diff "
-        "(all files matched filter, keeping original diff)"
-    )
-    raise SystemExit(0)
-
-filtered_diff = "".join(prefix_lines + [line for hunk in filtered_hunks for line in hunk])
-diff_file.write_text(filtered_diff)
-print(f"Filtered {filtered_count} lockfile/generated files from diff")
-PY
-
-file_list="$(grep -E '^diff --git' "$diff_file" | awk '{print $3}' | sed 's|^a/||' | sort -u || true)"
-if [[ -z "$file_list" ]]; then
-  file_list="(none)"
-else
-  file_list="$(printf "%s\n" "$file_list" | sed 's/^/- /')"
-fi
-
-stack_context="$(
-  DIFF_FILE="$diff_file" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-diff_file = Path(os.environ["DIFF_FILE"])
-changed_files = []
-for line in diff_file.read_text(errors="ignore").splitlines():
-    if line.startswith("diff --git "):
-        parts = line.split()
-        if len(parts) >= 4:
-            path = parts[2]
-            if path.startswith("a/"):
-                path = path[2:]
-            changed_files.append(path)
-changed_files = sorted(set(changed_files))
-
-ext_languages = {
-    ".py": "Python",
-    ".ts": "TypeScript",
-    ".tsx": "TypeScript",
-    ".js": "JavaScript",
-    ".jsx": "JavaScript",
-    ".go": "Go",
-    ".rs": "Rust",
-    ".rb": "Ruby",
-    ".java": "Java",
-    ".kt": "Kotlin",
-    ".swift": "Swift",
-    ".cs": "C#",
-    ".php": "PHP",
-    ".sh": "Shell",
-    ".yml": "YAML",
-    ".yaml": "YAML",
-}
-languages = set()
-for path in changed_files:
-    suffix = Path(path).suffix.lower()
-    if suffix in ext_languages:
-        languages.add(ext_languages[suffix])
-    if Path(path).name == "Dockerfile":
-        languages.add("Dockerfile")
-
-frameworks = set()
-root = Path(".")
-
-package_json = root / "package.json"
-if package_json.exists():
-    try:
-        pkg = json.loads(package_json.read_text())
-        deps = {}
-        for key in ("dependencies", "devDependencies", "peerDependencies"):
-            deps.update(pkg.get(key, {}) or {})
-    except Exception:
-        deps = {}
-    if "next" in deps:
-        frameworks.add("Next.js")
-    elif "react" in deps:
-        frameworks.add("React")
-    if "vue" in deps:
-        frameworks.add("Vue")
-    if "svelte" in deps:
-        frameworks.add("Svelte")
-    if "express" in deps:
-        frameworks.add("Express")
-    if "fastify" in deps:
-        frameworks.add("Fastify")
-
-pyproject = root / "pyproject.toml"
-if pyproject.exists():
-    pyproject_text = pyproject.read_text(errors="ignore").lower()
-    if "django" in pyproject_text:
-        frameworks.add("Django")
-    if "fastapi" in pyproject_text:
-        frameworks.add("FastAPI")
-    if "flask" in pyproject_text:
-        frameworks.add("Flask")
-
-if (root / "go.mod").exists():
-    frameworks.add("Go modules")
-if (root / "Cargo.toml").exists():
-    frameworks.add("Rust/Cargo")
-if (root / "Gemfile").exists():
-    gemfile_text = (root / "Gemfile").read_text(errors="ignore").lower()
-    if "rails" in gemfile_text:
-        frameworks.add("Rails")
-    else:
-        frameworks.add("Ruby")
-if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
-    frameworks.add("JVM")
-
-parts = []
-if languages:
-    parts.append("Languages: " + ", ".join(sorted(languages)))
-if frameworks:
-    parts.append("Frameworks/runtime: " + ", ".join(sorted(frameworks)))
-
-print(" | ".join(parts) if parts else "Unknown")
-PY
-)"
-
-export PR_FILE_LIST="$file_list"
-export PR_DIFF_FILE="$diff_file"
+# Render prompt: PR metadata inline, diff by file reference
 export PERSPECTIVE="$perspective"
-export PR_STACK_CONTEXT="$stack_context"
 
-CERBERUS_ROOT_PY="$CERBERUS_ROOT" PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" python3 - <<'PY'
+CERBERUS_ROOT_PY="$CERBERUS_ROOT" \
+  DIFF_FILE="$diff_file" \
+  PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" \
+  python3 - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -395,14 +190,11 @@ if pr_context_file and Path(pr_context_file).exists():
     base_branch = ctx.get("baseRefName", "")
     pr_body = ctx.get("body", "") or ""
 else:
-    # Fallback to individual env vars (legacy mode)
     pr_title = os.environ.get("GH_PR_TITLE", "")
     pr_author = os.environ.get("GH_PR_AUTHOR", "")
     head_branch = os.environ.get("GH_HEAD_BRANCH", "")
     base_branch = os.environ.get("GH_BASE_BRANCH", "")
     pr_body = os.environ.get("GH_PR_BODY", "")
-
-diff_text = Path(os.environ["PR_DIFF_FILE"]).read_text()
 
 replacements = {
     "{{PR_TITLE}}": pr_title,
@@ -410,10 +202,8 @@ replacements = {
     "{{HEAD_BRANCH}}": head_branch,
     "{{BASE_BRANCH}}": base_branch,
     "{{PR_BODY}}": pr_body,
-    "{{FILE_LIST}}": os.environ.get("PR_FILE_LIST", ""),
-    "{{PROJECT_STACK}}": os.environ.get("PR_STACK_CONTEXT", "Unknown"),
+    "{{DIFF_FILE}}": os.environ["DIFF_FILE"],
     "{{CURRENT_DATE}}": __import__('datetime').date.today().isoformat(),
-    "{{DIFF}}": diff_text,
     "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
 }
 
