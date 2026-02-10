@@ -33,6 +33,42 @@ runs:
       with:
         python-version: '3.12'
 
+    - name: Read reviewer policies from config
+      id: policies
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+      run: |
+        CONFIG="$CERBERUS_ROOT/defaults/config.yml"
+        python3 - "$CONFIG" <<'PYEOF'
+        import json, os, re, sys
+        config_path = sys.argv[1]
+        with open(config_path) as fh:
+            raw = fh.read()
+        # Strip comment-only lines to prevent matching commented-out entries.
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        # Extract global override actor policy.
+        m = re.search(r'^\s*override:\s*\n(?:.*\n)*?^\s+actor:\s*(\S+)', text, re.MULTILINE)
+        global_policy = m.group(1).strip("\"'") if m else "pr_author"
+        # Extract per-reviewer override policies from reviewers list.
+        policies = {}
+        for block in re.finditer(
+            r'^\s*-\s+name:\s*(\S+).*?(?=^\s*-\s+name:|\Z)', text, re.DOTALL | re.MULTILINE
+        ):
+            name = block.group(1).strip("\"'")
+            om = re.search(r'^\s*override:\s*(\S+)', block.group(0), re.MULTILINE)
+            if om:
+                policies[name] = om.group(1).strip("\"'")
+            else:
+                policies[name] = global_policy
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"global_policy={global_policy}\n")
+            f.write(f"reviewer_policies={json.dumps(policies)}\n")
+        PYEOF
+
     - name: Check for override
       id: override
       shell: bash
@@ -52,6 +88,16 @@ runs:
           echo "CERBERUS_OVERRIDE_EOF"
         } >> "$GITHUB_OUTPUT"
 
+        # Resolve actor's repo permission for write_access/maintainers_only policies.
+        ACTOR_PERMISSION=""
+        if [ -n "$OVERRIDE" ] && [ "$OVERRIDE" != "null" ]; then
+          ACTOR_LOGIN=$(echo "$OVERRIDE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('actor',''))" 2>/dev/null || true)
+          if [ -n "$ACTOR_LOGIN" ]; then
+            ACTOR_PERMISSION=$(gh api "repos/${REPO}/collaborators/${ACTOR_LOGIN}/permission" --jq '.permission' 2>/dev/null || echo "")
+          fi
+        fi
+        echo "actor_permission=$ACTOR_PERMISSION" >> "$GITHUB_OUTPUT"
+
     - name: Aggregate verdicts
       id: aggregate
       shell: bash
@@ -60,7 +106,9 @@ runs:
         GH_OVERRIDE_COMMENT: ${{ steps.override.outputs.override }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         GH_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        GH_OVERRIDE_POLICY: pr_author
+        GH_OVERRIDE_POLICY: ${{ steps.policies.outputs.global_policy }}
+        GH_REVIEWER_POLICIES: ${{ steps.policies.outputs.reviewer_policies }}
+        GH_OVERRIDE_ACTOR_PERMISSION: ${{ steps.override.outputs.actor_permission }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
         echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
@@ -74,7 +122,7 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        GH_OVERRIDE_POLICY: pr_author
+        GH_OVERRIDE_POLICY: ${{ steps.policies.outputs.global_policy }}
         PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         PR_ADDITIONS: ${{ github.event.pull_request.additions }}
         PR_DELETIONS: ${{ github.event.pull_request.deletions }}
