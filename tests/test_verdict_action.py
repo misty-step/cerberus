@@ -122,9 +122,11 @@ def test_fail_on_skip_is_wired_in_actions() -> None:
     assert "FAIL_ON_SKIP" in review_content
 
 
-def test_review_prompt_includes_detected_stack_placeholder() -> None:
+def test_review_prompt_includes_context_bundle_placeholders() -> None:
     prompt_content = REVIEW_PROMPT_TEMPLATE.read_text()
     run_reviewer_content = RUN_REVIEWER_SCRIPT.read_text()
 
-    assert "{{PROJECT_STACK}}" in prompt_content
-    assert '"{{PROJECT_STACK}}"' in run_reviewer_content
+    assert "{{CONTEXT_BUNDLE_DIR}}" in prompt_content
+    assert "{{BUNDLE_SUMMARY}}" in prompt_content
+    assert "CONTEXT_BUNDLE_DIR" in run_reviewer_content
+    assert "build-context.py" in run_reviewer_content

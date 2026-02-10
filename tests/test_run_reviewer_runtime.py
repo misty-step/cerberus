@@ -59,14 +59,21 @@ def write_simple_diff(path: Path) -> None:
 @pytest.fixture(autouse=True)
 def cleanup_tmp_outputs() -> None:
     """Keep /tmp artifacts from one test from leaking into others."""
+    import shutil
     suffixes = ("parse-input", "output.txt", "stderr.log", "exitcode", "review.md", "timeout-marker.txt")
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
             Path(f"/tmp/{perspective}-{suffix}").unlink(missing_ok=True)
+        context_dir = Path(f"/tmp/cerberus-context-{perspective}")
+        if context_dir.exists():
+            shutil.rmtree(context_dir, ignore_errors=True)
     yield
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
             Path(f"/tmp/{perspective}-{suffix}").unlink(missing_ok=True)
+        context_dir = Path(f"/tmp/cerberus-context-{perspective}")
+        if context_dir.exists():
+            shutil.rmtree(context_dir, ignore_errors=True)
 
 
 def test_empty_diff_file_is_handled(tmp_path: Path) -> None:
@@ -100,6 +107,7 @@ def make_env_with_cerberus_root(bin_dir: Path, diff_file: Path, cerberus_root: P
 def write_fake_cerberus_root(root: Path, perspective: str = "security") -> None:
     (root / "defaults").mkdir(parents=True)
     (root / "templates").mkdir(parents=True)
+    (root / "scripts").mkdir(parents=True)
     (root / ".opencode" / "agents").mkdir(parents=True)
 
     (root / "defaults" / "config.yml").write_text(
@@ -111,9 +119,16 @@ def write_fake_cerberus_root(root: Path, perspective: str = "security") -> None:
             ]
         )
     )
-    (root / "templates" / "review-prompt.md").write_text("{{DIFF}}\n")
+    (root / "templates" / "review-prompt.md").write_text(
+        "{{BUNDLE_SUMMARY}}\n{{CONTEXT_BUNDLE_DIR}}\n{{PERSPECTIVE}}\n"
+    )
     (root / "opencode.json").write_text("CERBERUS_OPENCODE_JSON\n")
     (root / ".opencode" / "agents" / f"{perspective}.md").write_text("CERBERUS_AGENT\n")
+
+    # Copy build-context.py from the real repo so run-reviewer.sh can invoke it
+    import shutil
+    real_script = REPO_ROOT / "scripts" / "build-context.py"
+    shutil.copy2(real_script, root / "scripts" / "build-context.py")
 
 
 def test_stages_trusted_opencode_config_then_restores_workspace(tmp_path: Path) -> None:

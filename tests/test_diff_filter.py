@@ -1,5 +1,14 @@
-"""Diff filtering tests for lockfiles, generated files, and minified assets."""
+"""Diff filtering tests for lockfiles, generated files, and minified assets.
 
+With context bundles, diffs are split into per-file files on disk rather than
+injected inline into the prompt. These tests verify:
+- Omitted files (lockfiles, generated, minified) don't get diff files written
+- Included files DO get diff files written
+- The prompt references the context bundle directory
+- Agent configs all have the test-only rule
+"""
+
+import json
 import os
 import stat
 import subprocess
@@ -26,14 +35,6 @@ def _build_diff_hunk(path: str, added_line: str) -> str:
         "@@ -0,0 +1 @@\n"
         f"+{added_line}\n"
     )
-
-
-def _extract_changed_files_section(prompt: str) -> str:
-    marker_open = '<file_list trust="UNTRUSTED">'
-    marker_close = "</file_list>"
-    if marker_open not in prompt or marker_close not in prompt:
-        return ""
-    return prompt.split(marker_open, 1)[1].split(marker_close, 1)[0]
 
 
 @pytest.fixture()
@@ -100,57 +101,125 @@ def _run_reviewer(
     return result, prompt_text, diff_file
 
 
-def test_lockfile_hunks_removed(tmp_path: Path, reviewer_env: dict[str, str]) -> None:
+def _get_context_bundle(perspective: str = "correctness") -> Path:
+    return Path(f"/tmp/cerberus-context-{perspective}")
+
+
+def test_prompt_does_not_contain_inline_diff(
+    tmp_path: Path, reviewer_env: dict[str, str]
+) -> None:
+    """The prompt piped to opencode should NOT contain raw diff content."""
+    diff_text = _build_diff_hunk("src/app.py", "print('app')")
+    _, prompt_text, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
+
+    # Prompt should reference context bundle, not contain inline diff
+    assert "Context Bundle" in prompt_text
+    assert "cerberus-context-" in prompt_text
+    # Should NOT have the old-style <diff> section
+    assert '<diff trust="UNTRUSTED">' not in prompt_text
+    assert "{{DIFF}}" not in prompt_text
+
+
+def test_context_bundle_created(
+    tmp_path: Path, reviewer_env: dict[str, str]
+) -> None:
+    """run-reviewer.sh should create a context bundle directory."""
+    diff_text = _build_diff_hunk("src/app.py", "print('app')")
+    _run_reviewer(diff_text, tmp_path, reviewer_env)
+
+    bundle_dir = _get_context_bundle()
+    assert bundle_dir.exists()
+    assert (bundle_dir / "manifest.json").exists()
+    assert (bundle_dir / "summary.md").exists()
+    assert (bundle_dir / "diffs").is_dir()
+
+
+def test_per_file_diff_written(
+    tmp_path: Path, reviewer_env: dict[str, str]
+) -> None:
+    """Included files should have per-file diffs in the bundle."""
+    diff_text = _build_diff_hunk("src/app.py", "print('app')")
+    _run_reviewer(diff_text, tmp_path, reviewer_env)
+
+    bundle_dir = _get_context_bundle()
+    diff_file = bundle_dir / "diffs" / "src__app.py.diff"
+    assert diff_file.exists()
+    assert "print('app')" in diff_file.read_text()
+
+
+def test_lockfile_not_in_bundle(
+    tmp_path: Path, reviewer_env: dict[str, str]
+) -> None:
+    """Lockfiles should be omitted from the bundle diffs."""
     diff_text = (
         _build_diff_hunk("src/app.py", "print('app')")
         + _build_diff_hunk("package-lock.json", '{"name":"demo"}')
     )
-    _, prompt_text, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
+    _run_reviewer(diff_text, tmp_path, reviewer_env)
 
-    assert "diff --git a/src/app.py b/src/app.py" in prompt_text
-    assert "diff --git a/package-lock.json b/package-lock.json" not in prompt_text
+    bundle_dir = _get_context_bundle()
+
+    # App diff exists
+    assert (bundle_dir / "diffs" / "src__app.py.diff").exists()
+
+    # Lockfile diff does NOT exist
+    assert not (bundle_dir / "diffs" / "package-lock.json.diff").exists()
+
+    # Manifest shows lockfile as omitted
+    manifest = json.loads((bundle_dir / "manifest.json").read_text())
+    lock_entry = [f for f in manifest["files"] if f["path"] == "package-lock.json"]
+    assert len(lock_entry) == 1
+    assert lock_entry[0]["omitted"] is True
 
 
-def test_generated_files_removed(tmp_path: Path, reviewer_env: dict[str, str]) -> None:
+def test_generated_files_not_in_bundle(
+    tmp_path: Path, reviewer_env: dict[str, str]
+) -> None:
     diff_text = (
         _build_diff_hunk("src/app.py", "print('app')")
         + _build_diff_hunk("types.generated.ts", "export type X = string;")
     )
-    _, prompt_text, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
+    _run_reviewer(diff_text, tmp_path, reviewer_env)
 
-    assert "diff --git a/src/app.py b/src/app.py" in prompt_text
-    assert "diff --git a/types.generated.ts b/types.generated.ts" not in prompt_text
+    bundle_dir = _get_context_bundle()
+    assert not (bundle_dir / "diffs" / "types.generated.ts.diff").exists()
 
 
-def test_minified_files_removed(tmp_path: Path, reviewer_env: dict[str, str]) -> None:
+def test_minified_files_not_in_bundle(
+    tmp_path: Path, reviewer_env: dict[str, str]
+) -> None:
     diff_text = (
         _build_diff_hunk("src/app.py", "print('app')")
         + _build_diff_hunk("bundle.min.js", "var x=1;")
     )
-    _, prompt_text, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
+    _run_reviewer(diff_text, tmp_path, reviewer_env)
 
-    assert "diff --git a/src/app.py b/src/app.py" in prompt_text
-    assert "diff --git a/bundle.min.js b/bundle.min.js" not in prompt_text
+    bundle_dir = _get_context_bundle()
+    assert not (bundle_dir / "diffs" / "bundle.min.js.diff").exists()
 
 
-def test_all_files_filtered_keeps_original(
+def test_all_files_filtered_still_produces_bundle(
     tmp_path: Path, reviewer_env: dict[str, str]
 ) -> None:
+    """Even when all files are omitted, bundle is still valid."""
     diff_text = _build_diff_hunk("package-lock.json", '{"name":"demo"}')
-    _, prompt_text, diff_file = _run_reviewer(diff_text, tmp_path, reviewer_env)
+    _run_reviewer(diff_text, tmp_path, reviewer_env)
 
-    assert "diff --git a/package-lock.json b/package-lock.json" in prompt_text
-    assert "diff --git a/package-lock.json b/package-lock.json" in diff_file.read_text()
+    bundle_dir = _get_context_bundle()
+    manifest = json.loads((bundle_dir / "manifest.json").read_text())
+    assert manifest["total_files"] == 1
+    assert manifest["included_files"] == 0
+    assert manifest["omitted_files"] == 1
 
 
-def test_filter_logged(tmp_path: Path, reviewer_env: dict[str, str]) -> None:
+def test_bundle_logged(tmp_path: Path, reviewer_env: dict[str, str]) -> None:
     diff_text = (
         _build_diff_hunk("src/app.py", "print('app')")
         + _build_diff_hunk("package-lock.json", '{"name":"demo"}')
     )
     result, _, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
 
-    assert "Filtered 1 lockfile/generated files from diff" in result.stdout
+    assert "Context bundle:" in result.stdout
 
 
 def test_all_agents_have_test_only_rule() -> None:
@@ -168,15 +237,13 @@ def test_all_agents_have_test_only_rule() -> None:
         assert phrase in content
 
 
-def test_file_list_excludes_filtered_files(
+def test_summary_in_prompt(
     tmp_path: Path, reviewer_env: dict[str, str]
 ) -> None:
-    diff_text = (
-        _build_diff_hunk("src/app.py", "print('app')")
-        + _build_diff_hunk("package-lock.json", '{"name":"demo"}')
-    )
+    """The prompt should contain the bundle summary inline."""
+    diff_text = _build_diff_hunk("src/app.py", "print('app')")
     _, prompt_text, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
-    file_section = _extract_changed_files_section(prompt_text)
 
-    assert "- src/app.py" in file_section
-    assert "package-lock.json" not in file_section
+    # Summary should be in the prompt (file list, counts)
+    assert "1 files changed" in prompt_text
+    assert "src/app.py" in prompt_text
