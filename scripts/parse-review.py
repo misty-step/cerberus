@@ -493,7 +493,16 @@ def main() -> None:
                 sys.exit(0)
 
             # The model sometimes exits 0 but produces empty/non-JSON output.
-            # Treat this as SKIP (non-blocking) rather than FAIL to reduce flakiness.
+            # Check if it's a scratchpad (has investigation notes or verdict header)
+            # and extract what we can before falling back to SKIP.
+            if is_scratchpad(raw):
+                md_verdict = extract_verdict_from_markdown(raw)
+                verdict = md_verdict or "WARN"
+                notes = extract_notes_summary(raw)
+                summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
+                write_fallback(REVIEWER_NAME, "no ```json block found", verdict=verdict, confidence=0.3, summary=summary)
+            
+            # Not a scratchpad — treat as SKIP (non-blocking) to reduce flakiness.
             write_fallback(
                 REVIEWER_NAME,
                 "no ```json block found",
