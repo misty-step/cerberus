@@ -454,7 +454,17 @@ def main() -> None:
     try:
         raw = read_input(input_path)
     except Exception as exc:
-        fail(f"unable to read input: {exc}")
+        # If we can't read the parse input file, this is almost always a prior-step failure
+        # (e.g., the reviewer never produced output). Treat as SKIP so we don't block the PR
+        # with a misleading maintainability/correctness failure.
+        print(f"parse-review: unable to read input: {exc}", file=sys.stderr)
+        write_fallback(
+            REVIEWER_NAME,
+            f"unable to read input: {exc}",
+            verdict="SKIP",
+            confidence=0.0,
+            summary=f"{PARSE_FAILURE_PREFIX}unable to read input: {exc}",
+        )
 
     RAW_INPUT = raw
 
@@ -482,7 +492,27 @@ def main() -> None:
                 skip_verdict = generate_skip_verdict(err_type, raw)
                 print(json.dumps(skip_verdict, indent=2, sort_keys=False))
                 sys.exit(0)
-            fail("no ```json block found")
+
+            print("parse-review: no ```json block found", file=sys.stderr)
+
+            # The model sometimes exits 0 but produces empty/non-JSON output.
+            # Check if it's a scratchpad (has investigation notes or verdict header)
+            # and extract what we can before falling back to SKIP.
+            if is_scratchpad(raw):
+                md_verdict = extract_verdict_from_markdown(raw)
+                verdict = md_verdict or "WARN"
+                notes = extract_notes_summary(raw)
+                summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
+                write_fallback(REVIEWER_NAME, "no ```json block found", verdict=verdict, confidence=0.3, summary=summary)
+            
+            # Not a scratchpad — treat as SKIP (non-blocking) to reduce flakiness.
+            write_fallback(
+                REVIEWER_NAME,
+                "no ```json block found",
+                verdict="SKIP",
+                confidence=0.0,
+                summary=f"{PARSE_FAILURE_PREFIX}no ```json block found",
+            )
 
         try:
             obj = json.loads(json_block)

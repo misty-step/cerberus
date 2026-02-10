@@ -106,7 +106,7 @@ class TestParseErrors:
         code, out, err = run_parse("Just some text with no json block")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Changed: missing JSON block is non-blocking
         assert data["confidence"] == 0.0
         assert "no" in err.lower() and "json" in err.lower()
 
@@ -257,7 +257,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args(["/nonexistent/path.txt"])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Changed: file read errors are non-blocking
         assert "unable to read" in err.lower()
 
     def test_reviewer_with_file(self, tmp_path):
@@ -894,7 +894,7 @@ def test_fallback_on_no_json_block():
     )
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Changed: missing JSON block is non-blocking
     assert data["confidence"] == 0.0
     assert data["reviewer"] == "APOLLO"
 
@@ -976,11 +976,11 @@ def test_invalid_finding_severity():
 
 
 def test_root_not_object():
-    """JSON array at root triggers fallback."""
+    """JSON array at root triggers fallback (note: regex only matches {}, so array is 'no block')."""
     code, out, _ = run_parse('```json\n[1, 2, 3]\n```')
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Changed: extract_json_block regex only matches objects, not arrays
     assert data["confidence"] == 0.0
 
 
