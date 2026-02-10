@@ -25,6 +25,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # `sync-v2-tag.yml` force-moves the floating `v2` tag after CI.
+      # semantic-release runs `git fetch --tags` and will fail if local `v2`
+      # exists but points elsewhere ("would clobber existing tag").
+      - name: Delete local v2 tag (avoid semantic-release fetch clobber)
+        run: |
+          set -euo pipefail
+          git tag -d v2 || true
+
       # Landfall: Automated semantic-release pipeline
       # https://github.com/misty-step/landfall
       - name: Run Landfall
