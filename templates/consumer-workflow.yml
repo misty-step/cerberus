@@ -8,10 +8,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: write
-
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -19,6 +15,9 @@ concurrency:
 jobs:
   review:
     if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: read
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
@@ -37,6 +36,7 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          post-comment: 'false'
           timeout: '600'
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
@@ -44,6 +44,9 @@ jobs:
     name: "Council Verdict"
     needs: review
     if: always()
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - uses: misty-step/cerberus/verdict@v2
