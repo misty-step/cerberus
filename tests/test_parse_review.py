@@ -1289,6 +1289,7 @@ SENTINEL (security) exceeded the configured timeout.
 Fast-path: yes
 Files in diff: src/main.py
 src/utils.py
+tests/test_app.py
 Next steps: Increase timeout, reduce diff size, or check model provider status.
 """
         code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "SENTINEL"})
@@ -1299,7 +1300,10 @@ Next steps: Increase timeout, reduce diff size, or check model provider status.
         assert "timeout after 600s" in data["summary"]
         assert "src/main.py" in data["findings"][0]["description"]
         assert "files_in_diff" in data
+        # Must capture ALL files, not just the first line.
         assert "src/main.py" in data["files_in_diff"]
+        assert "src/utils.py" in data["files_in_diff"]
+        assert "tests/test_app.py" in data["files_in_diff"]
 
     def test_enriched_timeout_fast_path_yes_suggests_provider_stall(self):
         """When fast-path was attempted, suggestion mentions provider stall."""

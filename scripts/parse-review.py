@@ -140,7 +140,9 @@ def detect_timeout(text: str) -> tuple[bool, int | None, str, str]:
     timeout_seconds = int(timeout_match.group(1))
 
     # Extract enriched metadata from timeout marker.
-    files_match = re.search(r"^Files in diff:\s*(.+)$", text, re.MULTILINE)
+    files_match = re.search(
+        r"^Files in diff:\s*(.*?)(?=^Next steps:|\Z)", text, re.DOTALL | re.MULTILINE,
+    )
     files_in_diff = files_match.group(1).strip() if files_match else ""
 
     fp_match = re.search(r"^Fast-path:\s*(.+)$", text, re.MULTILINE)
