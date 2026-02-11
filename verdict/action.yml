@@ -80,38 +80,53 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: |
-        # REST issue comments use .user.login; GraphQL comments use .author.login.
-        if ! OVERRIDE=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .user.login, body: .body}] | last' 2>&1); then
-          echo "::warning::Failed to fetch override comments: $OVERRIDE"
-          OVERRIDE=""
+        # Collect ALL override comments chronologically (not just the last one).
+        # Python's select_override() iterates in order, picking the first authorized.
+        # Uses --paginate to handle PRs with 30+ comments.
+        if ! OVERRIDES=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .user.login, body: .body}]' 2>&1); then
+          echo "::warning::Failed to fetch override comments: $OVERRIDES"
+          OVERRIDES="[]"
         fi
         {
-          echo "override<<CERBERUS_OVERRIDE_EOF"
-          echo "$OVERRIDE"
+          echo "overrides<<CERBERUS_OVERRIDE_EOF"
+          echo "$OVERRIDES"
           echo "CERBERUS_OVERRIDE_EOF"
         } >> "$GITHUB_OUTPUT"
 
-        # Resolve actor's repo permission for write_access/maintainers_only policies.
-        ACTOR_PERMISSION=""
-        if [ -n "$OVERRIDE" ] && [ "$OVERRIDE" != "null" ]; then
-          ACTOR_LOGIN=$(echo "$OVERRIDE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('actor',''))" 2>/dev/null || true)
-          if [ -n "$ACTOR_LOGIN" ]; then
-            ACTOR_PERMISSION=$(gh api "repos/${REPO}/collaborators/${ACTOR_LOGIN}/permission" --jq '.permission' 2>/dev/null || echo "")
-          fi
+        # Resolve repo permissions for all unique override actors.
+        ACTOR_PERMISSIONS="{}"
+        if [ "$OVERRIDES" != "[]" ] && [ "$OVERRIDES" != "null" ] && [ -n "$OVERRIDES" ]; then
+          ACTOR_PERMISSIONS=$(OVERRIDES_JSON="$OVERRIDES" REPO_NAME="$REPO" python3 -c '
+        import json, os, subprocess
+        comments = json.loads(os.environ.get("OVERRIDES_JSON", "[]"))
+        actors = sorted({c.get("actor", "") for c in comments if isinstance(c, dict) and c.get("actor")})
+        perms = {}
+        repo = os.environ["REPO_NAME"]
+        for actor in actors:
+            try:
+                result = subprocess.run(
+                    ["gh", "api", f"repos/{repo}/collaborators/{actor}/permission", "--jq", ".permission"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                perms[actor] = result.stdout.strip() if result.returncode == 0 else ""
+            except Exception:
+                perms[actor] = ""
+        print(json.dumps(perms))
+        ' 2>/dev/null || echo "{}")
         fi
-        echo "actor_permission=$ACTOR_PERMISSION" >> "$GITHUB_OUTPUT"
+        echo "actor_permissions=$ACTOR_PERMISSIONS" >> "$GITHUB_OUTPUT"
 
     - name: Aggregate verdicts
       id: aggregate
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}/..
-        GH_OVERRIDE_COMMENT: ${{ steps.override.outputs.override }}
+        GH_OVERRIDE_COMMENTS: ${{ steps.override.outputs.overrides }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         GH_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         GH_OVERRIDE_POLICY: ${{ steps.policies.outputs.global_policy }}
         GH_REVIEWER_POLICIES: ${{ steps.policies.outputs.reviewer_policies }}
-        GH_OVERRIDE_ACTOR_PERMISSION: ${{ steps.override.outputs.actor_permission }}
+        GH_OVERRIDE_ACTOR_PERMISSIONS: ${{ steps.override.outputs.actor_permissions }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
         echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"

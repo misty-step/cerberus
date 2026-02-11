@@ -13,6 +13,8 @@ def run_aggregate(verdict_dir: str, env_extra: dict | None = None) -> tuple[int,
     """Run aggregate-verdict.py with a verdict directory."""
     env = os.environ.copy()
     env.pop("GH_OVERRIDE_COMMENT", None)
+    env.pop("GH_OVERRIDE_COMMENTS", None)
+    env.pop("GH_OVERRIDE_ACTOR_PERMISSIONS", None)
     env.pop("GH_HEAD_SHA", None)
     env.pop("GH_PR_AUTHOR", None)
     env.pop("GH_OVERRIDE_POLICY", None)
@@ -1341,5 +1343,220 @@ class TestPerReviewerOverrideIntegration:
         assert code == 0
         assert "invalid GH_REVIEWER_POLICIES" in err
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+
+
+# ---------------------------------------------------------------------------
+# Override comment selection ordering (Issue #25)
+# ---------------------------------------------------------------------------
+
+_select_override = aggregate_verdict.select_override
+
+
+class TestSelectOverrideUnit:
+    """Unit tests for select_override() — first-authorized selection."""
+
+    def test_single_authorized_override_selected(self):
+        comments = json.dumps([
+            {"actor": "author", "sha": "abc1234", "reason": "verified"},
+        ])
+        result = _select_override(
+            comments, "abc1234", "pr_author", "author",
+        )
+        assert result is not None
+        assert result["actor"] == "author"
+
+    def test_first_authorized_selected_from_multiple(self):
+        comments = json.dumps([
+            {"actor": "author", "sha": "abc1234", "reason": "first override"},
+            {"actor": "author", "sha": "abc1234", "reason": "second override"},
+        ])
+        result = _select_override(
+            comments, "abc1234", "pr_author", "author",
+        )
+        assert result is not None
+        assert result["reason"] == "first override"
+
+    def test_unauthorized_skipped_authorized_selected(self):
+        comments = json.dumps([
+            {"actor": "intruder", "sha": "abc1234", "reason": "sneaky"},
+            {"actor": "author", "sha": "abc1234", "reason": "legit"},
+        ])
+        result = _select_override(
+            comments, "abc1234", "pr_author", "author",
+        )
+        assert result is not None
+        assert result["actor"] == "author"
+        assert result["reason"] == "legit"
+
+    def test_no_authorized_overrides_returns_none(self):
+        comments = json.dumps([
+            {"actor": "intruder1", "sha": "abc1234", "reason": "nope"},
+            {"actor": "intruder2", "sha": "abc1234", "reason": "also nope"},
+        ])
+        result = _select_override(
+            comments, "abc1234", "pr_author", "author",
+        )
+        assert result is None
+
+    def test_none_input(self):
+        assert _select_override(None, "abc1234", "pr_author", "author") is None
+
+    def test_empty_array(self):
+        assert _select_override("[]", "abc1234", "pr_author", "author") is None
+
+    def test_invalid_json(self):
+        assert _select_override("{bad", "abc1234", "pr_author", "author") is None
+
+    def test_single_object_backward_compat(self):
+        """Single JSON object (not array) should still work."""
+        comment = json.dumps(
+            {"actor": "author", "sha": "abc1234", "reason": "verified"},
+        )
+        result = _select_override(
+            comment, "abc1234", "pr_author", "author",
+        )
+        assert result is not None
+        assert result["actor"] == "author"
+
+    def test_write_access_policy_picks_first_authorized(self):
+        comments = json.dumps([
+            {"actor": "reader", "sha": "abc1234", "reason": "no perms"},
+            {"actor": "admin", "sha": "abc1234", "reason": "has perms"},
+        ])
+        result = _select_override(
+            comments, "abc1234", "write_access", "other",
+            actor_permissions={"reader": "read", "admin": "admin"},
+        )
+        assert result is not None
+        assert result["actor"] == "admin"
+        assert result["reason"] == "has perms"
+
+    def test_sha_mismatch_skipped(self):
+        comments = json.dumps([
+            {"actor": "author", "sha": "wrongsha", "reason": "bad sha"},
+            {"actor": "author", "sha": "abc1234", "reason": "right sha"},
+        ])
+        result = _select_override(
+            comments, "abc1234", "pr_author", "author",
+        )
+        assert result is not None
+        assert result["reason"] == "right sha"
+
+    def test_logs_selection_reason(self, capsys):
+        comments = json.dumps([
+            {"actor": "intruder", "sha": "abc1234", "reason": "bad"},
+            {"actor": "author", "sha": "abc1234", "reason": "good"},
+        ])
+        _select_override(comments, "abc1234", "pr_author", "author")
+        captured = capsys.readouterr()
+        assert "rejected" in captured.err
+        assert "authorized" in captured.err
+
+
+class TestSelectOverrideIntegration:
+    """Subprocess integration tests for multi-comment override selection."""
+
+    def test_first_authorized_comment_wins(self, tmp_path):
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue found.",
+        }))
+        comments = json.dumps([
+            {"actor": "intruder", "sha": "abc1234", "reason": "sneaky override"},
+            {"actor": "author", "sha": "abc1234", "reason": "legit override"},
+        ])
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENTS": comments,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+        assert data["override"]["actor"] == "author"
+        assert "rejected" in err  # intruder rejected
+        assert "authorized" in err  # author accepted
+
+    def test_no_authorized_comments_keeps_fail(self, tmp_path):
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue found.",
+        }))
+        comments = json.dumps([
+            {"actor": "intruder1", "sha": "abc1234", "reason": "nope"},
+            {"actor": "intruder2", "sha": "abc1234", "reason": "also nope"},
+        ])
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENTS": comments,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "FAIL"
+        assert data["override"]["used"] is False
+
+    def test_with_actor_permissions_map(self, tmp_path):
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue found.",
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }))
+        comments = json.dumps([
+            {"actor": "reader", "sha": "abc1234", "reason": "no perms"},
+            {"actor": "maintainer", "sha": "abc1234", "reason": "has perms"},
+        ])
+        policies = json.dumps({"SENTINEL": "maintainers_only"})
+        permissions = json.dumps({"reader": "read", "maintainer": "maintain"})
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENTS": comments,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "other",
+                "GH_REVIEWER_POLICIES": policies,
+                "GH_OVERRIDE_ACTOR_PERMISSIONS": permissions,
+            },
+        )
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True
+        assert data["override"]["actor"] == "maintainer"
+
+    def test_non_dict_actor_permissions_warns_and_degrades(self, tmp_path):
+        """Non-dict GH_OVERRIDE_ACTOR_PERMISSIONS should warn and treat actors as unpermissioned."""
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue found.",
+        }))
+        comments = json.dumps([
+            {"actor": "author", "sha": "abc1234", "reason": "verified"},
+        ])
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENTS": comments,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+                "GH_OVERRIDE_ACTOR_PERMISSIONS": '["not","a","dict"]',
+            },
+        )
+        assert code == 0
+        assert "invalid GH_OVERRIDE_ACTOR_PERMISSIONS" in err
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        # pr_author policy doesn't need permissions, so override still works
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
