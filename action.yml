@@ -88,6 +88,7 @@ runs:
       uses: actions/setup-node@v5
       with:
         node-version: '22'
+        package-manager-cache: false
 
     - name: Install OpenCode CLI
       shell: bash
