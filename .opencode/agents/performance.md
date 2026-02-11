@@ -67,6 +67,7 @@ Scale Scenarios
 - Background jobs without rate limiting
 - Cache stampede on shared keys
 - Retry loops without jitter
+- Defaults changes that shift the hot path: when a diff makes a different backend, algorithm, or code path the default, verify the newly-defaulted path's performance characteristics at scale
 
 Anti-Patterns (Do Not Flag)
 - Micro-optimizations without scale impact

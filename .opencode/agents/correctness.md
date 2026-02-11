@@ -57,6 +57,7 @@ Secondary Focus (check if relevant)
 - Feature flags defaulting to unsafe logic paths
 - Backward-compat issues that break runtime behavior
 - Migrations that can lose or corrupt data
+- Defaults changes that activate untested code paths: when a diff switches which implementation runs by default, trace the newly-defaulted path for correctness even if its lines are unchanged
 
 Anti-Patterns (Do Not Flag)
 - Naming, formatting, style, lint rules
