@@ -62,7 +62,7 @@ def cleanup_tmp_outputs() -> None:
     suffixes = (
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
-        "fast-path-stderr.log",
+        "fast-path-stderr.log", "model-used",
     )
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
@@ -650,3 +650,230 @@ def test_short_timeout_skips_fast_path(tmp_path: Path) -> None:
     content = parse_file.read_text()
     assert "Review Timeout:" in content
     assert "Fast-path: no" in content
+
+
+# --- Model fallback tests ---
+
+
+def test_fallback_model_used_after_primary_transient_failure(tmp_path: Path) -> None:
+    """When primary model exhausts retries with transient errors, fallback model is tried."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    # opencode stub: first 4 calls fail (primary: 1 + 3 retries), 5th succeeds (fallback).
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(attempt_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(attempt_counter) + "'\n"
+            "if [[ \"$count\" -le 4 ]]; then\n"
+            "  echo 'HTTP 500 Internal Server Error' >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Fallback succeeded",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+    make_executable(bin_dir / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/anthropic/claude-sonnet-4-5"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+    assert "Falling back to model:" in result.stdout
+    assert "openrouter/anthropic/claude-sonnet-4-5" in result.stdout
+    assert "model_used=openrouter/anthropic/claude-sonnet-4-5" in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/anthropic/claude-sonnet-4-5"
+
+
+def test_primary_succeeds_no_fallback_triggered(tmp_path: Path) -> None:
+    """When primary model succeeds, no fallback is attempted."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/anthropic/claude-sonnet-4-5"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "Falling back to model:" not in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/moonshotai/kimi-k2.5"
+
+
+def test_all_models_fail_writes_error_verdict(tmp_path: Path) -> None:
+    """When all models fail with transient errors, write error verdict."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "echo 'HTTP 500 Internal Server Error' >&2\n"
+            "exit 1\n"
+        ),
+    )
+    make_executable(bin_dir / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/fallback-model"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
+    parse_file = Path(parse_input_ref.read_text().strip())
+    content = parse_file.read_text()
+    assert "API Error:" in content
+    assert "Models tried:" in content
+
+
+def test_auth_error_skips_fallback(tmp_path: Path) -> None:
+    """Auth/quota permanent errors do NOT trigger model fallback."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(attempt_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(attempt_counter) + "'\n"
+            "echo '401 incorrect_api_key' >&2\n"
+            "exit 1\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/fallback-model"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    # Should NOT have fallen back — auth error is the same API key for all models.
+    assert attempt_counter.read_text() == "1"
+    assert "Falling back to model:" not in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    parse_file = Path(parse_input_ref.read_text().strip())
+    content = parse_file.read_text()
+    assert "API Error: API_KEY_INVALID" in content
+
+
+def test_client_4xx_triggers_fallback(tmp_path: Path) -> None:
+    """Non-auth 4xx errors (e.g., model not found) trigger model fallback."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(attempt_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(attempt_counter) + "'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  echo 'HTTP 404 Not Found: model does not exist' >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Fallback model worked",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/fallback-model"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "Falling back to model:" in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/fallback-model"
+
+
+def test_no_fallback_models_behaves_same_as_before(tmp_path: Path) -> None:
+    """When CERBERUS_FALLBACK_MODELS is empty, behavior matches original (no fallback)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "echo 'HTTP 500 Internal Server Error' >&2\n"
+            "exit 1\n"
+        ),
+    )
+    make_executable(bin_dir / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    # No CERBERUS_FALLBACK_MODELS set
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+    assert "Falling back to model:" not in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/moonshotai/kimi-k2.5"

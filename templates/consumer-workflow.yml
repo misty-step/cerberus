@@ -38,6 +38,7 @@ jobs:
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           post-comment: 'false'
           timeout: '600'
+          # fallback-models: 'openrouter/anthropic/claude-sonnet-4-5,openrouter/openai/gpt-4o' # optional: fallback models on transient failure
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
   verdict:

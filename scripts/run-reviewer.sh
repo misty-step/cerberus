@@ -25,6 +25,7 @@ cerberus_cleanup() {
   # Note: fast-path-output.txt is NOT cleaned here — it may be the parse input
   # for downstream steps (same as primary output.txt and review.md).
   rm -f "/tmp/${perspective}-fast-path-stderr.log" || true
+  # Note: model-used is NOT cleaned here — downstream steps read it.
   rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
   if [[ -z "$cerberus_staging_backup_dir" ]]; then
@@ -230,7 +231,22 @@ export CERBERUS_ISOLATED_HOME
 
 echo "Running reviewer: $reviewer_name ($perspective)"
 
-model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+primary_model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+
+# Build ordered model list: primary + optional fallbacks.
+models=("$primary_model")
+if [[ -n "${CERBERUS_FALLBACK_MODELS:-}" ]]; then
+  IFS=',' read -ra _fallback_models <<< "$CERBERUS_FALLBACK_MODELS"
+  for _fm in "${_fallback_models[@]}"; do
+    _fm_trimmed="$(echo "$_fm" | xargs)"  # trim whitespace
+    if [[ -n "$_fm_trimmed" ]]; then
+      models+=("$_fm_trimmed")
+    fi
+  done
+fi
+
+model="${models[0]}"
+model_used="${models[0]}"
 
 review_timeout="${REVIEW_TIMEOUT:-600}"
 
@@ -331,67 +347,123 @@ default_backoff_seconds() {
   esac
 }
 
-# Run opencode with retry logic for transient errors
+# Run opencode with retry + model fallback logic.
+# Inner loop: retry transient errors with backoff (up to max_retries).
+# Outer loop: cycle through fallback models when retries are exhausted.
 max_retries=3
-retry_count=0
+model_index=0
+fallback_triggered=false
 
-while true; do
-  set +e
-  # Run opencode with a sanitized environment.  Only explicitly-allowed
-  # variables are forwarded.  This prevents the model/CLI from seeing
-  # GITHUB_TOKEN, GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other
-  # secrets that leak via the Actions runner environment.
-  env -i \
-    PATH="${PATH}" \
-    HOME="${CERBERUS_ISOLATED_HOME}" \
-    XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
-    XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
-    TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
-    OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-    OPENCODE_DISABLE_AUTOUPDATE=true \
-    ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
-    ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-  timeout "${primary_timeout}" opencode run \
-    -m "${model}" \
-    --agent "${perspective}" \
-    < "/tmp/${perspective}-review-prompt.md" \
-    > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
-  exit_code=$?
-  set -e
-
-  # Always dump diagnostics for CI visibility
-  scratchpad="/tmp/${perspective}-review.md"
-  stdout_file="/tmp/${perspective}-output.txt"
-  output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
-  scratchpad_size="0"
-  if [[ -f "$scratchpad" ]]; then
-    scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+for model in "${models[@]}"; do
+  if [[ $model_index -gt 0 ]]; then
+    echo "Falling back to model: ${model} (fallback $model_index/${#models[@]})"
+    fallback_triggered=true
   fi
-  echo "opencode exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes (attempt $((retry_count + 1))/$((max_retries + 1)))"
+  model_used="$model"
+  retry_count=0
+  advance_to_next_model=false
 
-  if [[ "$exit_code" -eq 0 ]]; then
-    break
-  fi
+  while true; do
+    set +e
+    # Run opencode with a sanitized environment.  Only explicitly-allowed
+    # variables are forwarded.  This prevents the model/CLI from seeing
+    # GITHUB_TOKEN, GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other
+    # secrets that leak via the Actions runner environment.
+    env -i \
+      PATH="${PATH}" \
+      HOME="${CERBERUS_ISOLATED_HOME}" \
+      XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
+      XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
+      TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
+      OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+      OPENCODE_DISABLE_AUTOUPDATE=true \
+      ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
+      ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
+    timeout "${primary_timeout}" opencode run \
+      -m "${model}" \
+      --agent "${perspective}" \
+      < "/tmp/${perspective}-review-prompt.md" \
+      > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
+    exit_code=$?
+    set -e
 
-  if [[ "$exit_code" -eq 124 ]]; then
-    break
-  fi
-
-  detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log"
-
-  if [[ "$DETECTED_ERROR_TYPE" == "transient" ]] && [[ $retry_count -lt $max_retries ]]; then
-    retry_count=$((retry_count + 1))
-    wait_seconds="$(default_backoff_seconds "$retry_count")"
-    if [[ "$DETECTED_ERROR_CLASS" == "rate_limit" ]] && [[ "$DETECTED_RETRY_AFTER_SECONDS" =~ ^[0-9]+$ ]] && [[ "$DETECTED_RETRY_AFTER_SECONDS" -gt 0 ]]; then
-      wait_seconds="$DETECTED_RETRY_AFTER_SECONDS"
+    # Always dump diagnostics for CI visibility
+    scratchpad="/tmp/${perspective}-review.md"
+    stdout_file="/tmp/${perspective}-output.txt"
+    output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
+    scratchpad_size="0"
+    if [[ -f "$scratchpad" ]]; then
+      scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
     fi
-    echo "Retrying after transient error (class=${DETECTED_ERROR_CLASS}) attempt ${retry_count}/${max_retries}; wait=${wait_seconds}s"
-    sleep "$wait_seconds"
+    echo "opencode exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes model=${model} (attempt $((retry_count + 1))/$((max_retries + 1)))"
+
+    if [[ "$exit_code" -eq 0 ]]; then
+      break 2  # Success — exit both loops
+    fi
+
+    if [[ "$exit_code" -eq 124 ]]; then
+      break 2  # Timeout — handled downstream (fast-path fallback)
+    fi
+
+    detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log"
+
+    if [[ "$DETECTED_ERROR_TYPE" == "transient" ]] && [[ $retry_count -lt $max_retries ]]; then
+      retry_count=$((retry_count + 1))
+      wait_seconds="$(default_backoff_seconds "$retry_count")"
+      if [[ "$DETECTED_ERROR_CLASS" == "rate_limit" ]] && [[ "$DETECTED_RETRY_AFTER_SECONDS" =~ ^[0-9]+$ ]] && [[ "$DETECTED_RETRY_AFTER_SECONDS" -gt 0 ]]; then
+        wait_seconds="$DETECTED_RETRY_AFTER_SECONDS"
+      fi
+      echo "Retrying after transient error (class=${DETECTED_ERROR_CLASS}) attempt ${retry_count}/${max_retries}; wait=${wait_seconds}s"
+      sleep "$wait_seconds"
+      continue
+    fi
+
+    # Transient errors with retries exhausted: try next model if available.
+    if [[ "$DETECTED_ERROR_TYPE" == "transient" ]]; then
+      advance_to_next_model=true
+      break
+    fi
+
+    # Permanent auth/quota errors: no fallback (same API key for all models).
+    if [[ "$DETECTED_ERROR_CLASS" == "auth_or_quota" ]]; then
+      echo "Permanent API error detected (auth/quota). Writing error verdict."
+      break 2
+    fi
+
+    # Other permanent errors (e.g., 4xx model-not-found): try next model.
+    if [[ "$DETECTED_ERROR_TYPE" == "permanent" ]]; then
+      advance_to_next_model=true
+      break
+    fi
+
+    # Unknown error type — no point retrying or falling back.
+    break 2
+  done
+
+  if [[ "$advance_to_next_model" == "true" ]] && [[ $((model_index + 1)) -lt ${#models[@]} ]]; then
+    echo "Model ${model} exhausted retries (class=${DETECTED_ERROR_CLASS}). Trying next fallback..."
+    model_index=$((model_index + 1))
     continue
   fi
 
-  # If it's a permanent error, write structured error JSON
-  if [[ "$DETECTED_ERROR_TYPE" == "permanent" ]]; then
+  # No more fallback models available.
+  break
+done
+
+# Log which model was ultimately used.
+echo "model_used=${model_used}"
+if [[ "$fallback_triggered" == "true" ]]; then
+  echo "::notice::Review used fallback model: ${model_used} (primary: ${models[0]})"
+fi
+
+# Write model metadata for downstream steps.
+echo "$model_used" > "/tmp/${perspective}-model-used"
+
+# Handle permanent errors that fell through (auth/quota or final model exhausted).
+if [[ "$exit_code" -ne 0 ]]; then
+  detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log"
+
+  if [[ "$DETECTED_ERROR_TYPE" == "permanent" ]] || [[ "$DETECTED_ERROR_TYPE" == "transient" ]]; then
     echo "Permanent API error detected. Writing error verdict."
 
     # Preserve stderr for debugging before we override the output
@@ -410,6 +482,7 @@ while true; do
       error_type_str="API_CREDITS_DEPLETED"
     fi
 
+    models_tried="${models[*]}"
     # Write structured error marker for parse-review.py
     cat > "/tmp/${perspective}-output.txt" <<EOF
 API Error: $error_type_str
@@ -418,13 +491,12 @@ The OpenRouter API returned an error that prevents the review from completing:
 
 $error_msg
 
+Models tried: ${models_tried}
 Please check your API key and quota settings.
 EOF
     exit_code=0  # Mark as success so parse-review.py can handle it
   fi
-
-  break
-done
+fi
 
 if [[ "$exit_code" -ne 0 ]]; then
   echo "--- stderr ---" >&2

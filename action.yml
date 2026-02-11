@@ -19,6 +19,9 @@ inputs:
   model:
     description: 'Model name'
     default: 'openrouter/moonshotai/kimi-k2.5'
+  fallback-models:
+    description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
+    default: ''
   max-steps:
     description: 'Max agentic steps per review'
     default: '25'
@@ -124,6 +127,7 @@ runs:
         PERSPECTIVE: ${{ inputs.perspective }}
         OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
         OPENCODE_MODEL: ${{ inputs.model }}
+        CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}
         GH_DIFF_FILE: /tmp/pr.diff
