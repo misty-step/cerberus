@@ -125,17 +125,30 @@ def detect_api_error(text: str) -> tuple[bool, str]:
     return False, ""
 
 
-def detect_timeout(text: str) -> tuple[bool, int | None]:
-    """Detect explicit timeout markers from run-reviewer.sh output."""
+def detect_timeout(text: str) -> tuple[bool, int | None, str, str]:
+    """Detect explicit timeout markers from run-reviewer.sh output.
+
+    Returns (is_timeout, timeout_seconds, files_in_diff, fast_path_status).
+    """
     timeout_match = re.search(r"Review Timeout:\s*timeout after\s*(\d+)s", text, re.IGNORECASE)
-    if timeout_match:
-        return True, int(timeout_match.group(1))
+    if not timeout_match:
+        generic_timeout_match = re.search(r"timeout after\s*(\d+)s", text, re.IGNORECASE)
+        if not generic_timeout_match:
+            return False, None, "", ""
+        timeout_match = generic_timeout_match
 
-    generic_timeout_match = re.search(r"timeout after\s*(\d+)s", text, re.IGNORECASE)
-    if generic_timeout_match:
-        return True, int(generic_timeout_match.group(1))
+    timeout_seconds = int(timeout_match.group(1))
 
-    return False, None
+    # Extract enriched metadata from timeout marker.
+    files_match = re.search(
+        r"^Files in diff:\s*(.*?)(?=^Next steps:|\Z)", text, re.DOTALL | re.MULTILINE,
+    )
+    files_in_diff = files_match.group(1).strip() if files_match else ""
+
+    fp_match = re.search(r"^Fast-path:\s*(.+)$", text, re.MULTILINE)
+    fast_path_status = fp_match.group(1).strip() if fp_match else ""
+
+    return True, timeout_seconds, files_in_diff, fast_path_status
 
 
 def generate_skip_verdict(error_type: str, text: str) -> dict:
@@ -175,9 +188,29 @@ def generate_skip_verdict(error_type: str, text: str) -> dict:
     }
 
 
-def generate_timeout_skip_verdict(reviewer: str, timeout_seconds: int | None) -> dict:
+def generate_timeout_skip_verdict(
+    reviewer: str,
+    timeout_seconds: int | None,
+    files_in_diff: str = "",
+    fast_path_status: str = "",
+) -> dict:
     timeout_suffix = f" after {timeout_seconds}s" if timeout_seconds is not None else ""
-    return {
+
+    # Build an informative description with available diagnostics.
+    desc_parts = ["Reviewer exceeded the configured runtime limit before completing."]
+    if files_in_diff:
+        desc_parts.append(f"Files in diff: {files_in_diff}")
+    if fast_path_status:
+        desc_parts.append(f"Fast-path fallback: {fast_path_status}")
+    description = " ".join(desc_parts)
+
+    suggestion_parts = []
+    if fast_path_status.startswith("yes") or fast_path_status.startswith("attempted"):
+        suggestion_parts.append("Model provider may be stalled — check provider status.")
+    suggestion_parts.append("Increase timeout, reduce diff size, or try a faster model.")
+    suggestion = " ".join(suggestion_parts)
+
+    verdict: dict = {
         "reviewer": reviewer,
         "perspective": "timeout",
         "verdict": "SKIP",
@@ -190,8 +223,8 @@ def generate_timeout_skip_verdict(reviewer: str, timeout_seconds: int | None) ->
                 "file": "N/A",
                 "line": 0,
                 "title": f"Reviewer timeout{timeout_suffix}",
-                "description": "Reviewer exceeded the configured runtime limit before completing.",
-                "suggestion": "Increase timeout for this reviewer or reduce prompt/diff size.",
+                "description": description,
+                "suggestion": suggestion,
             }
         ],
         "stats": {
@@ -203,6 +236,9 @@ def generate_timeout_skip_verdict(reviewer: str, timeout_seconds: int | None) ->
             "info": 1,
         },
     }
+    if files_in_diff:
+        verdict["files_in_diff"] = [f.strip() for f in files_in_diff.split("\n") if f.strip()]
+    return verdict
 
 
 def extract_json_block(text: str) -> str | None:
@@ -469,9 +505,11 @@ def main() -> None:
     RAW_INPUT = raw
 
     # Check for explicit timeout markers first (from run-reviewer.sh)
-    is_timeout, timeout_seconds = detect_timeout(raw)
+    is_timeout, timeout_seconds, files_in_diff, fast_path_status = detect_timeout(raw)
     if is_timeout:
-        timeout_verdict = generate_timeout_skip_verdict(REVIEWER_NAME, timeout_seconds)
+        timeout_verdict = generate_timeout_skip_verdict(
+            REVIEWER_NAME, timeout_seconds, files_in_diff, fast_path_status,
+        )
         print(json.dumps(timeout_verdict, indent=2, sort_keys=False))
         sys.exit(0)
 

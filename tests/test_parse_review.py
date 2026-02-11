@@ -1277,3 +1277,86 @@ Your quota has been exceeded. billing issue detected.
         finding = data["findings"][0]
         assert "Check API key" in finding["suggestion"]
         assert "fallback" not in finding["suggestion"].lower()
+
+
+class TestEnrichedTimeoutVerdicts:
+    """Tests for enriched timeout markers with file list and diagnostics."""
+
+    def test_enriched_timeout_includes_file_list(self):
+        """Enriched timeout marker includes files_in_diff in the verdict."""
+        timeout_text = """Review Timeout: timeout after 600s
+SENTINEL (security) exceeded the configured timeout.
+Fast-path: yes
+Files in diff: src/main.py
+src/utils.py
+tests/test_app.py
+Next steps: Increase timeout, reduce diff size, or check model provider status.
+"""
+        code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "SENTINEL"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "SENTINEL"
+        assert "timeout after 600s" in data["summary"]
+        assert "src/main.py" in data["findings"][0]["description"]
+        assert "files_in_diff" in data
+        # Must capture ALL files, not just the first line.
+        assert "src/main.py" in data["files_in_diff"]
+        assert "src/utils.py" in data["files_in_diff"]
+        assert "tests/test_app.py" in data["files_in_diff"]
+
+    def test_enriched_timeout_fast_path_yes_suggests_provider_stall(self):
+        """When fast-path was attempted, suggestion mentions provider stall."""
+        timeout_text = """Review Timeout: timeout after 600s
+APOLLO (correctness) exceeded the configured timeout.
+Fast-path: yes
+Files in diff: app.py
+Next steps: Increase timeout, reduce diff size, or check model provider status.
+"""
+        code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert "provider" in data["findings"][0]["suggestion"].lower()
+
+    def test_enriched_timeout_fast_path_no_omits_stall_hint(self):
+        """When fast-path was not attempted, no provider stall hint."""
+        timeout_text = """Review Timeout: timeout after 60s
+APOLLO (correctness) exceeded the configured timeout.
+Fast-path: no
+Files in diff: app.py
+Next steps: Increase timeout (current: 60s is too short for fast-path fallback).
+"""
+        code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        # Should still be a valid SKIP verdict
+        assert data["verdict"] == "SKIP"
+        # Provider stall hint should NOT be in suggestion when fast-path wasn't tried
+        assert "stalled" not in data["findings"][0]["suggestion"].lower()
+
+    def test_basic_timeout_marker_still_works(self):
+        """Old-style timeout marker (no enrichment) still parses correctly."""
+        timeout_text = """Review Timeout: timeout after 600s
+APOLLO (correctness) exceeded the configured timeout.
+"""
+        code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "APOLLO"
+        assert "files_in_diff" not in data  # No enrichment present
+
+    def test_enriched_timeout_next_steps_in_description(self):
+        """Enriched timeout includes concrete next steps."""
+        timeout_text = """Review Timeout: timeout after 600s
+VULCAN (performance) exceeded the configured timeout.
+Fast-path: yes
+Files in diff: big_module.py
+Next steps: Increase timeout, reduce diff size, or check model provider status.
+"""
+        code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "VULCAN"})
+        assert code == 0
+        data = json.loads(out)
+        finding = data["findings"][0]
+        assert "big_module.py" in finding["description"]
+        assert "timeout" in finding["suggestion"].lower() or "model" in finding["suggestion"].lower()

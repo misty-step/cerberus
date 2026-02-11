@@ -59,7 +59,11 @@ def write_simple_diff(path: Path) -> None:
 @pytest.fixture(autouse=True)
 def cleanup_tmp_outputs() -> None:
     """Keep /tmp artifacts from one test from leaking into others."""
-    suffixes = ("parse-input", "output.txt", "stderr.log", "exitcode", "review.md", "timeout-marker.txt")
+    suffixes = (
+        "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
+        "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
+        "fast-path-stderr.log",
+    )
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
             Path(f"/tmp/{perspective}-{suffix}").unlink(missing_ok=True)
@@ -502,3 +506,147 @@ def test_auth_credential_errors_are_permanent_api_errors(tmp_path: Path, stderr_
     content = parse_file.read_text()
     assert "API Error:" in content
     assert stderr_line in content
+
+
+def test_fast_path_fallback_runs_on_timeout_with_no_output(tmp_path: Path) -> None:
+    """When primary times out with no output and fast-path succeeds, use fast-path."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    call_counter = tmp_path / "call-count"
+    call_counter.write_text("0")
+
+    # First call (primary): stubs a timeout exit; second call (fast-path): returns JSON.
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(call_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(call_counter) + "'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  exit 0\n"  # Primary produces no output (empty stdout, no scratchpad)
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"SENTINEL","perspective":"security","verdict":"PASS",'
+            '"confidence":0.80,"summary":"Fast-path review",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    # Stub timeout to simulate exit code 124 on the first invocation.
+    make_executable(
+        bin_dir / "timeout",
+        (
+            "#!/usr/bin/env bash\n"
+            "budget=\"$1\"; shift\n"
+            "count=$(cat '" + str(call_counter) + "')\n"
+            "if [[ \"$count\" -eq 0 ]]; then\n"
+            "  \"$@\"\n"  # Run primary — opencode writes nothing
+            "  exit 124\n"  # Simulate timeout
+            "fi\n"
+            "\"$@\"\n"  # Fast-path: run normally
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    diff_file.write_text(
+        "diff --git a/app.py b/app.py\n"
+        "+print('hello')\n"
+        "diff --git a/utils.py b/utils.py\n"
+        "+pass\n"
+    )
+
+    env = make_env(bin_dir, diff_file)
+    env["REVIEW_TIMEOUT"] = "600"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "fast-path fallback" in result.stdout.lower()
+    assert "parse-input: fast-path output" in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
+    parse_file = Path(parse_input_ref.read_text().strip())
+    assert "```json" in parse_file.read_text()
+
+
+def test_fast_path_also_fails_produces_enriched_timeout_marker(tmp_path: Path) -> None:
+    """When both primary and fast-path time out, write enriched timeout marker."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    # opencode always produces empty output
+    make_executable(bin_dir / "opencode", "#!/usr/bin/env bash\nexit 0\n")
+    # timeout always returns 124
+    make_executable(
+        bin_dir / "timeout",
+        "#!/usr/bin/env bash\nshift; \"$@\"; exit 124\n",
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    diff_file.write_text(
+        "diff --git a/src/main.py b/src/main.py\n"
+        "+import os\n"
+    )
+
+    env = make_env(bin_dir, diff_file)
+    env["REVIEW_TIMEOUT"] = "600"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "parse-input: timeout marker" in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    parse_file = Path(parse_input_ref.read_text().strip())
+    content = parse_file.read_text()
+    assert "Review Timeout:" in content
+    assert "Files in diff:" in content
+    assert "src/main.py" in content
+    assert "Fast-path: yes" in content
+    assert "Next steps:" in content
+
+
+def test_short_timeout_skips_fast_path(tmp_path: Path) -> None:
+    """With timeout < 120s, fast-path is skipped (budget too small)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    make_executable(bin_dir / "opencode", "#!/usr/bin/env bash\nexit 0\n")
+    make_executable(
+        bin_dir / "timeout",
+        "#!/usr/bin/env bash\nshift; \"$@\"; exit 124\n",
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+
+    env = make_env(bin_dir, diff_file)
+    env["REVIEW_TIMEOUT"] = "60"  # Too short for fast-path (budget = 12 < 60)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "fast-path fallback" not in result.stdout.lower()
+    assert "parse-input: timeout marker" in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    parse_file = Path(parse_input_ref.read_text().strip())
+    content = parse_file.read_text()
+    assert "Review Timeout:" in content
+    assert "Fast-path: no" in content
