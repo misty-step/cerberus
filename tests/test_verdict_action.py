@@ -6,16 +6,21 @@ ACTION_FILE = ROOT / "action.yml"
 VERDICT_ACTION_FILE = ROOT / "verdict" / "action.yml"
 POST_COMMENT_SCRIPT = ROOT / "scripts" / "post-comment.sh"
 RUN_REVIEWER_SCRIPT = ROOT / "scripts" / "run-reviewer.sh"
+COLLECT_OVERRIDES_SCRIPT = ROOT / "scripts" / "collect-overrides.py"
 CONSUMER_WORKFLOW_TEMPLATE = ROOT / "templates" / "consumer-workflow.yml"
 TRIAGE_WORKFLOW_TEMPLATE = ROOT / "templates" / "triage-workflow.yml"
 REVIEW_PROMPT_TEMPLATE = ROOT / "templates" / "review-prompt.md"
 README_FILE = ROOT / "README.md"
 
 
-def test_override_query_uses_rest_user_login() -> None:
+def test_verdict_action_uses_python_override_collection() -> None:
     content = VERDICT_ACTION_FILE.read_text()
+    collector = COLLECT_OVERRIDES_SCRIPT.read_text()
 
-    assert re.search(r"actor:\s*\.user\.login", content)
+    assert "scripts/collect-overrides.py" in content
+    assert "--github-output \"$GITHUB_OUTPUT\"" in content
+    assert "OVERRIDES=$(gh api" not in content
+    assert "user.get(\"login\")" in collector
 
 
 def test_verdict_action_uses_shared_upsert() -> None:
