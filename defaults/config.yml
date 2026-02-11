@@ -10,6 +10,9 @@ council:
 
 model:
   default: "openrouter/moonshotai/kimi-k2.5"
+  fallback:
+    - "openrouter/deepseek/deepseek-v3.2"
+    - "openrouter/google/gemini-3-flash-preview"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
@@ -65,6 +68,13 @@ reviewers:
   - name: ARTEMIS
     perspective: maintainability
     description: "Maintainability & DX — Think like the next developer"
+    override: pr_author
+    tools:
+      shell: false
+
+  - name: CASSANDRA
+    perspective: testing
+    description: "Testing & Coverage — See what will break"
     override: pr_author
     tools:
       shell: false
