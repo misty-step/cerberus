@@ -82,7 +82,8 @@ runs:
       run: |
         # Collect ALL override comments chronologically (not just the last one).
         # Python's select_override() iterates in order, picking the first authorized.
-        if ! OVERRIDES=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .user.login, body: .body}]' 2>&1); then
+        # Uses --paginate to handle PRs with 30+ comments.
+        if ! OVERRIDES=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.body | startswith("/council override")) | {actor: .user.login, body: .body}]' 2>&1); then
           echo "::warning::Failed to fetch override comments: $OVERRIDES"
           OVERRIDES="[]"
         fi
@@ -95,8 +96,23 @@ runs:
         # Resolve repo permissions for all unique override actors.
         ACTOR_PERMISSIONS="{}"
         if [ "$OVERRIDES" != "[]" ] && [ "$OVERRIDES" != "null" ] && [ -n "$OVERRIDES" ]; then
-          # Decode and run Python script (base64 to avoid YAML parsing issues)
-          ACTOR_PERMISSIONS=$(python3 -c "$(echo 'aW1wb3J0IGpzb24sIHN5cywgc3VicHJvY2Vzcwpjb21tZW50cyA9IGpzb24ubG9hZHMoc3lzLnN0ZGluLnJlYWQoKSkKYWN0b3JzID0gc29ydGVkKHNldChjLmdldCgiYWN0b3IiLCAiIikgZm9yIGMgaW4gY29tbWVudHMgaWYgYy5nZXQoImFjdG9yIikpKQpwZXJtcyA9IHt9CnJlcG8gPSBzeXMuYXJndlsxXQpmb3IgYWN0b3IgaW4gYWN0b3JzOgogICAgdHJ5OgogICAgICAgIHJlc3VsdCA9IHN1YnByb2Nlc3MucnVuKAogICAgICAgICAgICBbImdoIiwgImFwaSIsIGYicmVwb3Mve3JlcG99L2NvbGxhYm9yYXRvcnMve2FjdG9yfS9wZXJtaXNzaW9uIiwgIi0tanEiLCAiLnBlcm1pc3Npb24iXSwKICAgICAgICAgICAgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTEwLAogICAgICAgICkKICAgICAgICBwZXJtc1thY3Rvcl0gPSByZXN1bHQuc3Rkb3V0LnN0cmlwKCkgaWYgcmVzdWx0LnJldHVybmNvZGUgPT0gMCBlbHNlICIiCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHBlcm1zW2FjdG9yXSA9ICIiCnByaW50KGpzb24uZHVtcHMocGVybXMpKQo=' | base64 -d)" "$REPO" <<< "$OVERRIDES" 2>/dev/null || echo "{}")
+          ACTOR_PERMISSIONS=$(OVERRIDES_JSON="$OVERRIDES" python3 - "$REPO" <<'PYEOF' 2>/dev/null || echo "{}")
+import json, os, sys, subprocess
+comments = json.loads(os.environ.get("OVERRIDES_JSON", "[]"))
+actors = sorted({c.get("actor", "") for c in comments if isinstance(c, dict) and c.get("actor")})
+perms = {}
+repo = sys.argv[1]
+for actor in actors:
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/collaborators/{actor}/permission", "--jq", ".permission"],
+            capture_output=True, text=True, timeout=10,
+        )
+        perms[actor] = result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        perms[actor] = ""
+print(json.dumps(perms))
+PYEOF
         fi
         echo "actor_permissions=$ACTOR_PERMISSIONS" >> "$GITHUB_OUTPUT"
 

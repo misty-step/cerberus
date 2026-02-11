@@ -1534,3 +1534,29 @@ class TestSelectOverrideIntegration:
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
         assert data["override"]["actor"] == "maintainer"
+
+    def test_non_dict_actor_permissions_warns_and_degrades(self, tmp_path):
+        """Non-dict GH_OVERRIDE_ACTOR_PERMISSIONS should warn and treat actors as unpermissioned."""
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "summary": "Issue found.",
+        }))
+        comments = json.dumps([
+            {"actor": "author", "sha": "abc1234", "reason": "verified"},
+        ])
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={
+                "GH_OVERRIDE_COMMENTS": comments,
+                "GH_HEAD_SHA": "abc1234",
+                "GH_PR_AUTHOR": "author",
+                "GH_OVERRIDE_POLICY": "pr_author",
+                "GH_OVERRIDE_ACTOR_PERMISSIONS": '["not","a","dict"]',
+            },
+        )
+        assert code == 0
+        assert "invalid GH_OVERRIDE_ACTOR_PERMISSIONS" in err
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        # pr_author policy doesn't need permissions, so override still works
+        assert data["verdict"] == "PASS"
+        assert data["override"]["used"] is True

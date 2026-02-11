@@ -362,9 +362,16 @@ def main() -> None:
         actor_permissions: dict[str, str] = {}
         if actor_permissions_raw:
             try:
-                actor_permissions = json.loads(actor_permissions_raw)
-            except json.JSONDecodeError:
-                pass
+                parsed_perms = json.loads(actor_permissions_raw)
+                if not isinstance(parsed_perms, dict):
+                    raise ValueError("GH_OVERRIDE_ACTOR_PERMISSIONS must be a JSON object")
+                actor_permissions = parsed_perms
+            except (json.JSONDecodeError, ValueError) as exc:
+                print(
+                    f"aggregate-verdict: warning: invalid GH_OVERRIDE_ACTOR_PERMISSIONS ({exc}); "
+                    "treating all actors as unpermissioned",
+                    file=sys.stderr,
+                )
         override = select_override(
             comments_raw, head_sha, policy, pr_author, actor_permissions,
         )
