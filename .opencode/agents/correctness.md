@@ -59,6 +59,13 @@ Secondary Focus (check if relevant)
 - Migrations that can lose or corrupt data
 - Defaults changes that activate untested code paths: when a diff switches which implementation runs by default, trace the newly-defaulted path for correctness even if its lines are unchanged
 
+Consumer/Producer Data-Flow (mandatory when PR changes a consumer of shared data)
+If the diff adds/changes code that READS shared data (DB rows, shared types, artifacts, caches, event payloads):
+1) Identify what fields/invariants the consumer REQUIRES (explicit + implicit).
+2) Enumerate producers that WRITE the same data (including unchanged code).
+3) Verify each producer satisfies the consumer; if not, show the failing path.
+4) Treat silent-failure amplifiers as severity multipliers: swallowed errors, fallbacks, partial writes.
+
 Anti-Patterns (Do Not Flag)
 - Naming, formatting, style, lint rules
 - Documentation or comments unless they hide a bug

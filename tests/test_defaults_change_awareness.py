@@ -54,6 +54,12 @@ class TestAgentDefaultsAwareness:
         text = (AGENTS_DIR / "correctness.md").read_text()
         assert "newly-defaulted path" in text
 
+    def test_apollo_has_consumer_producer_checklist(self):
+        text = (AGENTS_DIR / "correctness.md").read_text()
+        assert "Consumer/Producer Data-Flow" in text
+        assert "Identify what fields/invariants the consumer REQUIRES" in text
+        assert "Enumerate producers that WRITE the same data" in text
+
     def test_vulcan_mentions_defaults_changes(self):
         text = (AGENTS_DIR / "performance.md").read_text()
         assert "defaults change" in text.lower()
