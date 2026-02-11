@@ -75,7 +75,7 @@ def fetch_actor_permissions(repo: str, actors: list[str]) -> dict[str, str]:
         endpoint = f"repos/{repo}/collaborators/{actor}/permission"
         try:
             payload = gh_json(["api", endpoint], timeout=10)
-        except Exception:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
             permissions[actor] = ""
             continue
         permission = ""
