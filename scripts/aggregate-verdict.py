@@ -92,6 +92,67 @@ def validate_actor(
     return False
 
 
+def select_override(
+    comments_raw: str | None,
+    head_sha: str | None,
+    policy: str,
+    pr_author: str | None,
+    actor_permissions: dict[str, str] | None = None,
+) -> dict | None:
+    """Select the first authorized override from a chronological list of comments.
+
+    Iterates comments in order (chronological from GitHub API), parses each,
+    validates the actor against the given policy, and returns the first that
+    passes all checks.  Logs each decision to stderr.
+    """
+    if not comments_raw or comments_raw.strip() in ("", "null", "None", "[]"):
+        return None
+
+    try:
+        parsed_input = json.loads(comments_raw)
+    except json.JSONDecodeError:
+        return None
+
+    # Accept a single object for backward compatibility.
+    if isinstance(parsed_input, dict):
+        parsed_input = [parsed_input]
+
+    if not isinstance(parsed_input, list) or not parsed_input:
+        return None
+
+    permissions = actor_permissions or {}
+
+    for i, comment in enumerate(parsed_input):
+        raw = json.dumps(comment)
+        parsed = parse_override(raw, head_sha)
+        actor_name = comment.get("actor") or comment.get("author") or "unknown"
+        if parsed is None:
+            print(
+                f"aggregate-verdict: override {i + 1}/{len(parsed_input)} "
+                f"from '{actor_name}': skipped (invalid or SHA mismatch)",
+                file=sys.stderr,
+            )
+            continue
+
+        actor = parsed["actor"]
+        permission = permissions.get(actor)
+        if validate_actor(actor, policy, pr_author, permission):
+            print(
+                f"aggregate-verdict: override {i + 1}/{len(parsed_input)} "
+                f"from '{actor}': authorized (policy={policy})",
+                file=sys.stderr,
+            )
+            return parsed
+        else:
+            print(
+                f"aggregate-verdict: override {i + 1}/{len(parsed_input)} "
+                f"from '{actor}': rejected by policy '{policy}'",
+                file=sys.stderr,
+            )
+
+    return None
+
+
 def determine_effective_policy(
     verdicts: list[dict],
     reviewer_policies: dict[str, str],
@@ -276,35 +337,51 @@ def main() -> None:
         )
 
     head_sha = os.environ.get("GH_HEAD_SHA")
-    override = parse_override(os.environ.get("GH_OVERRIDE_COMMENT"), head_sha)
-    if override:
-        global_policy = os.environ.get("GH_OVERRIDE_POLICY", "pr_author")
-        reviewer_policies_raw = os.environ.get("GH_REVIEWER_POLICIES")
-        reviewer_policies: dict[str, str] = {}
-        if reviewer_policies_raw:
-            try:
-                parsed = json.loads(reviewer_policies_raw)
-                if not isinstance(parsed, dict):
-                    raise ValueError("GH_REVIEWER_POLICIES must be a JSON object")
-                reviewer_policies = parsed
-            except (json.JSONDecodeError, ValueError) as exc:
-                print(
-                    f"aggregate-verdict: warning: invalid GH_REVIEWER_POLICIES ({exc}); "
-                    "falling back to global policy",
-                    file=sys.stderr,
-                )
-        policy = determine_effective_policy(verdicts, reviewer_policies, global_policy)
-        pr_author = os.environ.get("GH_PR_AUTHOR")
-        actor_permission = os.environ.get("GH_OVERRIDE_ACTOR_PERMISSION")
-        if not validate_actor(override["actor"], policy, pr_author, actor_permission):
+    global_policy = os.environ.get("GH_OVERRIDE_POLICY", "pr_author")
+    reviewer_policies_raw = os.environ.get("GH_REVIEWER_POLICIES")
+    reviewer_policies: dict[str, str] = {}
+    if reviewer_policies_raw:
+        try:
+            parsed = json.loads(reviewer_policies_raw)
+            if not isinstance(parsed, dict):
+                raise ValueError("GH_REVIEWER_POLICIES must be a JSON object")
+            reviewer_policies = parsed
+        except (json.JSONDecodeError, ValueError) as exc:
             print(
-                (
-                    f"aggregate-verdict: warning: override actor '{override['actor']}' "
-                    f"rejected by policy '{policy}'"
-                ),
+                f"aggregate-verdict: warning: invalid GH_REVIEWER_POLICIES ({exc}); "
+                "falling back to global policy",
                 file=sys.stderr,
             )
-            override = None
+    policy = determine_effective_policy(verdicts, reviewer_policies, global_policy)
+    pr_author = os.environ.get("GH_PR_AUTHOR")
+
+    # New multi-comment path: iterate comments chronologically, pick first authorized.
+    comments_raw = os.environ.get("GH_OVERRIDE_COMMENTS")
+    if comments_raw:
+        actor_permissions_raw = os.environ.get("GH_OVERRIDE_ACTOR_PERMISSIONS")
+        actor_permissions: dict[str, str] = {}
+        if actor_permissions_raw:
+            try:
+                actor_permissions = json.loads(actor_permissions_raw)
+            except json.JSONDecodeError:
+                pass
+        override = select_override(
+            comments_raw, head_sha, policy, pr_author, actor_permissions,
+        )
+    else:
+        # Legacy single-comment path (backward compat).
+        override = parse_override(os.environ.get("GH_OVERRIDE_COMMENT"), head_sha)
+        if override:
+            actor_permission = os.environ.get("GH_OVERRIDE_ACTOR_PERMISSION")
+            if not validate_actor(override["actor"], policy, pr_author, actor_permission):
+                print(
+                    (
+                        f"aggregate-verdict: warning: override actor '{override['actor']}' "
+                        f"rejected by policy '{policy}'"
+                    ),
+                    file=sys.stderr,
+                )
+                override = None
 
     council = aggregate(verdicts, override)
 
