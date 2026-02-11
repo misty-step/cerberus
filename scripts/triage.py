@@ -17,6 +17,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from lib.github import upsert_pr_comment
+
 VALID_MODES = {"off", "diagnose", "fix"}
 COUNCIL_MARKER = "cerberus:council"
 TRIAGE_MARKER = "cerberus:triage"
@@ -242,37 +244,12 @@ def post_triage_comment(
     comment_file = Path("/tmp/cerberus-triage-comment.md")
     comment_file.write_text(body, encoding="utf-8")
 
-    existing = None
-    for comment in comments:
-        text = str(comment.get("body", ""))
-        if marker in text:
-            existing = comment
-            break
-
-    if existing:
-        comment_id = existing.get("id")
-        if isinstance(comment_id, int):
-            run(
-                [
-                    "gh",
-                    "api",
-                    f"repos/{repo}/issues/comments/{comment_id}",
-                    "-X",
-                    "PATCH",
-                    "-F",
-                    f"body=@{comment_file}",
-                ]
-            )
-            return
-
-    run(
-        [
-            "gh",
-            "api",
-            f"repos/{repo}/issues/{pr_number}/comments",
-            "-F",
-            f"body=@{comment_file}",
-        ]
+    upsert_pr_comment(
+        repo=repo,
+        pr_number=pr_number,
+        marker=marker,
+        body_file=str(comment_file),
+        comments=comments,
     )
 
 

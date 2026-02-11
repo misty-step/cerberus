@@ -18,18 +18,20 @@ def test_override_query_uses_rest_user_login() -> None:
     assert re.search(r"actor:\s*\.user\.login", content)
 
 
-def test_verdict_action_updates_comment_with_typed_file_field() -> None:
+def test_verdict_action_uses_shared_upsert() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
-    assert "-X PATCH -F body=@/tmp/council-comment.md" in content
-    assert "-X PATCH -f body=\"$(cat /tmp/council-comment.md)\"" not in content
+    assert "scripts/lib/github.py" in content
+    assert "--body-file /tmp/council-comment.md" in content
+    assert "--marker" in content
 
 
-def test_post_comment_updates_comment_with_typed_file_field() -> None:
+def test_post_comment_uses_shared_upsert() -> None:
     content = POST_COMMENT_SCRIPT.read_text()
 
-    assert "-X PATCH -F body=@\"$comment_file\"" in content
-    assert "-X PATCH -f body=\"$(cat \"$comment_file\")\"" not in content
+    assert "scripts/lib/github.py" in content
+    assert "--body-file" in content
+    assert "--marker" in content
 
 
 def test_action_uses_api_key_fallback_validator() -> None:
@@ -82,12 +84,11 @@ def test_readme_quick_start_uses_openrouter_secret_name() -> None:
     assert "MOONSHOT_API_KEY" not in content
 
 
-def test_permission_help_is_present_in_comment_scripts() -> None:
-    post_comment_content = POST_COMMENT_SCRIPT.read_text()
-    verdict_content = VERDICT_ACTION_FILE.read_text()
+def test_permission_help_is_present_in_shared_module() -> None:
+    github_module = ROOT / "scripts" / "lib" / "github.py"
+    content = github_module.read_text()
 
-    assert "pull-requests: write" in post_comment_content
-    assert "pull-requests: write" in verdict_content
+    assert "pull-requests: write" in content
 
 
 def test_verdict_action_avoids_heredoc_in_run_block() -> None:
