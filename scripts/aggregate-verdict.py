@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import json
 import os
-import re
 import sys
+from dataclasses import asdict
 from pathlib import Path
+
+from lib.overrides import (
+    Override,
+    determine_effective_policy,
+    parse_override,
+    select_override,
+    validate_actor,
+)
 
 # Prefix of the summary field in fallback verdicts produced by parse-review.py.
 # parse-review.py appends ": <error detail>" after this prefix.
@@ -22,154 +32,6 @@ def read_json(path: Path) -> dict:
         fail(f"invalid JSON in {path}: {exc}")
     except OSError as exc:
         fail(f"unable to read {path}: {exc}")
-
-
-def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
-    if not raw or raw.strip() in {"", "null", "None"}:
-        return None
-    try:
-        obj = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-
-    # Keep backward compatibility with both normalized "actor" and legacy "author".
-    actor = obj.get("actor") or obj.get("author") or "unknown"
-    sha = obj.get("sha")
-    reason = obj.get("reason")
-
-    body = obj.get("body")
-    if body:
-        lines = [line.strip() for line in body.splitlines()]
-        command_line = next((l for l in lines if l.startswith("/council override")), "")
-        if command_line:
-            match = re.search(r"sha=([0-9a-fA-F]+)", command_line)
-            if match:
-                sha = sha or match.group(1)
-        for line in lines:
-            if line.lower().startswith("reason:"):
-                reason = reason or line.split(":", 1)[1].strip()
-        if not reason:
-            remainder = [l for l in lines if l and not l.startswith("/council override")]
-            if remainder:
-                reason = " ".join(remainder)
-
-    if not sha or not reason:
-        return None
-
-    if len(sha) < 7:
-        return None
-
-    if head_sha:
-        if not head_sha.startswith(sha):
-            return None
-
-    return {
-        "actor": actor,
-        "sha": sha,
-        "reason": reason,
-    }
-
-
-POLICY_STRICTNESS = {
-    "pr_author": 0,
-    "write_access": 1,
-    "maintainers_only": 2,
-}
-
-
-def validate_actor(
-    actor: str,
-    policy: str,
-    pr_author: str | None,
-    actor_permission: str | None = None,
-) -> bool:
-    if policy == "pr_author":
-        return bool(pr_author) and actor.lower() == pr_author.lower()
-    if policy == "write_access":
-        return actor_permission in ("write", "maintain", "admin")
-    if policy == "maintainers_only":
-        return actor_permission in ("maintain", "admin")
-    return False
-
-
-def select_override(
-    comments_raw: str | None,
-    head_sha: str | None,
-    policy: str,
-    pr_author: str | None,
-    actor_permissions: dict[str, str] | None = None,
-) -> dict | None:
-    """Select the first authorized override from a chronological list of comments.
-
-    Iterates comments in order (chronological from GitHub API), parses each,
-    validates the actor against the given policy, and returns the first that
-    passes all checks.  Logs each decision to stderr.
-    """
-    if not comments_raw or comments_raw.strip() in ("", "null", "None", "[]"):
-        return None
-
-    try:
-        parsed_input = json.loads(comments_raw)
-    except json.JSONDecodeError:
-        return None
-
-    # Accept a single object for backward compatibility.
-    if isinstance(parsed_input, dict):
-        parsed_input = [parsed_input]
-
-    if not isinstance(parsed_input, list) or not parsed_input:
-        return None
-
-    permissions = actor_permissions or {}
-
-    for i, comment in enumerate(parsed_input):
-        raw = json.dumps(comment)
-        parsed = parse_override(raw, head_sha)
-        actor_name = comment.get("actor") or comment.get("author") or "unknown"
-        if parsed is None:
-            print(
-                f"aggregate-verdict: override {i + 1}/{len(parsed_input)} "
-                f"from '{actor_name}': skipped (invalid or SHA mismatch)",
-                file=sys.stderr,
-            )
-            continue
-
-        actor = parsed["actor"]
-        permission = permissions.get(actor)
-        if validate_actor(actor, policy, pr_author, permission):
-            print(
-                f"aggregate-verdict: override {i + 1}/{len(parsed_input)} "
-                f"from '{actor}': authorized (policy={policy})",
-                file=sys.stderr,
-            )
-            return parsed
-        else:
-            print(
-                f"aggregate-verdict: override {i + 1}/{len(parsed_input)} "
-                f"from '{actor}': rejected by policy '{policy}'",
-                file=sys.stderr,
-            )
-
-    return None
-
-
-def determine_effective_policy(
-    verdicts: list[dict],
-    reviewer_policies: dict[str, str],
-    global_policy: str,
-) -> str:
-    """Pick the strictest override policy among failing reviewers."""
-    failing = [v for v in verdicts if v.get("verdict") == "FAIL"]
-    if not failing:
-        return global_policy
-
-    strictest = global_policy
-    for v in failing:
-        reviewer = v.get("reviewer", "")
-        policy = reviewer_policies.get(reviewer, global_policy)
-        if POLICY_STRICTNESS.get(policy, -1) > POLICY_STRICTNESS.get(strictest, -1):
-            strictest = policy
-    return strictest
 
 
 def parse_expected_reviewers(raw: str | None) -> list[str]:
@@ -238,7 +100,7 @@ def is_explicit_noncritical_fail(verdict: dict) -> bool:
     return False
 
 
-def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
+def aggregate(verdicts: list[dict], override: Override | None = None) -> dict:
     """Compute council verdict from individual reviewer verdicts.
 
     Returns the council dict with verdict, summary, reviewers, override, and stats.
@@ -270,7 +132,7 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
 
     summary = f"{len(verdicts)} reviewers. "
     if override_used:
-        summary += f"Override by {override['actor']} for {override['sha']}."
+        summary += f"Override by {override.actor} for {override.sha}."
     else:
         summary += f"Failures: {len(fails)}, warnings: {len(warns)}, skipped: {len(skips)}."
         if timed_out_reviewers:
@@ -282,7 +144,7 @@ def aggregate(verdicts: list[dict], override: dict | None = None) -> dict:
         "reviewers": verdicts,
         "override": {
             "used": override_used,
-            **(override or {}),
+            **(asdict(override) if override else {}),
         },
         "stats": {
             "total": len(verdicts),
@@ -380,10 +242,10 @@ def main() -> None:
         override = parse_override(os.environ.get("GH_OVERRIDE_COMMENT"), head_sha)
         if override:
             actor_permission = os.environ.get("GH_OVERRIDE_ACTOR_PERMISSION")
-            if not validate_actor(override["actor"], policy, pr_author, actor_permission):
+            if not validate_actor(override.actor, policy, pr_author, actor_permission):
                 print(
                     (
-                        f"aggregate-verdict: warning: override actor '{override['actor']}' "
+                        f"aggregate-verdict: warning: override actor '{override.actor}' "
                         f"rejected by policy '{policy}'"
                     ),
                     file=sys.stderr,
@@ -404,9 +266,9 @@ def main() -> None:
             [
                 "",
                 "Override:",
-                f"- actor: {override['actor']}",
-                f"- sha: {override['sha']}",
-                f"- reason: {override['reason']}",
+                f"- actor: {override.actor}",
+                f"- sha: {override.sha}",
+                f"- reason: {override.reason}",
             ]
         )
     print("\n".join(lines))

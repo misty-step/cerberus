@@ -542,6 +542,7 @@ def test_preserves_reviewer_runtime_seconds(tmp_path):
 # ---------------------------------------------------------------------------
 
 from tests.conftest import aggregate_verdict
+from lib.overrides import Override
 
 _parse_override = aggregate_verdict.parse_override
 _aggregate = aggregate_verdict.aggregate
@@ -595,13 +596,13 @@ class TestParseOverrideUnit:
     def test_valid_override(self):
         raw = json.dumps({"actor": "user", "sha": "abc1234", "reason": "verified"})
         result = _parse_override(raw, "abc1234567890")
-        assert result == {"actor": "user", "sha": "abc1234", "reason": "verified"}
+        assert result == Override(actor="user", sha="abc1234", reason="verified")
 
     def test_no_head_sha_skips_check(self):
         raw = json.dumps({"actor": "user", "sha": "abc1234", "reason": "ok"})
         result = _parse_override(raw, None)
         assert result is not None
-        assert result["sha"] == "abc1234"
+        assert result.sha == "abc1234"
 
     def test_body_parsing_extracts_sha_and_reason(self):
         raw = json.dumps({
@@ -610,8 +611,8 @@ class TestParseOverrideUnit:
         })
         result = _parse_override(raw, "abc1234567890")
         assert result is not None
-        assert result["sha"] == "abc1234"
-        assert result["reason"] == "False positive confirmed"
+        assert result.sha == "abc1234"
+        assert result.reason == "False positive confirmed"
 
     def test_body_parsing_remainder_as_reason(self):
         raw = json.dumps({
@@ -620,7 +621,7 @@ class TestParseOverrideUnit:
         })
         result = _parse_override(raw, "abc1234567890")
         assert result is not None
-        assert result["reason"] == "This is a false positive and safe to merge"
+        assert result.reason == "This is a false positive and safe to merge"
 
     def test_body_sha_does_not_override_explicit_sha(self):
         raw = json.dumps({
@@ -630,17 +631,17 @@ class TestParseOverrideUnit:
         })
         result = _parse_override(raw, "explicit1234567890")
         assert result is not None
-        assert result["sha"] == "explicit1"
+        assert result.sha == "explicit1"
 
     def test_author_field_fallback(self):
         raw = json.dumps({"author": "alt-user", "sha": "abc1234", "reason": "ok"})
         result = _parse_override(raw, "abc1234")
-        assert result["actor"] == "alt-user"
+        assert result.actor == "alt-user"
 
     def test_actor_defaults_to_unknown(self):
         raw = json.dumps({"sha": "abc1234", "reason": "ok"})
         result = _parse_override(raw, "abc1234")
-        assert result["actor"] == "unknown"
+        assert result.actor == "unknown"
 
 
 # --- aggregate() unit tests ---
@@ -698,14 +699,14 @@ class TestAggregateUnit:
 
     def test_override_turns_fail_to_pass(self):
         verdicts = [_verdict("A", "FAIL")]
-        override = {"actor": "user", "sha": "abc1234", "reason": "ok"}
+        override = Override(actor="user", sha="abc1234", reason="ok")
         result = _aggregate(verdicts, override)
         assert result["verdict"] == "PASS"
         assert result["override"]["used"] is True
 
     def test_override_with_warn_stays_warn(self):
         verdicts = [_verdict("A", "FAIL"), _verdict("B", "WARN")]
-        override = {"actor": "user", "sha": "abc1234", "reason": "ok"}
+        override = Override(actor="user", sha="abc1234", reason="ok")
         result = _aggregate(verdicts, override)
         assert result["verdict"] == "WARN"
 
@@ -722,7 +723,7 @@ class TestAggregateUnit:
 
     def test_summary_includes_override_info(self):
         verdicts = [_verdict("A", "FAIL")]
-        override = {"actor": "user", "sha": "abc1234", "reason": "ok"}
+        override = Override(actor="user", sha="abc1234", reason="ok")
         result = _aggregate(verdicts, override)
         assert "Override by user" in result["summary"]
 
@@ -1365,7 +1366,7 @@ class TestSelectOverrideUnit:
             comments, "abc1234", "pr_author", "author",
         )
         assert result is not None
-        assert result["actor"] == "author"
+        assert result.actor == "author"
 
     def test_first_authorized_selected_from_multiple(self):
         comments = json.dumps([
@@ -1376,7 +1377,7 @@ class TestSelectOverrideUnit:
             comments, "abc1234", "pr_author", "author",
         )
         assert result is not None
-        assert result["reason"] == "first override"
+        assert result.reason == "first override"
 
     def test_unauthorized_skipped_authorized_selected(self):
         comments = json.dumps([
@@ -1387,8 +1388,8 @@ class TestSelectOverrideUnit:
             comments, "abc1234", "pr_author", "author",
         )
         assert result is not None
-        assert result["actor"] == "author"
-        assert result["reason"] == "legit"
+        assert result.actor == "author"
+        assert result.reason == "legit"
 
     def test_no_authorized_overrides_returns_none(self):
         comments = json.dumps([
@@ -1418,7 +1419,7 @@ class TestSelectOverrideUnit:
             comment, "abc1234", "pr_author", "author",
         )
         assert result is not None
-        assert result["actor"] == "author"
+        assert result.actor == "author"
 
     def test_write_access_policy_picks_first_authorized(self):
         comments = json.dumps([
@@ -1430,8 +1431,8 @@ class TestSelectOverrideUnit:
             actor_permissions={"reader": "read", "admin": "admin"},
         )
         assert result is not None
-        assert result["actor"] == "admin"
-        assert result["reason"] == "has perms"
+        assert result.actor == "admin"
+        assert result.reason == "has perms"
 
     def test_sha_mismatch_skipped(self):
         comments = json.dumps([
@@ -1442,7 +1443,7 @@ class TestSelectOverrideUnit:
             comments, "abc1234", "pr_author", "author",
         )
         assert result is not None
-        assert result["reason"] == "right sha"
+        assert result.reason == "right sha"
 
     def test_logs_selection_reason(self, capsys):
         comments = json.dumps([
