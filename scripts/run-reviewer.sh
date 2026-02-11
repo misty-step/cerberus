@@ -21,6 +21,10 @@ cerberus_staging_agent_dest=""
 # Invoked via `trap`.
 cerberus_cleanup() {
   rm -f "/tmp/${perspective}-review-prompt.md" || true
+  rm -f "/tmp/${perspective}-fast-path-prompt.md" || true
+  # Note: fast-path-output.txt is NOT cleaned here — it may be the parse input
+  # for downstream steps (same as primary output.txt and review.md).
+  rm -f "/tmp/${perspective}-fast-path-stderr.log" || true
   rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
   if [[ -z "$cerberus_staging_backup_dir" ]]; then
@@ -230,6 +234,26 @@ model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
 
 review_timeout="${REVIEW_TIMEOUT:-600}"
 
+# Fast-path fallback: when the primary review times out with no output,
+# run a stripped-down review with the diff inline (no tool calls needed).
+# Budget: 20% of total timeout, capped at 120s; skip if total < 120s.
+fast_path_budget=$(( review_timeout / 5 ))
+if [[ $fast_path_budget -gt 120 ]]; then fast_path_budget=120; fi
+if [[ $fast_path_budget -lt 60 ]]; then fast_path_budget=0; fi
+primary_timeout="$review_timeout"
+if [[ $fast_path_budget -gt 0 ]]; then
+  primary_timeout=$(( review_timeout - fast_path_budget ))
+fi
+
+# Extract changed file paths from a unified diff.
+extract_diff_files() {
+  grep -E '^diff --git' "$1" 2>/dev/null \
+    | sed 's|diff --git a/.* b/||' \
+    | sort -u \
+    | head -20 \
+    || true
+}
+
 # API error patterns to detect
 # Permanent errors (not retryable): non-429 4xx, bad key/auth/quota failures
 # Transient errors (retryable): 429 (rate limit), 5xx, and network transport errors
@@ -327,7 +351,7 @@ while true; do
     OPENCODE_DISABLE_AUTOUPDATE=true \
     ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
     ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-  timeout "${review_timeout}" opencode run \
+  timeout "${primary_timeout}" opencode run \
     -m "${model}" \
     --agent "${perspective}" \
     < "/tmp/${perspective}-review-prompt.md" \
@@ -428,12 +452,78 @@ if [[ "$exit_code" -eq 124 ]]; then
     parse_input="$stdout_file"
     echo "parse-input: stdout (timeout, partial review)"
   else
-    cat > "$timeout_marker" <<EOF
+    # No salvageable output — attempt fast-path fallback review.
+    diff_files="$(extract_diff_files "$diff_file")"
+    fast_path_attempted="no"
+
+    if [[ $fast_path_budget -gt 0 ]] && [[ -f "${CERBERUS_ROOT}/templates/fast-path-prompt.md" ]]; then
+      fast_path_attempted="yes"
+      echo "Primary review timed out with no output. Running fast-path fallback (${fast_path_budget}s)..."
+
+      # Read diff content for inlining (truncate at 50 KB to stay within token limits).
+      diff_content="$(head -c 51200 "$diff_file" 2>/dev/null || true)"
+      diff_byte_count=$(wc -c < "$diff_file" 2>/dev/null || echo "0")
+      if [[ "$diff_byte_count" -gt 51200 ]]; then
+        diff_content="${diff_content}
+... (truncated, ${diff_byte_count} bytes total)"
+      fi
+
+      # Render fast-path prompt with inline diff via Python (safe for special chars).
+      CERBERUS_ROOT_PY="$CERBERUS_ROOT" \
+        FP_PERSPECTIVE="$perspective" \
+        FP_REVIEWER_NAME="$reviewer_name" \
+        FP_DIFF_CONTENT="$diff_content" \
+        FP_OUTPUT="/tmp/${perspective}-fast-path-prompt.md" \
+        python3 -c "
+import os; from pathlib import Path
+tpl = (Path(os.environ['CERBERUS_ROOT_PY']) / 'templates' / 'fast-path-prompt.md').read_text()
+for k, v in [('{{PERSPECTIVE}}', os.environ['FP_PERSPECTIVE']),
+             ('{{REVIEWER_NAME}}', os.environ['FP_REVIEWER_NAME']),
+             ('{{DIFF_CONTENT}}', os.environ['FP_DIFF_CONTENT'])]:
+    tpl = tpl.replace(k, v)
+Path(os.environ['FP_OUTPUT']).write_text(tpl)
+"
+
+      set +e
+      env -i \
+        PATH="${PATH}" \
+        HOME="${CERBERUS_ISOLATED_HOME}" \
+        XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
+        XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
+        TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
+        OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+        OPENCODE_DISABLE_AUTOUPDATE=true \
+        OPENCODE_MAX_STEPS=1 \
+      timeout "${fast_path_budget}" opencode run \
+        -m "${model}" \
+        --agent "${perspective}" \
+        < "/tmp/${perspective}-fast-path-prompt.md" \
+        > "/tmp/${perspective}-fast-path-output.txt" 2> "/tmp/${perspective}-fast-path-stderr.log"
+      fast_path_exit=$?
+      set -e
+
+      fp_size=$(wc -c < "/tmp/${perspective}-fast-path-output.txt" 2>/dev/null || echo "0")
+      echo "fast-path exit=$fast_path_exit stdout=${fp_size} bytes"
+
+      if [[ "$fast_path_exit" -eq 0 ]] && grep -q '```json' "/tmp/${perspective}-fast-path-output.txt" 2>/dev/null; then
+        parse_input="/tmp/${perspective}-fast-path-output.txt"
+        echo "parse-input: fast-path output (has JSON block)"
+      fi
+    fi
+
+    # If we still have no parse_input (fast-path skipped, failed, or produced no JSON),
+    # write an enriched timeout marker with file list and diagnostics.
+    if [[ -z "${parse_input:-}" ]]; then
+      cat > "$timeout_marker" <<MARKER
 Review Timeout: timeout after ${review_timeout}s
 ${reviewer_name} (${perspective}) exceeded the configured timeout.
-EOF
-    parse_input="$timeout_marker"
-    echo "parse-input: timeout marker (no output to salvage)"
+Fast-path: ${fast_path_attempted}
+Files in diff: ${diff_files}
+Next steps: Increase timeout, reduce diff size, or check model provider status.
+MARKER
+      parse_input="$timeout_marker"
+      echo "parse-input: timeout marker (no output to salvage)"
+    fi
   fi
   exit_code=0
 else
