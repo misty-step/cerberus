@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Five parallel OpenCode CLI reviewers (powered by Kimi K2.5 via OpenRouter) each analyze a PR diff from a specialized perspective, then a council action aggregates their verdicts into a single merge-gating check.
+Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel OpenCode CLI reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a council action aggregates their verdicts into a single merge-gating check.
 
 ## Architecture
 
@@ -40,7 +40,7 @@ The consumer defines the reviewer matrix in its own workflow. This repository pr
 
 Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `.opencode/agents/`, `templates/`, `defaults/`).
 
-### The Five Reviewers
+### The Six Reviewers
 
 | Name | Perspective | Shell Access | Focus |
 |------|-------------|-------------|-------|
@@ -49,6 +49,7 @@ Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`.
 | SENTINEL | security | no | Threat model, injection, auth flaws |
 | VULCAN | performance | no | Runtime efficiency, scalability |
 | ARTEMIS | maintainability | no | DX, readability, future maintenance |
+| CASSANDRA | testing | no | Test coverage gaps, regression risk |
 
 Shell/bash access is denied per agent via `permission` in the agent markdown frontmatter.
 

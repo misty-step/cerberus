@@ -28,6 +28,7 @@ jobs:
           - { reviewer: SENTINEL, perspective: security }
           - { reviewer: VULCAN, perspective: performance }
           - { reviewer: ARTEMIS, perspective: maintainability }
+          - { reviewer: CASSANDRA, perspective: testing }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +39,40 @@ jobs:
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           post-comment: 'false'
           timeout: '600'
-          # fallback-models: 'openrouter/anthropic/claude-sonnet-4-5,openrouter/openai/gpt-4o' # optional: fallback models on transient failure
+          # fallback-models: 'openrouter/deepseek/deepseek-v3.2,openrouter/google/gemini-3-flash-preview' # default fallback chain
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
+
+  # --- Advanced: per-reviewer model diversity ---
+  # Assign different models to each reviewer for diverse analysis.
+  # Uncomment and replace the review job above to use this configuration.
+  #
+  # review:
+  #   if: github.event.pull_request.head.repo.full_name == github.repository
+  #   permissions:
+  #     contents: read
+  #     pull-requests: read
+  #   name: "${{ matrix.reviewer }}"
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - { reviewer: APOLLO,    perspective: correctness,      model: 'openrouter/moonshotai/kimi-k2.5' }
+  #         - { reviewer: ATHENA,    perspective: architecture,     model: 'openrouter/z-ai/glm-5' }
+  #         - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/deepseek/deepseek-v3.2' }
+  #         - { reviewer: VULCAN,    perspective: performance,      model: 'openrouter/google/gemini-3-flash-preview' }
+  #         - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/minimax/minimax-m2.1' }
+  #         - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/qwen/qwen3-coder-next' }
+  #     fail-fast: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: misty-step/cerberus@v2
+  #       with:
+  #         perspective: ${{ matrix.perspective }}
+  #         model: ${{ matrix.model }}
+  #         github-token: ${{ secrets.GITHUB_TOKEN }}
+  #         api-key: ${{ secrets.OPENROUTER_API_KEY }}
+  #         post-comment: 'false'
+  #         timeout: '600'
 
   verdict:
     name: "Council Verdict"
