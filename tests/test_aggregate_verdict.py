@@ -596,8 +596,8 @@ def test_propagates_fallback_model_metadata(tmp_path):
     assert reviewer["fallback_used"] is True
 
 
-def test_missing_model_metadata_omitted(tmp_path):
-    """Verdicts without model metadata should not have model keys in council output."""
+def test_missing_model_metadata_defaults_to_none(tmp_path):
+    """Verdicts without model metadata should have None values in council output."""
     (tmp_path / "apollo.json").write_text(
         json.dumps(
             {
@@ -614,9 +614,33 @@ def test_missing_model_metadata_omitted(tmp_path):
     assert code == 0
     data = json.loads(Path("/tmp/council-verdict.json").read_text())
     reviewer = data["reviewers"][0]
-    assert "model_used" not in reviewer
-    assert "primary_model" not in reviewer
-    assert "fallback_used" not in reviewer
+    assert reviewer["model_used"] is None
+    assert reviewer["primary_model"] is None
+    assert reviewer["fallback_used"] is None
+
+
+def test_partial_model_metadata_propagates_present_values(tmp_path):
+    """Only model_used present; other fields default to None."""
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+                "model_used": "openrouter/moonshotai/kimi-k2.5",
+            }
+        )
+    )
+
+    code, _out, _err = run_aggregate(str(tmp_path))
+    assert code == 0
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    reviewer = data["reviewers"][0]
+    assert reviewer["model_used"] == "openrouter/moonshotai/kimi-k2.5"
+    assert reviewer["primary_model"] is None
+    assert reviewer["fallback_used"] is None
 
 
 # ---------------------------------------------------------------------------
