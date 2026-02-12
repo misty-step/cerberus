@@ -16,6 +16,7 @@ from typing import Mapping
 from .prompt_sanitize import escape_untrusted_xml
 
 MAX_PROJECT_CONTEXT_CHARS = 4000
+TOKEN_RE = re.compile(r"\{\{[A-Z0-9_]+\}\}")
 
 
 @dataclass(frozen=True)
@@ -121,13 +122,11 @@ def render_review_prompt_text(
         "{{PERSPECTIVE}}": perspective,
     }
 
-    token_re = re.compile(r"\{\{[A-Z0-9_]+\}\}")
-
     def replace_token(match: re.Match[str]) -> str:
         token = match.group(0)
         return replacements.get(token, token)
 
-    return token_re.sub(replace_token, template_text)
+    return TOKEN_RE.sub(replace_token, template_text)
 
 
 def render_review_prompt_file(
