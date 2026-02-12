@@ -28,6 +28,10 @@ Required fields:
 - findings[] with severity/category/file/line/title/description/suggestion
 - stats with files_reviewed, files_with_issues, critical, major, minor, info
 
+Optional fields:
+- findings[].evidence (string) - exact code quote backing the finding
+- findings[].scope (string) - set to `defaults-change` when citing unchanged code that became newly-defaulted
+
 Verdict rules:
 - FAIL: any critical OR 2+ major
 - WARN: exactly 1 major OR 3+ minor

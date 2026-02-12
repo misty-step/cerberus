@@ -155,6 +155,7 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
         PRIMARY_MODEL: ${{ inputs.model }}
+        GH_DIFF_FILE: /tmp/pr.diff
       run: |
         # Resolve reviewer name written by run-reviewer.sh (e.g. APOLLO).
         # Falls back to uppercased perspective if the file is missing.

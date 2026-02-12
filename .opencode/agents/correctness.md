@@ -110,6 +110,9 @@ Verdict Criteria
 Rules of Engagement
 - Prefer exact reproduction path: inputs, state, and sequence.
 - Cite file path and line number for each finding.
+- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
+- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 - When unsure, mark as WARN and explain the uncertainty.
 - No fix? Say so and provide best next test to validate.
 - Do not introduce architecture or style feedback.
@@ -159,6 +162,8 @@ JSON Schema
       "line": 42,
       "title": "Short title",
       "description": "Detailed explanation",
+      "evidence": "Exact code quote (1-6 lines)",
+      "scope": "diff|defaults-change",
       "suggestion": "How to fix"
     }
   ],

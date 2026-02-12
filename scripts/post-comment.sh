@@ -117,7 +117,25 @@ for f in findings:
     title = f.get("title", "Issue")
     desc = f.get("description", "")
     sugg = f.get("suggestion", "")
-    lines.append(f"- {emoji} `{file}:{line}` — {title}. {desc} Suggestion: {sugg}")
+    evidence = f.get("evidence", "")
+    unverified = bool(f.get("_evidence_unverified"))
+    reason = f.get("_evidence_reason", "")
+
+    meta = ""
+    if unverified:
+        meta = f" _(unverified: {reason})_" if reason else " _(unverified)_"
+
+    lines.append(f"- {emoji} `{file}:{line}` — {title}{meta}")
+    if desc:
+        lines.append(f"  {desc}")
+    if sugg:
+        lines.append(f"  Suggestion: {sugg}")
+    if isinstance(evidence, str) and evidence.strip():
+        lines.append("  Evidence:")
+        lines.append("    ```text")
+        for ln in evidence.strip().splitlines():
+            lines.append(f"    {ln}")
+        lines.append("    ```")
 
 if not lines:
     lines = ["- None"]
