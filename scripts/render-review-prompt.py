@@ -8,6 +8,7 @@ Environment:
   DIFF_FILE       (required) path to PR diff file
   PERSPECTIVE     (required) reviewer perspective (security, etc)
   PROMPT_OUTPUT   (required) output path for rendered prompt markdown
+  CERBERUS_CONTEXT (optional) maintainer-provided project context injected into prompt
 
 PR context (either):
   GH_PR_CONTEXT   path to JSON file from `gh pr view --json ...`

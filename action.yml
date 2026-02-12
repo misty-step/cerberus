@@ -37,6 +37,9 @@ inputs:
   fail-on-skip:
     description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
     default: 'false'
+  context:
+    description: 'Optional project context (maintainer-provided). Included in reviewer prompt. Do not include secrets.'
+    default: ''
 
 outputs:
   verdict:
@@ -127,6 +130,7 @@ runs:
         PERSPECTIVE: ${{ inputs.perspective }}
         OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
         OPENCODE_MODEL: ${{ inputs.model }}
+        CERBERUS_CONTEXT: ${{ inputs.context }}
         CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}

@@ -1,5 +1,7 @@
 Review this pull request from your specialized perspective.
 
+{{PROJECT_CONTEXT_SECTION}}
+
 ## PR Context
 - **Title:** <pr_title trust="UNTRUSTED">{{PR_TITLE}}</pr_title>
 - **Author:** {{PR_AUTHOR}}
