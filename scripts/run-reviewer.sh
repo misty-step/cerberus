@@ -196,8 +196,7 @@ fi
 # Render prompt: PR metadata inline, diff by file reference
 export PERSPECTIVE="$perspective"
 
-CERBERUS_ROOT="$CERBERUS_ROOT" \
-  DIFF_FILE="$diff_file" \
+DIFF_FILE="$diff_file" \
   PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" \
   PERSPECTIVE="$perspective" \
   python3 "$CERBERUS_ROOT/scripts/render-review-prompt.py"
