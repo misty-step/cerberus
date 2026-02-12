@@ -21,18 +21,19 @@ jobs:
     strategy:
       matrix:
         include:
-          - { reviewer: APOLLO, perspective: correctness }
-          - { reviewer: ATHENA, perspective: architecture }
-          - { reviewer: SENTINEL, perspective: security }
-          - { reviewer: VULCAN, perspective: performance }
-          - { reviewer: ARTEMIS, perspective: maintainability }
-          - { reviewer: CASSANDRA, perspective: testing }
+          - { reviewer: APOLLO,    perspective: correctness,      model: 'openrouter/moonshotai/kimi-k2.5' }
+          - { reviewer: ATHENA,    perspective: architecture,     model: 'openrouter/z-ai/glm-5' }
+          - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/deepseek/deepseek-v3.2' }
+          - { reviewer: VULCAN,    perspective: performance,      model: 'openrouter/google/gemini-3-flash-preview' }
+          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/minimax/minimax-m2.1' }
+          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/qwen/qwen3-coder-next' }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
       - uses: ./
         with:
           perspective: ${{ matrix.perspective }}
+          model: ${{ matrix.model }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           timeout: '600'

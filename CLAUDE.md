@@ -82,6 +82,10 @@ Override: `/council override sha=<sha>` comment on PR with reason. SHA must matc
 
 Every reviewer must end with a JSON block containing: `reviewer`, `perspective`, `verdict`, `confidence` (0-1), `summary`, `findings[]` (each with severity/category/file/line/title/description/suggestion), `stats` (files_reviewed, files_with_issues, critical, major, minor, info).
 
+Optional fields added by the pipeline:
+- `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
+- `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Present in fallback/partial verdicts so the council comment can surface the raw analysis.
+
 ## OpenCode CLI
 
 - Model: `openrouter/moonshotai/kimi-k2.5` via OpenRouter

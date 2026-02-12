@@ -165,6 +165,18 @@ comment_file="/tmp/${perspective}-comment.md"
   printf '%s\n' "### Findings (${findings_count})"
   cat "$findings_file"
   printf '\n'
+
+  raw_review="$(jq -r '.raw_review // empty' "$verdict_file")"
+  if [[ -n "$raw_review" ]]; then
+    printf '%s\n' "<details>"
+    printf '%s\n' "<summary>Full review output (click to expand)</summary>"
+    printf '\n'
+    printf '%s\n' "$raw_review"
+    printf '\n'
+    printf '%s\n' "</details>"
+    printf '\n'
+  fi
+
   printf '%s\n' "---"
   printf '%s\n' "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
   printf '%s\n' "${marker}"

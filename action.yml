@@ -150,9 +150,18 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
-        REVIEWER_NAME: ${{ inputs.perspective }}
         PRIMARY_MODEL: ${{ inputs.model }}
       run: |
+        # Resolve reviewer name written by run-reviewer.sh (e.g. APOLLO).
+        # Falls back to uppercased perspective if the file is missing.
+        REVIEWER_NAME_FILE="/tmp/${PERSPECTIVE}-reviewer-name"
+        if [[ -s "$REVIEWER_NAME_FILE" ]]; then
+          REVIEWER_NAME="$(cat "$REVIEWER_NAME_FILE")"
+        else
+          REVIEWER_NAME="${PERSPECTIVE^^}"
+        fi
+        export REVIEWER_NAME
+
         # Use scratchpad if available, else stdout
         PARSE_INPUT="/tmp/${PERSPECTIVE}-output.txt"
         if [[ -f "/tmp/${PERSPECTIVE}-parse-input" ]]; then
