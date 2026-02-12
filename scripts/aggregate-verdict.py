@@ -19,6 +19,12 @@ from lib.overrides import (
 # parse-review.py appends ": <error detail>" after this prefix.
 PARSE_FAILURE_PREFIX = "Review output could not be parsed"
 
+# Maximum artifact file size in bytes (1 MB).
+MAX_ARTIFACT_SIZE = 1_048_576
+
+VALID_VERDICTS = {"PASS", "WARN", "FAIL", "SKIP"}
+REQUIRED_ARTIFACT_FIELDS = ("verdict", "confidence", "summary")
+
 
 def fail(msg: str, code: int = 2) -> None:
     print(f"aggregate-verdict: {msg}", file=sys.stderr)
@@ -32,6 +38,39 @@ def read_json(path: Path) -> dict:
         fail(f"invalid JSON in {path}: {exc}")
     except OSError as exc:
         fail(f"unable to read {path}: {exc}")
+
+
+def validate_artifact(path: Path) -> tuple[dict | None, str | None]:
+    """Validate a verdict artifact file. Returns (data, None) on success or (None, error)."""
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return None, f"unable to stat {path.name}: {exc}"
+
+    if size > MAX_ARTIFACT_SIZE:
+        return None, f"artifact size {size} exceeds limit {MAX_ARTIFACT_SIZE}"
+
+    try:
+        raw = path.read_text()
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"unable to read {path.name}: {exc}"
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON in {path.name}: {exc}"
+
+    if not isinstance(data, dict):
+        return None, f"{path.name}: root must be a JSON object"
+
+    for field in REQUIRED_ARTIFACT_FIELDS:
+        if field not in data:
+            return None, f"{path.name}: missing required field '{field}'"
+
+    if data["verdict"] not in VALID_VERDICTS:
+        return None, f"{path.name}: invalid verdict '{data['verdict']}'"
+
+    return data, None
 
 
 def parse_expected_reviewers(raw: str | None) -> list[str]:
@@ -166,8 +205,16 @@ def main() -> None:
         fail("no verdict files found")
 
     verdicts = []
+    skipped_artifacts: list[dict] = []
     for path in verdict_files:
-        data = read_json(path)
+        data, err = validate_artifact(path)
+        if data is None:
+            print(
+                f"aggregate-verdict: warning: skipped {path.name}: {err}",
+                file=sys.stderr,
+            )
+            skipped_artifacts.append({"file": path.name, "reason": err})
+            continue
         entry = {
             "reviewer": data.get("reviewer", path.stem),
             "perspective": data.get("perspective", path.stem),
@@ -186,6 +233,19 @@ def main() -> None:
         if data.get("fallback_used") is not None:
             entry["fallback_used"] = data["fallback_used"]
         verdicts.append(entry)
+
+    if not verdicts and skipped_artifacts:
+        council = {
+            "verdict": "SKIP",
+            "summary": f"All {len(skipped_artifacts)} verdict artifact(s) were malformed and skipped.",
+            "reviewers": [],
+            "override": {"used": False},
+            "stats": {"total": 0, "fail": 0, "warn": 0, "pass": 0, "skip": 0},
+            "skipped_artifacts": skipped_artifacts,
+        }
+        Path("/tmp/council-verdict.json").write_text(json.dumps(council, indent=2))
+        print(f"Council Verdict: SKIP\n\nAll artifacts skipped: {len(skipped_artifacts)} malformed.")
+        sys.exit(0)
 
     expected_reviewers = parse_expected_reviewers(os.environ.get("EXPECTED_REVIEWERS"))
     fallback_reviewers = [v["reviewer"] for v in verdicts if is_fallback_verdict(v)]
@@ -259,6 +319,9 @@ def main() -> None:
                 override = None
 
     council = aggregate(verdicts, override)
+
+    if skipped_artifacts:
+        council["skipped_artifacts"] = skipped_artifacts
 
     Path("/tmp/council-verdict.json").write_text(json.dumps(council, indent=2))
 

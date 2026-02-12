@@ -170,7 +170,7 @@ runs:
         fi
         # Inject model metadata from run-reviewer.sh
         MODEL_USED_FILE="/tmp/${PERSPECTIVE}-model-used"
-        if [[ -f "$MODEL_USED_FILE" ]]; then
+        if [[ -s "$MODEL_USED_FILE" ]]; then
           model_used="$(cat "$MODEL_USED_FILE")"
           primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
           fallback_used="false"
