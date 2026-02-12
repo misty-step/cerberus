@@ -11,8 +11,8 @@ council:
 model:
   default: "openrouter/moonshotai/kimi-k2.5"
   fallback:
-    - "openrouter/deepseek/deepseek-v3.2"
     - "openrouter/google/gemini-3-flash-preview"
+    - "openrouter/z-ai/glm-5"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
@@ -55,7 +55,7 @@ reviewers:
 
   - name: SENTINEL
     perspective: security
-    model: "openrouter/deepseek/deepseek-v3.2"  # optional, falls back to model.default
+    model: "openrouter/minimax/minimax-m2.5"  # rotated from deepseek-v3.2 (reasoning trace issues)
     description: "Security & Threat Model — Think like an attacker"
     override: maintainers_only
     tools:
@@ -71,7 +71,7 @@ reviewers:
 
   - name: ARTEMIS
     perspective: maintainability
-    model: "openrouter/minimax/minimax-m2.1"  # optional, falls back to model.default
+    model: "openrouter/qwen/qwen3-max-thinking"  # upgraded: flagship Qwen reasoning model
     description: "Maintainability & DX — Think like the next developer"
     override: pr_author
     tools:
@@ -79,7 +79,7 @@ reviewers:
 
   - name: CASSANDRA
     perspective: testing
-    model: "openrouter/qwen/qwen3-coder-next"  # optional, falls back to model.default
+    model: "openrouter/qwen/qwen3-max-thinking"  # rotated from qwen3-coder-next (empty output 4x)
     description: "Testing & Coverage — See what will break"
     override: pr_author
     tools:
