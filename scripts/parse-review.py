@@ -90,21 +90,24 @@ def extract_notes_summary(text: str, max_len: int = 10000) -> str:
 def write_fallback(
     reviewer: str, error: str, verdict: str = "FAIL", confidence: float = 0.0,
     summary: str | None = None, raw_review: str | None = None,
+    findings: list[dict] | None = None,
 ) -> NoReturn:
+    resolved_findings = findings if findings else []
+    info_count = sum(1 for f in resolved_findings if f.get("severity") == "info")
     fallback = {
         "reviewer": reviewer,
         "perspective": PERSPECTIVE,
         "verdict": verdict,
         "confidence": confidence,
         "summary": summary or f"{PARSE_FAILURE_PREFIX}{error}",
-        "findings": [],
+        "findings": resolved_findings,
         "stats": {
             "files_reviewed": 0,
             "files_with_issues": 0,
             "critical": 0,
             "major": 0,
             "minor": 0,
-            "info": 0,
+            "info": info_count,
         },
     }
     if raw_review:
@@ -122,7 +125,16 @@ def fail(msg: str) -> NoReturn:
         notes = extract_notes_summary(RAW_INPUT)
         summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
         write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3,
-                       summary=summary, raw_review=raw_text or None)
+                       summary=summary, raw_review=raw_text or None,
+                       findings=[{
+                           "severity": "info",
+                           "category": "parse-failure",
+                           "file": "N/A",
+                           "line": 0,
+                           "title": "Review analysis available but not machine-parseable",
+                           "description": "Reviewer produced a scratchpad review without structured JSON output. See raw review for details.",
+                           "suggestion": "No action needed; review content is preserved in the raw output section.",
+                       }])
     write_fallback(REVIEWER_NAME, msg, raw_review=raw_text or None)
 
 
@@ -569,7 +581,16 @@ def main() -> None:
                 summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict=verdict, confidence=0.3,
-                               summary=summary, raw_review=raw_text or None)
+                               summary=summary, raw_review=raw_text or None,
+                               findings=[{
+                                   "severity": "info",
+                                   "category": "parse-failure",
+                                   "file": "N/A",
+                                   "line": 0,
+                                   "title": "Review analysis available but not machine-parseable",
+                                   "description": "Reviewer produced a scratchpad review without structured JSON output. See raw review for details.",
+                                   "suggestion": "No action needed; review content is preserved in the raw output section.",
+                               }])
 
             # Substantive raw text exists — upgrade to WARN so the review is visible.
             if len(raw_text) > 500:
@@ -577,7 +598,16 @@ def main() -> None:
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict="WARN", confidence=0.3,
                                summary=summary or f"{PARSE_FAILURE_PREFIX}no ```json block found",
-                               raw_review=raw_text)
+                               raw_review=raw_text,
+                               findings=[{
+                                   "severity": "info",
+                                   "category": "parse-failure",
+                                   "file": "N/A",
+                                   "line": 0,
+                                   "title": "Review analysis available but not machine-parseable",
+                                   "description": "Reviewer produced substantive output without structured JSON. See raw review for details.",
+                                   "suggestion": "No action needed; review content is preserved in the raw output section.",
+                               }])
 
             # Not a scratchpad and not substantive — SKIP (non-blocking).
             write_fallback(

@@ -1460,3 +1460,105 @@ class TestRawReviewPreservation:
         # Scratchpad path extracts verdict from ## Verdict: PASS header
         assert data["verdict"] == "PASS"
         assert "raw_review" in data
+
+    def test_substantive_warn_fallback_has_info_finding(self):
+        """WARN fallback for substantive raw text includes a parse-failure info finding."""
+        long_text = "This is a detailed review. " * 30  # ~810 chars
+        code, out, _ = run_parse(long_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["severity"] == "info"
+        assert finding["category"] == "parse-failure"
+        assert "machine-parseable" in finding["title"]
+        assert data["stats"]["info"] == 1
+
+    def test_scratchpad_fallback_has_info_finding(self):
+        """Scratchpad fallback without JSON block includes a parse-failure info finding."""
+        scratchpad = (
+            "# Review\n\n"
+            "## Investigation Notes\n"
+            "- Checked all files for correctness issues\n"
+            "- Found no significant problems\n\n"
+            "## Verdict: PASS\n"
+            "No issues found.\n"
+        )
+        code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["severity"] == "info"
+        assert finding["category"] == "parse-failure"
+        assert data["stats"]["info"] == 1
+
+    def test_skip_fallback_has_no_finding(self):
+        """SKIP fallback for short non-parseable text has no findings."""
+        code, out, _ = run_parse("Brief output.", env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert len(data["findings"]) == 0
+        assert data["stats"]["info"] == 0
+
+
+class TestExtractReviewSummaryDirect:
+    """Direct unit tests for extract_review_summary() via importlib."""
+
+    @staticmethod
+    def _load():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "parse_review", str(SCRIPT),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.extract_review_summary
+
+    def test_extracts_summary_header(self):
+        fn = self._load()
+        text = "# Review\n\n## Summary\nThe code looks good.\n\n## Details\nMore content."
+        assert fn(text) == "The code looks good."
+
+    def test_extracts_verdict_section_body(self):
+        """## Verdict: with content on same line falls through to fallback."""
+        fn = self._load()
+        text = "# Review\n\n## Verdict: PASS\nNo issues found.\n\n## Analysis\nStuff."
+        # The regex requires \n after the header, but "PASS" is on the same line,
+        # so this falls through to the 500-char fallback.
+        result = fn(text)
+        assert "Verdict: PASS" in result
+        assert "No issues found." in result
+
+    def test_extracts_verdict_header_newline(self):
+        """## Verdict: followed by a newline then body extracts correctly."""
+        fn = self._load()
+        text = "# Review\n\n## Verdict:\nPASS - No issues found.\n\n## Analysis\nStuff."
+        assert fn(text) == "PASS - No issues found."
+
+    def test_prefers_summary_over_verdict(self):
+        fn = self._load()
+        text = "# Review\n\n## Summary\nFirst section.\n\n## Verdict: PASS\nSecond section."
+        assert fn(text) == "First section."
+
+    def test_fallback_to_first_500_chars(self):
+        fn = self._load()
+        text = "No headers here. " * 50
+        result = fn(text)
+        assert len(result) <= 500
+        assert result == text.strip()[:500]
+
+    def test_empty_string(self):
+        fn = self._load()
+        assert fn("") == ""
+
+    def test_truncates_long_section(self):
+        fn = self._load()
+        long_body = "x" * 1000
+        text = f"# Review\n\n## Summary\n{long_body}\n\n## Details\nMore."
+        result = fn(text)
+        assert len(result) == 500
+        assert result == long_body[:500]

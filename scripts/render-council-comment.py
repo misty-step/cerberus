@@ -10,6 +10,10 @@ import re
 import sys
 from pathlib import Path
 
+# GitHub PR comments are silently rejected above 65,536 bytes.
+# Budget headroom so the structural markdown always fits.
+MAX_COMMENT_SIZE = 60000
+
 VERDICT_ICON = {
     "PASS": "✅",
     "WARN": "⚠️",
@@ -312,6 +316,67 @@ def format_reviewer_block(reviewer: dict, *, max_findings: int) -> list[str]:
     return lines
 
 
+def _build_comment(
+    *,
+    marker: str,
+    icon: str,
+    verdict: str,
+    summary_line: str,
+    skip_banner: str,
+    finding_totals: dict[str, int],
+    reviewer_total: int,
+    reviewer_pass: int,
+    reviewer_warn: int,
+    reviewer_fail: int,
+    reviewer_skip: int,
+    override: dict | None,
+    reviewers: list[dict],
+    max_findings: int,
+    size_note: str = "",
+) -> str:
+    lines = [
+        marker,
+        f"## {icon} Council Verdict: {verdict}",
+        "",
+        f"**Summary:** {summary_line}",
+    ]
+    if skip_banner:
+        lines.extend(["", skip_banner])
+
+    lines.extend(
+        [
+            "",
+            f"**Review Scope:** {scope_summary()}",
+            (
+                "**Reviewer Breakdown:** "
+                f"{reviewer_total} total | {reviewer_pass} pass | {reviewer_warn} warn | "
+                f"{reviewer_fail} fail | {reviewer_skip} skip"
+            ),
+            (
+                "**Findings:** "
+                f"{finding_totals['critical']} critical | {finding_totals['major']} major | "
+                f"{finding_totals['minor']} minor | {finding_totals['info']} info"
+            ),
+        ]
+    )
+
+    if isinstance(override, dict) and override.get("used"):
+        actor = str(override.get("actor") or "unknown")
+        sha = str(override.get("sha") or "unknown")
+        reason = truncate(override.get("reason"), max_len=120) or "n/a"
+        lines.append(f"**Override:** active by `{actor}` on `{sha}`. Reason: {reason}")
+
+    if size_note:
+        lines.extend(["", size_note])
+
+    lines.extend(["", "### Reviewer Details"])
+    for reviewer in reviewers:
+        lines.extend([""] + format_reviewer_block(reviewer, max_findings=max_findings))
+
+    lines.extend(["", "---", footer_line(), ""])
+    return "\n".join(lines)
+
+
 def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
     reviewers = council.get("reviewers")
     if not isinstance(reviewers, list):
@@ -345,45 +410,39 @@ def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
         reviewer_fail = len([r for r in reviewers if normalize_verdict(r.get("verdict")) == "FAIL"])
         reviewer_skip = len([r for r in reviewers if normalize_verdict(r.get("verdict")) == "SKIP"])
 
-    lines = [
-        marker,
-        f"## {icon} Council Verdict: {verdict}",
-        "",
-        f"**Summary:** {summary_line}",
-    ]
-    if skip_banner:
-        lines.extend(["", skip_banner])
-
-    lines.extend(
-        [
-            "",
-            f"**Review Scope:** {scope_summary()}",
-            (
-                "**Reviewer Breakdown:** "
-                f"{reviewer_total} total | {reviewer_pass} pass | {reviewer_warn} warn | "
-                f"{reviewer_fail} fail | {reviewer_skip} skip"
-            ),
-            (
-                "**Findings:** "
-                f"{finding_totals['critical']} critical | {finding_totals['major']} major | "
-                f"{finding_totals['minor']} minor | {finding_totals['info']} info"
-            ),
-        ]
+    common = dict(
+        marker=marker,
+        icon=icon,
+        verdict=verdict,
+        summary_line=summary_line,
+        skip_banner=skip_banner,
+        finding_totals=finding_totals,
+        reviewer_total=reviewer_total,
+        reviewer_pass=reviewer_pass,
+        reviewer_warn=reviewer_warn,
+        reviewer_fail=reviewer_fail,
+        reviewer_skip=reviewer_skip,
+        override=council.get("override"),
+        reviewers=reviewers,
+        max_findings=max_findings,
     )
 
-    override = council.get("override")
-    if isinstance(override, dict) and override.get("used"):
-        actor = str(override.get("actor") or "unknown")
-        sha = str(override.get("sha") or "unknown")
-        reason = truncate(override.get("reason"), max_len=120) or "n/a"
-        lines.append(f"**Override:** active by `{actor}` on `{sha}`. Reason: {reason}")
+    result = _build_comment(**common)
 
-    lines.extend(["", "### Reviewer Details"])
-    for reviewer in reviewers:
-        lines.extend([""] + format_reviewer_block(reviewer, max_findings=max_findings))
+    # Guard against GitHub's 65,536-byte comment limit.
+    # Strip raw_review blocks first (largest variable-size content).
+    if len(result) > MAX_COMMENT_SIZE:
+        for reviewer in reviewers:
+            reviewer.pop("raw_review", None)
+        result = _build_comment(
+            **common,
+            size_note=(
+                "> **Note:** Raw review output was omitted to stay within GitHub's comment size limit. "
+                "See the workflow run artifacts for full output."
+            ),
+        )
 
-    lines.extend(["", "---", footer_line(), ""])
-    return "\n".join(lines)
+    return result
 
 
 def parse_args() -> argparse.Namespace:
