@@ -43,7 +43,7 @@ verdict:
 council_verdict:
   fail_on: "any_critical_fail_or_2_fails"  # single non-critical FAIL is downgraded to WARN
 
-# The five heads of Cerberus.
+# The six heads of Cerberus.
 # Names are cosmetic — perspective determines behavior.
 reviewers:
   - name: APOLLO
