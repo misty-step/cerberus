@@ -79,7 +79,7 @@ reviewers:
 
   - name: CASSANDRA
     perspective: testing
-    model: "openrouter/qwen/qwen3-coder-next"  # optional, falls back to model.default
+    model: "openrouter/qwen/qwen3-max-thinking"  # rotated from qwen3-coder-next (empty output 4x)
     description: "Testing & Coverage — See what will break"
     override: pr_author
     tools:
