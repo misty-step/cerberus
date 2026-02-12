@@ -8,6 +8,7 @@ from typing import NoReturn
 
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
 REVIEWER_NAME = "UNKNOWN"
+PERSPECTIVE = "unknown"
 RAW_INPUT = ""
 VERDICT_CONFIDENCE_MIN = 0.7
 WARN_MINOR_THRESHOLD = 5
@@ -56,7 +57,24 @@ def is_scratchpad(text: str) -> bool:
     return "## Investigation Notes" in text or "## Verdict:" in text
 
 
-def extract_notes_summary(text: str, max_len: int = 200) -> str:
+def extract_review_summary(text: str) -> str:
+    """Extract a meaningful summary from unstructured review text."""
+    # Check for explicit summary or verdict headers
+    for header in (r"## Summary", r"## Verdict:"):
+        match = re.search(
+            rf"{header}\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL,
+        )
+        if match:
+            section = match.group(1).strip()
+            if section:
+                return section[:500]
+
+    # Fallback: first 500 non-empty chars
+    stripped = text.strip()
+    return stripped[:500] if stripped else ""
+
+
+def extract_notes_summary(text: str, max_len: int = 10000) -> str:
     """Extract investigation notes for inclusion in partial review summary."""
     match = re.search(
         r"## Investigation Notes\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL
@@ -71,37 +89,53 @@ def extract_notes_summary(text: str, max_len: int = 200) -> str:
 
 def write_fallback(
     reviewer: str, error: str, verdict: str = "FAIL", confidence: float = 0.0,
-    summary: str | None = None,
+    summary: str | None = None, raw_review: str | None = None,
+    findings: list[dict] | None = None,
 ) -> NoReturn:
+    resolved_findings = findings if findings else []
+    info_count = sum(1 for f in resolved_findings if f.get("severity") == "info")
     fallback = {
         "reviewer": reviewer,
-        "perspective": "unknown",
+        "perspective": PERSPECTIVE,
         "verdict": verdict,
         "confidence": confidence,
         "summary": summary or f"{PARSE_FAILURE_PREFIX}{error}",
-        "findings": [],
+        "findings": resolved_findings,
         "stats": {
             "files_reviewed": 0,
             "files_with_issues": 0,
             "critical": 0,
             "major": 0,
             "minor": 0,
-            "info": 0,
+            "info": info_count,
         },
     }
+    if raw_review:
+        fallback["raw_review"] = raw_review[:50000]
     print(json.dumps(fallback, indent=2, sort_keys=False))
     sys.exit(0)
 
 
 def fail(msg: str) -> NoReturn:
     print(f"parse-review: {msg}", file=sys.stderr)
+    raw_text = RAW_INPUT.strip() if RAW_INPUT else None
     if is_scratchpad(RAW_INPUT):
         md_verdict = extract_verdict_from_markdown(RAW_INPUT)
         verdict = md_verdict or "WARN"
         notes = extract_notes_summary(RAW_INPUT)
         summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
-        write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3, summary=summary)
-    write_fallback(REVIEWER_NAME, msg)
+        write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3,
+                       summary=summary, raw_review=raw_text or None,
+                       findings=[{
+                           "severity": "info",
+                           "category": "parse-failure",
+                           "file": "N/A",
+                           "line": 0,
+                           "title": "Review analysis available but not machine-parseable",
+                           "description": "Reviewer produced a scratchpad review without structured JSON output. See raw review for details.",
+                           "suggestion": "No action needed; review content is preserved in the raw output section.",
+                       }])
+    write_fallback(REVIEWER_NAME, msg, raw_review=raw_text or None)
 
 
 def read_input(path: str | None) -> str:
@@ -161,8 +195,8 @@ def generate_skip_verdict(error_type: str, text: str) -> dict:
         suggestion = "Check API key and quota settings."
 
     return {
-        "reviewer": "SYSTEM",
-        "perspective": "error",
+        "reviewer": REVIEWER_NAME,
+        "perspective": PERSPECTIVE,
         "verdict": "SKIP",
         "confidence": 0.0,
         "summary": summary,
@@ -212,7 +246,7 @@ def generate_timeout_skip_verdict(
 
     verdict: dict = {
         "reviewer": reviewer,
-        "perspective": "timeout",
+        "perspective": PERSPECTIVE,
         "verdict": "SKIP",
         "confidence": 0.0,
         "summary": f"Review skipped due to timeout{timeout_suffix}.",
@@ -477,7 +511,9 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
 
 
 def main() -> None:
-    global REVIEWER_NAME, RAW_INPUT
+    global REVIEWER_NAME, PERSPECTIVE, RAW_INPUT
+
+    PERSPECTIVE = os.environ.get("PERSPECTIVE", "unknown")
 
     try:
         input_path, reviewer = parse_args(sys.argv[1:])
@@ -533,23 +569,54 @@ def main() -> None:
 
             print("parse-review: no ```json block found", file=sys.stderr)
 
+            raw_text = raw.strip()
+
             # The model sometimes exits 0 but produces empty/non-JSON output.
             # Check if it's a scratchpad (has investigation notes or verdict header)
-            # and extract what we can before falling back to SKIP.
+            # and extract what we can before falling back.
             if is_scratchpad(raw):
                 md_verdict = extract_verdict_from_markdown(raw)
                 verdict = md_verdict or "WARN"
                 notes = extract_notes_summary(raw)
                 summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
-                write_fallback(REVIEWER_NAME, "no ```json block found", verdict=verdict, confidence=0.3, summary=summary)
-            
-            # Not a scratchpad — treat as SKIP (non-blocking) to reduce flakiness.
+                write_fallback(REVIEWER_NAME, "no ```json block found",
+                               verdict=verdict, confidence=0.3,
+                               summary=summary, raw_review=raw_text or None,
+                               findings=[{
+                                   "severity": "info",
+                                   "category": "parse-failure",
+                                   "file": "N/A",
+                                   "line": 0,
+                                   "title": "Review analysis available but not machine-parseable",
+                                   "description": "Reviewer produced a scratchpad review without structured JSON output. See raw review for details.",
+                                   "suggestion": "No action needed; review content is preserved in the raw output section.",
+                               }])
+
+            # Substantive raw text exists — upgrade to WARN so the review is visible.
+            if len(raw_text) > 500:
+                summary = extract_review_summary(raw_text)
+                write_fallback(REVIEWER_NAME, "no ```json block found",
+                               verdict="WARN", confidence=0.3,
+                               summary=summary or f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                               raw_review=raw_text,
+                               findings=[{
+                                   "severity": "info",
+                                   "category": "parse-failure",
+                                   "file": "N/A",
+                                   "line": 0,
+                                   "title": "Review analysis available but not machine-parseable",
+                                   "description": "Reviewer produced substantive output without structured JSON. See raw review for details.",
+                                   "suggestion": "No action needed; review content is preserved in the raw output section.",
+                               }])
+
+            # Not a scratchpad and not substantive — SKIP (non-blocking).
             write_fallback(
                 REVIEWER_NAME,
                 "no ```json block found",
                 verdict="SKIP",
                 confidence=0.0,
                 summary=f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                raw_review=raw_text if raw_text else None,
             )
 
         try:

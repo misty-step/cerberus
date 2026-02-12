@@ -2,7 +2,7 @@
 
 Multi-agent AI code review council for GitHub PRs.
 
-Five specialized reviewers analyze every pull request in parallel, then a council verdict gates merge.
+Six specialized reviewers analyze every pull request in parallel, then a council verdict gates merge.
 
 ## Reviewers
 | Name | Perspective | Focus |
@@ -12,6 +12,7 @@ Five specialized reviewers analyze every pull request in parallel, then a counci
 | SENTINEL | security | Injection, auth flaws, data exposure |
 | VULCAN | performance | Runtime efficiency, N+1 queries, scalability |
 | ARTEMIS | maintainability | Readability, naming, future maintenance cost |
+| CASSANDRA | testing | Test coverage gaps, regression risk |
 
 ## Quick Start
 1. Add one secret to your repository (Settings -> Secrets -> Actions):
@@ -40,11 +41,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - { reviewer: APOLLO, perspective: correctness }
-          - { reviewer: ATHENA, perspective: architecture }
-          - { reviewer: SENTINEL, perspective: security }
-          - { reviewer: VULCAN, perspective: performance }
-          - { reviewer: ARTEMIS, perspective: maintainability }
+          - { reviewer: APOLLO,    perspective: correctness }
+          - { reviewer: ATHENA,    perspective: architecture }
+          - { reviewer: SENTINEL,  perspective: security }
+          - { reviewer: VULCAN,    perspective: performance }
+          - { reviewer: ARTEMIS,   perspective: maintainability }
+          - { reviewer: CASSANDRA, perspective: testing }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +76,7 @@ jobs:
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
-2. OpenCode CLI (Kimi K2.5 via OpenRouter) analyzes the PR diff from each perspective
+2. OpenCode CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
 4. Each reviewer posts a structured comment with findings
 5. The verdict job aggregates all reviews into a verdict-first council comment with collapsible reviewer sections, severity-tagged findings, file/line references, review scope, and per-reviewer timing
@@ -102,7 +104,8 @@ Use `templates/triage-workflow.yml` to enable:
 | `perspective` | yes | - | Review perspective |
 | `github-token` | yes | - | GitHub token for PR comments |
 | `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY` or `OPENROUTER_API_KEY` env is set) |
-| `model` | no | `openrouter/moonshotai/kimi-k2.5` | Model name |
+| `model` | no | `openrouter/moonshotai/kimi-k2.5` | Model name (can vary per reviewer via matrix) |
+| `fallback-models` | no | `openrouter/deepseek/deepseek-v3.2,...` | Comma-separated fallback models, tried on transient failure |
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
 | `opencode-version` | no | `1.1.49` | OpenCode CLI version |
@@ -164,6 +167,22 @@ matrix:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-verdict: 'false'
 ```
+
+### Model diversity
+Assign a different model to each reviewer via the matrix `model` field. This reduces correlated blind spots across reviewers. See `templates/consumer-workflow.yml` for a full example.
+
+```yaml
+matrix:
+  include:
+    - { reviewer: APOLLO,    perspective: correctness,     model: 'openrouter/moonshotai/kimi-k2.5' }
+    - { reviewer: ATHENA,    perspective: architecture,    model: 'openrouter/z-ai/glm-5' }
+    - { reviewer: SENTINEL,  perspective: security,        model: 'openrouter/deepseek/deepseek-v3.2' }
+    - { reviewer: VULCAN,    perspective: performance,     model: 'openrouter/google/gemini-3-flash-preview' }
+    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/minimax/minimax-m2.1' }
+    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/qwen/qwen3-coder-next' }
+```
+
+If a reviewer's primary model fails with a transient error (429, 5xx, network), it retries with exponential backoff then falls through to the `fallback-models` chain before emitting SKIP.
 
 ### Fail when no review happened (SKIP)
 ```yaml

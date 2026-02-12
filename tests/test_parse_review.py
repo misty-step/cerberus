@@ -110,6 +110,17 @@ class TestParseErrors:
         assert data["confidence"] == 0.0
         assert "no" in err.lower() and "json" in err.lower()
 
+    def test_fallback_uses_reviewer_name_and_perspective(self):
+        """Fallback verdicts should use REVIEWER_NAME and PERSPECTIVE from env."""
+        code, out, _ = run_parse(
+            "No json here",
+            env_extra={"REVIEWER_NAME": "APOLLO", "PERSPECTIVE": "correctness"},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["reviewer"] == "APOLLO"
+        assert data["perspective"] == "correctness"
+
     def test_invalid_json(self):
         code, out, err = run_parse("```json\n{invalid json}\n```")
         assert code == 0
@@ -196,12 +207,15 @@ class TestParseErrors:
         """Explicit timeout marker should produce SKIP verdict."""
         timeout_marker = tmp_path / "timeout.txt"
         timeout_marker.write_text("Review Timeout: timeout after 600s\n")
-        code, out, _ = run_parse_file(timeout_marker, env_extra={"REVIEWER_NAME": "SENTINEL"})
+        code, out, _ = run_parse_file(
+            timeout_marker,
+            env_extra={"REVIEWER_NAME": "SENTINEL", "PERSPECTIVE": "security"},
+        )
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert data["reviewer"] == "SENTINEL"
-        assert data["perspective"] == "timeout"
+        assert data["perspective"] == "security"
 
 
 class TestParseArgs:
@@ -1044,11 +1058,12 @@ The OpenRouter API returned an error that prevents the review from completing:
 
 Please check your API key and quota settings.
 """
-        code, out, err = run_parse(error_text)
+        code, out, err = run_parse(error_text, env_extra={"REVIEWER_NAME": "SENTINEL", "PERSPECTIVE": "security"})
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
-        assert data["reviewer"] == "SYSTEM"
+        assert data["reviewer"] == "SENTINEL"
+        assert data["perspective"] == "security"
         assert "API_KEY_INVALID" in data["summary"]
         assert data["confidence"] == 0.0
 
@@ -1360,3 +1375,190 @@ Next steps: Increase timeout, reduce diff size, or check model provider status.
         finding = data["findings"][0]
         assert "big_module.py" in finding["description"]
         assert "timeout" in finding["suggestion"].lower() or "model" in finding["suggestion"].lower()
+
+
+class TestRawReviewPreservation:
+    """Tests for raw_review field in fallback verdicts."""
+
+    def test_substantive_raw_text_produces_warn_with_raw_review(self):
+        """Text >500 chars without JSON block upgrades to WARN and includes raw_review."""
+        long_text = "This is a detailed review. " * 30  # ~810 chars
+        code, out, _ = run_parse(long_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.3
+        assert "raw_review" in data
+        assert "detailed review" in data["raw_review"]
+
+    def test_short_raw_text_stays_skip_with_raw_review(self):
+        """Text <=500 chars without JSON block stays SKIP but still includes raw_review."""
+        short_text = "Brief review output."
+        code, out, _ = run_parse(short_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data.get("raw_review") == short_text
+
+    def test_empty_text_has_no_raw_review(self):
+        """Empty text does not include raw_review field."""
+        code, out, _ = run_parse("", env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert "raw_review" not in data
+
+    def test_scratchpad_fallback_includes_raw_review(self):
+        """Scratchpad without JSON block includes raw_review in fallback."""
+        scratchpad = (
+            "# Review\n\n"
+            "## Investigation Notes\n"
+            "- Checked all files for correctness issues\n"
+            "- Found no significant problems\n"
+            "- Code follows standard patterns\n\n"
+            "## Verdict: PASS\n"
+            "No issues found.\n"
+        )
+        code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert "raw_review" in data
+        assert "Investigation Notes" in data["raw_review"]
+
+    def test_raw_review_truncated_at_50kb(self):
+        """raw_review field is capped at 50,000 characters."""
+        huge_text = "x" * 60000
+        code, out, _ = run_parse(huge_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert "raw_review" in data
+        assert len(data["raw_review"]) == 50000
+
+    def test_extract_review_summary_with_summary_header(self):
+        """extract_review_summary extracts ## Summary section."""
+        text = (
+            "# Review\n\n## Summary\nThe code looks good overall.\n\n"
+            "## Details\n" + "This is detailed analysis of the code. " * 20
+        )
+        assert len(text.strip()) > 500  # precondition
+        code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert "looks good" in data["summary"]
+
+    def test_extract_review_summary_with_verdict_header(self):
+        """Text with ## Verdict: header is treated as scratchpad and uses that verdict."""
+        text = (
+            "# Review\n\n## Verdict: PASS\nNo issues found in the codebase.\n\n"
+            "## Analysis\n" + "Checked various code paths for problems. " * 20
+        )
+        assert len(text.strip()) > 500  # precondition
+        code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        # Scratchpad path extracts verdict from ## Verdict: PASS header
+        assert data["verdict"] == "PASS"
+        assert "raw_review" in data
+
+    def test_substantive_warn_fallback_has_info_finding(self):
+        """WARN fallback for substantive raw text includes a parse-failure info finding."""
+        long_text = "This is a detailed review. " * 30  # ~810 chars
+        code, out, _ = run_parse(long_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["severity"] == "info"
+        assert finding["category"] == "parse-failure"
+        assert "machine-parseable" in finding["title"]
+        assert data["stats"]["info"] == 1
+
+    def test_scratchpad_fallback_has_info_finding(self):
+        """Scratchpad fallback without JSON block includes a parse-failure info finding."""
+        scratchpad = (
+            "# Review\n\n"
+            "## Investigation Notes\n"
+            "- Checked all files for correctness issues\n"
+            "- Found no significant problems\n\n"
+            "## Verdict: PASS\n"
+            "No issues found.\n"
+        )
+        code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["severity"] == "info"
+        assert finding["category"] == "parse-failure"
+        assert data["stats"]["info"] == 1
+
+    def test_skip_fallback_has_no_finding(self):
+        """SKIP fallback for short non-parseable text has no findings."""
+        code, out, _ = run_parse("Brief output.", env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert len(data["findings"]) == 0
+        assert data["stats"]["info"] == 0
+
+
+class TestExtractReviewSummaryDirect:
+    """Direct unit tests for extract_review_summary() via importlib."""
+
+    @staticmethod
+    def _load():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "parse_review", str(SCRIPT),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.extract_review_summary
+
+    def test_extracts_summary_header(self):
+        fn = self._load()
+        text = "# Review\n\n## Summary\nThe code looks good.\n\n## Details\nMore content."
+        assert fn(text) == "The code looks good."
+
+    def test_extracts_verdict_section_body(self):
+        """## Verdict: with content on same line falls through to fallback."""
+        fn = self._load()
+        text = "# Review\n\n## Verdict: PASS\nNo issues found.\n\n## Analysis\nStuff."
+        # The regex requires \n after the header, but "PASS" is on the same line,
+        # so this falls through to the 500-char fallback.
+        result = fn(text)
+        assert "Verdict: PASS" in result
+        assert "No issues found." in result
+
+    def test_extracts_verdict_header_newline(self):
+        """## Verdict: followed by a newline then body extracts correctly."""
+        fn = self._load()
+        text = "# Review\n\n## Verdict:\nPASS - No issues found.\n\n## Analysis\nStuff."
+        assert fn(text) == "PASS - No issues found."
+
+    def test_prefers_summary_over_verdict(self):
+        fn = self._load()
+        text = "# Review\n\n## Summary\nFirst section.\n\n## Verdict: PASS\nSecond section."
+        assert fn(text) == "First section."
+
+    def test_fallback_to_first_500_chars(self):
+        fn = self._load()
+        text = "No headers here. " * 50
+        result = fn(text)
+        assert len(result) <= 500
+        assert result == text.strip()[:500]
+
+    def test_empty_string(self):
+        fn = self._load()
+        assert fn("") == ""
+
+    def test_truncates_long_section(self):
+        fn = self._load()
+        long_body = "x" * 1000
+        text = f"# Review\n\n## Summary\n{long_body}\n\n## Details\nMore."
+        result = fn(text)
+        assert len(result) == 500
+        assert result == long_body[:500]

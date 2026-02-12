@@ -150,6 +150,103 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
     assert "[#12345](https://github.com/misty-step/cerberus/actions/runs/12345)" in body
 
 
+def test_renders_raw_review_in_collapsible_block(tmp_path: Path) -> None:
+    council = {
+        "verdict": "WARN",
+        "summary": "1 reviewer warned.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "WARN",
+                "confidence": 0.3,
+                "summary": "Partial review — no JSON block.",
+                "runtime_seconds": 45,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                "raw_review": "## Investigation Notes\n- Checked all files\n- Found minor issue in main.py\n\n## Verdict: WARN\nMinor issues found.",
+            },
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    assert "Full review output (click to expand)" in body
+    assert "Investigation Notes" in body
+    assert "Found minor issue in main.py" in body
+
+
+def test_no_raw_review_block_when_absent(tmp_path: Path) -> None:
+    council = {
+        "verdict": "PASS",
+        "summary": "1 reviewer passed.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "No issues.",
+                "runtime_seconds": 10,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    assert "Full review output" not in body
+
+
+def test_increased_truncation_limits(tmp_path: Path) -> None:
+    long_desc = "D" * 500  # Would be truncated at 220 before, now fits in 1000
+    long_sugg = "S" * 500
+    long_title = "T" * 150  # Would be truncated at 100 before, now fits in 200
+    council = {
+        "verdict": "WARN",
+        "summary": "Test truncation limits.",
+        "reviewers": [
+            {
+                "reviewer": "VULCAN",
+                "perspective": "performance",
+                "verdict": "WARN",
+                "confidence": 0.85,
+                "summary": "Found issue.",
+                "runtime_seconds": 30,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "performance",
+                        "file": "app.py",
+                        "line": 1,
+                        "title": long_title,
+                        "description": long_desc,
+                        "suggestion": long_sugg,
+                    }
+                ],
+                "stats": {"critical": 0, "major": 1, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    # Full strings should appear without truncation ellipsis
+    assert long_desc in body
+    assert long_sugg in body
+    assert long_title in body
+
+
 def test_renders_override_details_when_present(tmp_path: Path) -> None:
     council = {
         "verdict": "PASS",
@@ -163,3 +260,68 @@ def test_renders_override_details_when_present(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "**Override:** active by `owner` on `abcdef1`. Reason: False positive" in body
+
+
+def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
+    """Comments exceeding MAX_COMMENT_SIZE strip raw_review and add a note."""
+    huge_raw = "x" * 70000  # Well over the 60K limit
+    council = {
+        "verdict": "WARN",
+        "summary": "1 reviewer warned.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "WARN",
+                "confidence": 0.3,
+                "summary": "Partial review.",
+                "runtime_seconds": 45,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                "raw_review": huge_raw,
+            },
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    assert len(body) < 65536, f"Comment is {len(body)} bytes, should be under 65536"
+    assert "Raw review output was omitted" in body
+    assert "Full review output" not in body  # raw_review block should be gone
+    # Structural content should still be present
+    assert "## ⚠️ Council Verdict: WARN" in body
+    assert "### Reviewer Details" in body
+
+
+def test_under_limit_comment_keeps_raw_review(tmp_path: Path) -> None:
+    """Comments under MAX_COMMENT_SIZE keep raw_review blocks."""
+    small_raw = "Short review output."
+    council = {
+        "verdict": "WARN",
+        "summary": "1 reviewer warned.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "WARN",
+                "confidence": 0.3,
+                "summary": "Partial review.",
+                "runtime_seconds": 45,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                "raw_review": small_raw,
+            },
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    assert "Full review output (click to expand)" in body
+    assert small_raw in body
+    assert "Raw review output was omitted" not in body

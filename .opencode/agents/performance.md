@@ -115,8 +115,9 @@ Review Discipline
 
 Output Format
 - Write your complete review to `/tmp/performance-review.md` using the write tool. Update it throughout your investigation.
-- End your response with a JSON block in ```json fences.
-- No extra text after the JSON block.
+- Your FINAL message MUST end with exactly one ```json block containing your verdict.
+- The JSON block must be the LAST thing in your response. Nothing after the closing ```.
+- If you cannot complete the review, still output a JSON block with verdict "SKIP" and explain in summary.
 - Keep summary to one sentence.
 - findings[] empty if no issues.
 - line must be an integer (use 0 if unknown).
