@@ -1375,3 +1375,88 @@ Next steps: Increase timeout, reduce diff size, or check model provider status.
         finding = data["findings"][0]
         assert "big_module.py" in finding["description"]
         assert "timeout" in finding["suggestion"].lower() or "model" in finding["suggestion"].lower()
+
+
+class TestRawReviewPreservation:
+    """Tests for raw_review field in fallback verdicts."""
+
+    def test_substantive_raw_text_produces_warn_with_raw_review(self):
+        """Text >500 chars without JSON block upgrades to WARN and includes raw_review."""
+        long_text = "This is a detailed review. " * 30  # ~810 chars
+        code, out, _ = run_parse(long_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["confidence"] == 0.3
+        assert "raw_review" in data
+        assert "detailed review" in data["raw_review"]
+
+    def test_short_raw_text_stays_skip_with_raw_review(self):
+        """Text <=500 chars without JSON block stays SKIP but still includes raw_review."""
+        short_text = "Brief review output."
+        code, out, _ = run_parse(short_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data.get("raw_review") == short_text
+
+    def test_empty_text_has_no_raw_review(self):
+        """Empty text does not include raw_review field."""
+        code, out, _ = run_parse("", env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert "raw_review" not in data
+
+    def test_scratchpad_fallback_includes_raw_review(self):
+        """Scratchpad without JSON block includes raw_review in fallback."""
+        scratchpad = (
+            "# Review\n\n"
+            "## Investigation Notes\n"
+            "- Checked all files for correctness issues\n"
+            "- Found no significant problems\n"
+            "- Code follows standard patterns\n\n"
+            "## Verdict: PASS\n"
+            "No issues found.\n"
+        )
+        code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert "raw_review" in data
+        assert "Investigation Notes" in data["raw_review"]
+
+    def test_raw_review_truncated_at_50kb(self):
+        """raw_review field is capped at 50,000 characters."""
+        huge_text = "x" * 60000
+        code, out, _ = run_parse(huge_text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert "raw_review" in data
+        assert len(data["raw_review"]) == 50000
+
+    def test_extract_review_summary_with_summary_header(self):
+        """extract_review_summary extracts ## Summary section."""
+        text = (
+            "# Review\n\n## Summary\nThe code looks good overall.\n\n"
+            "## Details\n" + "This is detailed analysis of the code. " * 20
+        )
+        assert len(text.strip()) > 500  # precondition
+        code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert "looks good" in data["summary"]
+
+    def test_extract_review_summary_with_verdict_header(self):
+        """Text with ## Verdict: header is treated as scratchpad and uses that verdict."""
+        text = (
+            "# Review\n\n## Verdict: PASS\nNo issues found in the codebase.\n\n"
+            "## Analysis\n" + "Checked various code paths for problems. " * 20
+        )
+        assert len(text.strip()) > 500  # precondition
+        code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
+        assert code == 0
+        data = json.loads(out)
+        # Scratchpad path extracts verdict from ## Verdict: PASS header
+        assert data["verdict"] == "PASS"
+        assert "raw_review" in data

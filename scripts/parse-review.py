@@ -57,7 +57,24 @@ def is_scratchpad(text: str) -> bool:
     return "## Investigation Notes" in text or "## Verdict:" in text
 
 
-def extract_notes_summary(text: str, max_len: int = 200) -> str:
+def extract_review_summary(text: str) -> str:
+    """Extract a meaningful summary from unstructured review text."""
+    # Check for explicit summary or verdict headers
+    for header in (r"## Summary", r"## Verdict:"):
+        match = re.search(
+            rf"{header}\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL,
+        )
+        if match:
+            section = match.group(1).strip()
+            if section:
+                return section[:500]
+
+    # Fallback: first 500 non-empty chars
+    stripped = text.strip()
+    return stripped[:500] if stripped else ""
+
+
+def extract_notes_summary(text: str, max_len: int = 10000) -> str:
     """Extract investigation notes for inclusion in partial review summary."""
     match = re.search(
         r"## Investigation Notes\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL
@@ -72,7 +89,7 @@ def extract_notes_summary(text: str, max_len: int = 200) -> str:
 
 def write_fallback(
     reviewer: str, error: str, verdict: str = "FAIL", confidence: float = 0.0,
-    summary: str | None = None,
+    summary: str | None = None, raw_review: str | None = None,
 ) -> NoReturn:
     fallback = {
         "reviewer": reviewer,
@@ -90,19 +107,23 @@ def write_fallback(
             "info": 0,
         },
     }
+    if raw_review:
+        fallback["raw_review"] = raw_review[:50000]
     print(json.dumps(fallback, indent=2, sort_keys=False))
     sys.exit(0)
 
 
 def fail(msg: str) -> NoReturn:
     print(f"parse-review: {msg}", file=sys.stderr)
+    raw_text = RAW_INPUT.strip() if RAW_INPUT else None
     if is_scratchpad(RAW_INPUT):
         md_verdict = extract_verdict_from_markdown(RAW_INPUT)
         verdict = md_verdict or "WARN"
         notes = extract_notes_summary(RAW_INPUT)
         summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
-        write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3, summary=summary)
-    write_fallback(REVIEWER_NAME, msg)
+        write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3,
+                       summary=summary, raw_review=raw_text or None)
+    write_fallback(REVIEWER_NAME, msg, raw_review=raw_text or None)
 
 
 def read_input(path: str | None) -> str:
@@ -536,23 +557,36 @@ def main() -> None:
 
             print("parse-review: no ```json block found", file=sys.stderr)
 
+            raw_text = raw.strip()
+
             # The model sometimes exits 0 but produces empty/non-JSON output.
             # Check if it's a scratchpad (has investigation notes or verdict header)
-            # and extract what we can before falling back to SKIP.
+            # and extract what we can before falling back.
             if is_scratchpad(raw):
                 md_verdict = extract_verdict_from_markdown(raw)
                 verdict = md_verdict or "WARN"
                 notes = extract_notes_summary(raw)
                 summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
-                write_fallback(REVIEWER_NAME, "no ```json block found", verdict=verdict, confidence=0.3, summary=summary)
-            
-            # Not a scratchpad — treat as SKIP (non-blocking) to reduce flakiness.
+                write_fallback(REVIEWER_NAME, "no ```json block found",
+                               verdict=verdict, confidence=0.3,
+                               summary=summary, raw_review=raw_text or None)
+
+            # Substantive raw text exists — upgrade to WARN so the review is visible.
+            if len(raw_text) > 500:
+                summary = extract_review_summary(raw_text)
+                write_fallback(REVIEWER_NAME, "no ```json block found",
+                               verdict="WARN", confidence=0.3,
+                               summary=summary or f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                               raw_review=raw_text)
+
+            # Not a scratchpad and not substantive — SKIP (non-blocking).
             write_fallback(
                 REVIEWER_NAME,
                 "no ```json block found",
                 verdict="SKIP",
                 confidence=0.0,
                 summary=f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                raw_review=raw_text if raw_text else None,
             )
 
         try:

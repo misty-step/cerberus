@@ -258,7 +258,7 @@ def format_reviewer_block(reviewer: dict, *, max_findings: int) -> list[str]:
     runtime = format_runtime(reviewer.get("runtime_seconds"))
     confidence = format_confidence(reviewer.get("confidence"))
     findings = findings_for(reviewer)
-    summary = truncate(reviewer.get("summary"), max_len=300) or "No summary provided."
+    summary = truncate(reviewer.get("summary"), max_len=2000) or "No summary provided."
 
     lines = [
         "<details>",
@@ -278,11 +278,11 @@ def format_reviewer_block(reviewer: dict, *, max_findings: int) -> list[str]:
         lines.append("**Key findings**")
         for finding in top_findings(reviewer, max_findings=max_findings):
             severity = normalize_severity(finding.get("severity"))
-            title = truncate(finding.get("title"), max_len=100) or "Untitled finding"
-            category = truncate(finding.get("category"), max_len=40) or "uncategorized"
+            title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
+            category = truncate(finding.get("category"), max_len=80) or "uncategorized"
             location = finding_location(finding)
-            description = truncate(finding.get("description"), max_len=220)
-            suggestion = truncate(finding.get("suggestion"), max_len=220)
+            description = truncate(finding.get("description"), max_len=1000)
+            suggestion = truncate(finding.get("suggestion"), max_len=1000)
             lines.append(
                 f"- `{severity}` **{title}** (`{category}`) at `{location}`"
             )
@@ -295,6 +295,18 @@ def format_reviewer_block(reviewer: dict, *, max_findings: int) -> list[str]:
             lines.append(f"- Additional findings not shown: {hidden}")
     else:
         lines.append("_No findings reported._")
+
+    raw_review = reviewer.get("raw_review")
+    if raw_review and isinstance(raw_review, str) and raw_review.strip():
+        lines.extend([
+            "",
+            "<details>",
+            "<summary>Full review output (click to expand)</summary>",
+            "",
+            raw_review.strip(),
+            "",
+            "</details>",
+        ])
 
     lines.extend(["", "</details>"])
     return lines
@@ -394,7 +406,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-findings",
         type=int,
-        default=3,
+        default=10,
         help="Maximum findings to show per reviewer section.",
     )
     return parser.parse_args()
