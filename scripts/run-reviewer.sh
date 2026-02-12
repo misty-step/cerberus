@@ -153,13 +153,13 @@ stage_opencode_project_config
 reviewer_meta="$(
   awk -v p="$perspective" '
     $1=="-" && $2=="name:" {
-      if (matched) { print name "\t" model; exit }
+      if (matched && !printed) { print name "\t" model; printed=1 }
       name=$3; model=""; matched=0
       next
     }
     $1=="perspective:" && $2==p { matched=1; next }
     $1=="model:" { model=$2; next }
-    END { if (matched) print name "\t" model }
+    END { if (matched && !printed) print name "\t" model }
   ' "$config_file"
 )"
 reviewer_name=""
