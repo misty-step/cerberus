@@ -110,6 +110,17 @@ class TestParseErrors:
         assert data["confidence"] == 0.0
         assert "no" in err.lower() and "json" in err.lower()
 
+    def test_fallback_uses_reviewer_name_and_perspective(self):
+        """Fallback verdicts should use REVIEWER_NAME and PERSPECTIVE from env."""
+        code, out, _ = run_parse(
+            "No json here",
+            env_extra={"REVIEWER_NAME": "APOLLO", "PERSPECTIVE": "correctness"},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["reviewer"] == "APOLLO"
+        assert data["perspective"] == "correctness"
+
     def test_invalid_json(self):
         code, out, err = run_parse("```json\n{invalid json}\n```")
         assert code == 0
@@ -196,12 +207,15 @@ class TestParseErrors:
         """Explicit timeout marker should produce SKIP verdict."""
         timeout_marker = tmp_path / "timeout.txt"
         timeout_marker.write_text("Review Timeout: timeout after 600s\n")
-        code, out, _ = run_parse_file(timeout_marker, env_extra={"REVIEWER_NAME": "SENTINEL"})
+        code, out, _ = run_parse_file(
+            timeout_marker,
+            env_extra={"REVIEWER_NAME": "SENTINEL", "PERSPECTIVE": "security"},
+        )
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert data["reviewer"] == "SENTINEL"
-        assert data["perspective"] == "timeout"
+        assert data["perspective"] == "security"
 
 
 class TestParseArgs:
@@ -1044,11 +1058,12 @@ The OpenRouter API returned an error that prevents the review from completing:
 
 Please check your API key and quota settings.
 """
-        code, out, err = run_parse(error_text)
+        code, out, err = run_parse(error_text, env_extra={"REVIEWER_NAME": "SENTINEL", "PERSPECTIVE": "security"})
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
-        assert data["reviewer"] == "SYSTEM"
+        assert data["reviewer"] == "SENTINEL"
+        assert data["perspective"] == "security"
         assert "API_KEY_INVALID" in data["summary"]
         assert data["confidence"] == 0.0
 

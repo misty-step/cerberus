@@ -161,6 +161,9 @@ if [[ -z "$reviewer_name" ]]; then
   exit 2
 fi
 
+# Persist reviewer name for downstream steps (parse, council).
+printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
+
 diff_file=""
 if [[ -n "${GH_DIFF_FILE:-}" && -f "${GH_DIFF_FILE:-}" ]]; then
   diff_file="$GH_DIFF_FILE"

@@ -8,6 +8,7 @@ from typing import NoReturn
 
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
 REVIEWER_NAME = "UNKNOWN"
+PERSPECTIVE = "unknown"
 RAW_INPUT = ""
 VERDICT_CONFIDENCE_MIN = 0.7
 WARN_MINOR_THRESHOLD = 5
@@ -75,7 +76,7 @@ def write_fallback(
 ) -> NoReturn:
     fallback = {
         "reviewer": reviewer,
-        "perspective": "unknown",
+        "perspective": PERSPECTIVE,
         "verdict": verdict,
         "confidence": confidence,
         "summary": summary or f"{PARSE_FAILURE_PREFIX}{error}",
@@ -161,8 +162,8 @@ def generate_skip_verdict(error_type: str, text: str) -> dict:
         suggestion = "Check API key and quota settings."
 
     return {
-        "reviewer": "SYSTEM",
-        "perspective": "error",
+        "reviewer": REVIEWER_NAME,
+        "perspective": PERSPECTIVE,
         "verdict": "SKIP",
         "confidence": 0.0,
         "summary": summary,
@@ -212,7 +213,7 @@ def generate_timeout_skip_verdict(
 
     verdict: dict = {
         "reviewer": reviewer,
-        "perspective": "timeout",
+        "perspective": PERSPECTIVE,
         "verdict": "SKIP",
         "confidence": 0.0,
         "summary": f"Review skipped due to timeout{timeout_suffix}.",
@@ -477,7 +478,9 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
 
 
 def main() -> None:
-    global REVIEWER_NAME, RAW_INPUT
+    global REVIEWER_NAME, PERSPECTIVE, RAW_INPUT
+
+    PERSPECTIVE = os.environ.get("PERSPECTIVE", "unknown")
 
     try:
         input_path, reviewer = parse_args(sys.argv[1:])
