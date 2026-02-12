@@ -168,18 +168,24 @@ def main() -> None:
     verdicts = []
     for path in verdict_files:
         data = read_json(path)
-        verdicts.append(
-            {
-                "reviewer": data.get("reviewer", path.stem),
-                "perspective": data.get("perspective", path.stem),
-                "verdict": data.get("verdict", "FAIL"),
-                "confidence": data.get("confidence"),
-                "summary": data.get("summary", ""),
-                "findings": data.get("findings"),
-                "stats": data.get("stats"),
-                "runtime_seconds": data.get("runtime_seconds"),
-            }
-        )
+        entry = {
+            "reviewer": data.get("reviewer", path.stem),
+            "perspective": data.get("perspective", path.stem),
+            "verdict": data.get("verdict", "FAIL"),
+            "confidence": data.get("confidence"),
+            "summary": data.get("summary", ""),
+            "findings": data.get("findings"),
+            "stats": data.get("stats"),
+            "runtime_seconds": data.get("runtime_seconds"),
+        }
+        # Propagate model metadata when present
+        if data.get("model_used") is not None:
+            entry["model_used"] = data["model_used"]
+        if data.get("primary_model") is not None:
+            entry["primary_model"] = data["primary_model"]
+        if data.get("fallback_used") is not None:
+            entry["fallback_used"] = data["fallback_used"]
+        verdicts.append(entry)
 
     expected_reviewers = parse_expected_reviewers(os.environ.get("EXPECTED_REVIEWERS"))
     fallback_reviewers = [v["reviewer"] for v in verdicts if is_fallback_verdict(v)]
