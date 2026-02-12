@@ -224,14 +224,10 @@ def main() -> None:
             "findings": data.get("findings"),
             "stats": data.get("stats"),
             "runtime_seconds": data.get("runtime_seconds"),
+            "model_used": data.get("model_used"),
+            "primary_model": data.get("primary_model"),
+            "fallback_used": data.get("fallback_used"),
         }
-        # Propagate model metadata when present
-        if data.get("model_used") is not None:
-            entry["model_used"] = data["model_used"]
-        if data.get("primary_model") is not None:
-            entry["primary_model"] = data["primary_model"]
-        if data.get("fallback_used") is not None:
-            entry["fallback_used"] = data["fallback_used"]
         verdicts.append(entry)
 
     if not verdicts and skipped_artifacts:

@@ -330,7 +330,7 @@ def test_no_model_when_metadata_absent(tmp_path: Path) -> None:
     code, body, err = run_render(tmp_path, council)
 
     assert code == 0, err
-    assert "model" not in body.lower().split("override")[0].split("footer")[0].split("Cerberus Council")[0]
+    assert "| model " not in body
     assert "- Model:" not in body
 
 
