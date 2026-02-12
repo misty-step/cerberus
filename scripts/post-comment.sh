@@ -53,6 +53,9 @@ fi
 verdict="$(jq -r .verdict "$verdict_file")"
 confidence="$(jq -r .confidence "$verdict_file")"
 summary="$(jq -r .summary "$verdict_file")"
+model_used="$(jq -r '.model_used // empty' "$verdict_file")"
+fallback_used="$(jq -r '.fallback_used // false' "$verdict_file")"
+primary_model="$(jq -r '.primary_model // empty' "$verdict_file")"
 
 if [[ "$verdict" == "null" || -z "$verdict" ]]; then
   echo "malformed verdict file: missing verdict field" >&2
@@ -126,12 +129,31 @@ print(len(findings))
 PY
 )"
 
+# Strip openrouter provider prefix for brevity: openrouter/moonshotai/kimi-k2.5 → kimi-k2.5
+short_model() {
+  local m="$1"
+  m="${m#openrouter/}"  # remove openrouter/ prefix
+  m="${m##*/}"          # keep only final segment
+  echo "$m"
+}
+
+model_display=""
+if [[ -n "$model_used" ]]; then
+  short="$(short_model "$model_used")"
+  if [[ "$fallback_used" == "true" && -n "$primary_model" ]]; then
+    primary_short="$(short_model "$primary_model")"
+    model_display=" | Model: \`${short}\` ↩️ (fallback from \`${primary_short}\`)"
+  else
+    model_display=" | Model: \`${short}\`"
+  fi
+fi
+
 sha_short="$(git rev-parse --short HEAD)"
 
 comment_file="/tmp/${perspective}-comment.md"
 {
   printf '%s\n' "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
-  printf '%s\n' "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}"
+  printf '%s\n' "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}${model_display}"
   printf '\n'
   if [[ -n "$skip_banner" ]]; then
     printf '%s\n' "$skip_banner"

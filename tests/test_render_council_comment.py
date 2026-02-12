@@ -247,6 +247,94 @@ def test_increased_truncation_limits(tmp_path: Path) -> None:
     assert long_title in body
 
 
+def test_renders_model_in_reviewer_details(tmp_path: Path) -> None:
+    council = {
+        "verdict": "PASS",
+        "summary": "1 reviewer. Failures: 0, warnings: 0, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.93,
+                "summary": "No issues.",
+                "runtime_seconds": 12,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                "model_used": "openrouter/moonshotai/kimi-k2.5",
+                "primary_model": "openrouter/moonshotai/kimi-k2.5",
+                "fallback_used": False,
+            },
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    # Model should appear in summary line and details
+    assert "model `kimi-k2.5`" in body
+    assert "- Model: `kimi-k2.5`" in body
+
+
+def test_renders_fallback_model_indicator(tmp_path: Path) -> None:
+    council = {
+        "verdict": "PASS",
+        "summary": "1 reviewer.",
+        "reviewers": [
+            {
+                "reviewer": "SENTINEL",
+                "perspective": "security",
+                "verdict": "PASS",
+                "confidence": 0.88,
+                "summary": "No issues.",
+                "runtime_seconds": 30,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                "model_used": "openrouter/deepseek/deepseek-v3.2",
+                "primary_model": "openrouter/moonshotai/kimi-k2.5",
+                "fallback_used": True,
+            },
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    assert "`deepseek-v3.2` ↩️ (fallback from `kimi-k2.5`)" in body
+
+
+def test_no_model_when_metadata_absent(tmp_path: Path) -> None:
+    council = {
+        "verdict": "PASS",
+        "summary": "1 reviewer.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.93,
+                "summary": "No issues.",
+                "runtime_seconds": 12,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+
+    assert code == 0, err
+    assert "| model " not in body
+    assert "- Model:" not in body
+
+
+
 def test_renders_override_details_when_present(tmp_path: Path) -> None:
     council = {
         "verdict": "PASS",

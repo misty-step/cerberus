@@ -544,6 +544,105 @@ def test_preserves_reviewer_runtime_seconds(tmp_path):
     assert data["reviewers"][0]["runtime_seconds"] == 37
 
 
+def test_propagates_model_metadata(tmp_path):
+    """model_used, primary_model, fallback_used should pass through to council verdict."""
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+                "model_used": "openrouter/moonshotai/kimi-k2.5",
+                "primary_model": "openrouter/moonshotai/kimi-k2.5",
+                "fallback_used": False,
+            }
+        )
+    )
+
+    code, _out, _err = run_aggregate(str(tmp_path))
+    assert code == 0
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    reviewer = data["reviewers"][0]
+    assert reviewer["model_used"] == "openrouter/moonshotai/kimi-k2.5"
+    assert reviewer["primary_model"] == "openrouter/moonshotai/kimi-k2.5"
+    assert reviewer["fallback_used"] is False
+
+
+def test_propagates_fallback_model_metadata(tmp_path):
+    """Fallback model metadata should propagate correctly."""
+    (tmp_path / "sentinel.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "SENTINEL",
+                "perspective": "security",
+                "verdict": "PASS",
+                "confidence": 0.85,
+                "summary": "ok",
+                "model_used": "openrouter/deepseek/deepseek-v3.2",
+                "primary_model": "openrouter/moonshotai/kimi-k2.5",
+                "fallback_used": True,
+            }
+        )
+    )
+
+    code, _out, _err = run_aggregate(str(tmp_path))
+    assert code == 0
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    reviewer = data["reviewers"][0]
+    assert reviewer["model_used"] == "openrouter/deepseek/deepseek-v3.2"
+    assert reviewer["primary_model"] == "openrouter/moonshotai/kimi-k2.5"
+    assert reviewer["fallback_used"] is True
+
+
+def test_missing_model_metadata_defaults_to_none(tmp_path):
+    """Verdicts without model metadata should have None values in council output."""
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+            }
+        )
+    )
+
+    code, _out, _err = run_aggregate(str(tmp_path))
+    assert code == 0
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    reviewer = data["reviewers"][0]
+    assert reviewer["model_used"] is None
+    assert reviewer["primary_model"] is None
+    assert reviewer["fallback_used"] is None
+
+
+def test_partial_model_metadata_propagates_present_values(tmp_path):
+    """Only model_used present; other fields default to None."""
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+                "model_used": "openrouter/moonshotai/kimi-k2.5",
+            }
+        )
+    )
+
+    code, _out, _err = run_aggregate(str(tmp_path))
+    assert code == 0
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    reviewer = data["reviewers"][0]
+    assert reviewer["model_used"] == "openrouter/moonshotai/kimi-k2.5"
+    assert reviewer["primary_model"] is None
+    assert reviewer["fallback_used"] is None
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: Unit tests via importlib (no subprocess)
 # ---------------------------------------------------------------------------

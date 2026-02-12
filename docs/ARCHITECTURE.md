@@ -7,7 +7,7 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 ## Modules
 
 ### Module 1: Council Review (GitHub Action) — **v1.0**
-**What:** Multi-AI code review council. 5 specialist reviewers analyze every PR from different angles (security, architecture, performance, quality, testing). Synthesizes verdicts into a unified council comment.
+**What:** Multi-AI code review council. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified council comment.
 
 **Status:** Working. Deployed across all Misty Step repos. Needs hardening.
 
@@ -91,9 +91,9 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 
 ### Phase 1: Resilience (P0)
 - [x] Timeout handling: per-reviewer timeouts with graceful degradation
-- [ ] API failure handling: retry with backoff, skip reviewer on persistent failure
-- [ ] Credit/token exhaustion: detect 402/429 errors, degrade gracefully, alert
-- [ ] Multi-provider fallback: if primary API fails, try secondary
+- [x] API failure handling: retry with backoff, skip reviewer on persistent failure
+- [x] Credit/token exhaustion: detect 402/429 errors, degrade gracefully, alert
+- [x] Multi-provider fallback: if primary API fails, try secondary (fallback-models chain)
 - [ ] Rate limit handling: respect GitHub API secondary rate limits
 
 ### Phase 2: Report Quality (P0)
@@ -104,11 +104,11 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 - [x] Timing info: how long each reviewer took
 
 ### Phase 3: Installation & DX (P1)
-- [ ] One-file installation: single workflow YAML, one secret
+- [x] One-file installation: single workflow YAML, one secret
 - [ ] Auto-detection of project type (language, framework)
-- [ ] Sensible defaults that work for 90% of repos
-- [ ] Clear error messages for misconfiguration
-- [ ] README with quick start, configuration reference, examples
+- [x] Sensible defaults that work for 90% of repos
+- [x] Clear error messages for misconfiguration
+- [x] README with quick start, configuration reference, examples
 
 ### Phase 4: Testing & Stability (P1)
 - [x] Unit tests for parse-review.py, aggregate-verdict.py
@@ -117,7 +117,7 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 - [ ] CI on cerberus repo itself (dogfooding)
 
 ### Phase 5: Documentation (P2)
-- [ ] Architecture decision records
-- [ ] Configuration reference
+- [x] Architecture decision records (docs/adr/)
+- [x] Configuration reference (README inputs tables)
 - [ ] Troubleshooting guide
-- [ ] Contributing guide
+- [x] Contributing guide (CONTRIBUTING.md)

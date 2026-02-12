@@ -215,18 +215,20 @@ def main() -> None:
             )
             skipped_artifacts.append({"file": path.name, "reason": err})
             continue
-        verdicts.append(
-            {
-                "reviewer": data.get("reviewer", path.stem),
-                "perspective": data.get("perspective", path.stem),
-                "verdict": data.get("verdict", "FAIL"),
-                "confidence": data.get("confidence"),
-                "summary": data.get("summary", ""),
-                "findings": data.get("findings"),
-                "stats": data.get("stats"),
-                "runtime_seconds": data.get("runtime_seconds"),
-            }
-        )
+        entry = {
+            "reviewer": data.get("reviewer", path.stem),
+            "perspective": data.get("perspective", path.stem),
+            "verdict": data.get("verdict", "FAIL"),
+            "confidence": data.get("confidence"),
+            "summary": data.get("summary", ""),
+            "findings": data.get("findings"),
+            "stats": data.get("stats"),
+            "runtime_seconds": data.get("runtime_seconds"),
+            "model_used": data.get("model_used"),
+            "primary_model": data.get("primary_model"),
+            "fallback_used": data.get("fallback_used"),
+        }
+        verdicts.append(entry)
 
     if not verdicts and skipped_artifacts:
         council = {

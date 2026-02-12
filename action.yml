@@ -150,6 +150,7 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
+        PRIMARY_MODEL: ${{ inputs.model }}
       run: |
         # Resolve reviewer name written by run-reviewer.sh (e.g. APOLLO).
         # Falls back to uppercased perspective if the file is missing.
@@ -175,6 +176,21 @@ runs:
             jq --argjson runtime_seconds "$runtime_seconds" '.runtime_seconds = $runtime_seconds' "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
             mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
           fi
+        fi
+        # Inject model metadata from run-reviewer.sh
+        MODEL_USED_FILE="/tmp/${PERSPECTIVE}-model-used"
+        if [[ -s "$MODEL_USED_FILE" ]]; then
+          model_used="$(cat "$MODEL_USED_FILE")"
+          primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+          fallback_used="false"
+          if [[ "$model_used" != "$primary_model" ]]; then
+            fallback_used="true"
+          fi
+          tmp_json="/tmp/${PERSPECTIVE}-verdict.model.json"
+          jq --arg mu "$model_used" --arg pm "$primary_model" --argjson fb "$fallback_used" \
+            '.model_used = $mu | .primary_model = $pm | .fallback_used = $fb' \
+            "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+          mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
         fi
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
         if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then

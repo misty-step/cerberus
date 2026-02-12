@@ -100,6 +100,26 @@ def format_runtime(runtime_seconds: object) -> str:
     return f"{seconds}s"
 
 
+def short_model_name(model: str) -> str:
+    """Strip provider prefixes for brevity: openrouter/moonshotai/kimi-k2.5 → kimi-k2.5"""
+    if model.startswith("openrouter/"):
+        model = model[len("openrouter/"):]
+    return model.rsplit("/", 1)[-1] if "/" in model else model
+
+
+def format_model(reviewer: dict) -> str | None:
+    model_used = reviewer.get("model_used")
+    if not model_used or not isinstance(model_used, str):
+        return None
+    short = short_model_name(model_used)
+    if reviewer.get("fallback_used"):
+        primary = reviewer.get("primary_model")
+        if primary and isinstance(primary, str):
+            primary_short = short_model_name(primary)
+            return f"`{short}` ↩️ (fallback from `{primary_short}`)"
+    return f"`{short}`"
+
+
 def format_confidence(confidence: object) -> str:
     if confidence is None:
         return "n/a"
@@ -261,22 +281,32 @@ def format_reviewer_block(reviewer: dict, *, max_findings: int) -> list[str]:
     perspective = perspective_name(reviewer)
     runtime = format_runtime(reviewer.get("runtime_seconds"))
     confidence = format_confidence(reviewer.get("confidence"))
+    model_label = format_model(reviewer)
     findings = findings_for(reviewer)
     summary = truncate(reviewer.get("summary"), max_len=2000) or "No summary provided."
 
+    summary_parts = [
+        f"<summary>{icon} <strong>{name}</strong> ({perspective}) | "
+        f"{verdict} | confidence {confidence}",
+    ]
+    if model_label:
+        summary_parts.append(f" | model {model_label}")
+    summary_parts.append(f" | runtime {runtime} | findings {len(findings)}</summary>")
+
     lines = [
         "<details>",
-        (
-            f"<summary>{icon} <strong>{name}</strong> ({perspective}) | "
-            f"{verdict} | confidence {confidence} | runtime {runtime} | findings {len(findings)}</summary>"
-        ),
+        "".join(summary_parts),
         "",
         f"- Verdict: `{verdict}`",
         f"- Confidence: `{confidence}`",
+    ]
+    if model_label:
+        lines.append(f"- Model: {model_label}")
+    lines.extend([
         f"- Runtime: `{runtime}`",
         f"- Summary: {summary}",
         "",
-    ]
+    ])
 
     if findings:
         lines.append("**Key findings**")
