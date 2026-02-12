@@ -104,7 +104,7 @@ Use `templates/triage-workflow.yml` to enable:
 | `perspective` | yes | - | Review perspective |
 | `github-token` | yes | - | GitHub token for PR comments |
 | `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY` or `OPENROUTER_API_KEY` env is set) |
-| `model` | no | `openrouter/moonshotai/kimi-k2.5` | Model name (can vary per reviewer via matrix) |
+| `model` | no | `defaults/config.yml` | Model override (else per-reviewer config, then `model.default`) |
 | `fallback-models` | no | `openrouter/deepseek/deepseek-v3.2,...` | Comma-separated fallback models, tried on transient failure |
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
@@ -169,7 +169,9 @@ matrix:
 ```
 
 ### Model diversity
-Assign a different model to each reviewer via the matrix `model` field. This reduces correlated blind spots across reviewers. See `templates/consumer-workflow.yml` for a full example.
+By default, Cerberus selects models per reviewer from `defaults/config.yml`.
+
+Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow.yml` for a full example.
 
 ```yaml
 matrix:
