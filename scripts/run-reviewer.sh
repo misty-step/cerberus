@@ -162,8 +162,9 @@ reviewer_meta="$(
     END { if (matched) print name "\t" model }
   ' "$config_file"
 )"
-reviewer_name="$(printf '%s' "$reviewer_meta" | cut -f1)"
-reviewer_model_raw="$(printf '%s' "$reviewer_meta" | cut -f2)"
+reviewer_name=""
+reviewer_model_raw=""
+IFS=$'\t' read -r reviewer_name reviewer_model_raw <<< "${reviewer_meta}"
 if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2
@@ -264,9 +265,13 @@ strip_wrapping_quotes() {
   printf '%s' "$s"
 }
 
-input_model="$(trim_ws "${OPENCODE_MODEL:-}")"
-reviewer_model="$(strip_wrapping_quotes "$(trim_ws "${reviewer_model_raw:-}")")"
-config_default_model="$(strip_wrapping_quotes "$(trim_ws "${config_default_model_raw:-}")")"
+sanitize_model() {
+  strip_wrapping_quotes "$(trim_ws "$1")"
+}
+
+input_model="$(sanitize_model "${OPENCODE_MODEL:-}")"
+reviewer_model="$(sanitize_model "${reviewer_model_raw:-}")"
+config_default_model="$(sanitize_model "${config_default_model_raw:-}")"
 
 primary_model="openrouter/moonshotai/kimi-k2.5"
 if [[ -n "$config_default_model" ]]; then
