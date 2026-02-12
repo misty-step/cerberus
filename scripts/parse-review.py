@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -16,6 +17,11 @@ WARN_SAME_CATEGORY_MINOR_THRESHOLD = 3
 
 EVIDENCE_MAX_CHARS = 2000
 EVIDENCE_WINDOW_RADIUS = 12
+
+_CHANGED_FILES_CACHE: dict[str, set[str]] = {}
+_RESOLVED_PATH_CACHE: dict[tuple[str, str], Path | None] = {}
+_FILE_CONTENT_CACHE: dict[Path, str] = {}
+_FILE_LINES_CACHE: dict[Path, list[str]] = {}
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
@@ -549,27 +555,48 @@ def _normalize_evidence(text: str) -> str:
             lines = [ln[1:] if ln.startswith(("+", "-", " ")) else ln for ln in lines]
             evidence = "\n".join(lines).strip("\n")
 
-    if len(evidence) > EVIDENCE_MAX_CHARS:
-        evidence = evidence[:EVIDENCE_MAX_CHARS] + "..."
     return evidence
 
 
-def _extract_changed_files_from_diff(diff_text: str) -> set[str]:
+def _truncate_evidence_for_output(evidence: str) -> str:
+    if len(evidence) > EVIDENCE_MAX_CHARS:
+        return evidence[:EVIDENCE_MAX_CHARS] + "..."
+    return evidence
+
+
+def _extract_changed_files_from_diff(diff_path: Path) -> set[str]:
+    cache_key: str | None = None
+    try:
+        cache_key = str(diff_path.resolve())
+    except OSError:
+        pass
+    if cache_key and cache_key in _CHANGED_FILES_CACHE:
+        return _CHANGED_FILES_CACHE[cache_key]
+
     changed: set[str] = set()
-    for line in diff_text.splitlines():
-        if not line.startswith("diff --git "):
-            continue
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        a_path = parts[2]
-        b_path = parts[3]
-        for raw in (a_path, b_path):
-            p = raw
-            if p.startswith(("a/", "b/")):
-                p = p[2:]
-            if p and p != "/dev/null":
-                changed.add(p)
+    try:
+        with diff_path.open("r", errors="replace") as handle:
+            for line in handle:
+                if not line.startswith("diff --git "):
+                    continue
+                suffix = line[len("diff --git ") :].strip()
+                try:
+                    parts = shlex.split(suffix)
+                except ValueError:
+                    parts = suffix.split()
+                if len(parts) < 2:
+                    continue
+                for raw in parts[:2]:
+                    p = raw
+                    if p.startswith(("a/", "b/")):
+                        p = p[2:]
+                    if p and p != "/dev/null":
+                        changed.add(p)
+    except OSError:
+        pass
+
+    if cache_key:
+        _CHANGED_FILES_CACHE[cache_key] = changed
     return changed
 
 
@@ -578,22 +605,37 @@ def _safe_resolve_repo_path(repo_root: Path, rel: str) -> Path | None:
         return None
     if rel.startswith(("a/", "b/")):
         rel = rel[2:]
+    cache_key = (str(repo_root), rel)
     if rel.startswith(("/", "~")):
         return None
     if ".." in Path(rel).parts:
         return None
+    if cache_key in _RESOLVED_PATH_CACHE:
+        return _RESOLVED_PATH_CACHE[cache_key]
     candidate = (repo_root / rel).resolve()
     try:
         candidate.relative_to(repo_root)
     except ValueError:
+        _RESOLVED_PATH_CACHE[cache_key] = None
         return None
+    _RESOLVED_PATH_CACHE[cache_key] = candidate
     return candidate
 
 
-def _evidence_matches_file(path: Path, line: int, evidence: str) -> bool:
+def _read_file_with_cache(path: Path) -> str | None:
+    if path in _FILE_CONTENT_CACHE:
+        return _FILE_CONTENT_CACHE[path]
     try:
         text = path.read_text(errors="replace")
     except OSError:
+        return None
+    _FILE_CONTENT_CACHE[path] = text
+    return text
+
+
+def _evidence_matches_file(path: Path, line: int, evidence: str) -> bool:
+    text = _read_file_with_cache(path)
+    if text is None:
         return False
 
     if not evidence:
@@ -601,7 +643,11 @@ def _evidence_matches_file(path: Path, line: int, evidence: str) -> bool:
 
     # Prefer a tight window around the cited line; fallback to whole-file search.
     if line > 0:
-        lines = text.splitlines()
+        if path in _FILE_LINES_CACHE:
+            lines = _FILE_LINES_CACHE[path]
+        else:
+            lines = text.splitlines()
+            _FILE_LINES_CACHE[path] = lines
         idx = line - 1
         if 0 <= idx < len(lines):
             start = max(0, idx - EVIDENCE_WINDOW_RADIUS)
@@ -627,7 +673,7 @@ def downgrade_unverified_findings(obj: dict) -> None:
     try:
         diff_path = Path(diff_file)
         if diff_path.is_file():
-            changed_files = _extract_changed_files_from_diff(diff_path.read_text(errors="replace"))
+            changed_files = _extract_changed_files_from_diff(diff_path)
     except OSError:
         changed_files = set()
 
@@ -670,7 +716,7 @@ def downgrade_unverified_findings(obj: dict) -> None:
             _prefix_title(finding, "[unverified] ")
             downgraded += 1
             continue
-        finding["evidence"] = evidence
+        finding["evidence"] = _truncate_evidence_for_output(evidence)
 
         resolved = _safe_resolve_repo_path(repo_root, file_norm)
         if resolved is None or not resolved.is_file():

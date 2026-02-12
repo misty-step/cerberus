@@ -92,59 +92,9 @@ fi
 
 findings_file="/tmp/${perspective}-findings.md"
 findings_count="$(
-  VERDICT_FILE="$verdict_file" FINDINGS_FILE="$findings_file" python3 - <<'PY'
-import json
-import os
-
-path = os.environ["VERDICT_FILE"]
-out = os.environ["FINDINGS_FILE"]
-
-data = json.load(open(path))
-findings = data.get("findings", [])
-
-sev = {
-    "critical": "🔴",
-    "major": "🟠",
-    "minor": "🟡",
-    "info": "🔵",
-}
-
-lines = []
-for f in findings:
-    emoji = sev.get(f.get("severity", "info"), "🔵")
-    file = f.get("file", "unknown")
-    line = f.get("line", 0)
-    title = f.get("title", "Issue")
-    desc = f.get("description", "")
-    sugg = f.get("suggestion", "")
-    evidence = f.get("evidence", "")
-    unverified = bool(f.get("_evidence_unverified"))
-    reason = f.get("_evidence_reason", "")
-
-    meta = ""
-    if unverified:
-        meta = f" _(unverified: {reason})_" if reason else " _(unverified)_"
-
-    lines.append(f"- {emoji} `{file}:{line}` — {title}{meta}")
-    if desc:
-        lines.append(f"  {desc}")
-    if sugg:
-        lines.append(f"  Suggestion: {sugg}")
-    if isinstance(evidence, str) and evidence.strip():
-        lines.append("  Evidence:")
-        lines.append("    ```text")
-        for ln in evidence.strip().splitlines():
-            lines.append(f"    {ln}")
-        lines.append("    ```")
-
-if not lines:
-    lines = ["- None"]
-
-with open(out, "w") as fh:
-    fh.write("\n".join(lines))
-
-print(len(findings))
-PY
+  python3 "$CERBERUS_ROOT/scripts/render-findings.py" \
+    --verdict-json "$verdict_file" \
+    --output "$findings_file"
 )"
 
 # Strip openrouter provider prefix for brevity: openrouter/moonshotai/kimi-k2.5 → kimi-k2.5
