@@ -110,12 +110,26 @@ def write_fake_cerberus_root(
 ) -> None:
     (root / "defaults").mkdir(parents=True)
     (root / "templates").mkdir(parents=True)
+    (root / "scripts" / "lib").mkdir(parents=True)
     (root / ".opencode" / "agents").mkdir(parents=True)
 
     if config_yml is None:
         config_yml = "\n".join(["- name: SENTINEL", f"  perspective: {perspective}", ""])
     (root / "defaults" / "config.yml").write_text(config_yml)
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
+    # Keep fake CERBERUS_ROOT runnable as action code evolves.
+    (root / "scripts" / "render-review-prompt.py").write_text(
+        (REPO_ROOT / "scripts" / "render-review-prompt.py").read_text()
+    )
+    (root / "scripts" / "lib" / "__init__.py").write_text(
+        (REPO_ROOT / "scripts" / "lib" / "__init__.py").read_text()
+    )
+    (root / "scripts" / "lib" / "review_prompt.py").write_text(
+        (REPO_ROOT / "scripts" / "lib" / "review_prompt.py").read_text()
+    )
+    (root / "scripts" / "lib" / "prompt_sanitize.py").write_text(
+        (REPO_ROOT / "scripts" / "lib" / "prompt_sanitize.py").read_text()
+    )
     (root / "opencode.json").write_text("CERBERUS_OPENCODE_JSON\n")
     (root / ".opencode" / "agents" / f"{perspective}.md").write_text("CERBERUS_AGENT\n")
 

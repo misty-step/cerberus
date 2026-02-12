@@ -196,52 +196,11 @@ fi
 # Render prompt: PR metadata inline, diff by file reference
 export PERSPECTIVE="$perspective"
 
-CERBERUS_ROOT_PY="$CERBERUS_ROOT" \
+CERBERUS_ROOT="$CERBERUS_ROOT" \
   DIFF_FILE="$diff_file" \
   PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" \
-  python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-cerberus_root = os.environ["CERBERUS_ROOT_PY"]
-template_path = Path(cerberus_root) / "templates" / "review-prompt.md"
-text = template_path.read_text()
-
-# Read PR context from JSON file if available (action mode)
-pr_context_file = os.environ.get("GH_PR_CONTEXT", "")
-if pr_context_file and Path(pr_context_file).exists():
-    ctx = json.loads(Path(pr_context_file).read_text())
-    pr_title = ctx.get("title", "")
-    pr_author = ctx.get("author", {})
-    if isinstance(pr_author, dict):
-        pr_author = pr_author.get("login", "")
-    head_branch = ctx.get("headRefName", "")
-    base_branch = ctx.get("baseRefName", "")
-    pr_body = ctx.get("body", "") or ""
-else:
-    pr_title = os.environ.get("GH_PR_TITLE", "")
-    pr_author = os.environ.get("GH_PR_AUTHOR", "")
-    head_branch = os.environ.get("GH_HEAD_BRANCH", "")
-    base_branch = os.environ.get("GH_BASE_BRANCH", "")
-    pr_body = os.environ.get("GH_PR_BODY", "")
-
-replacements = {
-    "{{PR_TITLE}}": pr_title,
-    "{{PR_AUTHOR}}": pr_author,
-    "{{HEAD_BRANCH}}": head_branch,
-    "{{BASE_BRANCH}}": base_branch,
-    "{{PR_BODY}}": pr_body,
-    "{{DIFF_FILE}}": os.environ["DIFF_FILE"],
-    "{{CURRENT_DATE}}": __import__('datetime').date.today().isoformat(),
-    "{{PERSPECTIVE}}": os.environ.get("PERSPECTIVE", ""),
-}
-
-for key, value in replacements.items():
-    text = text.replace(key, value)
-
-Path(os.environ["PROMPT_OUTPUT"]).write_text(text)
-PY
+  PERSPECTIVE="$perspective" \
+  python3 "$CERBERUS_ROOT/scripts/render-review-prompt.py"
 
 # Create an isolated HOME for the opencode process.  This confines any
 # file writes (caches, config) to a disposable directory and keeps them
