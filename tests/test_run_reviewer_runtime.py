@@ -877,3 +877,144 @@ def test_no_fallback_models_behaves_same_as_before(tmp_path: Path) -> None:
     assert "Falling back to model:" not in result.stdout
     model_used = Path("/tmp/security-model-used").read_text().strip()
     assert model_used == "openrouter/moonshotai/kimi-k2.5"
+
+
+# --- Provider generic error / empty output / unknown error tests ---
+
+
+def test_provider_returned_error_is_retried(tmp_path: Path) -> None:
+    """'Provider returned error' from OpenCode wrapper is treated as transient."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(retry_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(retry_counter) + "'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  echo 'Error: Provider returned error' >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Recovered from provider error",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+    make_executable(bin_dir / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert retry_counter.read_text() == "2"
+    assert "Retrying after transient error (class=provider_generic)" in result.stdout
+
+
+def test_empty_output_on_exit_zero_triggers_retry(tmp_path: Path) -> None:
+    """Exit 0 with no output is not accepted as success — retries instead."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(retry_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(retry_counter) + "'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  exit 0\n"  # Empty output, exit 0
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Second attempt succeeded",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+    make_executable(bin_dir / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert retry_counter.read_text() == "2"
+    assert "opencode exited 0 but produced no output" in result.stdout
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
+    parse_file = Path(parse_input_ref.read_text().strip())
+    assert "```json" in parse_file.read_text()
+
+
+def test_unknown_error_tries_fallback_model(tmp_path: Path) -> None:
+    """Unrecognized error from primary model tries fallback instead of aborting."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(attempt_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(attempt_counter) + "'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  echo 'Unexpected internal failure: segfault in wasm runtime' >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Fallback after unknown error",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/fallback-model"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "Unknown error type" in result.stdout
+    assert "Falling back to model:" in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/fallback-model"

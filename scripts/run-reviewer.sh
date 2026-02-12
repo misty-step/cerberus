@@ -334,6 +334,13 @@ detect_api_error() {
     return
   fi
 
+  # Generic provider/upstream errors reported by CLI wrappers (e.g., OpenCode).
+  if echo "$combined" | grep -qiE "(provider returned error|provider.error|upstream.error|model.error)"; then
+    DETECTED_ERROR_TYPE="transient"
+    DETECTED_ERROR_CLASS="provider_generic"
+    return
+  fi
+
   if echo "$combined" | grep -qiE "(\"(status|code)\"[[:space:]]*:[[:space:]]*4([0-1][0-9]|2[0-8]|[3-9][0-9])|http[^0-9]*4([0-1][0-9]|2[0-8]|[3-9][0-9])|error[^0-9]*4([0-1][0-9]|2[0-8]|[3-9][0-9]))"; then
     DETECTED_ERROR_TYPE="permanent"
     DETECTED_ERROR_CLASS="client_4xx"
@@ -401,7 +408,21 @@ for model in "${models[@]}"; do
     echo "opencode exit=$exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes model=${model} (attempt $((retry_count + 1))/$((max_retries + 1)))"
 
     if [[ "$exit_code" -eq 0 ]]; then
-      break 2  # Success — exit both loops
+      # Success with actual output — exit both loops.
+      if [[ "$output_size" -gt 0 ]] || [[ "$scratchpad_size" -gt 0 ]]; then
+        break 2
+      fi
+      # Exit 0 but no output — treat as transient failure and retry/fallback.
+      echo "opencode exited 0 but produced no output. Treating as transient failure."
+      if [[ $retry_count -lt $max_retries ]]; then
+        retry_count=$((retry_count + 1))
+        wait_seconds="$(default_backoff_seconds "$retry_count")"
+        echo "Retrying empty output (attempt ${retry_count}/${max_retries}); wait=${wait_seconds}s"
+        sleep "$wait_seconds"
+        continue
+      fi
+      advance_to_next_model=true
+      break
     fi
 
     if [[ "$exit_code" -eq 124 ]]; then
@@ -439,8 +460,10 @@ for model in "${models[@]}"; do
       break
     fi
 
-    # Unknown error type — no point retrying or falling back.
-    break 2
+    # Unknown error type — don't retry same model, but try next fallback.
+    echo "Unknown error type (exit=$exit_code). Trying next model if available..."
+    advance_to_next_model=true
+    break
   done
 
   if [[ "$advance_to_next_model" == "true" ]] && [[ $((model_index + 1)) -lt ${#models[@]} ]]; then
@@ -501,9 +524,14 @@ EOF
   fi
 fi
 
-if [[ "$exit_code" -ne 0 ]]; then
+if [[ "$exit_code" -ne 0 ]] && [[ "$exit_code" -ne 124 ]]; then
   echo "--- stderr ---" >&2
   cat "/tmp/${perspective}-stderr.log" >&2
+  # If we have any output to parse, let parse-review.py handle it.
+  if [[ -f "$scratchpad" && -s "$scratchpad" ]] || [[ -s "$stdout_file" ]]; then
+    echo "Unknown error but output exists — delegating to parser."
+    exit_code=0
+  fi
 fi
 
 # Parse input selection:
