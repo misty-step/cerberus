@@ -61,7 +61,7 @@ class TestAggregateOverride:
         # Create a single FAIL verdict
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Critical issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Critical issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
 
@@ -86,7 +86,7 @@ class TestAggregateOverride:
     def test_override_wrong_sha_ignored(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Critical issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Critical issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
 
@@ -111,7 +111,7 @@ class TestAggregateOverride:
 class TestAggregateAllPass:
     def test_all_pass(self, tmp_path):
         for name in ["a", "b", "c"]:
-            v = {"reviewer": name, "perspective": name, "verdict": "PASS", "summary": "Good."}
+            v = {"reviewer": name, "perspective": name, "verdict": "PASS", "confidence": 0.9, "summary": "Good."}
             (tmp_path / f"{name}.json").write_text(json.dumps(v))
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -120,10 +120,10 @@ class TestAggregateAllPass:
 
     def test_warn_verdict_when_no_fail(self, tmp_path):
         (tmp_path / "a.json").write_text(
-            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "WARN", "summary": "Minor."})
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "WARN", "confidence": 0.9, "summary": "Minor."})
         )
         (tmp_path / "b.json").write_text(
-            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "PASS", "summary": "Good."})
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "PASS", "confidence": 0.9, "summary": "Good."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -139,6 +139,7 @@ class TestCouncilFailThreshold:
                     "reviewer": "A",
                     "perspective": "a",
                     "verdict": "FAIL",
+                    "confidence": 0.9,
                     "summary": "Two major issues.",
                     "stats": {
                         "files_reviewed": 3,
@@ -164,6 +165,7 @@ class TestCouncilFailThreshold:
                         "reviewer": reviewer,
                         "perspective": reviewer.lower(),
                         "verdict": "FAIL",
+                        "confidence": 0.9,
                         "summary": "Two major issues.",
                         "stats": {
                             "files_reviewed": 3,
@@ -188,6 +190,7 @@ class TestCouncilFailThreshold:
                     "reviewer": "A",
                     "perspective": "a",
                     "verdict": "FAIL",
+                    "confidence": 0.9,
                     "summary": "Critical issue found.",
                     "stats": {
                         "files_reviewed": 3,
@@ -210,7 +213,7 @@ class TestOverrideSHAValidation:
     def test_short_sha_rejected(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -233,7 +236,7 @@ class TestOverrideSHAValidation:
     def test_prefix_sha_match_works(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -258,7 +261,7 @@ class TestOverrideActorAuthorization:
     def test_override_rejected_when_actor_not_pr_author(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -284,7 +287,7 @@ class TestOverrideActorAuthorization:
     def test_override_accepted_when_actor_is_pr_author(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -309,7 +312,7 @@ class TestOverrideActorAuthorization:
     def test_override_case_insensitive_actor_match(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -334,7 +337,7 @@ class TestOverrideActorAuthorization:
     def test_override_rejected_when_pr_author_unset(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -359,7 +362,7 @@ class TestOverrideActorAuthorization:
     def test_default_policy_is_pr_author(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -383,7 +386,7 @@ class TestOverrideActorAuthorization:
     def test_write_access_policy_rejected(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -408,7 +411,7 @@ class TestOverrideActorAuthorization:
     def test_maintainers_only_policy_rejected(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -433,7 +436,7 @@ class TestOverrideActorAuthorization:
     def test_unknown_policy_rejects_override(self, tmp_path):
         fail_verdict = {
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue."
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue."
         }
         (tmp_path / "security.json").write_text(json.dumps(fail_verdict))
         override = json.dumps({
@@ -469,19 +472,22 @@ class TestAggregateErrors:
 
 
 def test_read_json_handles_corrupt_file(tmp_path):
-    """Binary/corrupt verdict file produces error, not crash."""
+    """Binary/corrupt verdict file is skipped, not crash."""
     (tmp_path / "corrupt.json").write_bytes(b"\x00\x01\x02\x03")
     code, _, err = run_aggregate(str(tmp_path))
-    assert code == 2
-    assert "invalid JSON" in err or "unable to read" in err
+    assert code == 0
+    assert "skipped" in err.lower()
+    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    assert data["verdict"] == "SKIP"
+    assert len(data.get("skipped_artifacts", [])) == 1
 
 
 def test_warns_on_missing_reviewers(tmp_path):
     (tmp_path / "apollo.json").write_text(
-        json.dumps({"reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS", "summary": "ok"})
+        json.dumps({"reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS", "confidence": 0.9, "summary": "ok"})
     )
     (tmp_path / "athena.json").write_text(
-        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "ok"})
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "confidence": 0.9, "summary": "ok"})
     )
 
     code, out, err = run_aggregate(
@@ -505,7 +511,7 @@ def test_detects_fallback_verdicts(tmp_path):
         )
     )
     (tmp_path / "athena.json").write_text(
-        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "ok"})
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "confidence": 0.9, "summary": "ok"})
     )
 
     code, out, err = run_aggregate(
@@ -525,6 +531,7 @@ def test_preserves_reviewer_runtime_seconds(tmp_path):
                 "reviewer": "APOLLO",
                 "perspective": "correctness",
                 "verdict": "PASS",
+                "confidence": 0.9,
                 "summary": "ok",
                 "runtime_seconds": 37,
             }
@@ -960,7 +967,7 @@ class TestSkipVerdicts:
         """A single SKIP verdict should not cause council to FAIL."""
         skip_verdict = {
             "reviewer": "SYSTEM", "perspective": "error",
-            "verdict": "SKIP", "summary": "API error occurred."
+            "verdict": "SKIP", "confidence": 0.0, "summary": "API error occurred."
         }
         (tmp_path / "error.json").write_text(json.dumps(skip_verdict))
         code, out, _ = run_aggregate(str(tmp_path))
@@ -971,7 +978,7 @@ class TestSkipVerdicts:
     def test_all_skips_results_in_skip_verdict(self, tmp_path):
         """If all reviewers skip, council verdict should be SKIP."""
         for name in ["a", "b", "c"]:
-            v = {"reviewer": name, "perspective": name, "verdict": "SKIP", "summary": "API error."}
+            v = {"reviewer": name, "perspective": name, "verdict": "SKIP", "confidence": 0.0, "summary": "API error."}
             (tmp_path / f"{name}.json").write_text(json.dumps(v))
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -982,10 +989,10 @@ class TestSkipVerdicts:
     def test_mixed_skip_and_pass_results_in_pass(self, tmp_path):
         """SKIP + PASS should result in PASS (no failures or warnings)."""
         (tmp_path / "a.json").write_text(
-            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "confidence": 0.0, "summary": "API error."})
         )
         (tmp_path / "b.json").write_text(
-            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "PASS", "summary": "Good."})
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "PASS", "confidence": 0.9, "summary": "Good."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -997,10 +1004,10 @@ class TestSkipVerdicts:
     def test_mixed_skip_and_fail_results_in_fail(self, tmp_path):
         """SKIP + FAIL should result in FAIL."""
         (tmp_path / "a.json").write_text(
-            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "confidence": 0.0, "summary": "API error."})
         )
         (tmp_path / "b.json").write_text(
-            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "FAIL", "summary": "Bad."})
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "FAIL", "confidence": 0.9, "summary": "Bad."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -1012,10 +1019,10 @@ class TestSkipVerdicts:
     def test_mixed_skip_and_warn_results_in_warn(self, tmp_path):
         """SKIP + WARN should result in WARN (no failures)."""
         (tmp_path / "a.json").write_text(
-            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "confidence": 0.0, "summary": "API error."})
         )
         (tmp_path / "b.json").write_text(
-            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "WARN", "summary": "Minor."})
+            json.dumps({"reviewer": "B", "perspective": "b", "verdict": "WARN", "confidence": 0.9, "summary": "Minor."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -1027,7 +1034,7 @@ class TestSkipVerdicts:
     def test_skip_counted_in_summary(self, tmp_path):
         """SKIP count should appear in summary text."""
         (tmp_path / "a.json").write_text(
-            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "summary": "API error."})
+            json.dumps({"reviewer": "A", "perspective": "a", "verdict": "SKIP", "confidence": 0.0, "summary": "API error."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -1041,12 +1048,13 @@ class TestSkipVerdicts:
                     "reviewer": "APOLLO",
                     "perspective": "correctness",
                     "verdict": "SKIP",
+                    "confidence": 0.0,
                     "summary": "Review skipped due to timeout after 120s.",
                 }
             )
         )
         (tmp_path / "athena.json").write_text(
-            json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "summary": "Good."})
+            json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "confidence": 0.9, "summary": "Good."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -1056,16 +1064,16 @@ class TestSkipVerdicts:
     def test_all_four_verdict_types_in_stats(self, tmp_path):
         """Stats should include all four verdict types."""
         (tmp_path / "pass.json").write_text(
-            json.dumps({"reviewer": "P", "perspective": "p", "verdict": "PASS", "summary": "Good."})
+            json.dumps({"reviewer": "P", "perspective": "p", "verdict": "PASS", "confidence": 0.9, "summary": "Good."})
         )
         (tmp_path / "warn.json").write_text(
-            json.dumps({"reviewer": "W", "perspective": "w", "verdict": "WARN", "summary": "Minor."})
+            json.dumps({"reviewer": "W", "perspective": "w", "verdict": "WARN", "confidence": 0.9, "summary": "Minor."})
         )
         (tmp_path / "fail.json").write_text(
-            json.dumps({"reviewer": "F", "perspective": "f", "verdict": "FAIL", "summary": "Bad."})
+            json.dumps({"reviewer": "F", "perspective": "f", "verdict": "FAIL", "confidence": 0.9, "summary": "Bad."})
         )
         (tmp_path / "skip.json").write_text(
-            json.dumps({"reviewer": "S", "perspective": "s", "verdict": "SKIP", "summary": "Error."})
+            json.dumps({"reviewer": "S", "perspective": "s", "verdict": "SKIP", "confidence": 0.0, "summary": "Error."})
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
@@ -1196,12 +1204,12 @@ class TestPerReviewerOverrideIntegration:
         """SENTINEL (maintainers_only) FAIL should block override from pr_author."""
         (tmp_path / "sentinel.json").write_text(json.dumps({
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Critical security issue.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Critical security issue.",
             "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
         }))
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
-            "verdict": "PASS", "summary": "ok",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
         }))
         override = json.dumps({
             "actor": "pr-author", "sha": "abc1234", "reason": "False positive"
@@ -1226,7 +1234,7 @@ class TestPerReviewerOverrideIntegration:
         """APOLLO (pr_author) FAIL should allow override from pr_author."""
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
-            "verdict": "FAIL", "summary": "Logic issue.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Logic issue.",
             "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
         }))
         override = json.dumps({
@@ -1251,7 +1259,7 @@ class TestPerReviewerOverrideIntegration:
         """SENTINEL (maintainers_only) FAIL should allow override from maintainer."""
         (tmp_path / "sentinel.json").write_text(json.dumps({
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Security issue.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Security issue.",
             "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
         }))
         override = json.dumps({
@@ -1277,7 +1285,7 @@ class TestPerReviewerOverrideIntegration:
         """Without GH_REVIEWER_POLICIES, falls back to GH_OVERRIDE_POLICY (backward compat)."""
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
-            "verdict": "FAIL", "summary": "Issue.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue.",
         }))
         override = json.dumps({
             "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
@@ -1300,7 +1308,7 @@ class TestPerReviewerOverrideIntegration:
         """Malformed GH_REVIEWER_POLICIES should warn and fall back to global policy."""
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
-            "verdict": "FAIL", "summary": "Issue.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue.",
         }))
         override = json.dumps({
             "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
@@ -1326,7 +1334,7 @@ class TestPerReviewerOverrideIntegration:
         """Non-dict GH_REVIEWER_POLICIES should warn and fall back to global policy."""
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
-            "verdict": "FAIL", "summary": "Issue.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue.",
         }))
         override = json.dumps({
             "actor": "pr-author", "sha": "abc1234", "reason": "Verified"
@@ -1348,6 +1356,164 @@ class TestPerReviewerOverrideIntegration:
         assert data["override"]["used"] is True
 
 
+# ---------------------------------------------------------------------------
+# Artifact validation (Issue #91)
+# ---------------------------------------------------------------------------
+
+_validate_artifact = aggregate_verdict.validate_artifact
+
+MAX_ARTIFACT_SIZE = aggregate_verdict.MAX_ARTIFACT_SIZE
+
+
+class TestValidateArtifactUnit:
+    """Unit tests for validate_artifact()."""
+
+    def test_valid_artifact(self, tmp_path):
+        path = tmp_path / "good.json"
+        path.write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        data, err = _validate_artifact(path)
+        assert data is not None
+        assert err is None
+        assert data["verdict"] == "PASS"
+
+    def test_oversized_artifact_rejected(self, tmp_path):
+        path = tmp_path / "huge.json"
+        blob = {"reviewer": "X", "verdict": "PASS", "confidence": 0.9,
+                "summary": "ok", "padding": "x" * (MAX_ARTIFACT_SIZE + 1)}
+        path.write_text(json.dumps(blob))
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "size" in err.lower()
+
+    def test_invalid_json_rejected(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text("{not valid json}")
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "json" in err.lower()
+
+    def test_binary_file_rejected(self, tmp_path):
+        path = tmp_path / "binary.json"
+        path.write_bytes(b"\x00\x01\x02\x03")
+        data, err = _validate_artifact(path)
+        assert data is None
+
+    def test_missing_verdict_field(self, tmp_path):
+        path = tmp_path / "no_verdict.json"
+        path.write_text(json.dumps({
+            "reviewer": "A", "confidence": 0.9, "summary": "ok",
+        }))
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "verdict" in err.lower()
+
+    def test_missing_confidence_field(self, tmp_path):
+        path = tmp_path / "no_conf.json"
+        path.write_text(json.dumps({
+            "reviewer": "A", "verdict": "PASS", "summary": "ok",
+        }))
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "confidence" in err.lower()
+
+    def test_missing_summary_field(self, tmp_path):
+        path = tmp_path / "no_summary.json"
+        path.write_text(json.dumps({
+            "reviewer": "A", "verdict": "PASS", "confidence": 0.9,
+        }))
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "summary" in err.lower()
+
+    def test_invalid_verdict_value(self, tmp_path):
+        path = tmp_path / "bad_verdict.json"
+        path.write_text(json.dumps({
+            "reviewer": "A", "verdict": "MAYBE", "confidence": 0.9, "summary": "ok",
+        }))
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "verdict" in err.lower()
+
+    def test_non_dict_root_rejected(self, tmp_path):
+        path = tmp_path / "array.json"
+        path.write_text(json.dumps(["not", "a", "dict"]))
+        data, err = _validate_artifact(path)
+        assert data is None
+
+
+class TestArtifactValidationIntegration:
+    """Subprocess tests: malformed artifacts are skipped, not crashed."""
+
+    def test_invalid_json_skipped_others_aggregated(self, tmp_path):
+        """Invalid JSON artifact skipped; valid artifacts still aggregated."""
+        (tmp_path / "good.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        (tmp_path / "bad.json").write_text("{not json}")
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert "skipped" in err.lower()
+        assert len(data.get("skipped_artifacts", [])) == 1
+
+    def test_oversized_artifact_skipped(self, tmp_path):
+        (tmp_path / "good.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        big = tmp_path / "huge.json"
+        big.write_text(json.dumps({
+            "reviewer": "X", "verdict": "PASS", "confidence": 0.9,
+            "summary": "ok", "padding": "x" * (MAX_ARTIFACT_SIZE + 1),
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert len(data.get("skipped_artifacts", [])) == 1
+        assert "size" in data["skipped_artifacts"][0]["reason"].lower()
+
+    def test_missing_required_field_skipped(self, tmp_path):
+        (tmp_path / "good.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        (tmp_path / "bad.json").write_text(json.dumps({
+            "reviewer": "B", "perspective": "test",
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "PASS"
+        assert len(data.get("skipped_artifacts", [])) == 1
+
+    def test_all_artifacts_rejected_produces_skip(self, tmp_path):
+        """When every artifact is malformed, council verdict = SKIP."""
+        (tmp_path / "a.json").write_text("{bad}")
+        (tmp_path / "b.json").write_text("{also bad}")
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "SKIP"
+        assert len(data.get("skipped_artifacts", [])) == 2
+
+    def test_skipped_artifacts_report_filename(self, tmp_path):
+        (tmp_path / "good.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        (tmp_path / "corrupt.json").write_bytes(b"\x00\x01\x02")
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        skipped = data.get("skipped_artifacts", [])
+        assert len(skipped) == 1
+        assert "corrupt.json" in skipped[0]["file"]
 # ---------------------------------------------------------------------------
 # Override comment selection ordering (Issue #25)
 # ---------------------------------------------------------------------------
@@ -1462,7 +1628,7 @@ class TestSelectOverrideIntegration:
     def test_first_authorized_comment_wins(self, tmp_path):
         (tmp_path / "sentinel.json").write_text(json.dumps({
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue found.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue found.",
         }))
         comments = json.dumps([
             {"actor": "intruder", "sha": "abc1234", "reason": "sneaky override"},
@@ -1488,7 +1654,7 @@ class TestSelectOverrideIntegration:
     def test_no_authorized_comments_keeps_fail(self, tmp_path):
         (tmp_path / "sentinel.json").write_text(json.dumps({
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue found.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue found.",
         }))
         comments = json.dumps([
             {"actor": "intruder1", "sha": "abc1234", "reason": "nope"},
@@ -1511,7 +1677,7 @@ class TestSelectOverrideIntegration:
     def test_with_actor_permissions_map(self, tmp_path):
         (tmp_path / "sentinel.json").write_text(json.dumps({
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue found.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue found.",
             "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
         }))
         comments = json.dumps([
@@ -1540,7 +1706,7 @@ class TestSelectOverrideIntegration:
         """Non-dict GH_OVERRIDE_ACTOR_PERMISSIONS should warn and treat actors as unpermissioned."""
         (tmp_path / "sentinel.json").write_text(json.dumps({
             "reviewer": "SENTINEL", "perspective": "security",
-            "verdict": "FAIL", "summary": "Issue found.",
+            "verdict": "FAIL", "confidence": 0.9, "summary": "Issue found.",
         }))
         comments = json.dumps([
             {"actor": "author", "sha": "abc1234", "reason": "verified"},
