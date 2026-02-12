@@ -105,7 +105,7 @@ Use `templates/triage-workflow.yml` to enable:
 | `github-token` | yes | - | GitHub token for PR comments |
 | `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY` or `OPENROUTER_API_KEY` env is set) |
 | `model` | no | `defaults/config.yml` | Model override (else per-reviewer config, then `model.default`) |
-| `fallback-models` | no | `openrouter/deepseek/deepseek-v3.2,...` | Comma-separated fallback models, tried on transient failure |
+| `fallback-models` | no | `openrouter/google/gemini-3-flash-preview,...` | Comma-separated fallback models, tried on transient failure |
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
 | `opencode-version` | no | `1.1.49` | OpenCode CLI version |
@@ -178,10 +178,10 @@ matrix:
   include:
     - { reviewer: APOLLO,    perspective: correctness,     model: 'openrouter/moonshotai/kimi-k2.5' }
     - { reviewer: ATHENA,    perspective: architecture,    model: 'openrouter/z-ai/glm-5' }
-    - { reviewer: SENTINEL,  perspective: security,        model: 'openrouter/deepseek/deepseek-v3.2' }
+    - { reviewer: SENTINEL,  perspective: security,        model: 'openrouter/minimax/minimax-m2.5' }
     - { reviewer: VULCAN,    perspective: performance,     model: 'openrouter/google/gemini-3-flash-preview' }
-    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/minimax/minimax-m2.1' }
-    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/qwen/qwen3-coder-next' }
+    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/qwen/qwen3-max-thinking' }
+    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/qwen/qwen3-max-thinking' }
 ```
 
 If a reviewer's primary model fails with a transient error (429, 5xx, network), it retries with exponential backoff then falls through to the `fallback-models` chain before emitting SKIP.

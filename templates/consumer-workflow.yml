@@ -41,7 +41,7 @@ jobs:
           timeout: '600'
           # Optional: force one model for all reviewers (overrides per-reviewer defaults)
           # model: 'openrouter/moonshotai/kimi-k2.5'
-          # fallback-models: 'openrouter/deepseek/deepseek-v3.2,openrouter/google/gemini-3-flash-preview' # default fallback chain
+          # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5' # default fallback chain
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
   verdict:

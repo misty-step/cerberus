@@ -23,10 +23,10 @@ jobs:
         include:
           - { reviewer: APOLLO,    perspective: correctness,      model: 'openrouter/moonshotai/kimi-k2.5' }
           - { reviewer: ATHENA,    perspective: architecture,     model: 'openrouter/z-ai/glm-5' }
-          - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/deepseek/deepseek-v3.2' }
+          - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/minimax/minimax-m2.5' }
           - { reviewer: VULCAN,    perspective: performance,      model: 'openrouter/google/gemini-3-flash-preview' }
-          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/minimax/minimax-m2.1' }
-          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/qwen/qwen3-coder-next' }
+          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/qwen/qwen3-max-thinking' }
+          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/qwen/qwen3-max-thinking' }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4

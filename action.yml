@@ -21,7 +21,7 @@ inputs:
     default: ''
   fallback-models:
     description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
-    default: 'openrouter/deepseek/deepseek-v3.2,openrouter/google/gemini-3-flash-preview'
+    default: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
   max-steps:
     description: 'Max agentic steps per review'
     default: '25'
