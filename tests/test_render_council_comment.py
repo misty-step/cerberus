@@ -334,6 +334,7 @@ def test_no_model_when_metadata_absent(tmp_path: Path) -> None:
     assert "- Model:" not in body
 
 
+
 def test_renders_override_details_when_present(tmp_path: Path) -> None:
     council = {
         "verdict": "PASS",
