@@ -1018,3 +1018,52 @@ def test_unknown_error_tries_fallback_model(tmp_path: Path) -> None:
     assert "Falling back to model:" in result.stdout
     model_used = Path("/tmp/security-model-used").read_text().strip()
     assert model_used == "openrouter/fallback-model"
+
+
+def test_empty_output_exhausts_retries_then_uses_fallback(tmp_path: Path) -> None:
+    """Empty output on exit 0 retries, then falls back to next model (not unbound var)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    # Primary model (attempts 1-4): always empty output.
+    # Fallback model (attempt 5): returns valid JSON.
+    make_executable(
+        bin_dir / "opencode",
+        (
+            "#!/usr/bin/env bash\n"
+            "count=$(cat '" + str(attempt_counter) + "')\n"
+            "count=$((count + 1))\n"
+            "printf '%s' \"$count\" > '" + str(attempt_counter) + "'\n"
+            "if [[ \"$count\" -le 4 ]]; then\n"
+            "  exit 0\n"  # Empty output, exit 0
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+            '"confidence":0.95,"summary":"Fallback succeeded after empty primary",'
+            '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+            '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+    make_executable(bin_dir / "sleep", "#!/usr/bin/env bash\nexit 0\n")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env(bin_dir, diff_file)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/fallback-model"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+    assert "Falling back to model:" in result.stdout
+    assert "opencode exited 0 but produced no output" in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/fallback-model"

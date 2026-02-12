@@ -414,6 +414,8 @@ for model in "${models[@]}"; do
       fi
       # Exit 0 but no output — treat as transient failure and retry/fallback.
       echo "opencode exited 0 but produced no output. Treating as transient failure."
+      DETECTED_ERROR_TYPE="transient"
+      DETECTED_ERROR_CLASS="empty_output"
       if [[ $retry_count -lt $max_retries ]]; then
         retry_count=$((retry_count + 1))
         wait_seconds="$(default_backoff_seconds "$retry_count")"
