@@ -13,15 +13,6 @@ model:
   fallback:
     - "openrouter/deepseek/deepseek-v3.2"
     - "openrouter/google/gemini-3-flash-preview"
-  # Per-reviewer model assignments (configured in consumer workflow matrix).
-  # Model diversity reduces correlated failures and brings varied analysis.
-  per_reviewer:
-    correctness:      "openrouter/moonshotai/kimi-k2.5"
-    architecture:     "openrouter/z-ai/glm-5"
-    security:         "openrouter/deepseek/deepseek-v3.2"
-    performance:      "openrouter/google/gemini-3-flash-preview"
-    maintainability:  "openrouter/minimax/minimax-m2.1"
-    testing:          "openrouter/qwen/qwen3-coder-next"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
@@ -48,6 +39,7 @@ council_verdict:
 reviewers:
   - name: APOLLO
     perspective: correctness
+    model: "openrouter/moonshotai/kimi-k2.5"  # optional, falls back to model.default
     description: "Correctness & Logic — Find the bug"
     override: pr_author
     tools:
@@ -55,6 +47,7 @@ reviewers:
 
   - name: ATHENA
     perspective: architecture
+    model: "openrouter/z-ai/glm-5"  # optional, falls back to model.default
     description: "Architecture & Design — Zoom out"
     override: pr_author
     tools:
@@ -62,6 +55,7 @@ reviewers:
 
   - name: SENTINEL
     perspective: security
+    model: "openrouter/deepseek/deepseek-v3.2"  # optional, falls back to model.default
     description: "Security & Threat Model — Think like an attacker"
     override: maintainers_only
     tools:
@@ -69,6 +63,7 @@ reviewers:
 
   - name: VULCAN
     perspective: performance
+    model: "openrouter/google/gemini-3-flash-preview"  # optional, falls back to model.default
     description: "Performance & Scalability — Think at runtime"
     override: pr_author
     tools:
@@ -76,6 +71,7 @@ reviewers:
 
   - name: ARTEMIS
     perspective: maintainability
+    model: "openrouter/minimax/minimax-m2.1"  # optional, falls back to model.default
     description: "Maintainability & DX — Think like the next developer"
     override: pr_author
     tools:
@@ -83,6 +79,7 @@ reviewers:
 
   - name: CASSANDRA
     perspective: testing
+    model: "openrouter/qwen/qwen3-coder-next"  # optional, falls back to model.default
     description: "Testing & Coverage — See what will break"
     override: pr_author
     tools:

@@ -61,6 +61,14 @@ def test_action_pins_opencode_install_version() -> None:
     assert "pip install" not in content
 
 
+def test_action_reads_primary_model_file_when_present() -> None:
+    content = ACTION_FILE.read_text()
+
+    # Model metadata should prefer /tmp/<perspective>-primary-model written by run-reviewer.sh
+    assert "PRIMARY_MODEL_FILE" in content
+    assert "primary-model" in content
+
+
 def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 

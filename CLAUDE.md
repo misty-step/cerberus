@@ -88,7 +88,7 @@ Optional fields added by the pipeline:
 
 ## OpenCode CLI
 
-- Model: `openrouter/moonshotai/kimi-k2.5` via OpenRouter
+- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`
 - Env vars: `OPENROUTER_API_KEY`
 - Agent config: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - CLI config: `opencode.json` at repo root (auto-discovered)

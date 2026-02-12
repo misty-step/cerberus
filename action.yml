@@ -17,8 +17,8 @@ inputs:
     description: 'OpenRouter API key (optional if CERBERUS_API_KEY or OPENROUTER_API_KEY env is set)'
     required: false
   model:
-    description: 'Model name'
-    default: 'openrouter/moonshotai/kimi-k2.5'
+    description: 'Model name (optional; defaults to per-reviewer config)'
+    default: ''
   fallback-models:
     description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
     default: 'openrouter/deepseek/deepseek-v3.2,openrouter/google/gemini-3-flash-preview'
@@ -181,7 +181,12 @@ runs:
         MODEL_USED_FILE="/tmp/${PERSPECTIVE}-model-used"
         if [[ -s "$MODEL_USED_FILE" ]]; then
           model_used="$(cat "$MODEL_USED_FILE")"
-          primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+          PRIMARY_MODEL_FILE="/tmp/${PERSPECTIVE}-primary-model"
+          if [[ -s "$PRIMARY_MODEL_FILE" ]]; then
+            primary_model="$(cat "$PRIMARY_MODEL_FILE")"
+          else
+            primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+          fi
           fallback_used="false"
           if [[ "$model_used" != "$primary_model" ]]; then
             fallback_used="true"

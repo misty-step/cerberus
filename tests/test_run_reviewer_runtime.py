@@ -63,6 +63,7 @@ def cleanup_tmp_outputs() -> None:
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
         "fast-path-stderr.log", "model-used",
+        "primary-model",
     )
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
@@ -101,20 +102,19 @@ def make_env_with_cerberus_root(bin_dir: Path, diff_file: Path, cerberus_root: P
     return env
 
 
-def write_fake_cerberus_root(root: Path, perspective: str = "security") -> None:
+def write_fake_cerberus_root(
+    root: Path,
+    *,
+    perspective: str = "security",
+    config_yml: str | None = None,
+) -> None:
     (root / "defaults").mkdir(parents=True)
     (root / "templates").mkdir(parents=True)
     (root / ".opencode" / "agents").mkdir(parents=True)
 
-    (root / "defaults" / "config.yml").write_text(
-        "\n".join(
-            [
-                "- name: SENTINEL",
-                f"  perspective: {perspective}",
-                "",
-            ]
-        )
-    )
+    if config_yml is None:
+        config_yml = "\n".join(["- name: SENTINEL", f"  perspective: {perspective}", ""])
+    (root / "defaults" / "config.yml").write_text(config_yml)
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
     (root / "opencode.json").write_text("CERBERUS_OPENCODE_JSON\n")
     (root / ".opencode" / "agents" / f"{perspective}.md").write_text("CERBERUS_AGENT\n")
@@ -652,6 +652,324 @@ def test_short_timeout_skips_fast_path(tmp_path: Path) -> None:
     assert "Fast-path: no" in content
 
 
+# --- Primary model selection precedence ---
+
+
+def test_primary_model_uses_reviewer_model_when_input_empty(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                '    model: "openrouter/reviewer-model"',
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("OPENCODE_MODEL", None)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/reviewer-model"
+
+
+def test_primary_model_input_overrides_reviewer_model(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                '    model: "openrouter/reviewer-model"',
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env["OPENCODE_MODEL"] = "openrouter/input-model"
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/input-model"
+
+
+def test_primary_model_uses_config_default_when_reviewer_model_missing(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("OPENCODE_MODEL", None)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/default-model"
+
+
+def test_primary_model_ignores_whitespace_only_input_model(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                '    model: "openrouter/reviewer-model"',
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env["OPENCODE_MODEL"] = "   "
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/reviewer-model"
+
+
+def test_primary_model_strips_quotes_in_input_model(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env["OPENCODE_MODEL"] = '"openrouter/input-model"'
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/input-model"
+
+
+def test_primary_model_ignores_empty_reviewer_model_uses_config_default(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                '    model: ""',
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("OPENCODE_MODEL", None)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/default-model"
+
+
+def test_primary_model_uses_reviewer_model_regardless_of_field_order(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "model:",
+                '  default: "openrouter/default-model"',
+                "reviewers:",
+                "  - name: SENTINEL",
+                '    model: "openrouter/reviewer-model"',
+                "    perspective: security",
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("OPENCODE_MODEL", None)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/reviewer-model"
+
+
+def test_primary_model_hardcoded_default_when_config_has_no_model_section(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_opencode(bin_dir / "opencode")
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        perspective="security",
+        config_yml="\n".join(
+            [
+                "version: 1",
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                "",
+            ]
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("OPENCODE_MODEL", None)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
+    assert primary_model == "openrouter/moonshotai/kimi-k2.5"
+
+
 # --- Model fallback tests ---
 
 
@@ -724,8 +1042,9 @@ def test_primary_succeeds_no_fallback_triggered(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "Falling back to model:" not in result.stdout
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
     model_used = Path("/tmp/security-model-used").read_text().strip()
-    assert model_used == "openrouter/moonshotai/kimi-k2.5"
+    assert model_used == primary_model
 
 
 def test_all_models_fail_writes_error_verdict(tmp_path: Path) -> None:
@@ -875,8 +1194,9 @@ def test_no_fallback_models_behaves_same_as_before(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "Falling back to model:" not in result.stdout
+    primary_model = Path("/tmp/security-primary-model").read_text().strip()
     model_used = Path("/tmp/security-model-used").read_text().strip()
-    assert model_used == "openrouter/moonshotai/kimi-k2.5"
+    assert model_used == primary_model
 
 
 # --- Provider generic error / empty output / unknown error tests ---

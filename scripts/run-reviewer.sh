@@ -150,16 +150,34 @@ stage_opencode_project_config() {
 
 stage_opencode_project_config
 
-reviewer_name="$(
+reviewer_meta="$(
   awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {name=$3}
-    $1=="perspective:" && $2==p {print name; exit}
+    $1=="-" && $2=="name:" {
+      if (matched && !printed) { print name "\t" model; printed=1 }
+      name=$3; model=""; matched=0
+      next
+    }
+    $1=="perspective:" && $2==p { matched=1; next }
+    $1=="model:" { model=$2; next }
+    END { if (matched && !printed) print name "\t" model }
   ' "$config_file"
 )"
+reviewer_name=""
+reviewer_model_raw=""
+IFS=$'\t' read -r reviewer_name reviewer_model_raw <<< "${reviewer_meta}"
 if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2
 fi
+
+# Read config default model (optional). Used when input model unset and reviewer has no model.
+config_default_model_raw="$(
+  awk '
+    $0 ~ /^model:/ {in_model=1; next}
+    in_model && $0 !~ /^  / {in_model=0}
+    in_model && $0 ~ /^  default:/ {print $2; exit}
+  ' "$config_file"
+)"
 
 # Persist reviewer name for downstream steps (parse, council).
 printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
@@ -234,7 +252,40 @@ export CERBERUS_ISOLATED_HOME
 
 echo "Running reviewer: $reviewer_name ($perspective)"
 
-primary_model="${OPENCODE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+trim_ws() {
+  printf '%s' "$1" | xargs
+}
+
+strip_wrapping_quotes() {
+  local s="$1"
+  s="${s#\"}"
+  s="${s%\"}"
+  s="${s#\'}"
+  s="${s%\'}"
+  printf '%s' "$s"
+}
+
+sanitize_model() {
+  strip_wrapping_quotes "$(trim_ws "$1")"
+}
+
+input_model="$(sanitize_model "${OPENCODE_MODEL:-}")"
+reviewer_model="$(sanitize_model "${reviewer_model_raw:-}")"
+config_default_model="$(sanitize_model "${config_default_model_raw:-}")"
+
+primary_model="openrouter/moonshotai/kimi-k2.5"
+if [[ -n "$config_default_model" ]]; then
+  primary_model="$config_default_model"
+fi
+if [[ -n "$reviewer_model" ]]; then
+  primary_model="$reviewer_model"
+fi
+if [[ -n "$input_model" ]]; then
+  primary_model="$input_model"
+fi
+
+# Persist primary model for downstream steps (parse, comment metadata).
+printf '%s' "$primary_model" > "/tmp/${perspective}-primary-model"
 
 # Build ordered model list: primary + optional fallbacks.
 models=("$primary_model")
@@ -248,7 +299,6 @@ if [[ -n "${CERBERUS_FALLBACK_MODELS:-}" ]]; then
   done
 fi
 
-model="${models[0]}"
 model_used="${models[0]}"
 
 review_timeout="${REVIEW_TIMEOUT:-600}"
