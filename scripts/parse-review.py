@@ -459,6 +459,46 @@ _RELEASE_CLAIM_PATTERNS = [
 ]
 
 
+def downgrade_speculative_suggestions(obj: dict) -> None:
+    """Downgrade findings whose suggestion was explicitly marked unverified.
+
+    Reviewers may set ``suggestion_verified: false`` on a finding to indicate
+    the suggested fix was not traced through the codebase.  Such findings are
+    demoted to ``info`` severity so they remain visible without inflating the
+    verdict.
+    """
+    findings = obj.get("findings", [])
+    if not isinstance(findings, list) or not findings:
+        return
+
+    downgraded = 0
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+
+        # Only act on an *explicit* False — absent field preserves backward compat.
+        if finding.get("suggestion_verified") is not False:
+            continue
+
+        severity = finding.get("severity")
+        if severity not in {"critical", "major", "minor"}:
+            continue
+
+        finding["severity"] = "info"
+        finding["_speculative_downgraded"] = True
+        _prefix_title(finding, "[speculative] ")
+        downgraded += 1
+
+    if downgraded > 0:
+        stats = obj.get("stats")
+        if isinstance(stats, dict):
+            for sev in ("critical", "major", "minor", "info"):
+                stats[sev] = sum(
+                    1 for f in findings
+                    if isinstance(f, dict) and f.get("severity") == sev
+                )
+
+
 def downgrade_stale_knowledge_findings(obj: dict) -> None:
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
@@ -876,6 +916,7 @@ def main() -> None:
 
         validate(obj)
         downgrade_unverified_findings(obj)
+        downgrade_speculative_suggestions(obj)
         downgrade_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:

@@ -1911,3 +1911,170 @@ class TestExtractReviewSummaryDirect:
         result = fn(text)
         assert len(result) == 500
         assert result == long_body[:500]
+
+
+class TestSpeculativeSuggestionDowngrade:
+    """Tests for downgrading findings with unverified suggestions."""
+
+    def test_suggestion_verified_false_downgrades_to_info(self):
+        """Finding with suggestion_verified=false is downgraded to info."""
+        review = json.dumps({
+            "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Performance concern",
+            "findings": [{
+                "severity": "major",
+                "category": "unbounded-query",
+                "file": "src/api.py",
+                "line": 42,
+                "title": "loadConversation fetches all messages without limit",
+                "description": "Unbounded query could be slow at scale.",
+                "suggestion": "Add pagination support.",
+                "suggestion_verified": False,
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["title"].startswith("[speculative] ")
+        assert data["findings"][0].get("_speculative_downgraded") is True
+        assert data["verdict"] == "PASS"
+
+    def test_suggestion_verified_true_keeps_severity(self):
+        """Finding with suggestion_verified=true keeps original severity."""
+        review = json.dumps({
+            "reviewer": "VULCAN", "perspective": "performance", "verdict": "WARN",
+            "confidence": 0.9, "summary": "N+1 query found",
+            "findings": [{
+                "severity": "major",
+                "category": "n-plus-one",
+                "file": "src/api.py",
+                "line": 67,
+                "title": "N+1 query in user listing",
+                "description": "forEach fires one query per user.",
+                "suggestion": "Use batch query.",
+                "suggestion_verified": True,
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "major"
+        assert not data["findings"][0]["title"].startswith("[speculative] ")
+        assert data["verdict"] == "WARN"
+
+    def test_missing_suggestion_verified_keeps_severity(self):
+        """Backward compat: findings without suggestion_verified are not downgraded."""
+        review = json.dumps({
+            "reviewer": "VULCAN", "perspective": "performance", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issue found",
+            "findings": [{
+                "severity": "major",
+                "category": "n-plus-one",
+                "file": "src/api.py",
+                "line": 67,
+                "title": "N+1 query",
+                "description": "desc",
+                "suggestion": "Use batch query.",
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "major"
+        assert data["verdict"] == "WARN"
+
+    def test_stats_recomputed_after_speculative_downgrade(self):
+        """Stats object is updated to reflect downgraded severities."""
+        review = json.dumps({
+            "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Two major issues",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "unbounded-query",
+                    "file": "src/api.py",
+                    "line": 42,
+                    "title": "Unbounded query",
+                    "description": "desc",
+                    "suggestion": "Add pagination.",
+                    "suggestion_verified": False,
+                },
+                {
+                    "severity": "major",
+                    "category": "n-plus-one",
+                    "file": "src/api.py",
+                    "line": 67,
+                    "title": "N+1 query",
+                    "description": "desc",
+                    "suggestion": "Use batch query.",
+                    "suggestion_verified": True,
+                },
+            ],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 2, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["major"] == 1
+        assert data["stats"]["info"] == 1
+        # One speculative downgrade means only 1 major remains → WARN not FAIL
+        assert data["verdict"] == "WARN"
+
+    def test_speculative_critical_downgraded(self):
+        """Even critical findings are downgraded if suggestion is unverified."""
+        review = json.dumps({
+            "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
+            "confidence": 0.9, "summary": "Critical perf issue",
+            "findings": [{
+                "severity": "critical",
+                "category": "delete-replace",
+                "file": "src/gains.py",
+                "line": 10,
+                "title": "Full delete+insert on every upload",
+                "description": "Replaces all gains on each upload.",
+                "suggestion": "Use incremental UPSERT.",
+                "suggestion_verified": False,
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert data["stats"]["critical"] == 0
+        assert data["stats"]["info"] == 1
+        assert data["verdict"] == "PASS"
+
+    def test_info_severity_not_downgraded(self):
+        """Info findings with suggestion_verified=false are not re-downgraded."""
+        review = json.dumps({
+            "reviewer": "VULCAN", "perspective": "performance", "verdict": "PASS",
+            "confidence": 0.9, "summary": "Minor observation",
+            "findings": [{
+                "severity": "info",
+                "category": "micro-opt",
+                "file": "src/utils.py",
+                "line": 3,
+                "title": "Could use Map",
+                "description": "desc",
+                "suggestion": "Use Map instead of object.",
+                "suggestion_verified": False,
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 1}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "info"
+        assert not data["findings"][0]["title"].startswith("[speculative] ")
+        assert data["verdict"] == "PASS"

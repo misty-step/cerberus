@@ -85,6 +85,7 @@ Every reviewer must end with a JSON block containing: `reviewer`, `perspective`,
 Optional finding fields:
 - `evidence` (string) — exact code quote backing the claim (parser may downgrade unverified findings to `info`)
 - `scope` (string) — set to `defaults-change` when citing unchanged code that became newly-defaulted
+- `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative (parser downgrades `false` findings to `info`)
 
 Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
