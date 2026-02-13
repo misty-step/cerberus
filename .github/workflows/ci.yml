@@ -25,11 +25,16 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'templates/triage-workflow.yml']:
+          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml']:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')
           "
+
+      - name: Validate template parity
+        run: |
+          pip install pyyaml
+          tests/validate-template-parity.sh
 
   test:
     runs-on: ubuntu-latest

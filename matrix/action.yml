@@ -1,0 +1,81 @@
+name: 'Cerberus Matrix'
+description: 'Output the current Cerberus reviewer matrix from defaults/config.yml'
+author: 'misty-step'
+
+branding:
+  icon: 'list'
+  color: 'blue'
+
+outputs:
+  matrix:
+    description: 'JSON matrix of reviewers for use in strategy.matrix'
+    value: ${{ steps.generate.outputs.matrix }}
+  count:
+    description: 'Number of reviewers in the matrix'
+    value: ${{ steps.generate.outputs.count }}
+  reviewers:
+    description: 'Comma-separated list of reviewer names'
+    value: ${{ steps.generate.outputs.reviewers }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate matrix from config
+      id: generate
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+      run: |
+        config_file="${CERBERUS_ROOT}/defaults/config.yml"
+        
+        if [[ ! -f "$config_file" ]]; then
+          echo "::error::Config file not found: $config_file"
+          exit 1
+        fi
+        
+        # Parse reviewers from config.yml and build matrix JSON
+        # Reviewers are at the root level (sibling to council:, model:, etc.)
+        python3 -c "
+import yaml
+import json
+import sys
+
+try:
+    with open('$config_file', 'r') as f:
+        config = yaml.safe_load(f)
+    
+    reviewers = config.get('reviewers', [])
+    if not reviewers:
+        print('No reviewers found in config', file=sys.stderr)
+        sys.exit(1)
+    
+    matrix = []
+    reviewer_names = []
+    for reviewer in reviewers:
+        name = reviewer.get('name')
+        perspective = reviewer.get('perspective')
+        if name and perspective:
+            matrix.append({'reviewer': name, 'perspective': perspective})
+            reviewer_names.append(name)
+    
+    with open('/tmp/matrix-output.json', 'w') as f:
+        json.dump({'include': matrix}, f)
+    with open('/tmp/matrix-count.txt', 'w') as f:
+        f.write(str(len(matrix)))
+    with open('/tmp/matrix-names.txt', 'w') as f:
+        f.write(','.join(reviewer_names))
+        
+except Exception as e:
+    print(f'Error parsing config: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+        
+        matrix_json=$(cat /tmp/matrix-output.json)
+        count=$(cat /tmp/matrix-count.txt)
+        names=$(cat /tmp/matrix-names.txt)
+        
+        echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
+        echo "count=$count" >> "$GITHUB_OUTPUT"
+        echo "reviewers=$names" >> "$GITHUB_OUTPUT"
+        
+        echo "Generated matrix with $count reviewers: $names"
