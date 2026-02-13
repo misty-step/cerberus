@@ -7,6 +7,7 @@ import pytest
 
 from lib.github import (
     CommentPermissionError,
+    TransientGitHubError,
     find_comment_by_marker,
     upsert_pr_comment,
 )
@@ -277,3 +278,189 @@ class TestRunGhErrorHandling:
 
         result = mod._run_gh(["api", "repos/x/y/issues/1/comments"])
         assert result.stdout == "ok"
+
+
+class TestTransientErrorRetry:
+    """Tests for retry logic on transient GitHub API errors (5xx)."""
+
+    def test_503_error_triggers_retry_and_eventually_succeeds(self, monkeypatch):
+        call_count = 0
+
+        def mock_subprocess_run(args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="gh: HTTP 503: Service Unavailable",
+                )
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout='{"id": 123}', stderr=""
+            )
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
+        # Patch sleep to avoid test delays
+        monkeypatch.setattr(mod.time, "sleep", lambda x: None)
+
+        result = mod._run_gh(["api", "repos/x/y/issues/1/comments"])
+        assert result.returncode == 0
+        assert call_count == 3
+
+    def test_502_error_triggers_retry(self, monkeypatch):
+        call_count = 0
+
+        def mock_subprocess_run(args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="gh: HTTP 502: Bad Gateway",
+                )
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="ok", stderr=""
+            )
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
+        monkeypatch.setattr(mod.time, "sleep", lambda x: None)
+
+        result = mod._run_gh(["api", "repos/x/y/issues/1/comments"])
+        assert result.returncode == 0
+        assert call_count == 2
+
+    def test_504_error_triggers_retry(self, monkeypatch):
+        call_count = 0
+
+        def mock_subprocess_run(args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="gh: HTTP 504: Gateway Timeout",
+                )
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="ok", stderr=""
+            )
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
+        monkeypatch.setattr(mod.time, "sleep", lambda x: None)
+
+        result = mod._run_gh(["api", "repos/x/y/issues/1/comments"])
+        assert result.returncode == 0
+        assert call_count == 2
+
+    def test_exhausted_retries_raises_transient_error(self, monkeypatch):
+        def mock_subprocess_run(args, **kwargs):
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="gh: HTTP 503: Service Unavailable",
+            )
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
+        monkeypatch.setattr(mod.time, "sleep", lambda x: None)
+
+        with pytest.raises(mod.TransientGitHubError, match="after 3 attempts"):
+            mod._run_gh(["api", "repos/x/y/issues/1/comments"], max_retries=3)
+
+    def test_non_transient_errors_do_not_retry(self, monkeypatch):
+        call_count = 0
+
+        def mock_subprocess_run(args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="rate limit exceeded",
+            )
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
+
+        with pytest.raises(subprocess.CalledProcessError):
+            mod._run_gh(["api", "repos/x/y/issues/1/comments"])
+
+        assert call_count == 1  # No retries for non-transient errors
+
+    def test_permission_errors_do_not_retry(self, monkeypatch):
+        call_count = 0
+
+        def mock_subprocess_run(args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="HTTP 403: Resource not accessible",
+            )
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
+
+        with pytest.raises(CommentPermissionError):
+            mod._run_gh(["api", "repos/x/y/issues/1/comments"])
+
+        assert call_count == 1  # No retries for permission errors
+
+
+class TestTransientErrorHandlingInMain:
+    """Tests for how transient errors are handled in main()."""
+
+    def test_transient_error_exits_successfully_to_avoid_merge_blockers(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("Test body")
+
+        def mock_upsert(*args, **kwargs):
+            import lib.github as mod
+            raise mod.TransientGitHubError("HTTP 503 after retries")
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod, "upsert_pr_comment", mock_upsert)
+
+        # Should exit 0 (not fail the job) to avoid merge blockers
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "GitHub outage" in captured.err
+
+    def test_permission_error_exits_with_error(self, monkeypatch, tmp_path):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("Test body")
+
+        def mock_upsert(*args, **kwargs):
+            raise CommentPermissionError("no permission")
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod, "upsert_pr_comment", mock_upsert)
+
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+
+        assert exc_info.value.code == 1
