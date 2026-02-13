@@ -281,6 +281,23 @@ extract_diff_files() {
     || true
 }
 
+# Check if output contains a valid JSON block for parse-review.py
+# Returns 0 if valid JSON block found, 1 otherwise
+has_valid_json_block() {
+  local file="$1"
+  if [[ ! -f "$file" ]]; then
+    return 1
+  fi
+  # Look for ```json ... ``` pattern with content
+  if grep -qE '^```json\s*$' "$file" 2>/dev/null; then
+    # Check if there's actual JSON content (starts with {)
+    if grep -A1 '^```json\s*$' "$file" 2>/dev/null | grep -qE '^\s*\{'; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 # API error patterns to detect
 # Permanent errors (not retryable): non-429 4xx, bad key/auth/quota failures
 # Transient errors (retryable): 429 (rate limit), 5xx, and network transport errors
@@ -485,6 +502,85 @@ for model in "${models[@]}"; do
   # No more fallback models available.
   break
 done
+
+# Parse-failure retry logic (issue #144):
+# If the output doesn't contain a valid JSON block, retry with same model,
+# then fallback model. Track models attempted for SKIP verdict metadata.
+parse_failure_retries=0
+parse_failure_models_attempted=()
+stdout_file="/tmp/${perspective}-output.txt"
+scratchpad="/tmp/${perspective}-review.md"
+
+# Build list of models to try for parse-failure recovery (primary + fallbacks)
+parse_recovery_models=()
+for m in "${models[@]}"; do
+  parse_recovery_models+=("$m")
+done
+
+# Check if we need parse-failure recovery (exit 0 but no valid JSON)
+if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
+  echo "Parse failure detected: no valid JSON block in output. Attempting recovery retries..."
+
+  for pf_model in "${parse_recovery_models[@]}"; do
+    # Skip if we already have valid JSON
+    if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
+      echo "Parse recovery: valid JSON found after retry."
+      break
+    fi
+
+    parse_failure_models_attempted+=("$pf_model")
+
+    # Retry once per model for parse failures (not the full max_retries)
+    for pf_attempt in 1; do
+      if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
+        break 2
+      fi
+
+      parse_failure_retries=$((parse_failure_retries + 1))
+      echo "Parse recovery retry ${parse_failure_retries}: model=${pf_model} (attempt ${pf_attempt}/1)"
+
+      set +e
+      env -i \
+        PATH="${PATH}" \
+        HOME="${CERBERUS_ISOLATED_HOME}" \
+        XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
+        XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
+        TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
+        OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+        OPENCODE_DISABLE_AUTOUPDATE=true \
+        ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
+        ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
+      timeout "${primary_timeout}" opencode run \
+        -m "${pf_model}" \
+        --agent "${perspective}" \
+        < "/tmp/${perspective}-review-prompt.md" \
+        > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
+      pf_exit_code=$?
+      set -e
+
+      output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
+      echo "Parse recovery exit=$pf_exit_code stdout=${output_size} bytes model=${pf_model}"
+
+      if [[ "$pf_exit_code" -eq 0 ]] && [[ "$output_size" -gt 0 ]]; then
+        # Check if we now have valid JSON
+        if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
+          echo "Parse recovery successful: valid JSON block found."
+          model_used="$pf_model"
+          exit_code=0
+          break 2
+        fi
+      fi
+    done
+  done
+
+  # If we still don't have valid JSON after all retries, record failure metadata
+  if ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
+    echo "Parse recovery failed: no valid JSON after ${parse_failure_retries} retries across ${#parse_failure_models_attempted[@]} models."
+    # Write parse-failure metadata for parse-review.py
+    printf '%s\n' "${parse_failure_models_attempted[@]}" > "/tmp/${perspective}-parse-failure-models.txt"
+    echo "$parse_failure_retries" > "/tmp/${perspective}-parse-failure-retries.txt"
+  fi
+fi
 
 # Log which model was ultimately used.
 echo "model_used=${model_used}"
