@@ -1729,6 +1729,39 @@ Next steps: Increase timeout, reduce diff size, or check model provider status.
 class TestRawReviewPreservation:
     """Tests for raw_review field in fallback verdicts."""
 
+    def test_agentic_narration_is_stripped_and_not_surfaced(self):
+        """Agentic 'I'll start by...' traces should not be treated as substantive output."""
+        agentic = (
+            "I'll start by reading the PR diff to understand the changes, then investigate the repository context for security implications. "
+            "Now I need to create the security review document and examine the changes more closely. "
+            "Let me first create the initial review document and examine the changes more closely. "
+        ) * 10
+        assert len(agentic.strip()) > 500  # precondition
+        code, out, _ = run_parse(agentic, env_extra={"REVIEWER_NAME": "SENTINEL"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "raw_review" not in data  # scrubbed to empty
+
+    def test_scratchpad_with_agentic_preamble_strips_preamble_only(self):
+        """Scratchpad partial reviews keep the useful content but drop agentic preambles."""
+        scratchpad = (
+            "I'll start by reading the PR diff to understand the changes.\n"
+            "# Review\n\n"
+            "## Investigation Notes\n"
+            "- Checked the diff\n"
+            "- No security issues found\n\n"
+            "## Verdict: PASS\n"
+            "No issues found.\n"
+        )
+        code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "SENTINEL"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert "raw_review" in data
+        assert "I'll start by reading" not in data["raw_review"]
+        assert "Investigation Notes" in data["raw_review"]
+
     def test_substantive_raw_text_produces_warn_with_raw_review(self):
         """Text >500 chars without JSON block upgrades to WARN and includes raw_review."""
         long_text = "This is a detailed review. " * 30  # ~810 chars
