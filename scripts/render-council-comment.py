@@ -9,7 +9,8 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import quote
+
+from lib.markdown import details_block, location_link, repo_context, severity_icon
 
 # GitHub PR comments are silently rejected above 65,536 bytes.
 # Budget headroom so the structural markdown always fits.
@@ -20,13 +21,6 @@ VERDICT_ICON = {
     "WARN": "⚠️",
     "FAIL": "❌",
     "SKIP": "⏭️",
-}
-
-SEVERITY_ICON = {
-    "critical": "🔴",
-    "major": "🟠",
-    "minor": "🟡",
-    "info": "🔵",
 }
 
 SEVERITY_ORDER = {
@@ -174,36 +168,20 @@ def finding_location(finding: dict) -> str:
     return "location n/a"
 
 
-def blob_url(path: str, *, line: int | None = None) -> str | None:
-    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
-    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
-    sha = str(os.environ.get("GH_HEAD_SHA") or "").strip()
-    path = (path or "").strip()
-    if not (server and repo and sha and path):
-        return None
-    url = f"{server}/{repo}/blob/{sha}/{quote(path, safe='/')}"
-    if line is not None and line > 0:
-        url += f"#L{line}"
-    return url
-
-
-def format_location_link(*, path: str, line: int | None) -> str:
-    path = (path or "").strip()
-    if not path:
-        return "`location n/a`"
-    label = f"{path}:{line}" if line is not None and line > 0 else path
-    url = blob_url(path, line=line)
-    if not url:
-        return f"`{label}`"
-    return f"[`{label}`]({url})"
-
-
 def finding_location_link(finding: dict) -> str:
     path = str(finding.get("file") or "").strip()
     line = as_int(finding.get("line"))
     if line is not None and line <= 0:
         line = None
-    return format_location_link(path=path, line=line)
+    server, repo, sha = repo_context()
+    return location_link(
+        path,
+        line,
+        server=server,
+        repo=repo,
+        sha=sha,
+        missing_label="location n/a",
+    )
 
 
 def truncate(text: object, *, max_len: int) -> str:
@@ -370,23 +348,6 @@ def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple
     return sorted(items, key=_sort_key)[:max_total]
 
 
-def format_collapsible(*, summary: str, body: list[str], indent: str = "  ") -> list[str]:
-    if not body:
-        return []
-    lines = [
-        f"{indent}<details>",
-        f"{indent}<summary>{summary}</summary>",
-        "",
-    ]
-    for ln in body:
-        if ln:
-            lines.append(f"{indent}{ln}")
-        else:
-            lines.append("")
-    lines.extend(["", f"{indent}</details>"])
-    return lines
-
-
 def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[str]:
     items = collect_key_findings(reviewers, max_total=max_total)
     if not items:
@@ -395,7 +356,7 @@ def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[
     lines: list[str] = []
     for rname, finding in items:
         severity = normalize_severity(finding.get("severity"))
-        sev_icon = SEVERITY_ICON[severity]
+        sev_icon = severity_icon(severity)
         title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
         category = truncate(finding.get("category"), max_len=80) or "uncategorized"
         location = finding_location_link(finding)
@@ -409,7 +370,7 @@ def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[
             detail_lines.append(f"Description: {description}")
         if suggestion:
             detail_lines.append(f"Suggestion: {suggestion}")
-        lines.extend(format_collapsible(summary="Details", body=detail_lines))
+        lines.extend(details_block(detail_lines, summary="Details", indent="  "))
 
     return lines
 
@@ -445,7 +406,7 @@ def format_reviewer_details_block(reviewers: list[dict], *, max_findings: int) -
             lines.append("**Findings**")
             for finding in top_findings(reviewer, max_findings=max_findings):
                 severity = normalize_severity(finding.get("severity"))
-                sev_icon = SEVERITY_ICON[severity]
+                sev_icon = severity_icon(severity)
                 title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
                 category = truncate(finding.get("category"), max_len=80) or "uncategorized"
                 location = finding_location_link(finding)
@@ -543,7 +504,13 @@ def _build_comment(
     return "\n".join(lines)
 
 
-def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
+def render_comment(
+    council: dict,
+    *,
+    max_findings: int,
+    max_key_findings: int,
+    marker: str,
+) -> str:
     reviewers = council.get("reviewers")
     if not isinstance(reviewers, list):
         reviewers = []
@@ -611,7 +578,7 @@ def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
         include_key_findings=include_key_findings,
         include_reviewer_details=include_reviewer_details,
         max_findings=max_findings,
-        max_key_findings=10,
+        max_key_findings=max_key_findings,
         raw_output_note=raw_note,
     )
 
@@ -622,7 +589,7 @@ def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
         truncated = dict(common)
         truncated["include_reviewer_details"] = False
         truncated["max_findings"] = min(max_findings, 3)
-        truncated["max_key_findings"] = 5
+        truncated["max_key_findings"] = min(max_key_findings, 5)
         truncated["size_note"] = (
             "> **Note:** Comment was truncated to stay within GitHub's size limit. "
             "See the workflow run for full details."
@@ -655,6 +622,12 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help="Maximum findings to show per reviewer section.",
     )
+    parser.add_argument(
+        "--max-key-findings",
+        type=int,
+        default=10,
+        help="Maximum findings to show in the Key Findings section.",
+    )
     return parser.parse_args()
 
 
@@ -662,12 +635,19 @@ def main() -> None:
     args = parse_args()
     if args.max_findings < 1:
         fail("--max-findings must be >= 1")
+    if args.max_key_findings < 1:
+        fail("--max-key-findings must be >= 1")
 
     council_path = Path(args.council_json)
     output_path = Path(args.output)
 
     council = read_json(council_path)
-    markdown = render_comment(council, max_findings=args.max_findings, marker=args.marker)
+    markdown = render_comment(
+        council,
+        max_findings=args.max_findings,
+        max_key_findings=args.max_key_findings,
+        marker=args.marker,
+    )
 
     try:
         output_path.write_text(markdown, encoding="utf-8")

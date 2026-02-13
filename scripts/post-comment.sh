@@ -92,7 +92,7 @@ fi
 
 findings_file="/tmp/${perspective}-findings.md"
 server_url="${GITHUB_SERVER_URL:-https://github.com}"
-head_sha="$(git rev-parse HEAD)"
+head_sha="${GH_HEAD_SHA:-$(git rev-parse HEAD)}"
 findings_count="$(
   python3 "$CERBERUS_ROOT/scripts/render-findings.py" \
     --verdict-json "$verdict_file" \

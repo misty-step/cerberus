@@ -68,7 +68,7 @@ def is_scratchpad(text: str) -> bool:
 
 def extract_review_summary(text: str) -> str:
     """Extract a meaningful summary from unstructured review text."""
-    # Check for explicit summary or verdict headers
+    # Check for explicit summary or verdict headers.
     for header in (r"## Summary", r"## Verdict:"):
         match = re.search(
             rf"{header}\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL,
@@ -78,7 +78,7 @@ def extract_review_summary(text: str) -> str:
             if section:
                 return section[:500]
 
-    # Fallback: first 500 non-empty chars
+    # Fallback: first 500 non-empty chars.
     stripped = text.strip()
     return stripped[:500] if stripped else ""
 
@@ -926,10 +926,10 @@ def main() -> None:
 
             # Substantive raw text exists — upgrade to WARN so the review is visible.
             if len(sanitized_text) > 500:
-                summary = extract_review_summary(sanitized_text)
+                summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict="WARN", confidence=0.3,
-                               summary=summary or f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                               summary=summary,
                                raw_review=sanitized_text,
                                findings=[{
                                    "severity": "info",

@@ -366,7 +366,17 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
                     "confidence": 0.3,
                     "summary": huge_summary,
                     "runtime_seconds": 45,
-                    "findings": [],
+                    "findings": [
+                        {
+                            "severity": "minor",
+                            "category": "test",
+                            "file": f"src/file{i}.py",
+                            "line": 1,
+                            "title": f"Finding {i}",
+                            "description": "desc",
+                            "suggestion": "sugg",
+                        }
+                    ],
                     "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
                 }
                 for i in range(40)
@@ -385,3 +395,5 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     # Structural content should still be present
     assert "## ⚠️ Council Verdict: WARN" in body
     assert "### Reviewer Overview" in body
+    assert "### Key Findings" in body
+    assert body.count("**Finding ") == 5
