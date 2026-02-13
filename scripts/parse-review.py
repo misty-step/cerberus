@@ -101,16 +101,16 @@ _AGENTIC_PREAMBLE_START_RE = re.compile(
     ^\s*
     (?:[>\-*]\s*)?
     (?:
-        i(?:'ll|’ll)\b
+        i(?:'ll)\b
         |i\s+will\b
-        |i\s+(?:am|’m|'m)\s+going\s+to\b
+        |i\s+(?:am|'m)\s+going\s+to\b
         |i\s+need\s+to\b
         |now\s+i\b
         |next\s*,?\s+i\b
         |first\s*,?\s+i\b
         |then\s+i\b
         |let\s+me\b
-        |let['’]s\b
+        |let'?s\b
     )
     """,
     re.IGNORECASE | re.VERBOSE,
@@ -132,6 +132,8 @@ def sanitize_raw_review(text: str) -> str:
     reading...", "Now I need to...") in PR comments when JSON output fails.
     """
     sanitized = text.replace("\r\n", "\n").strip()
+    # Normalize typographic apostrophes to ASCII to keep regex + matching simple.
+    sanitized = sanitized.replace("\u2019", "'").replace("\u2018", "'")
     if not sanitized:
         return ""
 
