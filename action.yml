@@ -16,6 +16,9 @@ inputs:
   api-key:
     description: 'OpenRouter API key (optional if CERBERUS_API_KEY or OPENROUTER_API_KEY env is set)'
     required: false
+  kimi-api-key:
+    description: 'Deprecated alias for api-key (OpenRouter API key)'
+    required: false
   model:
     description: 'Model name (optional; defaults to per-reviewer config)'
     default: ''
@@ -79,6 +82,7 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
         INPUT_API_KEY: ${{ inputs.api-key }}
+        INPUT_KIMI_API_KEY: ${{ inputs.kimi-api-key }}
         CERBERUS_API_KEY: ${{ env.CERBERUS_API_KEY }}
         OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
       run: |
