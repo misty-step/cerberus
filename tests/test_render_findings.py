@@ -57,7 +57,8 @@ def test_renders_unverified_meta_and_evidence_block(tmp_path: Path) -> None:
     assert out.strip() == "1"
     assert "`src/app.py:12`" in body
     assert "_(unverified: evidence-mismatch)_" in body
+    assert "<details>" in body
+    assert "<summary>Details</summary>" in body
     assert "Evidence:" in body
     assert "```text" in body
     assert "x = 1" in body
-
