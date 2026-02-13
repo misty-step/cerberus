@@ -204,6 +204,7 @@ def test_no_raw_review_block_when_absent(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "Full review output" not in body
+    assert "Reviewer details (click to expand)" not in body
 
 
 def test_increased_truncation_limits(tmp_path: Path) -> None:
