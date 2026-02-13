@@ -104,6 +104,7 @@ Use `templates/triage-workflow.yml` to enable:
 | `perspective` | yes | - | Review perspective |
 | `github-token` | yes | - | GitHub token for PR comments |
 | `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY` or `OPENROUTER_API_KEY` env is set) |
+| `kimi-api-key` | no | - | Deprecated alias for `api-key` (OpenRouter API key) |
 | `context` | no | `''` | Maintainer-provided project context injected into the reviewer prompt (do not include secrets) |
 | `model` | no | `defaults/config.yml` | Model override (else per-reviewer config, then `model.default`) |
 | `fallback-models` | no | `openrouter/google/gemini-3-flash-preview,...` | Comma-separated fallback models, tried on transient failure |
