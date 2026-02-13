@@ -22,10 +22,16 @@ Read this file to see all changes. Skip lockfiles, generated/minified files, and
 ## Scope Rules
 - ONLY flag issues in code that is ADDED or MODIFIED in this diff.
 - You MAY read surrounding code for context, but do not report issues in unchanged code.
-- If an existing bug is made worse by this change, flag it. If it was already there, skip it.
 - Do not suggest improvements to code outside the diff.
 - Prioritize: new files over modified files, application code over test code.
 - If the diff is very large, focus on the highest-risk changes and note which files you deprioritized.
+
+### Pre-Existing Conditions
+Findings must be attributable to THIS PR's changes, not the codebase's history.
+- If a file had pre-existing issues before this PR, do NOT flag them as findings.
+- If this PR makes a pre-existing issue WORSE, flag only the delta — the new complexity introduced, not the total. Example: "This PR adds 150 lines to an already-large component" is valid; "This 800-line component is too large" is not.
+- If a pre-existing condition is relevant context for a finding, mention it in the description as background, not as the finding itself.
+- Do NOT inflate severity because of accumulated pre-existing debt. Judge the PR's contribution in isolation.
 
 ## Defaults Change Awareness
 - When a diff changes DEFAULT BEHAVIOR (feature flags, env var defaults, fallback order, backend selection, default function arguments), the newly-defaulted code path is IN SCOPE for review even if its lines are unchanged.

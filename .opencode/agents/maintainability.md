@@ -148,6 +148,11 @@ Bad finding (do NOT report this):
   Title: "Could add JSDoc to exported function"
   Why this is bad: The function name and types are self-documenting. Adding docs for docs' sake is noise.
 
+Bad finding (pre-existing condition, do NOT report this):
+- severity: major, category: component-complexity, file: src/pages/ChatPage.tsx, line: 1
+  Title: "ChatPage component has grown too large with mixed responsibilities — spans 800+ lines"
+  Why this is bad: The component was already ~650 lines before this PR. The PR added proportional complexity for its feature. Flag only the delta introduced by this PR, not the pre-existing total.
+
 JSON Schema
 ```json
 {
