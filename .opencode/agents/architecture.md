@@ -175,7 +175,8 @@ JSON Schema
       "description": "Detailed explanation",
       "evidence": "Exact code quote (1-6 lines)",
       "scope": "diff|defaults-change",
-      "suggestion": "How to fix"
+      "suggestion": "How to fix",
+      "suggestion_verified": true
     }
   ],
   "stats": {
