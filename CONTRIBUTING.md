@@ -6,6 +6,33 @@ This guide covers local development, testing, release behavior, and consumer set
 
 ## Local Development
 
+### Git Hooks (Quality Gates)
+
+Cerberus uses git hooks to catch issues before they reach CI:
+
+**Install hooks:**
+```bash
+make setup
+```
+
+Or use the setup script directly:
+```bash
+./scripts/setup-hooks.sh
+```
+
+**Hook summary:**
+
+| Hook | When | Duration | Checks |
+|------|------|----------|--------|
+| `pre-commit` | Every commit | <5s | Staged files only: shellcheck, py_compile, ruff, yamllint, jsonlint |
+| `pre-push` | Every push | <60s | Full test suite, shellcheck on all scripts, ruff on all Python files |
+
+**Emergency bypass:**
+```bash
+git commit --no-verify    # Skip pre-commit
+git push --no-verify      # Skip pre-push
+```
+
 ### Python Version
 
 Cerberus CI runs on Python 3.12 (`.github/workflows/ci.yml`), and the
