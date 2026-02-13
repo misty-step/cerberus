@@ -179,6 +179,44 @@ config_default_model_raw="$(
   ' "$config_file"
 )"
 
+# Read model pool from config (optional). Used when reviewer has model: pool.
+read_model_pool() {
+  awk '
+    $0 ~ /^model:/ {in_model=1; next}
+    in_model && $0 !~ /^  / {in_model=0}
+    in_model && $0 ~ /^  pool:/ {in_pool=1; next}
+    in_pool && $0 !~ /^    - / {in_pool=0}
+    in_pool && $0 ~ /^    - / {
+      gsub(/^    - /, "")
+      gsub(/^[\"\047]/, "")
+      gsub(/[\"\047]$/, "")
+      print
+    }
+  ' "$config_file"
+}
+model_pool=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && model_pool+=("$line")
+done < <(read_model_pool)
+
+# If reviewer model is "pool", randomly select from pool.
+if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
+  if [[ ${#model_pool[@]} -gt 0 ]]; then
+    # Use shuf for random selection (available on macOS and Linux)
+    if command -v shuf >/dev/null 2>&1; then
+      reviewer_model_raw="$(printf '%s\n' "${model_pool[@]}" | shuf -n 1)"
+    else
+      # Fallback: use $RANDOM for bash-only random selection
+      idx=$((RANDOM % ${#model_pool[@]}))
+      reviewer_model_raw="${model_pool[$idx]}"
+    fi
+    echo "Selected random model from pool: $reviewer_model_raw"
+  else
+    echo "Warning: reviewer uses 'pool' but no pool defined. Falling back to default."
+    reviewer_model_raw=""
+  fi
+fi
+
 # Persist reviewer name for downstream steps (parse, council).
 printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
 
