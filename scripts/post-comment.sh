@@ -92,41 +92,9 @@ fi
 
 findings_file="/tmp/${perspective}-findings.md"
 findings_count="$(
-  VERDICT_FILE="$verdict_file" FINDINGS_FILE="$findings_file" python3 - <<'PY'
-import json
-import os
-
-path = os.environ["VERDICT_FILE"]
-out = os.environ["FINDINGS_FILE"]
-
-data = json.load(open(path))
-findings = data.get("findings", [])
-
-sev = {
-    "critical": "🔴",
-    "major": "🟠",
-    "minor": "🟡",
-    "info": "🔵",
-}
-
-lines = []
-for f in findings:
-    emoji = sev.get(f.get("severity", "info"), "🔵")
-    file = f.get("file", "unknown")
-    line = f.get("line", 0)
-    title = f.get("title", "Issue")
-    desc = f.get("description", "")
-    sugg = f.get("suggestion", "")
-    lines.append(f"- {emoji} `{file}:{line}` — {title}. {desc} Suggestion: {sugg}")
-
-if not lines:
-    lines = ["- None"]
-
-with open(out, "w") as fh:
-    fh.write("\n".join(lines))
-
-print(len(findings))
-PY
+  python3 "$CERBERUS_ROOT/scripts/render-findings.py" \
+    --verdict-json "$verdict_file" \
+    --output "$findings_file"
 )"
 
 # Strip openrouter provider prefix for brevity: openrouter/moonshotai/kimi-k2.5 → kimi-k2.5

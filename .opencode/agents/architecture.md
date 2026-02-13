@@ -123,6 +123,11 @@ Review Discipline
 - Avoid fix proposals that add more surface area.
 - If change is acceptable, say why it preserves invariants.
 
+Evidence (mandatory)
+- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
+- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
+
 Output Format
 - Write your complete review to `/tmp/architecture-review.md` using the write tool. Update it throughout your investigation.
 - Your FINAL message MUST end with exactly one ```json block containing your verdict.
@@ -168,6 +173,8 @@ JSON Schema
       "line": 42,
       "title": "Short title",
       "description": "Detailed explanation",
+      "evidence": "Exact code quote (1-6 lines)",
+      "scope": "diff|defaults-change",
       "suggestion": "How to fix"
     }
   ],

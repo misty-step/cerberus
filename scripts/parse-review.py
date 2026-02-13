@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -13,6 +14,14 @@ RAW_INPUT = ""
 VERDICT_CONFIDENCE_MIN = 0.7
 WARN_MINOR_THRESHOLD = 5
 WARN_SAME_CATEGORY_MINOR_THRESHOLD = 3
+
+EVIDENCE_MAX_CHARS = 2000
+EVIDENCE_WINDOW_RADIUS = 12
+
+_CHANGED_FILES_CACHE: dict[str, set[str]] = {}
+_RESOLVED_PATH_CACHE: dict[tuple[str, str], Path | None] = {}
+_FILE_CONTENT_CACHE: dict[Path, str] = {}
+_FILE_LINES_CACHE: dict[Path, list[str]] = {}
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
@@ -510,6 +519,244 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
                 )
 
 
+def _prefix_title(finding: dict, prefix: str) -> None:
+    title = str(finding.get("title", ""))
+    if title.startswith(prefix):
+        return
+    finding["title"] = f"{prefix}{title}"
+
+
+def _unwrap_fenced_code_block(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 2:
+        return stripped
+    if not lines[0].startswith("```"):
+        return stripped
+    if lines[-1].strip() != "```":
+        return stripped
+    return "\n".join(lines[1:-1]).strip("\n")
+
+
+def _normalize_evidence(text: str) -> str:
+    evidence = text.replace("\r\n", "\n").strip()
+    evidence = _unwrap_fenced_code_block(evidence)
+
+    # If the model pasted diff lines, strip leading +/-/space markers.
+    lines = evidence.splitlines()
+    if lines:
+        looks_like_diff = (
+            all((ln.startswith(("+", "-", " ")) and not ln.startswith(("+++ ", "--- "))) or ln == "" for ln in lines)
+            and any(ln.startswith(("+", "-")) for ln in lines if ln)
+        )
+        if looks_like_diff:
+            lines = [ln[1:] if ln.startswith(("+", "-", " ")) else ln for ln in lines]
+            evidence = "\n".join(lines).strip("\n")
+
+    return evidence
+
+
+def _truncate_evidence_for_output(evidence: str) -> str:
+    if len(evidence) > EVIDENCE_MAX_CHARS:
+        return evidence[:EVIDENCE_MAX_CHARS] + "..."
+    return evidence
+
+
+def _extract_changed_files_from_diff(diff_path: Path) -> set[str]:
+    cache_key: str | None = None
+    try:
+        cache_key = str(diff_path.resolve())
+    except OSError:
+        pass
+    if cache_key and cache_key in _CHANGED_FILES_CACHE:
+        return _CHANGED_FILES_CACHE[cache_key]
+
+    changed: set[str] = set()
+    try:
+        with diff_path.open("r", errors="replace") as handle:
+            for line in handle:
+                if not line.startswith("diff --git "):
+                    continue
+                suffix = line[len("diff --git ") :].strip()
+                try:
+                    parts = shlex.split(suffix)
+                except ValueError:
+                    parts = suffix.split()
+                if len(parts) < 2:
+                    continue
+                for raw in parts[:2]:
+                    p = raw
+                    if p.startswith(("a/", "b/")):
+                        p = p[2:]
+                    if p and p != "/dev/null":
+                        changed.add(p)
+    except OSError:
+        pass
+
+    if cache_key:
+        _CHANGED_FILES_CACHE[cache_key] = changed
+    return changed
+
+
+def _safe_resolve_repo_path(repo_root: Path, rel: str) -> Path | None:
+    if not rel or rel in {"N/A", "unknown"}:
+        return None
+    if rel.startswith(("a/", "b/")):
+        rel = rel[2:]
+    cache_key = (str(repo_root), rel)
+    if rel.startswith(("/", "~")):
+        return None
+    if ".." in Path(rel).parts:
+        return None
+    if cache_key in _RESOLVED_PATH_CACHE:
+        return _RESOLVED_PATH_CACHE[cache_key]
+    candidate = (repo_root / rel).resolve()
+    try:
+        candidate.relative_to(repo_root)
+    except ValueError:
+        _RESOLVED_PATH_CACHE[cache_key] = None
+        return None
+    _RESOLVED_PATH_CACHE[cache_key] = candidate
+    return candidate
+
+
+def _read_file_with_cache(path: Path) -> str | None:
+    if path in _FILE_CONTENT_CACHE:
+        return _FILE_CONTENT_CACHE[path]
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return None
+    _FILE_CONTENT_CACHE[path] = text
+    return text
+
+
+def _evidence_matches_file(path: Path, line: int, evidence: str) -> bool:
+    text = _read_file_with_cache(path)
+    if text is None:
+        return False
+
+    if not evidence:
+        return False
+
+    # Prefer a tight window around the cited line; fallback to whole-file search.
+    if line > 0:
+        if path in _FILE_LINES_CACHE:
+            lines = _FILE_LINES_CACHE[path]
+        else:
+            lines = text.splitlines()
+            _FILE_LINES_CACHE[path] = lines
+        idx = line - 1
+        if 0 <= idx < len(lines):
+            start = max(0, idx - EVIDENCE_WINDOW_RADIUS)
+            end = min(len(lines), idx + EVIDENCE_WINDOW_RADIUS + 1)
+            window = "\n".join(lines[start:end])
+            if evidence in window:
+                return True
+
+    return evidence in text
+
+
+def downgrade_unverified_findings(obj: dict) -> None:
+    findings = obj.get("findings", [])
+    if not isinstance(findings, list) or not findings:
+        return
+
+    repo_root = Path.cwd().resolve()
+
+    diff_file = os.environ.get("GH_DIFF_FILE")
+    if not diff_file:
+        return
+    changed_files: set[str] = set()
+    try:
+        diff_path = Path(diff_file)
+        if diff_path.is_file():
+            changed_files = _extract_changed_files_from_diff(diff_path)
+    except OSError:
+        changed_files = set()
+
+    downgraded = 0
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+
+        severity = finding.get("severity")
+        if severity not in {"critical", "major", "minor"}:
+            continue
+
+        file_raw = str(finding.get("file", "")).strip()
+        file_norm = file_raw[2:] if file_raw.startswith(("a/", "b/")) else file_raw
+        scope = str(finding.get("scope", "")).strip().lower()
+
+        # Out-of-scope (relative to diff) unless explicitly justified.
+        if changed_files and file_norm and file_norm not in changed_files and scope != "defaults-change":
+            finding["severity"] = "info"
+            finding["_evidence_unverified"] = True
+            finding["_evidence_reason"] = "out-of-scope"
+            _prefix_title(finding, "[out-of-scope] ")
+            downgraded += 1
+            continue
+
+        evidence_raw = finding.get("evidence")
+        if not isinstance(evidence_raw, str) or not evidence_raw.strip():
+            finding["severity"] = "info"
+            finding["_evidence_unverified"] = True
+            finding["_evidence_reason"] = "missing-evidence"
+            _prefix_title(finding, "[unverified] ")
+            downgraded += 1
+            continue
+
+        evidence = _normalize_evidence(evidence_raw)
+        if not evidence:
+            finding["severity"] = "info"
+            finding["_evidence_unverified"] = True
+            finding["_evidence_reason"] = "empty-evidence"
+            _prefix_title(finding, "[unverified] ")
+            downgraded += 1
+            continue
+        finding["evidence"] = _truncate_evidence_for_output(evidence)
+
+        resolved = _safe_resolve_repo_path(repo_root, file_norm)
+        if resolved is None or not resolved.is_file():
+            finding["severity"] = "info"
+            finding["_evidence_unverified"] = True
+            finding["_evidence_reason"] = "file-not-found"
+            _prefix_title(finding, "[unverified] ")
+            downgraded += 1
+            continue
+
+        try:
+            line = int(finding.get("line", 0))
+        except (TypeError, ValueError):
+            line = 0
+
+        if not _evidence_matches_file(resolved, line, evidence):
+            finding["severity"] = "info"
+            finding["_evidence_unverified"] = True
+            finding["_evidence_reason"] = "evidence-mismatch"
+            _prefix_title(finding, "[unverified] ")
+            downgraded += 1
+            continue
+
+        finding["_evidence_verified"] = True
+
+    if downgraded > 0:
+        stats = obj.get("stats")
+        if isinstance(stats, dict):
+            for sev in ("critical", "major", "minor", "info"):
+                stats[sev] = sum(
+                    1 for f in findings
+                    if isinstance(f, dict) and f.get("severity") == sev
+                )
+        summary = obj.get("summary")
+        if isinstance(summary, str) and summary:
+            marker = f" [unverified->info: {downgraded}]"
+            if marker not in summary:
+                obj["summary"] = summary + marker
+
+
 def main() -> None:
     global REVIEWER_NAME, PERSPECTIVE, RAW_INPUT
 
@@ -628,6 +875,7 @@ def main() -> None:
             fail("root must be object")
 
         validate(obj)
+        downgrade_unverified_findings(obj)
         downgrade_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:

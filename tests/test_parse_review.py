@@ -60,6 +60,27 @@ def run_parse_with_args(
     return result.returncode, result.stdout, result.stderr
 
 
+def run_parse_in_cwd(
+    input_text: str,
+    cwd: Path,
+    env_extra: dict | None = None,
+) -> tuple[int, str, str]:
+    """Run parse-review.py with input text in a specific working directory."""
+    env = os.environ.copy()
+    env.pop("REVIEWER_NAME", None)
+    if env_extra:
+        env.update(env_extra)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        input=input_text,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(cwd),
+    )
+    return result.returncode, result.stdout, result.stderr
+
+
 class TestParsePass:
     def test_extracts_valid_json(self):
         code, out, err = run_parse_file(FIXTURES / "sample-output-pass.txt")
@@ -602,6 +623,334 @@ def test_verdict_consistency_confidence_threshold_is_inclusive():
     assert code == 0
     data = json.loads(out)
     assert data["verdict"] == "FAIL"
+
+
+class TestEvidenceDowngrade:
+    @staticmethod
+    def _write_diff(cwd: Path, changed_files: list[str]) -> Path:
+        diff_path = cwd / "pr.diff"
+        blocks = []
+        for file in changed_files:
+            blocks.append(
+                "\n".join(
+                    [
+                        f"diff --git a/{file} b/{file}",
+                        "index 0000000..1111111 100644",
+                        f"--- a/{file}",
+                        f"+++ b/{file}",
+                        "@@ -0,0 +1,1 @@",
+                        "+stub",
+                        "",
+                    ]
+                )
+            )
+        diff_path.write_text("\n".join(blocks))
+        return diff_path
+
+    @staticmethod
+    def _wrap_json(obj: dict) -> str:
+        return f"```json\n{json.dumps(obj)}\n```"
+
+    @staticmethod
+    def _review(finding: dict, verdict: str = "PASS", summary: str = "Major issue") -> dict:
+        severity = finding.get("severity")
+        stats = {
+            "files_reviewed": 1,
+            "files_with_issues": 1,
+            "critical": 1 if severity == "critical" else 0,
+            "major": 1 if severity == "major" else 0,
+            "minor": 1 if severity == "minor" else 0,
+            "info": 1 if severity == "info" else 0,
+        }
+        return {
+            "reviewer": "APOLLO",
+            "perspective": "correctness",
+            "verdict": verdict,
+            "confidence": 0.95,
+            "summary": summary,
+            "findings": [finding],
+            "stats": stats,
+        }
+
+    def test_missing_evidence_downgrades_to_info(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Wrong thing",
+                "description": "desc",
+                "suggestion": "fix",
+            },
+            verdict="FAIL",
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["stats"]["major"] == 0
+        assert data["stats"]["info"] == 1
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["title"].startswith("[unverified] ")
+        assert "[unverified->info: 1]" in data["summary"]
+
+    def test_evidence_mismatch_downgrades_to_info(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Wrong thing",
+                "description": "desc",
+                "evidence": "x = 2",
+                "suggestion": "fix",
+            },
+            verdict="WARN",
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["title"].startswith("[unverified] ")
+        assert data["findings"][0]["_evidence_reason"] == "evidence-mismatch"
+
+    def test_evidence_match_keeps_severity(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Real issue",
+                "description": "desc",
+                "evidence": "x = 1",
+                "suggestion": "fix",
+            }
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["findings"][0]["severity"] == "major"
+        assert data["findings"][0]["_evidence_verified"] is True
+
+    def test_out_of_scope_file_downgrades(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "other.py").write_text("y = 2\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "other.py",
+                "line": 1,
+                "title": "Out of scope",
+                "description": "desc",
+                "evidence": "y = 2",
+                "suggestion": "fix",
+            },
+            verdict="FAIL",
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["title"].startswith("[out-of-scope] ")
+        assert data["findings"][0]["_evidence_reason"] == "out-of-scope"
+
+    def test_defaults_change_scope_allows_out_of_diff(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "other.py").write_text("y = 2\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "defaults-change",
+                "scope": "defaults-change",
+                "file": "other.py",
+                "line": 1,
+                "title": "New default path is unsafe",
+                "description": "desc",
+                "evidence": "y = 2",
+                "suggestion": "fix",
+            }
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["findings"][0]["severity"] == "major"
+        assert data["findings"][0]["_evidence_verified"] is True
+
+    def test_empty_evidence_after_normalization_downgrades(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Empty evidence",
+                "description": "desc",
+                "evidence": "```text\n+\n```",
+                "suggestion": "fix",
+            }
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["_evidence_reason"] == "empty-evidence"
+
+    def test_file_not_found_downgrades(self, tmp_path):
+        diff = self._write_diff(tmp_path, ["missing.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "missing.py",
+                "line": 1,
+                "title": "Missing file",
+                "description": "desc",
+                "evidence": "x = 1",
+                "suggestion": "fix",
+            },
+            verdict="FAIL",
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["_evidence_reason"] == "file-not-found"
+
+    def test_truncation_does_not_break_verification(self, tmp_path):
+        long_val = "a" * 2100
+        long_line = f'x = "{long_val}"'
+        (tmp_path / "app.py").write_text(long_line + "\n")
+        diff = self._write_diff(tmp_path, ["app.py"])
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Long evidence",
+                "description": "desc",
+                "evidence": long_line,
+                "suggestion": "fix",
+            }
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["findings"][0]["severity"] == "major"
+        assert data["findings"][0]["_evidence_verified"] is True
+        assert data["findings"][0]["evidence"].endswith("...")
+
+    def test_diff_parser_handles_quoted_paths_with_spaces(self, tmp_path):
+        file_name = "hello world.txt"
+        (tmp_path / file_name).write_text("x = 1\n")
+
+        diff = tmp_path / "pr.diff"
+        diff.write_text(
+            "\n".join(
+                [
+                    f'diff --git "a/{file_name}" "b/{file_name}"',
+                    "index 0000000..1111111 100644",
+                    f'--- "a/{file_name}"',
+                    f'+++ "b/{file_name}"',
+                    "@@ -0,0 +1,1 @@",
+                    "+stub",
+                    "",
+                ]
+            )
+        )
+
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": file_name,
+                "line": 1,
+                "title": "Space path in-scope",
+                "description": "desc",
+                "evidence": "x = 1",
+                "suggestion": "fix",
+            }
+        )
+
+        code, out, _ = run_parse_in_cwd(
+            self._wrap_json(review),
+            cwd=tmp_path,
+            env_extra={"GH_DIFF_FILE": str(diff)},
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+        assert data["findings"][0]["severity"] == "major"
+        assert data["findings"][0]["_evidence_verified"] is True
 
 
 class TestStaleKnowledgeDowngrade:
