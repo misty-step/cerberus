@@ -195,6 +195,121 @@ def aggregate(verdicts: list[dict], override: Override | None = None) -> dict:
     }
 
 
+def generate_quality_report(
+    verdicts: list[dict],
+    council: dict,
+    skipped_artifacts: list[dict],
+    repo: str | None = None,
+    pr_number: str | None = None,
+    head_sha: str | None = None,
+) -> dict:
+    """Generate a quality report from council verdict data."""
+    total = len(verdicts)
+    if total == 0:
+        return {
+            "meta": {
+                "repo": repo,
+                "pr_number": pr_number,
+                "head_sha": head_sha,
+                "generated_at": Path("/tmp").stat().st_mtime if Path("/tmp").exists() else None,
+            },
+            "summary": {
+                "total_reviewers": 0,
+                "skip_rate": 0.0,
+                "parse_failure_rate": 0.0,
+                "council_verdict": council.get("verdict", "UNKNOWN"),
+            },
+            "reviewers": [],
+            "models": {},
+            "errors": ["No valid verdicts"],
+        }
+
+    skips = [v for v in verdicts if v["verdict"] == "SKIP"]
+    fallback_verdicts = [v for v in verdicts if is_fallback_verdict(v)]
+    skip_rate = len(skips) / total if total > 0 else 0.0
+    parse_failure_rate = len(fallback_verdicts) / total if total > 0 else 0.0
+
+    # Per-reviewer details
+    reviewer_details = []
+    for v in verdicts:
+        detail = {
+            "reviewer": v["reviewer"],
+            "perspective": v["perspective"],
+            "verdict": v["verdict"],
+            "confidence": v.get("confidence"),
+            "runtime_seconds": v.get("runtime_seconds"),
+            "model_used": v.get("model_used"),
+            "primary_model": v.get("primary_model"),
+            "fallback_used": v.get("fallback_used", False),
+            "parse_failed": is_fallback_verdict(v),
+            "timed_out": is_timeout_skip(v),
+        }
+        reviewer_details.append(detail)
+
+    # Per-model aggregation
+    model_stats: dict[str, dict] = {}
+    for v in verdicts:
+        model = v.get("model_used") or v.get("primary_model") or "unknown"
+        if model not in model_stats:
+            model_stats[model] = {
+                "count": 0,
+                "verdicts": {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0},
+                "total_runtime_seconds": 0,
+                "runtimes": [],
+                "fallback_count": 0,
+                "parse_failures": 0,
+            }
+        model_stats[model]["count"] += 1
+        model_stats[model]["verdicts"][v["verdict"]] += 1
+        if v.get("runtime_seconds"):
+            model_stats[model]["total_runtime_seconds"] += v["runtime_seconds"]
+            model_stats[model]["runtimes"].append(v["runtime_seconds"])
+        if v.get("fallback_used"):
+            model_stats[model]["fallback_count"] += 1
+        if is_fallback_verdict(v):
+            model_stats[model]["parse_failures"] += 1
+
+    # Compute averages and rates per model
+    for model, stats in model_stats.items():
+        count = stats["count"]
+        runtimes = stats.pop("runtimes")
+        stats["avg_runtime_seconds"] = stats["total_runtime_seconds"] / count if count > 0 else 0
+        stats["median_runtime_seconds"] = sorted(runtimes)[len(runtimes) // 2] if runtimes else 0
+        stats["skip_rate"] = stats["verdicts"]["SKIP"] / count if count > 0 else 0
+        stats["parse_failure_rate"] = stats["parse_failures"] / count if count > 0 else 0
+        stats["fallback_rate"] = stats["fallback_count"] / count if count > 0 else 0
+
+    # Verdict distribution
+    verdict_distribution = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
+    for v in verdicts:
+        verdict_distribution[v["verdict"]] += 1
+
+    report = {
+        "meta": {
+            "repo": repo,
+            "pr_number": pr_number,
+            "head_sha": head_sha,
+            "generated_at": Path("/tmp").stat().st_mtime if Path("/tmp").exists() else None,
+        },
+        "summary": {
+            "total_reviewers": total,
+            "skip_count": len(skips),
+            "skip_rate": round(skip_rate, 4),
+            "parse_failure_count": len(fallback_verdicts),
+            "parse_failure_rate": round(parse_failure_rate, 4),
+            "council_verdict": council.get("verdict", "UNKNOWN"),
+            "verdict_distribution": verdict_distribution,
+        },
+        "reviewers": reviewer_details,
+        "models": model_stats,
+    }
+
+    if skipped_artifacts:
+        report["skipped_artifacts"] = skipped_artifacts
+
+    return report
+
+
 def main() -> None:
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
@@ -320,6 +435,15 @@ def main() -> None:
         council["skipped_artifacts"] = skipped_artifacts
 
     Path("/tmp/council-verdict.json").write_text(json.dumps(council, indent=2))
+
+    # Generate quality report
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    pr_number = os.environ.get("GH_PR_NUMBER")
+    quality_report = generate_quality_report(
+        verdicts, council, skipped_artifacts, repo, pr_number, head_sha
+    )
+    Path("/tmp/quality-report.json").write_text(json.dumps(quality_report, indent=2))
+    print("aggregate-verdict: quality report written to /tmp/quality-report.json", file=sys.stderr)
 
     council_verdict = council["verdict"]
     lines = [f"Council Verdict: {council_verdict}", ""]
