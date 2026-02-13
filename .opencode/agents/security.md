@@ -120,9 +120,9 @@ Evidence (mandatory)
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
-- Write your complete review to `/tmp/security-review.md` using the write tool. Update it throughout your investigation.
-- Your FINAL message MUST end with exactly one ```json block containing your verdict.
-- The JSON block must be the LAST thing in your response. Nothing after the closing ```.
+- Do NOT narrate your process (no "I'll start by reading...", "let me...", tool-use talk).
+- You MAY use tools silently, but do not mention them.
+- Your ENTIRE response MUST be exactly one ```json block and nothing else.
 - If you cannot complete the review, still output a JSON block with verdict "SKIP" and explain in summary.
 - Keep summary to one sentence.
 - findings[] empty if no issues.

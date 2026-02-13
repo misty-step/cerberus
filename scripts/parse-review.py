@@ -96,6 +96,62 @@ def extract_notes_summary(text: str, max_len: int = 10000) -> str:
     return notes
 
 
+_AGENTIC_PREAMBLE_START_RE = re.compile(
+    r"""
+    ^\s*
+    (?:[>\-*]\s*)?
+    (?:
+        i(?:'ll|’ll)\b
+        |i\s+will\b
+        |i\s+(?:am|’m|'m)\s+going\s+to\b
+        |i\s+need\s+to\b
+        |now\s+i\b
+        |next\s*,?\s+i\b
+        |first\s*,?\s+i\b
+        |then\s+i\b
+        |let\s+me\b
+        |let['’]s\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_AGENTIC_PREAMBLE_VERB_RE = re.compile(
+    r"\b(?:start|begin|read|review|examin|investigat|check|look|analyz|create|write|open|fetch|run|use|call|tool|step)\w*\b",
+    re.IGNORECASE,
+)
+
+_FIRST_SENTENCE_RE = re.compile(r"(?s)^.*?(?:[.!?](?:\s+|\s*\n+)|\n+)")
+
+
+def sanitize_raw_review(text: str) -> str:
+    """Strip common agentic narration preambles from raw model output.
+
+    This is used ONLY for displaying fallback/unparsed output (raw_review).
+    The goal is to avoid surfacing tool-use / process narration ("I'll start by
+    reading...", "Now I need to...") in PR comments when JSON output fails.
+    """
+    sanitized = text.replace("\r\n", "\n").strip()
+    if not sanitized:
+        return ""
+
+    # Iteratively drop leading sentences/lines that look like "agentic plan"
+    # narration. Keep the rest intact if it becomes substantive.
+    for _ in range(100):
+        match = _FIRST_SENTENCE_RE.match(sanitized)
+        sentence = match.group(0) if match else sanitized
+        if not _AGENTIC_PREAMBLE_START_RE.match(sentence):
+            break
+        if not _AGENTIC_PREAMBLE_VERB_RE.search(sentence):
+            break
+        sanitized = sanitized[len(sentence):].lstrip()
+        if not sanitized:
+            break
+
+    sanitized = re.sub(r"\n{3,}", "\n\n", sanitized).strip()
+    return sanitized
+
+
 def write_fallback(
     reviewer: str, error: str, verdict: str = "FAIL", confidence: float = 0.0,
     summary: str | None = None, raw_review: str | None = None,
@@ -120,7 +176,9 @@ def write_fallback(
         },
     }
     if raw_review:
-        fallback["raw_review"] = raw_review[:50000]
+        sanitized_raw_review = sanitize_raw_review(raw_review)
+        if sanitized_raw_review:
+            fallback["raw_review"] = sanitized_raw_review[:50000]
     print(json.dumps(fallback, indent=2, sort_keys=False))
     sys.exit(0)
 
@@ -857,6 +915,7 @@ def main() -> None:
             print("parse-review: no ```json block found", file=sys.stderr)
 
             raw_text = raw.strip()
+            sanitized_text = sanitize_raw_review(raw_text)
 
             # The model sometimes exits 0 but produces empty/non-JSON output.
             # Check if it's a scratchpad (has investigation notes or verdict header)
@@ -880,12 +939,12 @@ def main() -> None:
                                }])
 
             # Substantive raw text exists — upgrade to WARN so the review is visible.
-            if len(raw_text) > 500:
-                summary = extract_review_summary(raw_text)
+            if len(sanitized_text) > 500:
+                summary = extract_review_summary(sanitized_text)
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict="WARN", confidence=0.3,
                                summary=summary or f"{PARSE_FAILURE_PREFIX}no ```json block found",
-                               raw_review=raw_text,
+                               raw_review=sanitized_text,
                                findings=[{
                                    "severity": "info",
                                    "category": "parse-failure",
@@ -903,7 +962,7 @@ def main() -> None:
                 verdict="SKIP",
                 confidence=0.0,
                 summary=f"{PARSE_FAILURE_PREFIX}no ```json block found",
-                raw_review=raw_text if raw_text else None,
+                raw_review=sanitized_text if sanitized_text else None,
             )
 
         try:
