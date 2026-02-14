@@ -284,18 +284,21 @@ extract_diff_files() {
 }
 
 # Check if output contains a valid JSON block for parse-review.py.
-# Matches the same patterns parse-review.py accepts: ```json on its own
-# line, optional blank lines, then a line starting with {.
+# Matches the same patterns parse-review.py accepts:
+#   ```json\s*{...}\s*```  (DOTALL)
+# Handles JSON on the same line as ```json or on subsequent lines.
 # Returns 0 if valid JSON block found, 1 otherwise.
 has_valid_json_block() {
   local file="$1"
   if [[ ! -f "$file" ]] || [[ ! -s "$file" ]]; then
     return 1
   fi
-  # Use awk for a multi-line scan: after seeing ```json, skip blanks,
-  # then check for a line starting with {.
   awk '
-    /^```json/ { in_block=1; next }
+    /^```json/ {
+      # Check for JSON on the same line (e.g., ```json{"key":"val"})
+      if (/```json[[:space:]]*\{/) { found=1; exit }
+      in_block=1; next
+    }
     in_block && /^[[:space:]]*$/ { next }
     in_block && /^[[:space:]]*\{/ { found=1; exit }
     in_block { in_block=0 }
@@ -452,8 +455,14 @@ for model in "${models[@]}"; do
   advance_to_next_model=false
 
   while true; do
+    remaining_budget="$(get_remaining_timeout "$review_start_time" "$primary_timeout")"
+    if [[ "$remaining_budget" -eq 0 ]]; then
+      echo "Timeout budget exhausted before attempt — treating as timeout."
+      exit_code=124  # same as timeout(1) expiry
+      break
+    fi
     set +e
-    run_opencode "${model}" "$(get_remaining_timeout "$review_start_time" "$primary_timeout")"
+    run_opencode "${model}" "$remaining_budget"
     exit_code=$OPENCODE_EXIT_CODE
     set -e
 
