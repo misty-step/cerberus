@@ -1,0 +1,81 @@
+name: Eval - Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'evals/**'
+      - 'templates/**'
+      - '.opencode/agents/**'
+  workflow_dispatch:
+
+jobs:
+  smoke-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Promptfoo
+        run: npm install -g promptfoo
+
+      - name: Run smoke eval
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          promptfoo eval --config evals/promptfooconfig.yaml \
+            --no-cache \
+            --max-concurrency 3 \
+            2>&1 | tee evals/results/smoke-output.txt
+
+      - name: Check pass rate
+        run: |
+          # Extract pass rate from output
+          PASS_RATE=$(grep -oP '\d+(?=%)' evals/results/smoke-output.txt | head -1 || echo "0")
+          echo "Pass rate: $PASS_RATE%"
+          
+          if [ "$PASS_RATE" -lt 80 ]; then
+            echo "❌ Smoke eval failed: $PASS_RATE% < 80% threshold"
+            exit 1
+          fi
+          echo "✅ Smoke eval passed: $PASS_RATE% >= 80%"
+
+      - name: Post results as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('evals/results/smoke-output.txt', 'utf8');
+            
+            // Extract summary
+            const passMatch = output.match(/(\d+)%/);
+            const passRate = passMatch ? passMatch[1] : 'unknown';
+            
+            const body = `## 🤖 Cerberus Smoke Eval Results
+            
+            **Pass Rate:** ${passRate}%
+            **Threshold:** 80%
+            
+            ${output.slice(-2000)}
+            
+            *(Full results: evals/results/smoke-output.txt)*
+            `;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-eval-results
+          path: evals/results/
+          retention-days: 30
