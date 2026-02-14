@@ -89,7 +89,7 @@ Optional finding fields:
 
 Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
-- `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Present in fallback/partial verdicts so the council comment can surface the raw analysis.
+- `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Stored in fallback/partial verdicts for debugging via workflow logs/artifacts (not rendered in PR comments).
 
 ## OpenCode CLI
 

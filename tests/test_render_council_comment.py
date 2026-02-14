@@ -95,10 +95,11 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert "## ❌ Council Verdict: FAIL" in body
     assert "**Summary:** 1/2 reviewers passed. 1 failed (VULCAN)." in body
     assert "**Review Scope:** 7 files changed, +120 / -44 lines" in body
-    assert "### Reviewer Details" in body
-    assert "<details>" in body
-    assert "`src/service.py:42`" in body
-    assert "runtime 1m 5s" in body
+    assert "### Reviewer Overview" in body
+    assert "VULCAN" in body
+    assert "runtime `1m 5s`" in body
+    assert "Reviewer details (click to expand)" in body
+    assert "blob/abcdef1234567890/src/service.py#L42" in body
     assert "/council override sha=abcdef123456" in body
 
 
@@ -150,7 +151,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
     assert "[#12345](https://github.com/misty-step/cerberus/actions/runs/12345)" in body
 
 
-def test_renders_raw_review_in_collapsible_block(tmp_path: Path) -> None:
+def test_raw_review_is_omitted_and_note_is_present(tmp_path: Path) -> None:
     council = {
         "verdict": "WARN",
         "summary": "1 reviewer warned.",
@@ -174,9 +175,9 @@ def test_renders_raw_review_in_collapsible_block(tmp_path: Path) -> None:
     code, body, err = run_render(tmp_path, council)
 
     assert code == 0, err
-    assert "Full review output (click to expand)" in body
-    assert "Investigation Notes" in body
-    assert "Found minor issue in main.py" in body
+    assert "produced unstructured output" in body
+    assert "Raw output is preserved" in body
+    assert "Investigation Notes" not in body
 
 
 def test_no_raw_review_block_when_absent(tmp_path: Path) -> None:
@@ -203,6 +204,7 @@ def test_no_raw_review_block_when_absent(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "Full review output" not in body
+    assert "Reviewer details (click to expand)" not in body
 
 
 def test_increased_truncation_limits(tmp_path: Path) -> None:
@@ -273,9 +275,8 @@ def test_renders_model_in_reviewer_details(tmp_path: Path) -> None:
     code, body, err = run_render(tmp_path, council)
 
     assert code == 0, err
-    # Model should appear in summary line and details
+    # Model should appear in reviewer overview
     assert "model `kimi-k2.5`" in body
-    assert "- Model: `kimi-k2.5`" in body
 
 
 def test_renders_fallback_model_indicator(tmp_path: Path) -> None:
@@ -351,25 +352,37 @@ def test_renders_override_details_when_present(tmp_path: Path) -> None:
 
 
 def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
-    """Comments exceeding MAX_COMMENT_SIZE strip raw_review and add a note."""
-    huge_raw = "x" * 70000  # Well over the 60K limit
+    """Comments exceeding MAX_COMMENT_SIZE truncate reviewer details and add a note."""
+    huge_summary = "x" * 70000
     council = {
         "verdict": "WARN",
         "summary": "1 reviewer warned.",
         "reviewers": [
-            {
-                "reviewer": "APOLLO",
-                "perspective": "correctness",
-                "verdict": "WARN",
-                "confidence": 0.3,
-                "summary": "Partial review.",
-                "runtime_seconds": 45,
-                "findings": [],
-                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
-                "raw_review": huge_raw,
-            },
+            *[
+                {
+                    "reviewer": f"R{i}",
+                    "perspective": "correctness",
+                    "verdict": "WARN",
+                    "confidence": 0.3,
+                    "summary": huge_summary,
+                    "runtime_seconds": 45,
+                    "findings": [
+                        {
+                            "severity": "minor",
+                            "category": "test",
+                            "file": f"src/file{i}.py",
+                            "line": 1,
+                            "title": f"Finding {i}",
+                            "description": "desc",
+                            "suggestion": "sugg",
+                        }
+                    ],
+                    "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                }
+                for i in range(40)
+            ],
         ],
-        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "stats": {"total": 40, "pass": 0, "warn": 40, "fail": 0, "skip": 0},
         "override": {"used": False},
     }
 
@@ -377,39 +390,10 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert len(body) < 65536, f"Comment is {len(body)} bytes, should be under 65536"
-    assert "Raw review output was omitted" in body
-    assert "Full review output" not in body  # raw_review block should be gone
+    assert "Comment was truncated" in body
+    assert "Reviewer details (click to expand)" not in body
     # Structural content should still be present
     assert "## ⚠️ Council Verdict: WARN" in body
-    assert "### Reviewer Details" in body
-
-
-def test_under_limit_comment_keeps_raw_review(tmp_path: Path) -> None:
-    """Comments under MAX_COMMENT_SIZE keep raw_review blocks."""
-    small_raw = "Short review output."
-    council = {
-        "verdict": "WARN",
-        "summary": "1 reviewer warned.",
-        "reviewers": [
-            {
-                "reviewer": "APOLLO",
-                "perspective": "correctness",
-                "verdict": "WARN",
-                "confidence": 0.3,
-                "summary": "Partial review.",
-                "runtime_seconds": 45,
-                "findings": [],
-                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
-                "raw_review": small_raw,
-            },
-        ],
-        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
-        "override": {"used": False},
-    }
-
-    code, body, err = run_render(tmp_path, council)
-
-    assert code == 0, err
-    assert "Full review output (click to expand)" in body
-    assert small_raw in body
-    assert "Raw review output was omitted" not in body
+    assert "### Reviewer Overview" in body
+    assert "### Key Findings" in body
+    assert body.count("**Finding ") == 5
