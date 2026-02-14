@@ -30,6 +30,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
+          mkdir -p evals/results
           promptfoo eval --config evals/promptfooconfig.yaml \
             --no-cache \
             --max-concurrency 5 \

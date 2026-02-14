@@ -39,7 +39,6 @@ prompts:
       ```json
       {"verdict": "FAIL", "findings": [{"severity": "critical|major|minor", "category": "{{perspective}}", "file": "FILE", "line": LINE, "title": "TITLE", "description": "DESC"}], "summary": "SUMMARY"}
       ```
-      ```
 
 # Model providers - use OpenRouter
 providers:
@@ -64,7 +63,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "output.findings && output.findings.some(f => f.category === 'security' || f.title.toLowerCase().includes('sql') || f.description.toLowerCase().includes('injection'))"
+        value: "output.findings && output.findings.some(f => f.category === 'security' || (f.title || '').toLowerCase().includes('sql') || (f.description || '').toLowerCase().includes('injection'))"
 
   - description: "Security - Hardcoded Secret"
     vars:
@@ -172,7 +171,7 @@ tests:
       perspective: "correctness"
       diff: |
         -  if (user && user.isAdmin || user.isOwner) {
-        +  if ((user && user.isAdmin) || user.isOwner) {
+        +  if (user && (user.isAdmin || user.isOwner)) {
     assert:
       - type: javascript
         value: "output.verdict === 'PASS'"
@@ -500,7 +499,7 @@ tests:
       perspective: "testing"
       diff: |
         +test('fetchUser', async () => {
-        +  jest.spyOn(fetch, ').mockResolvedValue({ json: () => ({ name: 'John' }) });
+        +  jest.spyOn(global, 'fetch').mockResolvedValue({ json: () => ({ name: 'John' }) });
         +  expect(await fetchUser(1)).toEqual({ name: 'John' });
         +});
     assert:
@@ -562,7 +561,7 @@ tests:
 outputPath: evals/results/latest.json
 shareResults: false
 
-# Options
+# Default test options
 defaultTest:
   options:
-    output: json
+    transform: "JSON.parse(output)"

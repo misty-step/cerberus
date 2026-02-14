@@ -27,6 +27,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
+          mkdir -p evals/results
           promptfoo eval --config evals/promptfooconfig.yaml \
             --no-cache \
             --max-concurrency 3 \
@@ -56,22 +57,39 @@ jobs:
             const passMatch = output.match(/(\d+)%/);
             const passRate = passMatch ? passMatch[1] : 'unknown';
             
-            const body = `## 🤖 Cerberus Smoke Eval Results
-            
+            const marker = '<!-- cerberus:smoke-eval -->';
+            const body = `${marker}\n## 🤖 Cerberus Smoke Eval Results
+
             **Pass Rate:** ${passRate}%
             **Threshold:** 80%
-            
+
             ${output.slice(-2000)}
-            
+
             *(Full results: evals/results/smoke-output.txt)*
             `;
-            
-            await github.rest.issues.createComment({
+
+            const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: body
             });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                comment_id: existing.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
