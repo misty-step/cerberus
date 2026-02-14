@@ -277,7 +277,8 @@ def generate_quality_report(
     for model, stats in model_stats.items():
         count = stats["count"]
         runtimes = stats.pop("runtimes")
-        stats["avg_runtime_seconds"] = stats["total_runtime_seconds"] / count if count > 0 else 0
+        runtime_count = len(runtimes)
+        stats["avg_runtime_seconds"] = stats["total_runtime_seconds"] / runtime_count if runtime_count > 0 else 0
         stats["median_runtime_seconds"] = statistics.median(runtimes) if runtimes else 0
         stats["skip_rate"] = stats["verdicts"]["SKIP"] / count if count > 0 else 0
         stats["parse_failure_rate"] = stats["parse_failures"] / count if count > 0 else 0
@@ -286,7 +287,11 @@ def generate_quality_report(
     # Verdict distribution
     verdict_distribution = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
     for v in verdicts:
-        verdict_distribution[v["verdict"]] += 1
+        vd = v["verdict"]
+        if vd in verdict_distribution:
+            verdict_distribution[vd] += 1
+        else:
+            verdict_distribution[vd] = 1
 
     report = {
         "meta": {

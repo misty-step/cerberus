@@ -90,26 +90,27 @@ def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
     return artifacts
 
 
-def download_artifact(repo: str, artifact_id: int, output_dir: Path) -> tuple[int, Path | None]:
-    """Download an artifact to the specified directory.
-    
-    Returns tuple of (artifact_id, path_or_none).
+def download_artifact(repo: str, run_id: int, output_dir: Path) -> tuple[int, Path | None]:
+    """Download a quality report artifact for a given run.
+
+    Returns tuple of (run_id, path_or_none).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_gh([
             "run", "download",
             "--repo", repo,
-            str(artifact_id),
+            str(run_id),
+            "--name", "cerberus-quality-report",
             "--dir", str(output_dir),
         ])
         # Find the downloaded quality-report.json
         report_path = output_dir / "quality-report.json"
         if report_path.exists():
-            return (artifact_id, report_path)
-    except SystemExit:
+            return (run_id, report_path)
+    except GHError:
         pass
-    return (artifact_id, None)
+    return (run_id, None)
 
 
 def load_quality_reports(artifact_dir: Path) -> list[dict]:
@@ -290,7 +291,7 @@ def main() -> int:
             def download_with_meta(artifact: dict) -> tuple[dict, Path | None]:
                 """Download artifact and return (artifact_meta, path)."""
                 artifact_dir = tmp_path / f"run-{artifact['run_id']}"
-                _, report_path = download_artifact(args.repo, artifact["artifact_id"], artifact_dir)
+                _, report_path = download_artifact(args.repo, artifact["run_id"], artifact_dir)
                 return (artifact, report_path)
 
             reports = []
