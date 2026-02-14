@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import statistics
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -211,7 +213,7 @@ def generate_quality_report(
                 "repo": repo,
                 "pr_number": pr_number,
                 "head_sha": head_sha,
-                "generated_at": Path("/tmp").stat().st_mtime if Path("/tmp").exists() else None,
+                "generated_at": time.time(),
             },
             "summary": {
                 "total_reviewers": 0,
@@ -260,8 +262,10 @@ def generate_quality_report(
                 "parse_failures": 0,
             }
         model_stats[model]["count"] += 1
-        model_stats[model]["verdicts"][v["verdict"]] += 1
-        if v.get("runtime_seconds"):
+        vd = v["verdict"]
+        if vd in model_stats[model]["verdicts"]:
+            model_stats[model]["verdicts"][vd] += 1
+        if v.get("runtime_seconds") is not None:
             model_stats[model]["total_runtime_seconds"] += v["runtime_seconds"]
             model_stats[model]["runtimes"].append(v["runtime_seconds"])
         if v.get("fallback_used"):
@@ -274,7 +278,7 @@ def generate_quality_report(
         count = stats["count"]
         runtimes = stats.pop("runtimes")
         stats["avg_runtime_seconds"] = stats["total_runtime_seconds"] / count if count > 0 else 0
-        stats["median_runtime_seconds"] = sorted(runtimes)[len(runtimes) // 2] if runtimes else 0
+        stats["median_runtime_seconds"] = statistics.median(runtimes) if runtimes else 0
         stats["skip_rate"] = stats["verdicts"]["SKIP"] / count if count > 0 else 0
         stats["parse_failure_rate"] = stats["parse_failures"] / count if count > 0 else 0
         stats["fallback_rate"] = stats["fallback_count"] / count if count > 0 else 0
@@ -289,7 +293,7 @@ def generate_quality_report(
             "repo": repo,
             "pr_number": pr_number,
             "head_sha": head_sha,
-            "generated_at": Path("/tmp").stat().st_mtime if Path("/tmp").exists() else None,
+            "generated_at": time.time(),
         },
         "summary": {
             "total_reviewers": total,

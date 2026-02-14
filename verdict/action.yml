@@ -135,7 +135,7 @@ runs:
           --body-file /tmp/council-comment.md
 
     - name: Upload quality report artifact
-      if: steps.aggregate.outcome == 'success'
+      if: always() && steps.aggregate.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-quality-report

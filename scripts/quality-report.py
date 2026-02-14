@@ -13,22 +13,25 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from pathlib import Path
-from typing import Any
+
+
+class GHError(Exception):
+    """Raised when a gh CLI command fails."""
 
 
 def run_gh(args: list[str]) -> str:
     """Run gh CLI and return stdout."""
     result = subprocess.run(
-        ["gh"] + args,
+        ["gh", *args],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         print(f"gh error: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
+        raise GHError(result.stderr)
     return result.stdout
 
 
@@ -67,7 +70,7 @@ def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
                         "artifact_id": artifact["databaseId"],
                         "created_at": run.get("createdAt"),
                     })
-        except SystemExit:
+        except GHError:
             pass
         return artifacts
 
@@ -126,19 +129,6 @@ def aggregate_reports(reports: list[dict]) -> dict:
     if not reports:
         return {"error": "No quality reports found"}
 
-    # Sort reports by generated_at to ensure chronological order for date range
-    def parse_generated_at(report: dict) -> datetime:
-        """Parse generated_at timestamp for sorting."""
-        ts = report.get("meta", {}).get("generated_at")
-        if ts:
-            try:
-                return datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                pass
-        return datetime.min
-    
-    reports_sorted = sorted(reports, key=parse_generated_at)
-    
     total_runs = len(reports)
     total_reviewers = sum(r.get("summary", {}).get("total_reviewers", 0) for r in reports)
     total_skips = sum(r.get("summary", {}).get("skip_count", 0) for r in reports)
@@ -168,8 +158,11 @@ def aggregate_reports(reports: list[dict]) -> dict:
             ms["total_count"] += count
             for v in ["PASS", "WARN", "FAIL", "SKIP"]:
                 ms["verdicts"][v] += stats.get("verdicts", {}).get(v, 0)
-            ms["total_runtime_seconds"] += stats.get("total_runtime_seconds", 0)
-            ms["runtime_count"] += count
+            runtime_total = stats.get("total_runtime_seconds", 0)
+            ms["total_runtime_seconds"] += runtime_total
+            # Only count reviews that contributed runtime data
+            if runtime_total > 0:
+                ms["runtime_count"] += count
             ms["fallback_count"] += stats.get("fallback_count", 0)
             ms["parse_failures"] += stats.get("parse_failures", 0)
 
@@ -199,12 +192,18 @@ def aggregate_reports(reports: list[dict]) -> dict:
     # Rank models by success rate (descending), then by avg runtime (ascending)
     model_summaries.sort(key=lambda x: (-x["success_rate"], x["avg_runtime_seconds"]))
 
+    timestamps = [
+        r.get("meta", {}).get("generated_at")
+        for r in reports
+        if r.get("meta", {}).get("generated_at") is not None
+    ]
+
     return {
         "meta": {
             "total_runs_analyzed": total_runs,
             "date_range": {
-                "from": reports_sorted[0].get("meta", {}).get("generated_at") if reports_sorted else None,
-                "to": reports_sorted[-1].get("meta", {}).get("generated_at") if reports_sorted else None,
+                "from": min(timestamps) if timestamps else None,
+                "to": max(timestamps) if timestamps else None,
             },
         },
         "summary": {
@@ -281,7 +280,6 @@ def main() -> int:
         reports = load_quality_reports(args.artifact_dir)
     elif args.repo:
         # Fetch from GitHub
-        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             print(f"Fetching artifacts from {args.repo} (last {args.last} runs)...", file=sys.stderr)
