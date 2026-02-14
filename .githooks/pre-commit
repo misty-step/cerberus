@@ -99,7 +99,7 @@ for path in sys.argv[1:]:
 
 sys.exit(1 if failed else 0)
 PY
-            ; then
+            then
                 errors=$((errors + 1))
             fi
         fi
@@ -135,7 +135,7 @@ for path in sys.argv[1:]:
 
 sys.exit(1 if failed else 0)
 PY
-        ; then
+        then
             errors=$((errors + 1))
         fi
     fi
