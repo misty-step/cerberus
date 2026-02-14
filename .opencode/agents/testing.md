@@ -60,6 +60,9 @@ Anti-Patterns (Do Not Flag)
 - Test framework choice or tooling preferences
 - Documentation or comment quality in tests
 - Test-only PRs with adequate coverage: if the diff contains ONLY test files with meaningful assertions, PASS with summary "Test additions with adequate coverage." and empty findings.
+- Files in .github/workflows/ directory (CI/CD configs are not unit-testable)
+- Files in evals/ directory (eval configs are test definitions themselves)
+- Package.json, tsconfig.json, and other config files that don't contain runtime code
 
 Knowledge Boundaries
 Your training data has a cutoff date. You WILL encounter valid code that post-dates your knowledge:
