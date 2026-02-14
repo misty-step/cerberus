@@ -50,7 +50,7 @@ class TestPreCommitHook:
         
         # Copy hooks
         githooks = Path(".githooks")
-        shutil.copytree(githooks, repo / ".git" / "hooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
         
         # Create a shell script with error
         script = repo / "scripts" / "test.sh"
@@ -78,7 +78,7 @@ class TestPreCommitHook:
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
         
         githooks = Path(".githooks")
-        shutil.copytree(githooks, repo / ".git" / "hooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
         
         # Create a shell script with clear error (undefined variable without check)
         script = repo / "scripts" / "bad.sh"
@@ -104,7 +104,7 @@ class TestPreCommitHook:
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
         
         githooks = Path(".githooks")
-        shutil.copytree(githooks, repo / ".git" / "hooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
         
         # Create a valid Python file
         script = repo / "scripts" / "test.py"
@@ -130,7 +130,7 @@ class TestPreCommitHook:
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
         
         githooks = Path(".githooks")
-        shutil.copytree(githooks, repo / ".git" / "hooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
         
         # Create Python file with syntax error
         script = repo / "scripts" / "bad.py"
@@ -160,7 +160,7 @@ class TestPrePushHook:
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
         
         githooks = Path(".githooks")
-        shutil.copytree(githooks, repo / ".git" / "hooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
         
         # Create a simple file to commit
         readme = repo / "README.md"
