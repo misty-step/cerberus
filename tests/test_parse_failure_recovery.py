@@ -145,8 +145,10 @@ class TestParseFailureRecovery:
             timeout=60,
         )
 
-        # Should succeed because recovery eventually gets valid JSON
+        # Script completes successfully; recovery was attempted
         assert result.returncode == 0
+        assert "Parse failure detected" in result.stdout
+        assert "Parse recovery retry" in result.stdout
 
     def test_recovery_exhaustion_writes_metadata(self, tmp_path: Path) -> None:
         """If all recovery attempts fail, metadata files are written."""

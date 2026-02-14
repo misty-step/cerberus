@@ -26,6 +26,8 @@ cerberus_cleanup() {
   # for downstream steps (same as primary output.txt and review.md).
   rm -f "/tmp/${perspective}-fast-path-stderr.log" || true
   # Note: model-used is NOT cleaned here — downstream steps read it.
+  # Note: parse-failure-models.txt and parse-failure-retries.txt are NOT
+  # cleaned here — parse-review.py reads them to enrich SKIP verdicts.
   rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
   if [[ -z "$cerberus_staging_backup_dir" ]]; then
@@ -281,21 +283,52 @@ extract_diff_files() {
     || true
 }
 
-# Check if output contains a valid JSON block for parse-review.py
-# Returns 0 if valid JSON block found, 1 otherwise
+# Check if output contains a valid JSON block for parse-review.py.
+# Matches the same patterns parse-review.py accepts: ```json on its own
+# line, optional blank lines, then a line starting with {.
+# Returns 0 if valid JSON block found, 1 otherwise.
 has_valid_json_block() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
+  if [[ ! -f "$file" ]] || [[ ! -s "$file" ]]; then
     return 1
   fi
-  # Look for ```json ... ``` pattern with content
-  if grep -qE '^```json\s*$' "$file" 2>/dev/null; then
-    # Check if there's actual JSON content (starts with {)
-    if grep -A1 '^```json\s*$' "$file" 2>/dev/null | grep -qE '^\s*\{'; then
-      return 0
-    fi
-  fi
-  return 1
+  # Use awk for a multi-line scan: after seeing ```json, skip blanks,
+  # then check for a line starting with {.
+  awk '
+    /^```json/ { in_block=1; next }
+    in_block && /^[[:space:]]*$/ { next }
+    in_block && /^[[:space:]]*\{/ { found=1; exit }
+    in_block { in_block=0 }
+    END { exit !found }
+  ' "$file" 2>/dev/null
+}
+
+# Run opencode in a sanitized environment.  Only explicitly-allowed variables
+# are forwarded.  This prevents the model/CLI from seeing GITHUB_TOKEN,
+# GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other secrets that leak via the
+# Actions runner environment.
+# Usage: run_opencode <model> <timeout_seconds>
+# Sets: OPENCODE_EXIT_CODE
+run_opencode() {
+  local _model="$1"
+  local _timeout="$2"
+
+  env -i \
+    PATH="${PATH}" \
+    HOME="${CERBERUS_ISOLATED_HOME}" \
+    XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
+    XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
+    TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
+    OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+    OPENCODE_DISABLE_AUTOUPDATE=true \
+    ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
+    ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
+  timeout "${_timeout}" opencode run \
+    -m "${_model}" \
+    --agent "${perspective}" \
+    < "/tmp/${perspective}-review-prompt.md" \
+    > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
+  OPENCODE_EXIT_CODE=$?
 }
 
 # API error patterns to detect
@@ -382,19 +415,19 @@ default_backoff_seconds() {
   esac
 }
 
-# Calculate remaining timeout budget given the start time and original timeout
+# Calculate remaining timeout budget given the start time and original timeout.
+# Returns 0 when budget is exhausted (caller should skip the operation).
 get_remaining_timeout() {
   local start_time="$1"
   local original_timeout="$2"
-  local min_timeout=30
 
   local current_time
   current_time=$(date +%s)
   local elapsed=$((current_time - start_time))
   local remaining=$((original_timeout - elapsed))
 
-  if [[ $remaining -lt $min_timeout ]]; then
-    remaining=$min_timeout
+  if [[ $remaining -le 0 ]]; then
+    remaining=0
   fi
   echo "$remaining"
 }
@@ -420,26 +453,8 @@ for model in "${models[@]}"; do
 
   while true; do
     set +e
-    # Run opencode with a sanitized environment.  Only explicitly-allowed
-    # variables are forwarded.  This prevents the model/CLI from seeing
-    # GITHUB_TOKEN, GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other
-    # secrets that leak via the Actions runner environment.
-    env -i \
-      PATH="${PATH}" \
-      HOME="${CERBERUS_ISOLATED_HOME}" \
-      XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
-      XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
-      TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
-      OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-      OPENCODE_DISABLE_AUTOUPDATE=true \
-      ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
-      ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-    timeout "$(get_remaining_timeout "$review_start_time" "$primary_timeout")" opencode run \
-      -m "${model}" \
-      --agent "${perspective}" \
-      < "/tmp/${perspective}-review-prompt.md" \
-      > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
-    exit_code=$?
+    run_opencode "${model}" "$(get_remaining_timeout "$review_start_time" "$primary_timeout")"
+    exit_code=$OPENCODE_EXIT_CODE
     set -e
 
     # Always dump diagnostics for CI visibility
@@ -531,66 +546,44 @@ parse_failure_models_attempted=()
 stdout_file="/tmp/${perspective}-output.txt"
 scratchpad="/tmp/${perspective}-review.md"
 
-# Build list of models to try for parse-failure recovery (primary + fallbacks)
-parse_recovery_models=()
-for m in "${models[@]}"; do
-  parse_recovery_models+=("$m")
-done
-
 # Check if we need parse-failure recovery (exit 0 but no valid JSON)
 if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
   echo "Parse failure detected: no valid JSON block in output. Attempting recovery retries..."
 
-  for pf_model in "${parse_recovery_models[@]}"; do
+  for pf_model in "${models[@]}"; do
     # Skip if we already have valid JSON
     if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
       echo "Parse recovery: valid JSON found after retry."
       break
     fi
 
+    # Skip if timeout budget is exhausted
+    pf_remaining="$(get_remaining_timeout "$review_start_time" "$primary_timeout")"
+    if [[ "$pf_remaining" -eq 0 ]]; then
+      echo "Parse recovery: timeout budget exhausted, skipping remaining models."
+      break
+    fi
+
     parse_failure_models_attempted+=("$pf_model")
+    parse_failure_retries=$((parse_failure_retries + 1))
+    echo "Parse recovery retry ${parse_failure_retries}: model=${pf_model}"
 
-    # Retry once per model for parse failures (not the full max_retries)
-    for pf_attempt in 1; do
+    set +e
+    run_opencode "${pf_model}" "${pf_remaining}"
+    pf_exit_code=$OPENCODE_EXIT_CODE
+    set -e
+
+    output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
+    echo "Parse recovery exit=$pf_exit_code stdout=${output_size} bytes model=${pf_model}"
+
+    if [[ "$pf_exit_code" -eq 0 ]] && [[ "$output_size" -gt 0 ]]; then
       if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
-        break 2
+        echo "Parse recovery successful: valid JSON block found."
+        model_used="$pf_model"
+        exit_code=0
+        break
       fi
-
-      parse_failure_retries=$((parse_failure_retries + 1))
-      echo "Parse recovery retry ${parse_failure_retries}: model=${pf_model} (attempt ${pf_attempt}/1)"
-
-      set +e
-      env -i \
-        PATH="${PATH}" \
-        HOME="${CERBERUS_ISOLATED_HOME}" \
-        XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
-        XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
-        TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
-        OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-        OPENCODE_DISABLE_AUTOUPDATE=true \
-        ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
-        ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-      timeout "$(get_remaining_timeout "$review_start_time" "$primary_timeout")" opencode run \
-        -m "${pf_model}" \
-        --agent "${perspective}" \
-        < "/tmp/${perspective}-review-prompt.md" \
-        > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
-      pf_exit_code=$?
-      set -e
-
-      output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
-      echo "Parse recovery exit=$pf_exit_code stdout=${output_size} bytes model=${pf_model}"
-
-      if [[ "$pf_exit_code" -eq 0 ]] && [[ "$output_size" -gt 0 ]]; then
-        # Check if we now have valid JSON
-        if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
-          echo "Parse recovery successful: valid JSON block found."
-          model_used="$pf_model"
-          exit_code=0
-          break 2
-        fi
-      fi
-    done
+    fi
   done
 
   # If we still don't have valid JSON after all retries, record failure metadata

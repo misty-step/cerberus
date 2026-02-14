@@ -997,15 +997,18 @@ def main() -> None:
                 summary_parts.append(f"Models tried: {models_str}")
             skip_summary = " ".join(summary_parts)
 
-            skip_findings = [{
-                "severity": "info",
-                "category": "parse-failure",
-                "file": "N/A",
-                "line": 0,
-                "title": "Review output could not be parsed",
-                "description": "Reviewer produced output without a structured JSON block after retries. See raw review for details.",
-                "suggestion": "No action needed; review content is preserved in the raw output section.",
-            }]
+            # Only attach a finding when retries were actually attempted.
+            skip_findings: list[dict[str, object]] | None = None
+            if pf_meta.get("retry_count") is not None:
+                skip_findings = [{
+                    "severity": "info",
+                    "category": "parse-failure",
+                    "file": "N/A",
+                    "line": 0,
+                    "title": "Review output could not be parsed",
+                    "description": "Reviewer produced output without a structured JSON block after retries. See raw review for details.",
+                    "suggestion": "No action needed; review content is preserved in the raw output section.",
+                }]
 
             write_fallback(
                 REVIEWER_NAME,
