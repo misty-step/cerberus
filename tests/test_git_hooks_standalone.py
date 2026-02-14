@@ -154,7 +154,7 @@ def test_contributing_mentions_hooks():
     print("✓ test_contributing_mentions_hooks passed")
 
 if __name__ == "__main__":
-    os.chdir("/tmp/cerberus")
+    os.chdir(Path(__file__).parent.parent)
     
     tests = [
         test_setup_script_exists,
