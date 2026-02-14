@@ -102,6 +102,14 @@ or:
 python -m pytest tests/ -v
 ```
 
+### Coverage
+
+CI enforces a minimum coverage threshold (see `.coveragerc`). Run locally:
+
+```bash
+COVERAGE=1 ./tests/run-tests.sh
+```
+
 ### Security Regression Tests (#56)
 
 ```bash

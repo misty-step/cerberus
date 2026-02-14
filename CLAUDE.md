@@ -104,17 +104,24 @@ Optional fields added by the pipeline:
 
 ```bash
 # Run test suite
-pip install pytest
+pip install pytest pytest-cov pyyaml
 python3 -m pytest tests/ -v
 
 # Or use the helper script
 ./tests/run-tests.sh
+
+# Run with coverage
+COVERAGE=1 ./tests/run-tests.sh
+# Or directly:
+python3 -m pytest tests/ --cov=scripts --cov-report=term-missing
 
 # Lint
 shellcheck scripts/*.sh
 python3 -m py_compile scripts/parse-review.py
 python3 -m py_compile scripts/aggregate-verdict.py
 ```
+
+Coverage is enforced in CI at 30% (see `.coveragerc`). Configuration: `pytest.ini`, `.coveragerc`.
 
 End-to-end testing requires pushing to a branch and having a target repo use `misty-step/cerberus@<branch>`. Current test target: `misty-step/moonbridge`.
 
