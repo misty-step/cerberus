@@ -9,6 +9,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 SHELLCHECK_AVAILABLE = shutil.which("shellcheck") is not None
+RUFF_AVAILABLE = shutil.which("ruff") is not None
 
 
 class TestHookInfrastructure:
@@ -248,6 +249,36 @@ class TestPreCommitHook:
         )
         assert result.returncode != 0, "pre-commit should fail on invalid JSON"
 
+    @pytest.mark.skipif(not RUFF_AVAILABLE, reason="ruff not installed")
+    def test_pre_commit_fails_on_ruff_errors(self, tmp_path):
+        """pre-commit must fail (blocking) when ruff finds lint errors."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+
+        githooks = REPO_ROOT / ".githooks"
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
+
+        # Create Python file with unused import (F401)
+        script = repo / "scripts" / "lint_fail.py"
+        script.parent.mkdir()
+        script.write_text("import os\nimport sys\nprint('hello')\n")
+
+        subprocess.run(["git", "add", "scripts/lint_fail.py"], cwd=repo, check=True)
+
+        result = subprocess.run(
+            [repo / ".git" / "hooks" / "pre-commit"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        combined = result.stdout + result.stderr
+        assert result.returncode != 0, \
+            f"pre-commit should fail when ruff finds errors, got: {combined}"
+        assert "ruff" in combined.lower(), "output should mention ruff"
+
 
 class TestSetupScript:
     """Test setup-hooks.sh installs hooks correctly."""
@@ -315,11 +346,17 @@ class TestPrePushHook:
         githooks = REPO_ROOT / ".githooks"
         shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
 
-        # Create a simple file to commit
+        # Create a minimal passing test so pytest succeeds and hook proceeds
+        (repo / "tests").mkdir()
+        (repo / "tests" / "test_ok.py").write_text("def test_pass():\n    assert True\n")
+        (repo / "scripts").mkdir()
         readme = repo / "README.md"
         readme.write_text("# Test")
-        subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "--no-verify", "-m", "init"],
+            cwd=repo, check=True, capture_output=True,
+        )
 
         # Run pre-push
         result = subprocess.run(
@@ -329,12 +366,55 @@ class TestPrePushHook:
             text=True
         )
         combined = (result.stdout + result.stderr).lower()
-        # Hook must identify itself and mention running checks
+        # Hook must identify itself and attempt each check phase
         assert "pre-push" in combined, "pre-push should identify itself"
-        assert "test" in combined or "pytest" in combined, \
-            "pre-push should mention running tests"
-        assert result.returncode in [0, 1], \
-            f"pre-push should exit 0 (pass) or 1 (fail), got {result.returncode}"
+        assert "running full test suite" in combined, \
+            "pre-push should attempt to run the test suite"
+        assert "shellcheck" in combined, \
+            "pre-push should attempt shellcheck"
+        assert "ruff" in combined, \
+            "pre-push should attempt ruff check"
+        assert result.returncode == 0, \
+            f"pre-push should pass on clean repo, got: {result.stdout + result.stderr}"
+
+    @pytest.mark.skipif(not SHELLCHECK_AVAILABLE, reason="shellcheck not installed")
+    def test_pre_push_blocks_on_shellcheck_failure(self, tmp_path):
+        """pre-push must block push when shellcheck finds errors."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+
+        githooks = REPO_ROOT / ".githooks"
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
+
+        # Need an initial commit with passing tests for pre-push to reach shellcheck
+        (repo / "scripts").mkdir()
+        (repo / "tests").mkdir()
+        (repo / "tests" / "test_ok.py").write_text("def test_pass():\n    assert True\n")
+        # Include a bad shell script that shellcheck will catch
+        bad_script = repo / "scripts" / "bad.sh"
+        bad_script.write_text("#!/bin/sh\necho $UNDEFINED_VAR\n")
+        readme = repo / "README.md"
+        readme.write_text("# Test")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "--no-verify", "-m", "init"],
+            cwd=repo, check=True, capture_output=True,
+        )
+
+        result = subprocess.run(
+            [repo / ".git" / "hooks" / "pre-push"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        combined = result.stdout + result.stderr
+        assert result.returncode != 0, \
+            f"pre-push should block on shellcheck failure, got: {combined}"
+        assert "shellcheck failed" in combined.lower(), \
+            "output should indicate shellcheck failure"
 
 
 class TestMakefile:

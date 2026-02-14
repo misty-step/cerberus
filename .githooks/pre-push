@@ -10,9 +10,12 @@ echo "🔍 Running pre-push checks..."
 start_time=$(date +%s)
 
 # Check 1: Run full pytest suite
-echo "  → Running full test suite (pytest -x --timeout=30)..."
+echo "  → Running full test suite..."
 if command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" 2>/dev/null; then
-    if python3 -m pytest tests/ -x --timeout=30 -q; then
+    timeout_flag=""
+    python3 -c "import pytest_timeout" 2>/dev/null && timeout_flag="--timeout=30"
+    # shellcheck disable=SC2086
+    if python3 -m pytest tests/ -x $timeout_flag -q; then
         echo "    ✓ All tests passed"
     else
         echo "    ✗ Tests failed - push blocked"
