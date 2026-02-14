@@ -1,7 +1,7 @@
 # Cerberus Makefile
 # Quality gates and common tasks
 
-.PHONY: setup test lint shellcheck help
+.PHONY: setup test lint shellcheck validate help
 
 # Default target
 help:
@@ -29,7 +29,7 @@ test:
 lint:
 	@if command -v ruff >/dev/null 2>&1; then \
 		echo "🔍 Running ruff..."; \
-		ruff check --select E,W,F --ignore E501 scripts/; \
+		ruff check scripts/ matrix/ tests/; \
 	else \
 		echo "⚠ ruff not installed. Install with: uv pip install ruff"; \
 		exit 1; \
@@ -39,7 +39,7 @@ lint:
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		echo "🔍 Running shellcheck..."; \
-		find scripts -name "*.sh" -type f -exec shellcheck {} +; \
+		find scripts tests -name "*.sh" -type f -exec shellcheck {} +; \
 	else \
 		echo "⚠ shellcheck not installed. Install with: brew install shellcheck (macOS) or apt install shellcheck (Linux)"; \
 		exit 1; \
