@@ -19,6 +19,7 @@ jobs:
           python3 -m py_compile scripts/parse-review.py
           python3 -m py_compile scripts/aggregate-verdict.py
           python3 -m py_compile scripts/triage.py
+          python3 -m py_compile matrix/generate-matrix.py
 
       - name: YAML validity
         run: |
@@ -32,9 +33,10 @@ jobs:
           "
 
       - name: Validate template parity
-        run: |
-          pip install pyyaml
-          tests/validate-template-parity.sh
+        run: tests/validate-template-parity.sh
+
+      - name: Validate matrix generation
+        run: tests/matrix/test-matrix-generation.sh
 
   test:
     runs-on: ubuntu-latest
