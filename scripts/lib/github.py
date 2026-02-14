@@ -27,10 +27,10 @@ def _is_transient_error(stderr: str) -> bool:
     transient_codes = ("502", "503", "504")
     lower_stderr = stderr.lower()
     # Handle both gh CLI format "(http 503)" and raw "HTTP 503" formats
-    for code in transient_codes:
-        if f"(http {code})" in lower_stderr or f"http {code}" in lower_stderr:
-            return True
-    return False
+    return any(
+        f"(http {code})" in lower_stderr or f"http {code}" in lower_stderr
+        for code in transient_codes
+    )
 
 
 def _run_gh(
@@ -56,8 +56,6 @@ def _run_gh(
         TransientGitHubError: GitHub API returned 5xx after all retries
         subprocess.CalledProcessError: Other gh CLI failures
     """
-    last_exception: subprocess.CalledProcessError | None = None
-
     for attempt in range(max_retries):
         result = subprocess.run(
             ["gh", *args], capture_output=True, text=True, check=False
@@ -80,9 +78,6 @@ def _run_gh(
 
         # Check for transient errors (5xx) and retry
         if _is_transient_error(result.stderr or ""):
-            last_exception = subprocess.CalledProcessError(
-                result.returncode, result.args, result.stdout, result.stderr
-            )
             if attempt < max_retries - 1:
                 # Exponential backoff with jitter: 1s, 2s, 4s + random jitter
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
@@ -107,10 +102,8 @@ def _run_gh(
             )
         return result
 
-    # Should not reach here, but satisfy type checker
-    if last_exception:
-        raise last_exception
-    return result
+    # The loop must either return or raise. This code should be unreachable.
+    raise RuntimeError("_run_gh retry loop exited unexpectedly")
 
 
 def fetch_comments(repo: str, pr_number: int) -> list[dict]:

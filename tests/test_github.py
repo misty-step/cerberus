@@ -310,7 +310,11 @@ class TestTransientErrorRetry:
         assert result.returncode == 0
         assert call_count == 3
 
-    def test_502_error_triggers_retry(self, monkeypatch):
+    @pytest.mark.parametrize("error_stderr", [
+        "gh: HTTP 502: Bad Gateway",
+        "gh: HTTP 504: Gateway Timeout",
+    ])
+    def test_5xx_error_triggers_retry(self, monkeypatch, error_stderr):
         call_count = 0
 
         def mock_subprocess_run(args, **kwargs):
@@ -321,33 +325,7 @@ class TestTransientErrorRetry:
                     args=args,
                     returncode=1,
                     stdout="",
-                    stderr="gh: HTTP 502: Bad Gateway",
-                )
-            return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout="ok", stderr=""
-            )
-
-        import lib.github as mod
-
-        monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
-        monkeypatch.setattr(mod.time, "sleep", lambda x: None)
-
-        result = mod._run_gh(["api", "repos/x/y/issues/1/comments"])
-        assert result.returncode == 0
-        assert call_count == 2
-
-    def test_504_error_triggers_retry(self, monkeypatch):
-        call_count = 0
-
-        def mock_subprocess_run(args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return subprocess.CompletedProcess(
-                    args=args,
-                    returncode=1,
-                    stdout="",
-                    stderr="gh: HTTP 504: Gateway Timeout",
+                    stderr=error_stderr,
                 )
             return subprocess.CompletedProcess(
                 args=args, returncode=0, stdout="ok", stderr=""
@@ -433,6 +411,12 @@ class TestTransientErrorHandlingInMain:
         body_file = tmp_path / "body.md"
         body_file.write_text("Test body")
 
+        monkeypatch.setattr(
+            "sys.argv",
+            ["prog", "--repo", "o/r", "--pr", "1", "--marker", "m",
+             "--body-file", str(body_file)],
+        )
+
         def mock_upsert(*args, **kwargs):
             import lib.github as mod
             raise mod.TransientGitHubError("HTTP 503 after retries")
@@ -452,6 +436,12 @@ class TestTransientErrorHandlingInMain:
     def test_permission_error_exits_with_error(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"
         body_file.write_text("Test body")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["prog", "--repo", "o/r", "--pr", "1", "--marker", "m",
+             "--body-file", str(body_file)],
+        )
 
         def mock_upsert(*args, **kwargs):
             raise CommentPermissionError("no permission")
