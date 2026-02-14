@@ -24,7 +24,7 @@ if command -v shellcheck >/dev/null 2>&1; then
     if [ -n "$sh_files" ]; then
         echo "  → Checking shell scripts with shellcheck..."
         # Check each staged shell script
-        for file in $sh_files; do
+        while IFS= read -r file; do
             if [ -f "$file" ]; then
                 if ! shellcheck "$file" 2>/dev/null; then
                     echo "    ✗ shellcheck failed: $file"
@@ -33,7 +33,7 @@ if command -v shellcheck >/dev/null 2>&1; then
                     echo "    ✓ $file"
                 fi
             fi
-        done
+        done <<< "$sh_files"
     fi
 else
     echo "  → shellcheck not installed, skipping shell script checks"
@@ -43,7 +43,7 @@ fi
 py_files=$(echo "$staged_files" | grep -E '^scripts/.*\.py$' || true)
 if [ -n "$py_files" ]; then
     echo "  → Checking Python syntax with py_compile..."
-    for file in $py_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
             if ! python3 -m py_compile "$file" 2>/dev/null; then
                 echo "    ✗ Syntax error in: $file"
@@ -52,11 +52,11 @@ if [ -n "$py_files" ]; then
                 echo "    ✓ $file"
             fi
         fi
-    done
-    
+    done <<< "$py_files"
+
     # Run ruff lint on Python files (if available)
     echo "  → Running ruff check (lint only)..."
-    for file in $py_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
             # Use ruff if available, otherwise skip
             if command -v ruff >/dev/null 2>&1; then
@@ -68,14 +68,14 @@ if [ -n "$py_files" ]; then
                 fi
             fi
         fi
-    done
+    done <<< "$py_files"
 fi
 
 # Check YAML files
 yaml_files=$(echo "$staged_files" | grep -E '\.(yml|yaml)$' || true)
 if [ -n "$yaml_files" ]; then
     echo "  → Checking YAML files..."
-    for file in $yaml_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
             # Basic YAML validation via python
             if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
@@ -85,14 +85,14 @@ if [ -n "$yaml_files" ]; then
                 echo "    ✓ $file"
             fi
         fi
-    done
+    done <<< "$yaml_files"
 fi
 
 # Check JSON files (specifically opencode.json)
 json_files=$(echo "$staged_files" | grep '\.json$' || true)
 if [ -n "$json_files" ]; then
     echo "  → Checking JSON files..."
-    for file in $json_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
             if ! python3 -c "import json; json.load(open('$file'))" 2>/dev/null; then
                 echo "    ✗ Invalid JSON: $file"
@@ -101,7 +101,7 @@ if [ -n "$json_files" ]; then
                 echo "    ✓ $file"
             fi
         fi
-    done
+    done <<< "$json_files"
 fi
 
 if [ $errors -gt 0 ]; then

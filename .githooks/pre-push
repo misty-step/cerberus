@@ -28,12 +28,12 @@ if command -v shellcheck >/dev/null 2>&1; then
     sh_scripts=$(find scripts -name "*.sh" -type f 2>/dev/null || true)
     if [ -n "$sh_scripts" ]; then
         sc_errors=0
-        for script in $sh_scripts; do
+        while IFS= read -r script; do
             if ! shellcheck "$script"; then
                 echo "    ✗ shellcheck failed: $script"
                 sc_errors=$((sc_errors + 1))
             fi
-        done
+        done <<< "$sh_scripts"
         if [ $sc_errors -gt 0 ]; then
             echo "    ✗ $sc_errors shell script(s) failed - push blocked"
             exit 1
