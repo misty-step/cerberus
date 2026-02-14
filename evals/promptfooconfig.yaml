@@ -283,11 +283,8 @@ tests:
     assert:
       - type: javascript
         value: "output.verdict === 'FAIL'"
-<<<<<<< HEAD
       - type: javascript
         value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('sync') || (f.title + f.description).toLowerCase().includes('blocking') || (f.title + f.description).toLowerCase().includes('file'))"
-=======
->>>>>>> c4bd43d (fix: stabilize eval transform and assertion checks)
 
   - description: "Performance - No Caching"
     vars:
@@ -421,10 +418,6 @@ tests:
       pr_body: "Set request timeout using named constant from config"
       perspective: "maintainability"
       diff: |
-<<<<<<< HEAD
-        +// Timeout value from API specification
-=======
->>>>>>> c4bd43d (fix: stabilize eval transform and assertion checks)
         +const REQUEST_TIMEOUT_MS = 5000;
         +fetch(url, { timeout: REQUEST_TIMEOUT_MS });
     assert:
