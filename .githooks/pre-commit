@@ -75,17 +75,34 @@ fi
 yaml_files=$(echo "$staged_files" | grep -E '\.(yml|yaml)$' || true)
 if [ -n "$yaml_files" ]; then
     if python3 -c "import yaml" 2>/dev/null; then
-        echo "  → Checking YAML files..."
+        yaml_to_check=()
         while IFS= read -r file; do
-            if [ -f "$file" ]; then
-                if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$file"; then
-                    echo "    ✗ Invalid YAML: $file"
-                    errors=$((errors + 1))
-                else
-                    echo "    ✓ $file"
-                fi
-            fi
+            [ -f "$file" ] && yaml_to_check+=("$file")
         done <<< "$yaml_files"
+
+        echo "  → Checking YAML files..."
+        if [ ${#yaml_to_check[@]} -gt 0 ]; then
+            if ! python3 - "${yaml_to_check[@]}" <<'PY'
+import sys
+import yaml
+
+failed = False
+
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            yaml.safe_load(f)
+        print(f"    ✓ {path}")
+    except Exception:
+        print(f"    ✗ Invalid YAML: {path}")
+        failed = True
+
+sys.exit(1 if failed else 0)
+PY
+            ; then
+                errors=$((errors + 1))
+            fi
+        fi
     else
         echo "  → PyYAML not installed, skipping YAML validation"
     fi
@@ -95,16 +112,33 @@ fi
 json_files=$(echo "$staged_files" | grep '\.json$' || true)
 if [ -n "$json_files" ]; then
     echo "  → Checking JSON files..."
+    json_to_check=()
     while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            if ! python3 -c "import sys, json; json.load(open(sys.argv[1]))" "$file"; then
-                echo "    ✗ Invalid JSON: $file"
-                errors=$((errors + 1))
-            else
-                echo "    ✓ $file"
-            fi
-        fi
+        [ -f "$file" ] && json_to_check+=("$file")
     done <<< "$json_files"
+
+    if [ ${#json_to_check[@]} -gt 0 ]; then
+        if ! python3 - "${json_to_check[@]}" <<'PY'
+import json
+import sys
+
+failed = False
+
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            json.load(f)
+        print(f"    ✓ {path}")
+    except Exception:
+        print(f"    ✗ Invalid JSON: {path}")
+        failed = True
+
+sys.exit(1 if failed else 0)
+PY
+        ; then
+            errors=$((errors + 1))
+        fi
+    fi
 fi
 
 if [ $errors -gt 0 ]; then
