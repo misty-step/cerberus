@@ -212,9 +212,10 @@ def fail(msg: str) -> NoReturn:
     print(f"parse-review: {msg}", file=sys.stderr)
     raw_text = RAW_INPUT.strip() if RAW_INPUT else None
     if is_scratchpad(RAW_INPUT):
-        md_verdict = extract_verdict_from_markdown(RAW_INPUT)
-        verdict = md_verdict or "WARN"
-        summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
+        # Treat unstructured (non-JSON) reviews as SKIP.
+        # A markdown "Verdict: FAIL" without machine-parseable findings is not actionable and is too flaky to gate merges.
+        verdict = "SKIP"
+        summary = "Partial review: reviewer output was unstructured (no JSON). Treating as SKIP; see workflow logs/artifacts for full output."
         write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3,
                        summary=summary, raw_review=raw_text or None,
                        findings=[{
