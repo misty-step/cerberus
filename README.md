@@ -97,6 +97,21 @@ Use `templates/triage-workflow.yml` to enable:
 - manual triage via PR comment: `/cerberus triage` (optional `mode=fix`)
 - scheduled triage for stale unresolved council failures
 
+## Fork PRs
+
+Cerberus supports both same-repo and fork PRs with appropriate security handling:
+
+### Same-Repo PRs
+Full review council runs with full access to the `OPENROUTER_API_KEY` secret.
+
+### Fork PRs
+- Fork PRs trigger the workflow but skip the review jobs
+- This is intentional: GitHub Actions secrets are **not available** to fork PRs
+- The workflow runs a lightweight triage job that detects fork PRs and posts a notice
+- Full review requires a PR from the same repository (not a fork)
+
+This prevents confusing failures when secret-dependent operations can't access their credentials.
+
 ## Inputs
 ### Review Action (`misty-step/cerberus@v2`)
 | Input | Required | Default | Description |
