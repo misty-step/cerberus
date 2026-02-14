@@ -147,6 +147,154 @@ class TestPreCommitHook:
         )
         assert result.returncode != 0, "pre-commit should fail on bad Python syntax"
 
+    def test_pre_commit_passes_valid_yaml(self, tmp_path):
+        """pre-commit must pass on valid YAML files."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+
+        githooks = Path(".githooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
+
+        yml = repo / "config.yml"
+        yml.write_text("key: value\nlist:\n  - item1\n  - item2\n")
+
+        subprocess.run(["git", "add", "config.yml"], cwd=repo, check=True)
+
+        result = subprocess.run(
+            [repo / ".git" / "hooks" / "pre-commit"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0, f"pre-commit failed on valid YAML: {result.stderr}"
+
+    def test_pre_commit_fails_invalid_yaml(self, tmp_path):
+        """pre-commit must fail on invalid YAML files."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+
+        githooks = Path(".githooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
+
+        yml = repo / "bad.yml"
+        yml.write_text("key: value\n  bad indent: broken\n    - not valid\n")
+
+        subprocess.run(["git", "add", "bad.yml"], cwd=repo, check=True)
+
+        result = subprocess.run(
+            [repo / ".git" / "hooks" / "pre-commit"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode != 0, "pre-commit should fail on invalid YAML"
+
+    def test_pre_commit_passes_valid_json(self, tmp_path):
+        """pre-commit must pass on valid JSON files."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+
+        githooks = Path(".githooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
+
+        jsonf = repo / "config.json"
+        jsonf.write_text('{"key": "value", "list": [1, 2, 3]}')
+
+        subprocess.run(["git", "add", "config.json"], cwd=repo, check=True)
+
+        result = subprocess.run(
+            [repo / ".git" / "hooks" / "pre-commit"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0, f"pre-commit failed on valid JSON: {result.stderr}"
+
+    def test_pre_commit_fails_invalid_json(self, tmp_path):
+        """pre-commit must fail on invalid JSON files."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+
+        githooks = Path(".githooks")
+        shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
+
+        jsonf = repo / "bad.json"
+        jsonf.write_text('{"key": "value", missing_quotes: true}')
+
+        subprocess.run(["git", "add", "bad.json"], cwd=repo, check=True)
+
+        result = subprocess.run(
+            [repo / ".git" / "hooks" / "pre-commit"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode != 0, "pre-commit should fail on invalid JSON"
+
+
+class TestSetupScript:
+    """Test setup-hooks.sh installs hooks correctly."""
+
+    def test_setup_hooks_installs_hooks(self, tmp_path):
+        """setup-hooks.sh must install hook files into .git/hooks/."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+
+        shutil.copytree(Path(".githooks"), repo / ".githooks")
+        (repo / "scripts").mkdir()
+        shutil.copy2(Path("scripts/setup-hooks.sh"), repo / "scripts" / "setup-hooks.sh")
+
+        result = subprocess.run(
+            ["bash", repo / "scripts" / "setup-hooks.sh"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0, f"setup-hooks.sh failed: {result.stderr}"
+        assert (repo / ".git" / "hooks" / "pre-commit").exists(), "pre-commit hook must be installed"
+        assert (repo / ".git" / "hooks" / "pre-push").exists(), "pre-push hook must be installed"
+        assert os.access(repo / ".git" / "hooks" / "pre-commit", os.X_OK), "pre-commit must be executable"
+        assert os.access(repo / ".git" / "hooks" / "pre-push", os.X_OK), "pre-push must be executable"
+
+    def test_setup_hooks_sets_config(self, tmp_path):
+        """setup-hooks.sh must set git config core.hooksPath."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+
+        shutil.copytree(Path(".githooks"), repo / ".githooks")
+        (repo / "scripts").mkdir()
+        shutil.copy2(Path("scripts/setup-hooks.sh"), repo / "scripts" / "setup-hooks.sh")
+
+        subprocess.run(
+            ["bash", repo / "scripts" / "setup-hooks.sh"],
+            cwd=repo,
+            check=True,
+            capture_output=True
+        )
+
+        result = subprocess.run(
+            ["git", "config", "--local", "core.hooksPath"],
+            cwd=repo,
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0, "core.hooksPath must be set"
+        assert "hooks" in result.stdout, f"core.hooksPath should point to hooks dir, got: {result.stdout.strip()}"
+
 
 class TestPrePushHook:
     """Test pre-push hook functionality."""

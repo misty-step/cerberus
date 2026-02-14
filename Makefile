@@ -29,7 +29,7 @@ test:
 lint:
 	@if command -v ruff >/dev/null 2>&1; then \
 		echo "🔍 Running ruff..."; \
-		ruff check --select E,W,F --ignore E501 scripts/; \
+		ruff check scripts/; \
 	else \
 		echo "⚠ ruff not installed. Install with: uv pip install ruff"; \
 		exit 1; \

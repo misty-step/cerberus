@@ -56,7 +56,7 @@ if [ -n "$py_files" ]; then
     # Run ruff lint on all staged Python files at once (if available)
     if command -v ruff >/dev/null 2>&1; then
         echo "  → Running ruff check (lint only)..."
-        if ! echo "$py_files" | xargs ruff check --select E,W,F --ignore E501 2>/dev/null; then
+        if ! echo "$py_files" | xargs ruff check 2>/dev/null; then
             echo "    ! ruff found warnings (non-blocking)"
         else
             echo "    ✓ ruff clean"

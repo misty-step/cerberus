@@ -46,8 +46,11 @@ fi
 # Check 3: Run ruff on all Python files
 echo "  → Running ruff check on all Python files..."
 if command -v ruff >/dev/null 2>&1; then
-    if [ -d "scripts" ]; then
-        if ruff check --select E,W,F --ignore E501 scripts/ 2>/dev/null; then
+    ruff_paths=""
+    [ -d "scripts" ] && ruff_paths="scripts/"
+    [ -d "tests" ] && ruff_paths="$ruff_paths tests/"
+    if [ -n "$ruff_paths" ]; then
+        if ruff check $ruff_paths 2>/dev/null; then
             echo "    ✓ All Python files passed ruff"
         else
             echo "    ! ruff found issues (non-blocking)"
