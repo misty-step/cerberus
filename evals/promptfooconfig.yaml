@@ -327,14 +327,20 @@ tests:
       pr_author: "developer"
       head_branch: "feature/payment"
       base_branch: "main"
-      pr_body: "Process payments with interface"
+      pr_body: "Process payments by coupling directly to Stripe"
       perspective: "architecture"
       diff: |
-        +interface PaymentProcessor {
-        +  charge(amount: number): void;
+        +class StripePayment {
+        +  charge(amount: number): void {
+        +    /* ... */
+        +  }
         +}
-        +class StripePayment implements PaymentProcessor {
-        +  charge(amount) { }
+        +
+        +class CheckoutService {
+        +  constructor() {
+        +    // Missing abstraction: business logic depends on concrete gateway
+        +    this.processor = new StripePayment();
+        +  }
         +}
     assert:
       - type: javascript
@@ -430,11 +436,35 @@ tests:
       pr_author: "developer"
       head_branch: "feature/processor"
       base_branch: "main"
-      pr_body: "Simple data transformation"
+      pr_body: "Business logic in one big function"
       perspective: "maintainability"
       diff: |
-        +function double(x) {
-        +  return x * 2;
+        +function processOrders(orders) {
+        +  let total = 0;
+        +  for (const order of orders) {
+        +    if (!order) continue;
+        +    if (order.status === 'cancelled') continue;
+        +
+        +    if (order.status === 'refunded') {
+        +      total -= order.amount;
+        +    } else {
+        +      total += order.amount;
+        +    }
+        +
+        +    if (order.items) {
+        +      for (const item of order.items) {
+        +        if (item.type === 'digital') total += item.price * 0.9;
+        +        else if (item.type === 'physical') total += item.price;
+        +        else if (item.type === 'service') total += item.price * 1.1;
+        +      }
+        +    }
+        +
+        +    if (order.coupon) {
+        +      if (order.coupon.type === 'percent') total *= (1 - order.coupon.value);
+        +      else if (order.coupon.type === 'fixed') total -= order.coupon.value;
+        +    }
+        +  }
+        +  return Math.round(total * 100) / 100;
         +}
     assert:
       - type: javascript
@@ -585,35 +615,43 @@ defaultTest:
           if (!value || typeof value !== 'object') {
             return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
           }
+
           if (typeof value.verdict === 'string') {
             const normalized = value.verdict.trim().toUpperCase();
             if (normalized === 'PASS' || normalized === 'FAIL' || normalized === 'SKIP') {
               value.verdict = normalized;
             }
           }
+
           if (!Array.isArray(value.findings)) {
             value.findings = [];
           }
+
           return value;
         };
+
         const parseJson = (text) => {
           try {
             return normalize(JSON.parse(text));
-          } catch(e) {
+          } catch (e) {
             return null;
           }
         };
+
         const direct = parseJson(output);
-        if (direct) { return direct; }
-        const fences = [...output.matchAll(/```json\\s*([\\s\\S]*?)\\s*```/g)];
+        if (direct) return direct;
+
+        const fences = [...output.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
         for (let i = fences.length - 1; i >= 0; i--) {
           const parsed = parseJson(fences[i][1]);
-          if (parsed) { return parsed; }
+          if (parsed) return parsed;
         }
-        const n = output.match(/\\{[\\s\\S]*\\}/);
+
+        const n = output.match(/\{[\s\S]*\}/);
         if (n) {
           const parsed = parseJson(n[0]);
-          if (parsed) { return parsed; }
+          if (parsed) return parsed;
         }
+
         return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
       })()

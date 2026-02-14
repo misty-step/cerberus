@@ -946,10 +946,8 @@ def main() -> None:
             # Check if it's a scratchpad (has investigation notes or verdict header)
             # and extract what we can before falling back.
             if is_scratchpad(raw):
-                # Treat unstructured scratchpad output as SKIP to avoid flakily gating
-                # merges on unstructured text while preserving raw output for debugging.
                 verdict = "SKIP"
-                summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
+                summary = "Partial review: reviewer output was unstructured (no JSON). Treating as SKIP; see workflow logs/artifacts for full output."
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict=verdict, confidence=0.3,
                                summary=summary, raw_review=raw_text or None,

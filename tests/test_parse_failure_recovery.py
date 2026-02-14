@@ -275,8 +275,8 @@ class TestParseReviewMetadata:
 
             assert code == 0
             data = json.loads(out)
-            # Should parse as partial review, not SKIP
-            assert data["verdict"] == "PASS"
+            # Scratchpad without a JSON block is treated as SKIP (non-blocking) even if it has a verdict header.
+            assert data["verdict"] == "SKIP"
         finally:
             cleanup_parse_failure_metadata(perspective)
 

@@ -67,10 +67,10 @@ jobs:
       - name: Compare with baseline
         if: hashFiles('evals/results/baseline.json') != ''
         run: |
-          CURRENT=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' evals/results/latest.json)
-          CURRENT_PASS=$(jq '.results.stats.successes' evals/results/latest.json)
-          BASELINE=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' evals/results/baseline.json)
-          BASELINE_PASS=$(jq '.results.stats.successes' evals/results/baseline.json)
+          CURRENT=$(jq '(.results.stats.successes // 0) + (.results.stats.failures // 0) + (.results.stats.errors // 0)' evals/results/latest.json)
+          CURRENT_PASS=$(jq '.results.stats.successes // 0' evals/results/latest.json)
+          BASELINE=$(jq '(.results.stats.successes // 0) + (.results.stats.failures // 0) + (.results.stats.errors // 0)' evals/results/baseline.json)
+          BASELINE_PASS=$(jq '.results.stats.successes // 0' evals/results/baseline.json)
 
           CURRENT_RATE=$((CURRENT_PASS * 100 / CURRENT))
           BASELINE_RATE=$((BASELINE_PASS * 100 / BASELINE))

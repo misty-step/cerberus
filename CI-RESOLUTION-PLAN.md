@@ -1,55 +1,47 @@
 # CI Resolution Plan
 
 ## Root cause
-- **Classification:** Code issue
-- **Cause:** `defaultTest.options.transform` is now compilable, but smoke eval is currently failing at assertion/runtime level in `evals/promptfooconfig.yaml` checks.
-- **Impact:** 30 assertion mismatches plus one runtime assertion error still keep the suite at 0% pass despite stable workflow plumbing.
-
-- **Location:** `evals/promptfooconfig.yaml` (assertions and transform normalization points), with current evidence from smoke workflow run `22024931706`.
-- **Error introduced by:** current suite tuning after transform repair; assertion robustness and expected-output normalization still need adjustment.
+- **Classification:** Code issue (expected behavior of merge gate)
+- **Cause:** `Council Verdict` is FAIL because ARTEMIS + CASSANDRA verdicts are FAIL, so the verdict action exits 1 when `fail-on-verdict: true`.
+- **Evidence:** `Cerberus Council` run `22026142556`:
+  - `aggregate-verdict: override ... skipped (invalid or SHA mismatch)`
+  - `ARTEMIS: FAIL` (maintainability)
+  - `CASSANDRA: FAIL` (testing)
 
 ## Planned fixes
 
-- [x] [CODE FIX] Replace inline transform with expression-safe IIFE form
+- [x] [CODE FIX] Make Promptfoo transform readable + less error-prone
   ```
-  Files: evals/promptfooconfig.yaml:567
-  Issue: `Unexpected token 'try'` errors from Promptfoo transform parser
-  Cause: transform was provided as bare statement syntax instead of expression-compatible form
-  Fix: use `(() => { ... })()` wrapper so the transform is a valid expression and retains JSON fallback parsing
-  Verify: rerun `smoke-eval` workflow and confirm transform errors disappear
-  Estimate: 10m
+  Files: evals/promptfooconfig.yaml:580
+  Issue: transform was a 1000+ char one-liner (hard to maintain/debug)
+  Fix: convert to YAML block scalar `|` with formatted IIFE + simpler regex escaping
+  Verify: `Eval - Smoke` workflow still passes
   ```
 
-- [x] [CI FIX] Revalidate smoke-eval threshold behavior after transformation fix
+- [x] [CODE FIX] Fix inconsistent SKIP handling for unstructured scratchpad output
   ```
-  Files: .github/workflows/smoke-eval.yml (observability only)
-  Issue: pass rate currently reads as 0% because all tests were transform-failing
-  Cause: downstream check is a symptom of earlier parser failure
-  Fix: rerun smoke-eval from current branch head and confirm pass-rate computation reflects test assertions
-  Verify: `Results: 0 passed` should no longer be constant failure from parse phase
-  Estimate: 5m
+  Files: scripts/parse-review.py
+  Issue: scratchpad/no-JSON path defaulted to WARN, while fail() treats scratchpad as SKIP
+  Fix: make scratchpad/no-JSON fallback SKIP with preserved raw output
+  Verify: unit tests + next council run shows fewer false-positive FAILs
   ```
 
-- [ ] [CODE FIX] Harden assertion shape handling for SQL/critical first-pass case
+- [x] [CODE FIX] Align eval cases and harden brittle JS assertions
   ```
   Files: evals/promptfooconfig.yaml
-  Issue: `TypeError: Cannot read properties of undefined (reading 'includes')` on `output.findings` path
-  Cause: brittle optional field access inside custom JS assertion
-  Fix: switch to optional chaining and existence checks in the affected assertion
-  Verify: rerun smoke-eval and confirm the runtime error is eliminated
-  Estimate: 15m
+  Issue: some test descriptions contradicted diffs; some assertions called .toLowerCase() on non-strings
+  Fix: update mis-specified diffs (e.g. "Missing Interface", "Long Function"); wrap finding fields with String(...)
+  Verify: `Eval - Smoke` pass rate remains >= threshold
   ```
 
-- [ ] [CODE FIX] Improve output normalization in transform/validator
+- [x] [CI FIX] Align smoke/full workflows with stated thresholds and safer jq defaults
   ```
-  Files: evals/promptfooconfig.yaml
-  Issue: 30 assertion mismatches after transform syntax repair
-  Cause: judge output variants are not always mapped into stable PASS/FAIL schema expected by assertions
-  Fix: normalize verdict case, handle common response variants, and keep explicit fallback semantics for non-JSON output
-  Verify: rerun smoke-eval and confirm pass rate moves above threshold or identify remaining false-negative tests explicitly
-  Estimate: 30m
+  Files: .github/workflows/smoke-eval.yml, .github/workflows/full-eval.yml
+  Issue: smoke threshold in code was 75% but PR acceptance says 80%; full-eval jq arithmetic was brittle
+  Fix: set smoke threshold to 80%; use `// 0` jq defaults in full-eval (and baseline compare)
+  Verify: smoke-eval still passes; full-eval arithmetic can’t error on missing fields
   ```
 
 ## Prevention
-- Keep Promptfoo transform expressions in expression-safe form (IIFE) and avoid statement-style snippets unless docs confirm body-mode execution.
-- Add a minimal smoke test config entry with a known fixture output when touching eval transform logic.
+- Prefer block scalars for embedded JS in YAML (avoid giant quoted one-liners).
+- Keep parse-failure fallbacks consistent (scratchpad == SKIP unless we have structured findings).

@@ -1,19 +1,26 @@
-# CI Failure Summary (historical)
+# CI Failure Summary
 
-## Workflow
-- **Name:** `Eval - Smoke`
-- **Workflow file:** `.github/workflows/smoke-eval.yml`
-- **Job:** `smoke-eval`
-- **Status:** Assertion-level failures after transform fix.
+## Failing check
+- **Workflow:** `Cerberus Council`
+- **Run:** `22026142556`
+- **Job:** `Council Verdict`
+- **Step:** `Run /./verdict`
+- **Exit code:** `1`
 
-## Latest observed failure
-- **Command:** `promptfoo eval --config evals/promptfooconfig.yaml --no-cache --max-concurrency 3`
-- **Error pattern:** `Results: 0 passed, ✗ 30 failed, ✗ 1 error (0%)`
-- **Failure detail:** `TypeError: Cannot read properties of undefined (reading 'includes')`
-- **Likely cause:** brittle assertion in `output.findings...toLowerCase()` and low-confidence output parsing/normalization behavior from the judge responses.
-- **Impact:** 31 tests run on this branch, with no passing assertions and one assertion runtime error, so threshold gates still fail even after transform syntax repair.
+## Error summary (exact)
+```
+aggregate-verdict: override 1/1 from 'phrazzld': skipped (invalid or SHA mismatch)
+Council Verdict: FAIL
+Reviewers:
+- ATHENA (architecture): PASS
+- APOLLO (correctness): PASS
+- ARTEMIS (maintainability): FAIL
+- VULCAN (performance): WARN
+- SENTINEL (security): PASS
+- CASSANDRA (testing): FAIL
+##[error]Council Verdict: FAIL
+```
 
-## Current status
-- `defaultTest.options.transform` uses an IIFE expression wrapper and is no longer throwing parser errors.
-- Remaining failures appear to be in assertion expectations / model-output interpretation, not workflow plumbing.
-- Latest observed dataset result on this branch: `0 passed, 30 failed, 1 error` at run `22024931706`.
+## Notes
+- Smoke eval is green: `Eval - Smoke` run `22026142560` passed with **87%** (27/31).
+- Council is red because 2 reviewers failed (ARTEMIS + CASSANDRA), so verdict action intentionally fails when `fail-on-verdict: true`.

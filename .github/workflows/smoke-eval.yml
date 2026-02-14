@@ -55,11 +55,11 @@ jobs:
           PASS_RATE=$((PASS * 100 / TOTAL))
           echo "Pass rate: $PASS_RATE% ($PASS/$TOTAL)"
 
-          if [ "$PASS_RATE" -lt 75 ]; then
-            echo "Smoke eval failed: $PASS_RATE% < 75% threshold"
+          if [ "$PASS_RATE" -lt 80 ]; then
+            echo "Smoke eval failed: $PASS_RATE% < 80% threshold"
             exit 1
           fi
-          echo "Smoke eval passed: $PASS_RATE% >= 75%"
+          echo "Smoke eval passed: $PASS_RATE% >= 80%"
 
       - name: Post results as PR comment
         if: ${{ always() && github.event_name == 'pull_request' }}
@@ -78,7 +78,7 @@ jobs:
               '## Cerberus Smoke Eval Results',
               '',
               `**Pass Rate:** ${passRate}% (${stats.successes}/${total})`,
-              `**Threshold:** 75%`,
+              `**Threshold:** 80%`,
               '',
               `| Metric | Value |`,
               `|--------|-------|`,
