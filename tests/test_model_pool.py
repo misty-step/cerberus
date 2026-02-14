@@ -1,7 +1,6 @@
 """Tests for model pool random assignment feature (issue #148)."""
 
 import os
-import re
 import stat
 import subprocess
 from pathlib import Path
@@ -87,10 +86,12 @@ def cleanup_tmp_outputs() -> None:
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
         "fast-path-stderr.log", "model-used", "primary-model", "reviewer-name",
     )
+    Path("/tmp/opencode_calls.log").unlink(missing_ok=True)
     for perspective in ("security", "correctness"):
         for suffix in suffixes:
             Path(f"/tmp/{perspective}-{suffix}").unlink(missing_ok=True)
     yield
+    Path("/tmp/opencode_calls.log").unlink(missing_ok=True)
     for perspective in ("security", "correctness"):
         for suffix in suffixes:
             Path(f"/tmp/{perspective}-{suffix}").unlink(missing_ok=True)
@@ -154,8 +155,8 @@ reviewers:
             if primary_model_file.exists():
                 selected_models.add(primary_model_file.read_text().strip())
 
-        # Should have selected from the pool
-        assert len(selected_models) > 0
+        # Should have selected multiple distinct models across 10 runs
+        assert len(selected_models) > 1, f"Expected diversity, got only: {selected_models}"
         # All selections should be from the pool
         pool_models = {"openrouter/model-a", "openrouter/model-b", "openrouter/model-c"}
         assert selected_models.issubset(pool_models), f"Got unexpected models: {selected_models}"
@@ -362,3 +363,78 @@ reviewers:
         assert result.returncode == 0
         correctness_model = Path("/tmp/correctness-primary-model").read_text().strip()
         assert correctness_model == "openrouter/pinned-model"
+
+    def test_pool_does_not_bleed_into_fallback(self, tmp_path: Path) -> None:
+        """Pool parser stops at fallback: section and doesn't include its items."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        write_stub_opencode(bin_dir / "opencode")
+
+        cerberus_root = tmp_path / "cerberus-root"
+        config = '''
+model:
+  default: "openrouter/moonshotai/kimi-k2.5"
+  pool:
+    - "openrouter/pool-only"
+  fallback:
+    - "openrouter/fallback-only"
+
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: pool
+'''
+        write_fake_cerberus_root(cerberus_root, config_yml=config)
+
+        diff_file = tmp_path / "test.diff"
+        write_simple_diff(diff_file)
+
+        # Run several times; all should pick pool-only, never fallback-only
+        for _ in range(5):
+            result = subprocess.run(
+                [str(RUN_REVIEWER), "security"],
+                env=make_env(bin_dir, diff_file, cerberus_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert result.returncode == 0
+            model = Path("/tmp/security-primary-model").read_text().strip()
+            assert model == "openrouter/pool-only", f"Got fallback model: {model}"
+
+    def test_inline_comments_stripped_from_pool_entries(self, tmp_path: Path) -> None:
+        """Inline YAML comments after pool model names are stripped."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        write_stub_opencode(bin_dir / "opencode")
+
+        cerberus_root = tmp_path / "cerberus-root"
+        config = '''
+model:
+  default: "openrouter/moonshotai/kimi-k2.5"
+  pool:
+    - "openrouter/model-a"  # fast model
+    - "openrouter/model-b"  # smart model
+
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: pool
+'''
+        write_fake_cerberus_root(cerberus_root, config_yml=config)
+
+        diff_file = tmp_path / "test.diff"
+        write_simple_diff(diff_file)
+
+        result = subprocess.run(
+            [str(RUN_REVIEWER), "security"],
+            env=make_env(bin_dir, diff_file, cerberus_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        model = Path("/tmp/security-primary-model").read_text().strip()
+        assert model in {"openrouter/model-a", "openrouter/model-b"}, (
+            f"Comment leaked into model name: {model!r}"
+        )

@@ -152,48 +152,39 @@ stage_opencode_project_config
 
 reviewer_meta="$(
   awk -v p="$perspective" '
-    # Skip empty lines and comments
     /^[[:space:]]*$/ {next}
     /^[[:space:]]*#/ {next}
-    
-    # Normalize: strip leading whitespace for field matching
+
     /^[[:space:]]*-[[:space:]]*name:/ {
       if (matched && !printed) { print name "\t" model; printed=1 }
-      # Extract name value (everything after "name:")
       match($0, /name:[[:space:]]*/)
       name=substr($0, RSTART+RLENGTH)
-      # Strip quotes
+      sub(/[[:space:]]*#.*$/, "", name)
       gsub(/^[\"\047]/, "", name)
       gsub(/[\"\047]$/, "", name)
       model=""; matched=0
       next
     }
-    
-    # Check for perspective match
+
     /perspective:/ {
-      # Extract perspective value
       match($0, /perspective:[[:space:]]*/)
       persp=substr($0, RSTART+RLENGTH)
-      # Strip quotes
+      sub(/[[:space:]]*#.*$/, "", persp)
       gsub(/^[\"\047]/, "", persp)
       gsub(/[\"\047]$/, "", persp)
       if (persp == p) { matched=1 }
       next
     }
-    
-    # Extract model if present
+
     /^[[:space:]]*model:/ {
-      # Extract model value
       match($0, /model:[[:space:]]*/)
       model=substr($0, RSTART+RLENGTH)
-      # Strip quotes
+      sub(/[[:space:]]*#.*$/, "", model)
       gsub(/^[\"\047]/, "", model)
       gsub(/[\"\047]$/, "", model)
-      # Strip inline comments
-      sub(/[[:space:]]*#.*$/, "", model)
       next
     }
-    
+
     END { if (matched && !printed) print name "\t" model }
   ' "$config_file"
 )"
@@ -208,68 +199,50 @@ fi
 # Read config default model (optional). Used when input model unset and reviewer has no model.
 config_default_model_raw="$(
   awk '
-    # Skip empty lines and comments
     /^[[:space:]]*$/ {next}
     /^[[:space:]]*#/ {next}
-    # Detect model: section
-    /^[[:space:]]*model:/ {in_model=1; next}
-    # Exit model section if line has no leading whitespace
+    /^model:/ {in_model=1; next}
     in_model && !/^[[:space:]]/ {in_model=0}
-    # Extract default value
     in_model && /^[[:space:]]+default:/ {
-      sub(/^[[:space:]]+default:/, "")
-      # Strip quotes
+      sub(/^[[:space:]]+default:[[:space:]]*/, "")
+      sub(/[[:space:]]*#.*$/, "")
       gsub(/^[\"\047]/, "")
       gsub(/[\"\047]$/, "")
-      # Strip inline comments
-      sub(/[[:space:]]*#.*$/, "")
       print
       exit
     }
   ' "$config_file"
 )"
 
-# Read model pool from config (optional). Used when reviewer has model: pool.
-read_model_pool() {
-  awk '
-    # Skip empty lines and comments
-    /^[[:space:]]*$/ {next}
-    /^[[:space:]]*#/ {next}
-    
-    # Detect model: section (any amount of leading whitespace)
-    /^[[:space:]]*model:/ {in_model=1; next}
-    # Exit model section if line has no leading whitespace (new top-level key)
-    in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
-    
-    # Detect pool: within model section
-    in_model && /^[[:space:]]+pool:/ {in_pool=1; next}
-    
-    # Extract pool items (dash after optional whitespace)
-    in_pool && /^[[:space:]]*-/ {
-      # Strip the dash and leading whitespace
-      sub(/^[[:space:]]*-[[:space:]]*/, "")
-      # Strip inline comments
-      sub(/[[:space:]]*#.*$/, "")
-      # Strip quotes
-      gsub(/^[\"\047]/, "")
-      gsub(/[\"\047]$/, "")
-      print
-    }
-  ' "$config_file"
-}
-model_pool=()
-while IFS= read -r line; do
-  [[ -n "$line" ]] && model_pool+=("$line")
-done < <(read_model_pool)
-
-# If reviewer model is "pool", randomly select from pool.
+# If reviewer model is "pool", randomly select from the model.pool config list.
 if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
+  model_pool=()
+  while IFS= read -r _pool_line; do
+    [[ -n "$_pool_line" ]] && model_pool+=("$_pool_line")
+  done < <(
+    awk '
+      /^[[:space:]]*$/ {next}
+      /^[[:space:]]*#/ {next}
+      /^model:/ {in_model=1; next}
+      in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
+      in_model && /^[[:space:]]+[a-zA-Z_-]+:/ {
+        if (/^[[:space:]]+pool:/) {in_pool=1} else {in_pool=0}
+        next
+      }
+      in_pool && /^[[:space:]]*-/ {
+        sub(/^[[:space:]]*-[[:space:]]*/, "")
+        sub(/[[:space:]]*#.*$/, "")
+        gsub(/^[\"\047]/, "")
+        gsub(/[\"\047]$/, "")
+        print
+      }
+    ' "$config_file"
+  )
+
   if [[ ${#model_pool[@]} -gt 0 ]]; then
-    # Use shuf for random selection (available on macOS and Linux)
     if command -v shuf >/dev/null 2>&1; then
       reviewer_model_raw="$(printf '%s\n' "${model_pool[@]}" | shuf -n 1)"
     else
-      # Fallback: use $RANDOM for bash-only random selection
       idx=$((RANDOM % ${#model_pool[@]}))
       reviewer_model_raw="${model_pool[$idx]}"
     fi
