@@ -13,6 +13,8 @@ import argparse
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -39,14 +41,15 @@ def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
         "--workflow", "cerberus.yml",
         "--status", "success",
         "--limit", str(limit),
-        "--json", "databaseId,headSha,event,number",
+        "--json", "databaseId,headSha,event,number,createdAt",
     ])
     runs = json.loads(runs_json)
 
-    artifacts: list[dict] = []
-    for run in runs:
+    # Parallelize gh run view calls to avoid N+1 problem
+    def fetch_run_artifacts(run: dict) -> list[dict]:
+        """Fetch artifacts for a single run."""
         run_id = run["databaseId"]
-        # List artifacts for this run
+        artifacts = []
         try:
             artifacts_json = run_gh([
                 "run", "view",
@@ -62,15 +65,33 @@ def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
                         "head_sha": run["headSha"],
                         "pr_number": run.get("number"),
                         "artifact_id": artifact["databaseId"],
+                        "created_at": run.get("createdAt"),
                     })
         except SystemExit:
-            continue
+            pass
+        return artifacts
 
+    # Use ThreadPoolExecutor to parallelize artifact fetching
+    artifacts: list[dict] = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_run_artifacts, run): run for run in runs}
+        for future in as_completed(futures):
+            try:
+                artifacts.extend(future.result())
+            except Exception as exc:
+                run = futures[future]
+                print(f"Warning: failed to fetch artifacts for run {run.get('databaseId')}: {exc}", file=sys.stderr)
+
+    # Sort by created_at descending to get most recent first
+    artifacts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return artifacts
 
 
-def download_artifact(repo: str, artifact_id: int, output_dir: Path) -> Path | None:
-    """Download an artifact to the specified directory."""
+def download_artifact(repo: str, artifact_id: int, output_dir: Path) -> tuple[int, Path | None]:
+    """Download an artifact to the specified directory.
+    
+    Returns tuple of (artifact_id, path_or_none).
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_gh([
@@ -82,10 +103,10 @@ def download_artifact(repo: str, artifact_id: int, output_dir: Path) -> Path | N
         # Find the downloaded quality-report.json
         report_path = output_dir / "quality-report.json"
         if report_path.exists():
-            return report_path
+            return (artifact_id, report_path)
     except SystemExit:
         pass
-    return None
+    return (artifact_id, None)
 
 
 def load_quality_reports(artifact_dir: Path) -> list[dict]:
@@ -105,6 +126,19 @@ def aggregate_reports(reports: list[dict]) -> dict:
     if not reports:
         return {"error": "No quality reports found"}
 
+    # Sort reports by generated_at to ensure chronological order for date range
+    def parse_generated_at(report: dict) -> datetime:
+        """Parse generated_at timestamp for sorting."""
+        ts = report.get("meta", {}).get("generated_at")
+        if ts:
+            try:
+                return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+        return datetime.min
+    
+    reports_sorted = sorted(reports, key=parse_generated_at)
+    
     total_runs = len(reports)
     total_reviewers = sum(r.get("summary", {}).get("total_reviewers", 0) for r in reports)
     total_skips = sum(r.get("summary", {}).get("skip_count", 0) for r in reports)
@@ -169,8 +203,8 @@ def aggregate_reports(reports: list[dict]) -> dict:
         "meta": {
             "total_runs_analyzed": total_runs,
             "date_range": {
-                "from": reports[-1].get("meta", {}).get("generated_at") if reports else None,
-                "to": reports[0].get("meta", {}).get("generated_at") if reports else None,
+                "from": reports_sorted[0].get("meta", {}).get("generated_at") if reports_sorted else None,
+                "to": reports_sorted[-1].get("meta", {}).get("generated_at") if reports_sorted else None,
             },
         },
         "summary": {
@@ -254,24 +288,38 @@ def main() -> int:
             artifacts = fetch_artifacts(args.repo, args.last)
             print(f"Found {len(artifacts)} quality report artifacts", file=sys.stderr)
 
-            for i, artifact in enumerate(artifacts, 1):
-                print(f"Downloading artifact {i}/{len(artifacts)}...", file=sys.stderr)
+            # Parallelize artifact downloads
+            def download_with_meta(artifact: dict) -> tuple[dict, Path | None]:
+                """Download artifact and return (artifact_meta, path)."""
                 artifact_dir = tmp_path / f"run-{artifact['run_id']}"
-                report_path = download_artifact(args.repo, artifact["artifact_id"], artifact_dir)
-                if report_path:
-                    try:
-                        data = json.loads(report_path.read_text())
-                        # Enrich with run metadata
-                        data["_run_meta"] = {
-                            "run_id": artifact["run_id"],
-                            "head_sha": artifact["head_sha"],
-                            "pr_number": artifact["pr_number"],
-                        }
-                        reports.append(data)
-                    except (json.JSONDecodeError, OSError) as exc:
-                        print(f"Warning: could not parse artifact: {exc}", file=sys.stderr)
+                _, report_path = download_artifact(args.repo, artifact["artifact_id"], artifact_dir)
+                return (artifact, report_path)
 
-            print(f"Successfully loaded {len(reports)} quality reports", file=sys.stderr)
+            reports = []
+            downloaded = 0
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(download_with_meta, artifact): artifact for artifact in artifacts}
+                for i, future in enumerate(as_completed(futures), 1):
+                    try:
+                        artifact, report_path = future.result()
+                        if report_path:
+                            try:
+                                data = json.loads(report_path.read_text())
+                                # Enrich with run metadata
+                                data["_run_meta"] = {
+                                    "run_id": artifact["run_id"],
+                                    "head_sha": artifact["head_sha"],
+                                    "pr_number": artifact["pr_number"],
+                                }
+                                reports.append(data)
+                                downloaded += 1
+                            except (json.JSONDecodeError, OSError) as exc:
+                                print(f"Warning: could not parse artifact: {exc}", file=sys.stderr)
+                    except Exception as exc:
+                        artifact = futures[future]
+                        print(f"Warning: failed to download artifact: {exc}", file=sys.stderr)
+            
+            print(f"Successfully downloaded {downloaded}/{len(artifacts)} quality reports", file=sys.stderr)
     else:
         parser.error("Either --repo or --artifact-dir is required")
 
