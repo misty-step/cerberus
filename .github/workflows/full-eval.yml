@@ -45,7 +45,7 @@ jobs:
             exit 1
           fi
 
-          TOTAL=$(jq '.results.stats.successes + .results.stats.failures' "$RESULTS")
+          TOTAL=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' "$RESULTS")
           PASS=$(jq '.results.stats.successes' "$RESULTS")
 
           if [ "$TOTAL" -eq 0 ]; then
@@ -66,9 +66,9 @@ jobs:
       - name: Compare with baseline
         if: hashFiles('evals/results/baseline.json') != ''
         run: |
-          CURRENT=$(jq '.results.stats.successes + .results.stats.failures' evals/results/latest.json)
+          CURRENT=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' evals/results/latest.json)
           CURRENT_PASS=$(jq '.results.stats.successes' evals/results/latest.json)
-          BASELINE=$(jq '.results.stats.successes + .results.stats.failures' evals/results/baseline.json)
+          BASELINE=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' evals/results/baseline.json)
           BASELINE_PASS=$(jq '.results.stats.successes' evals/results/baseline.json)
 
           CURRENT_RATE=$((CURRENT_PASS * 100 / CURRENT))
@@ -79,6 +79,7 @@ jobs:
 
           if [ "$DIFF" -lt -5 ]; then
             echo "Regression detected: ${DIFF}% drop from baseline"
+            exit 1
           fi
 
       - name: Save baseline

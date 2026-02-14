@@ -43,7 +43,7 @@ jobs:
             exit 1
           fi
 
-          TOTAL=$(jq '.results.stats.successes + .results.stats.failures' "$RESULTS")
+          TOTAL=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' "$RESULTS")
           PASS=$(jq '.results.stats.successes' "$RESULTS")
 
           if [ "$TOTAL" -eq 0 ]; then
@@ -68,8 +68,8 @@ jobs:
             const fs = require('fs');
             const results = JSON.parse(fs.readFileSync('evals/results/latest.json', 'utf8'));
             const stats = results.results.stats;
-            const total = stats.successes + stats.failures;
-            const passRate = total > 0 ? Math.round(stats.successes * 100 / total) : 0;
+            const total = stats.successes + stats.failures + (stats.errors || 0);
+            const passRate = total > 0 ? Math.floor(stats.successes * 100 / total) : 0;
 
             const marker = '<!-- cerberus:smoke-eval -->';
             const body = [
