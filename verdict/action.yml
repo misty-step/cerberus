@@ -93,10 +93,12 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}/..
         GH_OVERRIDE_COMMENTS: ${{ steps.override.outputs.overrides }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GH_PR_NUMBER: ${{ github.event.pull_request.number }}
         GH_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         GH_OVERRIDE_POLICY: ${{ steps.policies.outputs.global_policy }}
         GH_REVIEWER_POLICIES: ${{ steps.policies.outputs.reviewer_policies }}
         GH_OVERRIDE_ACTOR_PERMISSIONS: ${{ steps.override.outputs.actor_permissions }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
         echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
@@ -131,6 +133,14 @@ runs:
           --pr "$PR_NUMBER" \
           --marker "<!-- cerberus:council -->" \
           --body-file /tmp/council-comment.md
+
+    - name: Upload quality report artifact
+      if: always() && steps.aggregate.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cerberus-quality-report
+        path: /tmp/quality-report.json
+        retention-days: 30
 
     - name: Check verdict
       if: always() && steps.aggregate.outcome == 'success' && (inputs.fail-on-verdict == 'true' || inputs.fail-on-skip == 'true')
