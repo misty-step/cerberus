@@ -305,7 +305,7 @@ class TestHasValidJsonBlock:
                 '  echo "No JSON here"\n'
                 'else\n'
                 '  echo "```json"\n'
-                '  echo \'{\\"verdict\\": \\"PASS\\"}\'\n'
+                '  echo \'{"verdict": "PASS"}\'\n'
                 '  echo "```"\n'
                 "fi\n"
             ),
