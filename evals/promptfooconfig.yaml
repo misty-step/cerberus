@@ -265,7 +265,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('loop') || (f.title + f.description).toLowerCase().includes('nested') || (f.title + f.description).toLowerCase().includes('complexity'))"
+        value: "(output.findings || []).some(f => ((f?.title || '') + (f?.description || '')).toLowerCase().includes('loop') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('nested') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('complexity'))"
 
   - description: "Performance - Sync File I/O"
     vars:
@@ -284,7 +284,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('sync') || (f.title + f.description).toLowerCase().includes('blocking') || (f.title + f.description).toLowerCase().includes('file'))"
+        value: "(output.findings || []).some(f => ((f?.title || '') + (f?.description || '')).toLowerCase().includes('sync') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('blocking') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('file'))"
 
   - description: "Performance - No Caching"
     vars:
