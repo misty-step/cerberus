@@ -68,7 +68,7 @@ def is_scratchpad(text: str) -> bool:
 
 def extract_review_summary(text: str) -> str:
     """Extract a meaningful summary from unstructured review text."""
-    # Check for explicit summary or verdict headers
+    # Check for explicit summary or verdict headers.
     for header in (r"## Summary", r"## Verdict:"):
         match = re.search(
             rf"{header}\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL,
@@ -78,22 +78,9 @@ def extract_review_summary(text: str) -> str:
             if section:
                 return section[:500]
 
-    # Fallback: first 500 non-empty chars
+    # Fallback: first 500 non-empty chars.
     stripped = text.strip()
     return stripped[:500] if stripped else ""
-
-
-def extract_notes_summary(text: str, max_len: int = 10000) -> str:
-    """Extract investigation notes for inclusion in partial review summary."""
-    match = re.search(
-        r"## Investigation Notes\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL
-    )
-    if not match:
-        return ""
-    notes = match.group(1).strip()
-    if len(notes) > max_len:
-        notes = notes[:max_len] + "..."
-    return notes
 
 
 _AGENTIC_PREAMBLE_START_RE = re.compile(
@@ -127,9 +114,8 @@ _FIRST_SENTENCE_RE = re.compile(r"(?s)^.*?(?:[.!?](?:\s+|\s*\n+)|\n+)")
 def sanitize_raw_review(text: str) -> str:
     """Strip common agentic narration preambles from raw model output.
 
-    This is used ONLY for displaying fallback/unparsed output (raw_review).
-    The goal is to avoid surfacing tool-use / process narration ("I'll start by
-    reading...", "Now I need to...") in PR comments when JSON output fails.
+    Used only for preserving fallback/unparsed output (raw_review) in verdict JSON
+    while removing tool-use/process narration.
     """
     sanitized = text.replace("\r\n", "\n").strip()
     # Normalize typographic apostrophes to ASCII to keep regex + matching simple.
@@ -191,8 +177,7 @@ def fail(msg: str) -> NoReturn:
     if is_scratchpad(RAW_INPUT):
         md_verdict = extract_verdict_from_markdown(RAW_INPUT)
         verdict = md_verdict or "WARN"
-        notes = extract_notes_summary(RAW_INPUT)
-        summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
+        summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
         write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3,
                        summary=summary, raw_review=raw_text or None,
                        findings=[{
@@ -201,8 +186,8 @@ def fail(msg: str) -> NoReturn:
                            "file": "N/A",
                            "line": 0,
                            "title": "Review analysis available but not machine-parseable",
-                           "description": "Reviewer produced a scratchpad review without structured JSON output. See raw review for details.",
-                           "suggestion": "No action needed; review content is preserved in the raw output section.",
+                           "description": "Reviewer produced a scratchpad review without structured JSON output. Raw output is preserved in workflow logs/artifacts.",
+                           "suggestion": "No action needed; see the workflow run for the preserved raw output.",
                        }])
     write_fallback(REVIEWER_NAME, msg, raw_review=raw_text or None)
 
@@ -925,8 +910,7 @@ def main() -> None:
             if is_scratchpad(raw):
                 md_verdict = extract_verdict_from_markdown(raw)
                 verdict = md_verdict or "WARN"
-                notes = extract_notes_summary(raw)
-                summary = f"Partial review (investigation notes follow). {notes}" if notes else "Partial review timed out before completion."
+                summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict=verdict, confidence=0.3,
                                summary=summary, raw_review=raw_text or None,
@@ -936,16 +920,16 @@ def main() -> None:
                                    "file": "N/A",
                                    "line": 0,
                                    "title": "Review analysis available but not machine-parseable",
-                                   "description": "Reviewer produced a scratchpad review without structured JSON output. See raw review for details.",
-                                   "suggestion": "No action needed; review content is preserved in the raw output section.",
+                                   "description": "Reviewer produced a scratchpad review without structured JSON output. Raw output is preserved in workflow logs/artifacts.",
+                                   "suggestion": "No action needed; see the workflow run for the preserved raw output.",
                                }])
 
             # Substantive raw text exists — upgrade to WARN so the review is visible.
             if len(sanitized_text) > 500:
-                summary = extract_review_summary(sanitized_text)
+                summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict="WARN", confidence=0.3,
-                               summary=summary or f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                               summary=summary,
                                raw_review=sanitized_text,
                                findings=[{
                                    "severity": "info",
@@ -953,8 +937,8 @@ def main() -> None:
                                    "file": "N/A",
                                    "line": 0,
                                    "title": "Review analysis available but not machine-parseable",
-                                   "description": "Reviewer produced substantive output without structured JSON. See raw review for details.",
-                                   "suggestion": "No action needed; review content is preserved in the raw output section.",
+                                   "description": "Reviewer produced substantive output without structured JSON. Raw output is preserved in workflow logs/artifacts.",
+                                   "suggestion": "No action needed; see the workflow run for the preserved raw output.",
                                }])
 
             # Not a scratchpad and not substantive — SKIP (non-blocking).

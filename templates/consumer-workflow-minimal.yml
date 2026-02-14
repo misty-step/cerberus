@@ -1,0 +1,75 @@
+# Cerberus AI Code Review Council — Minimal Consumer Workflow
+# https://github.com/misty-step/cerberus
+#
+# This workflow uses the dynamic matrix action to automatically stay in sync
+# with the Cerberus reviewer roster. When Cerberus adds or changes reviewers,
+# your workflow automatically uses the updated roster without manual edits.
+#
+# Fork PR security: repository secrets are unavailable to forks.
+# Keep review job gated to same-repo PRs to avoid secret access attempts.
+name: Cerberus Council
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: cerberus-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Generate the reviewer matrix from Cerberus defaults/config.yml
+  matrix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      count: ${{ steps.generate.outputs.count }}
+    steps:
+      - uses: misty-step/cerberus/matrix@v2
+        id: generate
+
+  # Run reviews in parallel using the generated matrix
+  review:
+    needs: matrix
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: read
+    name: "${{ matrix.reviewer }}"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          post-comment: 'false'
+          timeout: '600'
+          # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
+          # context: |
+          #   Moneta is a single-user personal finance and tax tool.
+          #   Data volumes are bounded: ~100-500 transactions per user per year.
+          # Optional: force one model for all reviewers (overrides per-reviewer defaults)
+          # model: 'openrouter/moonshotai/kimi-k2.5'
+          # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
+          # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
+
+  # Aggregate all review results into a single verdict comment
+  verdict:
+    name: "Council Verdict"
+    needs: review
+    if: always()
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)

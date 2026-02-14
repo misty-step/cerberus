@@ -1816,8 +1816,8 @@ class TestRawReviewPreservation:
         assert "raw_review" in data
         assert len(data["raw_review"]) == 50000
 
-    def test_extract_review_summary_with_summary_header(self):
-        """extract_review_summary extracts ## Summary section."""
+    def test_unstructured_text_summary_is_generic(self):
+        """Unstructured (non-JSON) output should not leak raw analysis into summary."""
         text = (
             "# Review\n\n## Summary\nThe code looks good overall.\n\n"
             "## Details\n" + "This is detailed analysis of the code. " * 20
@@ -1827,7 +1827,8 @@ class TestRawReviewPreservation:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "WARN"
-        assert "looks good" in data["summary"]
+        assert "unstructured" in data["summary"].lower()
+        assert "looks good" not in data["summary"].lower()
 
     def test_extract_review_summary_with_verdict_header(self):
         """Text with ## Verdict: header is treated as scratchpad and uses that verdict."""

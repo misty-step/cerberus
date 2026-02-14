@@ -10,6 +10,8 @@ import re
 import sys
 from pathlib import Path
 
+from lib.markdown import details_block, location_link, repo_context, severity_icon
+
 # GitHub PR comments are silently rejected above 65,536 bytes.
 # Budget headroom so the structural markdown always fits.
 MAX_COMMENT_SIZE = 60000
@@ -166,6 +168,22 @@ def finding_location(finding: dict) -> str:
     return "location n/a"
 
 
+def finding_location_link(finding: dict) -> str:
+    path = str(finding.get("file") or "").strip()
+    line = as_int(finding.get("line"))
+    if line is not None and line <= 0:
+        line = None
+    server, repo, sha = repo_context()
+    return location_link(
+        path,
+        line,
+        server=server,
+        repo=repo,
+        sha=sha,
+        missing_label="location n/a",
+    )
+
+
 def truncate(text: object, *, max_len: int) -> str:
     raw = str(text or "").strip()
     if len(raw) <= max_len:
@@ -274,75 +292,140 @@ def footer_line() -> str:
     )
 
 
-def format_reviewer_block(reviewer: dict, *, max_findings: int) -> list[str]:
-    verdict = normalize_verdict(reviewer.get("verdict"))
-    icon = VERDICT_ICON[verdict]
-    name = reviewer_name(reviewer)
-    perspective = perspective_name(reviewer)
-    runtime = format_runtime(reviewer.get("runtime_seconds"))
-    confidence = format_confidence(reviewer.get("confidence"))
-    model_label = format_model(reviewer)
-    findings = findings_for(reviewer)
-    summary = truncate(reviewer.get("summary"), max_len=2000) or "No summary provided."
+def format_reviewer_overview_lines(reviewers: list[dict]) -> list[str]:
+    if not reviewers:
+        return ["- No reviewer verdicts available."]
 
-    summary_parts = [
-        f"<summary>{icon} <strong>{name}</strong> ({perspective}) | "
-        f"{verdict} | confidence {confidence}",
-    ]
-    if model_label:
-        summary_parts.append(f" | model {model_label}")
-    summary_parts.append(f" | runtime {runtime} | findings {len(findings)}</summary>")
+    lines: list[str] = []
+    for reviewer in reviewers:
+        verdict = normalize_verdict(reviewer.get("verdict"))
+        icon = VERDICT_ICON[verdict]
+        name = reviewer_name(reviewer)
+        perspective = perspective_name(reviewer)
+        runtime = format_runtime(reviewer.get("runtime_seconds"))
+        confidence = format_confidence(reviewer.get("confidence"))
+        model_label = format_model(reviewer)
+        finding_count = len(findings_for(reviewer))
 
+        parts = [
+            f"{icon} **{name}** ({perspective})",
+            f"`{verdict}`",
+            f"{finding_count} findings",
+            f"conf `{confidence}`",
+            f"runtime `{runtime}`",
+        ]
+        if model_label:
+            parts.append(f"model {model_label}")
+        lines.append("- " + " | ".join(parts))
+
+    return lines
+
+
+def has_raw_output(reviewers: list[dict]) -> bool:
+    for reviewer in reviewers:
+        raw_review = reviewer.get("raw_review")
+        if isinstance(raw_review, str) and raw_review.strip():
+            return True
+    return False
+
+
+def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple[str, dict]]:
+    items: list[tuple[str, dict]] = []
+    for reviewer in reviewers:
+        rname = reviewer_name(reviewer)
+        for finding in findings_for(reviewer):
+            items.append((rname, finding))
+
+    def _sort_key(item: tuple[str, dict]) -> tuple[int, str, str, str]:
+        rname, finding = item
+        return (
+            SEVERITY_ORDER.get(normalize_severity(finding.get("severity")), 99),
+            str(finding.get("title") or ""),
+            finding_location(finding),
+            rname,
+        )
+
+    return sorted(items, key=_sort_key)[:max_total]
+
+
+def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[str]:
+    items = collect_key_findings(reviewers, max_total=max_total)
+    if not items:
+        return ["_No findings reported._"]
+
+    lines: list[str] = []
+    for rname, finding in items:
+        severity = normalize_severity(finding.get("severity"))
+        sev_icon = severity_icon(severity)
+        title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
+        category = truncate(finding.get("category"), max_len=80) or "uncategorized"
+        location = finding_location_link(finding)
+        description = truncate(finding.get("description"), max_len=1000)
+        suggestion = truncate(finding.get("suggestion"), max_len=1000)
+
+        lines.append(f"- {sev_icon} **{title}** (`{category}`) at {location} ({rname})")
+
+        detail_lines: list[str] = []
+        if description:
+            detail_lines.append(f"Description: {description}")
+        if suggestion:
+            detail_lines.append(f"Suggestion: {suggestion}")
+        lines.extend(details_block(detail_lines, summary="Details", indent="  "))
+
+    return lines
+
+
+def format_reviewer_details_block(reviewers: list[dict], *, max_findings: int) -> list[str]:
     lines = [
         "<details>",
-        "".join(summary_parts),
+        "<summary>Reviewer details (click to expand)</summary>",
         "",
-        f"- Verdict: `{verdict}`",
-        f"- Confidence: `{confidence}`",
     ]
-    if model_label:
-        lines.append(f"- Model: {model_label}")
-    lines.extend([
-        f"- Runtime: `{runtime}`",
-        f"- Summary: {summary}",
-        "",
-    ])
 
-    if findings:
-        lines.append("**Key findings**")
-        for finding in top_findings(reviewer, max_findings=max_findings):
-            severity = normalize_severity(finding.get("severity"))
-            title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
-            category = truncate(finding.get("category"), max_len=80) or "uncategorized"
-            location = finding_location(finding)
-            description = truncate(finding.get("description"), max_len=1000)
-            suggestion = truncate(finding.get("suggestion"), max_len=1000)
-            lines.append(
-                f"- `{severity}` **{title}** (`{category}`) at `{location}`"
-            )
-            if description:
-                lines.append(f"  - {description}")
-            if suggestion:
-                lines.append(f"  - Suggestion: {suggestion}")
-        hidden = len(findings) - max_findings
-        if hidden > 0:
-            lines.append(f"- Additional findings not shown: {hidden}")
-    else:
-        lines.append("_No findings reported._")
+    for reviewer in reviewers:
+        verdict = normalize_verdict(reviewer.get("verdict"))
+        icon = VERDICT_ICON[verdict]
+        name = reviewer_name(reviewer)
+        perspective = perspective_name(reviewer)
+        runtime = format_runtime(reviewer.get("runtime_seconds"))
+        confidence = format_confidence(reviewer.get("confidence"))
+        model_label = format_model(reviewer)
+        findings = findings_for(reviewer)
+        summary = truncate(reviewer.get("summary"), max_len=2000) or "No summary provided."
 
-    raw_review = reviewer.get("raw_review")
-    if raw_review and isinstance(raw_review, str) and raw_review.strip():
-        lines.extend([
-            "",
-            "<details>",
-            "<summary>Full review output (click to expand)</summary>",
-            "",
-            raw_review.strip(),
-            "",
-            "</details>",
-        ])
+        lines.append(f"#### {icon} {name} ({perspective}) — {verdict}")
+        lines.append("")
+        lines.append(f"- Confidence: `{confidence}`")
+        if model_label:
+            lines.append(f"- Model: {model_label}")
+        lines.append(f"- Runtime: `{runtime}`")
+        lines.append(f"- Summary: {summary}")
+        lines.append("")
 
-    lines.extend(["", "</details>"])
+        if findings:
+            lines.append("**Findings**")
+            for finding in top_findings(reviewer, max_findings=max_findings):
+                severity = normalize_severity(finding.get("severity"))
+                sev_icon = severity_icon(severity)
+                title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
+                category = truncate(finding.get("category"), max_len=80) or "uncategorized"
+                location = finding_location_link(finding)
+                description = truncate(finding.get("description"), max_len=1000)
+                suggestion = truncate(finding.get("suggestion"), max_len=1000)
+                lines.append(f"- {sev_icon} **{title}** (`{category}`) at {location}")
+                if description:
+                    lines.append(f"  - {description}")
+                if suggestion:
+                    lines.append(f"  - Suggestion: {suggestion}")
+            hidden = len(findings) - max_findings
+            if hidden > 0:
+                lines.append(f"- Additional findings not shown: {hidden}")
+        else:
+            lines.append("_No findings reported._")
+
+        lines.append("")
+
+    lines.append("</details>")
     return lines
 
 
@@ -361,7 +444,12 @@ def _build_comment(
     reviewer_skip: int,
     override: dict | None,
     reviewers: list[dict],
+    detail_reviewers: list[dict],
+    include_key_findings: bool,
+    include_reviewer_details: bool,
     max_findings: int,
+    max_key_findings: int,
+    raw_output_note: str = "",
     size_note: str = "",
 ) -> str:
     lines = [
@@ -396,18 +484,33 @@ def _build_comment(
         reason = truncate(override.get("reason"), max_len=120) or "n/a"
         lines.append(f"**Override:** active by `{actor}` on `{sha}`. Reason: {reason}")
 
+    if raw_output_note:
+        lines.extend(["", raw_output_note])
     if size_note:
         lines.extend(["", size_note])
 
-    lines.extend(["", "### Reviewer Details"])
-    for reviewer in reviewers:
-        lines.extend([""] + format_reviewer_block(reviewer, max_findings=max_findings))
+    if reviewers:
+        lines.extend(["", "### Reviewer Overview"])
+        lines.extend(format_reviewer_overview_lines(reviewers))
+
+    if include_key_findings:
+        lines.extend(["", "### Key Findings"])
+        lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
+
+    if include_reviewer_details and detail_reviewers:
+        lines.extend(["", *format_reviewer_details_block(detail_reviewers, max_findings=max_findings)])
 
     lines.extend(["", "---", footer_line(), ""])
     return "\n".join(lines)
 
 
-def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
+def render_comment(
+    council: dict,
+    *,
+    max_findings: int,
+    max_key_findings: int,
+    marker: str,
+) -> str:
     reviewers = council.get("reviewers")
     if not isinstance(reviewers, list):
         reviewers = []
@@ -440,6 +543,23 @@ def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
         reviewer_fail = len([r for r in reviewers if normalize_verdict(r.get("verdict")) == "FAIL"])
         reviewer_skip = len([r for r in reviewers if normalize_verdict(r.get("verdict")) == "SKIP"])
 
+    raw_note = ""
+    if has_raw_output(reviewers):
+        raw_note = (
+            "> **Note:** One or more reviewers produced unstructured output. "
+            "Raw output is preserved in workflow artifacts/logs, but omitted from PR comments."
+        )
+
+    total_findings = sum(len(findings_for(r)) for r in reviewers)
+    include_key_findings = total_findings > 0
+
+    detail_reviewers = [
+        r for r in reviewers
+        if normalize_verdict(r.get("verdict")) != "PASS" or len(findings_for(r)) > 0
+    ]
+
+    include_reviewer_details = verdict != "PASS" or include_key_findings or bool(raw_note)
+
     common = dict(
         marker=marker,
         icon=icon,
@@ -454,23 +574,27 @@ def render_comment(council: dict, *, max_findings: int, marker: str) -> str:
         reviewer_skip=reviewer_skip,
         override=council.get("override"),
         reviewers=reviewers,
+        detail_reviewers=detail_reviewers,
+        include_key_findings=include_key_findings,
+        include_reviewer_details=include_reviewer_details,
         max_findings=max_findings,
+        max_key_findings=max_key_findings,
+        raw_output_note=raw_note,
     )
 
     result = _build_comment(**common)
 
     # Guard against GitHub's 65,536-byte comment limit.
-    # Strip raw_review blocks first (largest variable-size content).
     if len(result) > MAX_COMMENT_SIZE:
-        for reviewer in reviewers:
-            reviewer.pop("raw_review", None)
-        result = _build_comment(
-            **common,
-            size_note=(
-                "> **Note:** Raw review output was omitted to stay within GitHub's comment size limit. "
-                "See the workflow run artifacts for full output."
-            ),
+        truncated = dict(common)
+        truncated["include_reviewer_details"] = False
+        truncated["max_findings"] = min(max_findings, 3)
+        truncated["max_key_findings"] = min(max_key_findings, 5)
+        truncated["size_note"] = (
+            "> **Note:** Comment was truncated to stay within GitHub's size limit. "
+            "See the workflow run for full details."
         )
+        result = _build_comment(**truncated)
 
     return result
 
@@ -498,6 +622,12 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help="Maximum findings to show per reviewer section.",
     )
+    parser.add_argument(
+        "--max-key-findings",
+        type=int,
+        default=10,
+        help="Maximum findings to show in the Key Findings section.",
+    )
     return parser.parse_args()
 
 
@@ -505,12 +635,19 @@ def main() -> None:
     args = parse_args()
     if args.max_findings < 1:
         fail("--max-findings must be >= 1")
+    if args.max_key_findings < 1:
+        fail("--max-key-findings must be >= 1")
 
     council_path = Path(args.council_json)
     output_path = Path(args.output)
 
     council = read_json(council_path)
-    markdown = render_comment(council, max_findings=args.max_findings, marker=args.marker)
+    markdown = render_comment(
+        council,
+        max_findings=args.max_findings,
+        max_key_findings=args.max_key_findings,
+        marker=args.marker,
+    )
 
     try:
         output_path.write_text(markdown, encoding="utf-8")

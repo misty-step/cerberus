@@ -1,16 +1,17 @@
 # Cerberus AI Code Review Council
 # https://github.com/misty-step/cerberus
 #
-# FORK PR SECURITY NOTE:
-# - GitHub Actions running on fork PRs have NO access to repository secrets
-# - The GITHUB_TOKEN is read-only for fork PRs
-# - This workflow explicitly gates full review to same-repo PRs only
-# - Fork PRs will trigger this workflow but skip the review jobs
-# - This prevents confusing failures from secret-dependent operations
+# ⚠️ DEPRECATED: This template hardcodes the reviewer matrix and will drift
+# from the Cerberus roster over time. For a minimal workflow that stays
+# automatically in sync, use consumer-workflow-minimal.yml instead:
 #
-# Fork PR Detection:
-# - github.event.pull_request.head.repo.fork == true  → PR from a fork
-# - github.event.pull_request.head.repo.full_name == github.repository → same repo
+#   https://github.com/misty-step/cerberus/blob/main/templates/consumer-workflow-minimal.yml
+#
+# FORK PR SECURITY:
+# - Repository secrets are unavailable to fork PRs
+# - The GITHUB_TOKEN is read-only for fork PRs
+# - This workflow gates full review to same-repo PRs only
+# - Fork PRs trigger the workflow but skip review jobs
 name: Cerberus Council
 
 on:
