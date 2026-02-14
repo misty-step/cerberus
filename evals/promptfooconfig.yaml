@@ -564,4 +564,4 @@ shareResults: false
 # Default test options
 defaultTest:
   options:
-    transform: "try { return JSON.parse(output) } catch(e) { const m = output.match(/\\{[\\s\\S]*\\}/); return m ? JSON.parse(m[0]) : output }"
+    transform: "(() => { try { return JSON.parse(output) } catch(e) { const m = output.match(/\\{[\\s\\S]*\\}/); return m ? JSON.parse(m[0]) : output } })()"
