@@ -152,13 +152,48 @@ stage_opencode_project_config
 
 reviewer_meta="$(
   awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {
+    # Skip empty lines and comments
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+    
+    # Normalize: strip leading whitespace for field matching
+    /^[[:space:]]*-[[:space:]]*name:/ {
       if (matched && !printed) { print name "\t" model; printed=1 }
-      name=$3; model=""; matched=0
+      # Extract name value (everything after "name:")
+      match($0, /name:[[:space:]]*/)
+      name=substr($0, RSTART+RLENGTH)
+      # Strip quotes
+      gsub(/^[\"\047]/, "", name)
+      gsub(/[\"\047]$/, "", name)
+      model=""; matched=0
       next
     }
-    $1=="perspective:" && $2==p { matched=1; next }
-    $1=="model:" { model=$2; next }
+    
+    # Check for perspective match
+    /perspective:/ {
+      # Extract perspective value
+      match($0, /perspective:[[:space:]]*/)
+      persp=substr($0, RSTART+RLENGTH)
+      # Strip quotes
+      gsub(/^[\"\047]/, "", persp)
+      gsub(/[\"\047]$/, "", persp)
+      if (persp == p) { matched=1 }
+      next
+    }
+    
+    # Extract model if present
+    /^[[:space:]]*model:/ {
+      # Extract model value
+      match($0, /model:[[:space:]]*/)
+      model=substr($0, RSTART+RLENGTH)
+      # Strip quotes
+      gsub(/^[\"\047]/, "", model)
+      gsub(/[\"\047]$/, "", model)
+      # Strip inline comments
+      sub(/[[:space:]]*#.*$/, "", model)
+      next
+    }
+    
     END { if (matched && !printed) print name "\t" model }
   ' "$config_file"
 )"
@@ -173,21 +208,49 @@ fi
 # Read config default model (optional). Used when input model unset and reviewer has no model.
 config_default_model_raw="$(
   awk '
-    $0 ~ /^model:/ {in_model=1; next}
-    in_model && $0 !~ /^  / {in_model=0}
-    in_model && $0 ~ /^  default:/ {print $2; exit}
+    # Skip empty lines and comments
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+    # Detect model: section
+    /^[[:space:]]*model:/ {in_model=1; next}
+    # Exit model section if line has no leading whitespace
+    in_model && !/^[[:space:]]/ {in_model=0}
+    # Extract default value
+    in_model && /^[[:space:]]+default:/ {
+      sub(/^[[:space:]]+default:/, "")
+      # Strip quotes
+      gsub(/^[\"\047]/, "")
+      gsub(/[\"\047]$/, "")
+      # Strip inline comments
+      sub(/[[:space:]]*#.*$/, "")
+      print
+      exit
+    }
   ' "$config_file"
 )"
 
 # Read model pool from config (optional). Used when reviewer has model: pool.
 read_model_pool() {
   awk '
-    $0 ~ /^model:/ {in_model=1; next}
-    in_model && $0 !~ /^  / {in_model=0}
-    in_model && $0 ~ /^  pool:/ {in_pool=1; next}
-    in_pool && $0 !~ /^    - / {in_pool=0}
-    in_pool && $0 ~ /^    - / {
-      gsub(/^    - /, "")
+    # Skip empty lines and comments
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+    
+    # Detect model: section (any amount of leading whitespace)
+    /^[[:space:]]*model:/ {in_model=1; next}
+    # Exit model section if line has no leading whitespace (new top-level key)
+    in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
+    
+    # Detect pool: within model section
+    in_model && /^[[:space:]]+pool:/ {in_pool=1; next}
+    
+    # Extract pool items (dash after optional whitespace)
+    in_pool && /^[[:space:]]*-/ {
+      # Strip the dash and leading whitespace
+      sub(/^[[:space:]]*-[[:space:]]*/, "")
+      # Strip inline comments
+      sub(/[[:space:]]*#.*$/, "")
+      # Strip quotes
       gsub(/^[\"\047]/, "")
       gsub(/[\"\047]$/, "")
       print

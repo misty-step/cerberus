@@ -307,8 +307,8 @@ reviewers:
         model_used = model_used_file.read_text().strip()
         assert model_used in {"openrouter/model-a", "openrouter/model-b"}
 
-        # Check logged in stderr
-        assert "model_used=" in result.stderr
+        # Check logged in stdout
+        assert "model_used=" in result.stdout
 
     def test_mixed_reviewers_some_pool_some_pinned(self, tmp_path: Path) -> None:
         """Council can have some reviewers using pool and others pinned."""
