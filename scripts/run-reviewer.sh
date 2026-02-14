@@ -26,6 +26,8 @@ cerberus_cleanup() {
   # for downstream steps (same as primary output.txt and review.md).
   rm -f "/tmp/${perspective}-fast-path-stderr.log" || true
   # Note: model-used is NOT cleaned here — downstream steps read it.
+  # Note: parse-failure-models.txt and parse-failure-retries.txt are NOT
+  # cleaned here — parse-review.py reads them to enrich SKIP verdicts.
   rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
   if [[ -z "$cerberus_staging_backup_dir" ]]; then
@@ -152,13 +154,39 @@ stage_opencode_project_config
 
 reviewer_meta="$(
   awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+
+    /^[[:space:]]*-[[:space:]]*name:/ {
       if (matched && !printed) { print name "\t" model; printed=1 }
-      name=$3; model=""; matched=0
+      match($0, /name:[[:space:]]*/)
+      name=substr($0, RSTART+RLENGTH)
+      sub(/[[:space:]]+#.*$/, "", name)
+      gsub(/^[\"\047]/, "", name)
+      gsub(/[\"\047]$/, "", name)
+      model=""; matched=0
       next
     }
-    $1=="perspective:" && $2==p { matched=1; next }
-    $1=="model:" { model=$2; next }
+
+    /^[[:space:]]*perspective:/ {
+      match($0, /perspective:[[:space:]]*/)
+      persp=substr($0, RSTART+RLENGTH)
+      sub(/[[:space:]]+#.*$/, "", persp)
+      gsub(/^[\"\047]/, "", persp)
+      gsub(/[\"\047]$/, "", persp)
+      if (persp == p) { matched=1 }
+      next
+    }
+
+    /^[[:space:]]*model:/ {
+      match($0, /model:[[:space:]]*/)
+      model=substr($0, RSTART+RLENGTH)
+      sub(/[[:space:]]+#.*$/, "", model)
+      gsub(/^[\"\047]/, "", model)
+      gsub(/[\"\047]$/, "", model)
+      next
+    }
+
     END { if (matched && !printed) print name "\t" model }
   ' "$config_file"
 )"
@@ -173,11 +201,59 @@ fi
 # Read config default model (optional). Used when input model unset and reviewer has no model.
 config_default_model_raw="$(
   awk '
-    $0 ~ /^model:/ {in_model=1; next}
-    in_model && $0 !~ /^  / {in_model=0}
-    in_model && $0 ~ /^  default:/ {print $2; exit}
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+    /^model:/ {in_model=1; next}
+    in_model && !/^[[:space:]]/ {in_model=0}
+    in_model && /^[[:space:]]+default:/ {
+      sub(/^[[:space:]]+default:[[:space:]]*/, "")
+      sub(/[[:space:]]+#.*$/, "")
+      gsub(/^[\"\047]/, "")
+      gsub(/[\"\047]$/, "")
+      print
+      exit
+    }
   ' "$config_file"
 )"
+
+# If reviewer model is "pool", randomly select from the model.pool config list.
+if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
+  model_pool=()
+  while IFS= read -r _pool_line; do
+    [[ -n "$_pool_line" ]] && model_pool+=("$_pool_line")
+  done < <(
+    awk '
+      /^[[:space:]]*$/ {next}
+      /^[[:space:]]*#/ {next}
+      /^model:/ {in_model=1; next}
+      in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
+      in_model && /^[[:space:]]+[a-zA-Z_-]+:/ {
+        if (/^[[:space:]]+pool:/) {in_pool=1} else {in_pool=0}
+        next
+      }
+      in_pool && /^[[:space:]]*-/ {
+        sub(/^[[:space:]]*-[[:space:]]*/, "")
+        sub(/[[:space:]]+#.*$/, "")
+        gsub(/^[\"\047]/, "")
+        gsub(/[\"\047]$/, "")
+        print
+      }
+    ' "$config_file"
+  )
+
+  if [[ ${#model_pool[@]} -gt 0 ]]; then
+    if command -v shuf >/dev/null 2>&1; then
+      reviewer_model_raw="$(printf '%s\n' "${model_pool[@]}" | shuf -n 1)"
+    else
+      idx=$((RANDOM % ${#model_pool[@]}))
+      reviewer_model_raw="${model_pool[$idx]}"
+    fi
+    echo "Selected random model from pool: $reviewer_model_raw"
+  else
+    echo "Warning: reviewer uses 'pool' but no pool defined. Falling back to default."
+    reviewer_model_raw=""
+  fi
+fi
 
 # Persist reviewer name for downstream steps (parse, council).
 printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
@@ -281,6 +357,57 @@ extract_diff_files() {
     || true
 }
 
+# Check if output contains a valid JSON block for parse-review.py.
+# Matches the same patterns parse-review.py accepts:
+#   ```json\s*{...}\s*```  (DOTALL)
+# Handles JSON on the same line as ```json or on subsequent lines.
+# Returns 0 if valid JSON block found, 1 otherwise.
+has_valid_json_block() {
+  local file="$1"
+  if [[ ! -f "$file" ]] || [[ ! -s "$file" ]]; then
+    return 1
+  fi
+  awk '
+    /^```json/ {
+      # Check for JSON on the same line (e.g., ```json{"key":"val"})
+      if (/```json[[:space:]]*\{/) { found=1; exit }
+      in_block=1; next
+    }
+    in_block && /^[[:space:]]*$/ { next }
+    in_block && /^[[:space:]]*\{/ { found=1; exit }
+    in_block { in_block=0 }
+    END { exit !found }
+  ' "$file" 2>/dev/null
+}
+
+# Run opencode in a sanitized environment.  Only explicitly-allowed variables
+# are forwarded.  This prevents the model/CLI from seeing GITHUB_TOKEN,
+# GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other secrets that leak via the
+# Actions runner environment.
+# Usage: run_opencode <model> <timeout_seconds>
+# Sets: OPENCODE_EXIT_CODE
+run_opencode() {
+  local _model="$1"
+  local _timeout="$2"
+
+  env -i \
+    PATH="${PATH}" \
+    HOME="${CERBERUS_ISOLATED_HOME}" \
+    XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
+    XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
+    TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
+    OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+    OPENCODE_DISABLE_AUTOUPDATE=true \
+    ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
+    ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
+  timeout "${_timeout}" opencode run \
+    -m "${_model}" \
+    --agent "${perspective}" \
+    < "/tmp/${perspective}-review-prompt.md" \
+    > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
+  OPENCODE_EXIT_CODE=$?
+}
+
 # API error patterns to detect
 # Permanent errors (not retryable): non-429 4xx, bad key/auth/quota failures
 # Transient errors (retryable): 429 (rate limit), 5xx, and network transport errors
@@ -365,12 +492,32 @@ default_backoff_seconds() {
   esac
 }
 
+# Calculate remaining timeout budget given the start time and original timeout.
+# Returns 0 when budget is exhausted (caller should skip the operation).
+get_remaining_timeout() {
+  local start_time="$1"
+  local original_timeout="$2"
+
+  local current_time
+  current_time=$(date +%s)
+  local elapsed=$((current_time - start_time))
+  local remaining=$((original_timeout - elapsed))
+
+  if [[ $remaining -le 0 ]]; then
+    remaining=0
+  fi
+  echo "$remaining"
+}
+
 # Run opencode with retry + model fallback logic.
 # Inner loop: retry transient errors with backoff (up to max_retries).
 # Outer loop: cycle through fallback models when retries are exhausted.
 max_retries=3
 model_index=0
 fallback_triggered=false
+
+# Track elapsed time to share timeout budget across retries
+review_start_time=$(date +%s)
 
 for model in "${models[@]}"; do
   if [[ $model_index -gt 0 ]]; then
@@ -382,27 +529,15 @@ for model in "${models[@]}"; do
   advance_to_next_model=false
 
   while true; do
+    remaining_budget="$(get_remaining_timeout "$review_start_time" "$primary_timeout")"
+    if [[ "$remaining_budget" -eq 0 ]]; then
+      echo "Timeout budget exhausted before attempt — treating as timeout."
+      exit_code=124  # same as timeout(1) expiry
+      break
+    fi
     set +e
-    # Run opencode with a sanitized environment.  Only explicitly-allowed
-    # variables are forwarded.  This prevents the model/CLI from seeing
-    # GITHUB_TOKEN, GH_TOKEN, ACTIONS_RUNTIME_TOKEN, or any other
-    # secrets that leak via the Actions runner environment.
-    env -i \
-      PATH="${PATH}" \
-      HOME="${CERBERUS_ISOLATED_HOME}" \
-      XDG_CONFIG_HOME="${CERBERUS_ISOLATED_HOME}/.config" \
-      XDG_DATA_HOME="${CERBERUS_ISOLATED_HOME}/.local/share" \
-      TMPDIR="${CERBERUS_ISOLATED_HOME}/tmp" \
-      OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-      OPENCODE_DISABLE_AUTOUPDATE=true \
-      ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
-      ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-    timeout "${primary_timeout}" opencode run \
-      -m "${model}" \
-      --agent "${perspective}" \
-      < "/tmp/${perspective}-review-prompt.md" \
-      > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
-    exit_code=$?
+    run_opencode "${model}" "$remaining_budget"
+    exit_code=$OPENCODE_EXIT_CODE
     set -e
 
     # Always dump diagnostics for CI visibility
@@ -485,6 +620,67 @@ for model in "${models[@]}"; do
   # No more fallback models available.
   break
 done
+
+# Parse-failure retry logic (issue #144):
+# If the output doesn't contain a valid JSON block, retry with same model,
+# then fallback model. Track models attempted for SKIP verdict metadata.
+parse_failure_retries=0
+parse_failure_models_attempted=()
+stdout_file="/tmp/${perspective}-output.txt"
+scratchpad="/tmp/${perspective}-review.md"
+
+# Check if we need parse-failure recovery (exit 0 but no valid JSON)
+if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
+  echo "Parse failure detected: no valid JSON block in output. Attempting recovery retries..."
+
+  for pf_model in "${models[@]}"; do
+    # Skip if we already have valid JSON
+    if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
+      echo "Parse recovery: valid JSON found after retry."
+      break
+    fi
+
+    # Skip if timeout budget is exhausted
+    pf_remaining="$(get_remaining_timeout "$review_start_time" "$primary_timeout")"
+    if [[ "$pf_remaining" -eq 0 ]]; then
+      echo "Parse recovery: timeout budget exhausted, skipping remaining models."
+      break
+    fi
+
+    parse_failure_models_attempted+=("$pf_model")
+    parse_failure_retries=$((parse_failure_retries + 1))
+    echo "Parse recovery retry ${parse_failure_retries}: model=${pf_model}"
+
+    set +e
+    run_opencode "${pf_model}" "${pf_remaining}"
+    pf_exit_code=$OPENCODE_EXIT_CODE
+    set -e
+
+    output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
+    scratchpad_size="0"
+    if [[ -f "$scratchpad" ]]; then
+      scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+    fi
+    echo "Parse recovery exit=$pf_exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes model=${pf_model}"
+
+    if [[ "$pf_exit_code" -eq 0 ]] && { [[ "$output_size" -gt 0 ]] || [[ "$scratchpad_size" -gt 0 ]]; }; then
+      if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
+        echo "Parse recovery successful: valid JSON block found."
+        model_used="$pf_model"
+        exit_code=0
+        break
+      fi
+    fi
+  done
+
+  # If we still don't have valid JSON after all retries, record failure metadata
+  if ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
+    echo "Parse recovery failed: no valid JSON after ${parse_failure_retries} retries across ${#parse_failure_models_attempted[@]} models."
+    # Write parse-failure metadata for parse-review.py
+    printf '%s\n' "${parse_failure_models_attempted[@]}" > "/tmp/${perspective}-parse-failure-models.txt"
+    echo "$parse_failure_retries" > "/tmp/${perspective}-parse-failure-retries.txt"
+  fi
+fi
 
 # Log which model was ultimately used.
 echo "model_used=${model_used}"

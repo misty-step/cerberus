@@ -13,6 +13,15 @@ model:
   fallback:
     - "openrouter/google/gemini-3-flash-preview"
     - "openrouter/z-ai/glm-5"
+  # Pool for random model assignment per run (issue #148).
+  # When a reviewer has "model: pool", a random model is selected each run.
+  # Benefits: resilience (no single model failure tanks a reviewer),
+  # implicit eval data, cost optimization, diversity of perspectives.
+  # pool:
+  #   - "openrouter/moonshotai/kimi-k2.5"
+  #   - "openrouter/z-ai/glm-5"
+  #   - "openrouter/minimax/minimax-m2.5"
+  #   - "openrouter/google/gemini-3-flash-preview"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer

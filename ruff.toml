@@ -1,0 +1,5 @@
+# Shared ruff configuration for Cerberus
+# Used by pre-commit, pre-push, and Makefile lint targets
+[lint]
+select = ["E", "W", "F"]
+ignore = ["E501"]
