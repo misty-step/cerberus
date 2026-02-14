@@ -1,7 +1,7 @@
 # Cerberus Makefile
 # Quality gates and common tasks
 
-.PHONY: setup test lint shellcheck help
+.PHONY: setup test lint shellcheck validate help
 
 # Default target
 help:

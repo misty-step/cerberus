@@ -109,9 +109,8 @@ def test_pre_commits_fails_on_bad_shell():
             capture_output=True,
             text=True
         )
-        # Note: pre-commit doesn't block on shellcheck warnings, only errors
-        # This is expected behavior - shellcheck warnings don't fail the commit
-        print(f"  (shellcheck warnings present: returncode={result.returncode})")
+        # Shellcheck should flag unquoted variable as error
+        assert result.returncode != 0, "pre-commit should fail on bad shell script"
         print("✓ test_pre_commits_fails_on_bad_shell passed")
 
 def test_pre_commits_fails_on_bad_python():
