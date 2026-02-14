@@ -59,8 +59,9 @@ jobs:
         with:
           name: coverage-report
           path: |
-            coverage-html/
+            htmlcov/
             coverage.xml
+            .coverage
           retention-days: 30
 
       - name: Check coverage threshold
@@ -96,11 +97,37 @@ jobs:
         with:
           name: coverage-report
 
-      - name: Generate coverage comment
-        uses: py-cov-action/python-coverage-comment-action@v3
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MINIMUM_GREEN: 90
-          MINIMUM_ORANGE: 80
-          ANNOTATE_MISSING_LINES: true
-          ANNOTATION_TYPE: warning
+      - name: Post coverage comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          BODY=$(python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.get('line-rate', 0)) * 100
+          branch_rate = float(root.get('branch-rate', 0)) * 100
+          lines_valid = int(root.get('lines-valid', 0))
+          lines_covered = int(root.get('lines-covered', 0))
+          icon = ':white_check_mark:' if line_rate >= 30 else ':x:'
+          print(f'## {icon} Test Coverage: {line_rate:.1f}%')
+          print()
+          print(f'| Metric | Value |')
+          print(f'|--------|-------|')
+          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) |')
+          print(f'| Branch coverage | {branch_rate:.1f}% |')
+          print(f'| Threshold | 30% |')
+          print()
+          print('<!-- cerberus:coverage -->')
+          ")
+          # Upsert comment using marker
+          EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | contains("<!-- cerberus:coverage -->")) | .id' | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${EXISTING}" \
+              -X PATCH -f body="$BODY"
+          else
+            gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -f body="$BODY"
+          fi
