@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Test configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEST_DIR=$(mktemp -d)
+TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sync-v1-tag.XXXXXX")
 TEST_REPO="$TEST_DIR/repo"
 BARE_REMOTE="$TEST_DIR/remote.git"
 trap 'rm -rf "$TEST_DIR"' EXIT
@@ -47,7 +47,7 @@ setup_repo() {
   git tag -a v2.0.0 -m "Version 2.0.0"
 
   # Push everything to bare remote
-  git push origin master --tags
+  git push origin HEAD --tags
 }
 
 # Test: Finds latest v1.x.x tag
