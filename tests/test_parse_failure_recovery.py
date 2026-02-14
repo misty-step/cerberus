@@ -106,7 +106,6 @@ class TestParseFailureRecovery:
         bin_dir.mkdir()
 
         # opencode that produces invalid output (no JSON)
-        call_count = 0
         opencode_script = tmp_path / "opencode_script.sh"
         make_executable(
             opencode_script,
@@ -325,4 +324,4 @@ class TestHasValidJsonBlock:
         # Should succeed after recovery
         assert result.returncode == 0
         # Should mention parse recovery in output
-        assert "Parse recovery" in result.stderr or "parse failure" in result.stderr.lower() or "recovery" in result.stdout
+        assert "Parse recovery" in result.stdout or "parse failure" in result.stdout.lower() or "recovery" in result.stdout

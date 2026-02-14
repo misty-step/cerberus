@@ -382,12 +382,32 @@ default_backoff_seconds() {
   esac
 }
 
+# Calculate remaining timeout budget given the start time and original timeout
+get_remaining_timeout() {
+  local start_time="$1"
+  local original_timeout="$2"
+  local min_timeout=30
+
+  local current_time
+  current_time=$(date +%s)
+  local elapsed=$((current_time - start_time))
+  local remaining=$((original_timeout - elapsed))
+
+  if [[ $remaining -lt $min_timeout ]]; then
+    remaining=$min_timeout
+  fi
+  echo "$remaining"
+}
+
 # Run opencode with retry + model fallback logic.
 # Inner loop: retry transient errors with backoff (up to max_retries).
 # Outer loop: cycle through fallback models when retries are exhausted.
 max_retries=3
 model_index=0
 fallback_triggered=false
+
+# Track elapsed time to share timeout budget across retries
+review_start_time=$(date +%s)
 
 for model in "${models[@]}"; do
   if [[ $model_index -gt 0 ]]; then
@@ -414,7 +434,7 @@ for model in "${models[@]}"; do
       OPENCODE_DISABLE_AUTOUPDATE=true \
       ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
       ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-    timeout "${primary_timeout}" opencode run \
+    timeout "$(get_remaining_timeout "$review_start_time" "$primary_timeout")" opencode run \
       -m "${model}" \
       --agent "${perspective}" \
       < "/tmp/${perspective}-review-prompt.md" \
@@ -550,7 +570,7 @@ if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_va
         OPENCODE_DISABLE_AUTOUPDATE=true \
         ${OPENCODE_MAX_STEPS:+OPENCODE_MAX_STEPS="${OPENCODE_MAX_STEPS}"} \
         ${OPENCODE_CAPTURE_PATH:+OPENCODE_CAPTURE_PATH="${OPENCODE_CAPTURE_PATH}"} \
-      timeout "${primary_timeout}" opencode run \
+      timeout "$(get_remaining_timeout "$review_start_time" "$primary_timeout")" opencode run \
         -m "${pf_model}" \
         --agent "${perspective}" \
         < "/tmp/${perspective}-review-prompt.md" \
