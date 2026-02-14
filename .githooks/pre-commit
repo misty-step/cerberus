@@ -56,8 +56,7 @@ if [ -n "$py_files" ]; then
     # Run ruff lint on all staged Python files at once (if available)
     if command -v ruff >/dev/null 2>&1; then
         echo "  → Running ruff check (lint only)..."
-        # shellcheck disable=SC2086
-        if ! ruff check --select E,W,F --ignore E501 $py_files 2>/dev/null; then
+        if ! echo "$py_files" | xargs ruff check --select E,W,F --ignore E501 2>/dev/null; then
             echo "    ! ruff found warnings (non-blocking)"
         else
             echo "    ✓ ruff clean"
@@ -65,20 +64,24 @@ if [ -n "$py_files" ]; then
     fi
 fi
 
-# Check YAML files
+# Check YAML files (only if PyYAML is installed)
 yaml_files=$(echo "$staged_files" | grep -E '\.(yml|yaml)$' || true)
 if [ -n "$yaml_files" ]; then
-    echo "  → Checking YAML files..."
-    while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$file" 2>/dev/null; then
-                echo "    ✗ Invalid YAML: $file"
-                errors=$((errors + 1))
-            else
-                echo "    ✓ $file"
+    if python3 -c "import yaml" 2>/dev/null; then
+        echo "  → Checking YAML files..."
+        while IFS= read -r file; do
+            if [ -f "$file" ]; then
+                if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$file" 2>/dev/null; then
+                    echo "    ✗ Invalid YAML: $file"
+                    errors=$((errors + 1))
+                else
+                    echo "    ✓ $file"
+                fi
             fi
-        fi
-    done <<< "$yaml_files"
+        done <<< "$yaml_files"
+    else
+        echo "  → PyYAML not installed, skipping YAML validation"
+    fi
 fi
 
 # Check JSON files (specifically opencode.json)

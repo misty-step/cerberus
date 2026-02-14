@@ -11,7 +11,7 @@ start_time=$(date +%s)
 
 # Check 1: Run full pytest suite
 echo "  → Running full test suite (pytest -x --timeout=30)..."
-if command -v python3 >/dev/null 2>&1; then
+if command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" 2>/dev/null; then
     if python3 -m pytest tests/ -x --timeout=30 -q; then
         echo "    ✓ All tests passed"
     else
@@ -19,7 +19,7 @@ if command -v python3 >/dev/null 2>&1; then
         exit 1
     fi
 else
-    echo "    ⚠ Python3 not available, skipping tests"
+    echo "    ⚠ Python3 or pytest not available, skipping tests"
 fi
 
 # Check 2: Run shellcheck on ALL shell scripts (not just staged)

@@ -168,17 +168,18 @@ class TestPrePushHook:
         subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
         
-        # Run pre-push (it may fail if pytest not installed, but should attempt)
+        # Run pre-push
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-push"],
             cwd=repo,
             capture_output=True,
             text=True
         )
-        # Hook output goes to stdout (echo statements); check both streams
         combined = (result.stdout + result.stderr).lower()
-        assert "test" in combined or result.returncode in [0, 1], \
-            "pre-push should attempt to run tests"
+        # Hook must mention tests/pytest in output and exit cleanly
+        assert "test" in combined, "pre-push should mention running tests"
+        assert result.returncode in [0, 1], \
+            f"pre-push should exit 0 (pass) or 1 (fail), got {result.returncode}"
 
 
 class TestMakefile:
