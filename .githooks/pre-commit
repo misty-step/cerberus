@@ -18,48 +18,55 @@ fi
 
 errors=0
 
-# Check shell scripts (*.sh) - only if shellcheck is installed
+# Check shell scripts (*.sh) — batched into single shellcheck invocation
 if command -v shellcheck >/dev/null 2>&1; then
     sh_files=$(echo "$staged_files" | grep '\.sh$' || true)
     if [ -n "$sh_files" ]; then
         echo "  → Checking shell scripts with shellcheck..."
+        files_to_check=()
         while IFS= read -r file; do
-            if [ -f "$file" ]; then
-                if ! shellcheck "$file" 2>/dev/null; then
-                    echo "    ✗ shellcheck failed: $file"
-                    errors=$((errors + 1))
-                else
-                    echo "    ✓ $file"
-                fi
-            fi
+            [ -f "$file" ] && files_to_check+=("$file")
         done <<< "$sh_files"
+        if [ ${#files_to_check[@]} -gt 0 ]; then
+            if ! shellcheck "${files_to_check[@]}"; then
+                echo "    ✗ shellcheck failed"
+                errors=$((errors + 1))
+            else
+                echo "    ✓ shellcheck passed"
+            fi
+        fi
     fi
 else
     echo "  → shellcheck not installed, skipping shell script checks"
 fi
 
-# Check Python files in scripts/ and scripts/lib/
-py_files=$(echo "$staged_files" | grep -E '^scripts/.*\.py$' || true)
+# Check all staged Python files (scripts/, matrix/, tests/, etc.)
+py_files=$(echo "$staged_files" | grep '\.py$' || true)
 if [ -n "$py_files" ]; then
-    echo "  → Checking Python syntax with py_compile..."
+    py_to_check=()
     while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            if ! python3 -m py_compile "$file" 2>/dev/null; then
-                echo "    ✗ Syntax error in: $file"
-                errors=$((errors + 1))
-            else
-                echo "    ✓ $file"
-            fi
-        fi
+        [ -f "$file" ] && py_to_check+=("$file")
     done <<< "$py_files"
 
-    # Run ruff lint on all staged Python files at once (if available)
-    if command -v ruff >/dev/null 2>&1; then
-        echo "  → Running ruff check (lint only)..."
-        if ! echo "$py_files" | xargs ruff check 2>/dev/null; then
-            echo "    ! ruff found warnings (non-blocking)"
+    if [ ${#py_to_check[@]} -gt 0 ]; then
+        # Syntax check — batched py_compile
+        echo "  → Checking Python syntax..."
+        if ! python3 -m py_compile "${py_to_check[@]}"; then
+            echo "    ✗ Python syntax errors found"
+            errors=$((errors + 1))
         else
-            echo "    ✓ ruff clean"
+            echo "    ✓ Python syntax OK"
+        fi
+
+        # Ruff lint (blocking)
+        if command -v ruff >/dev/null 2>&1; then
+            echo "  → Running ruff check..."
+            if ! ruff check "${py_to_check[@]}"; then
+                echo "    ✗ ruff found errors"
+                errors=$((errors + 1))
+            else
+                echo "    ✓ ruff clean"
+            fi
         fi
     fi
 fi
@@ -71,7 +78,7 @@ if [ -n "$yaml_files" ]; then
         echo "  → Checking YAML files..."
         while IFS= read -r file; do
             if [ -f "$file" ]; then
-                if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$file" 2>/dev/null; then
+                if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$file"; then
                     echo "    ✗ Invalid YAML: $file"
                     errors=$((errors + 1))
                 else
@@ -84,13 +91,13 @@ if [ -n "$yaml_files" ]; then
     fi
 fi
 
-# Check JSON files (specifically opencode.json)
+# Check JSON files
 json_files=$(echo "$staged_files" | grep '\.json$' || true)
 if [ -n "$json_files" ]; then
     echo "  → Checking JSON files..."
     while IFS= read -r file; do
         if [ -f "$file" ]; then
-            if ! python3 -c "import sys, json; json.load(open(sys.argv[1]))" "$file" 2>/dev/null; then
+            if ! python3 -c "import sys, json; json.load(open(sys.argv[1]))" "$file"; then
                 echo "    ✗ Invalid JSON: $file"
                 errors=$((errors + 1))
             else
@@ -106,5 +113,6 @@ if [ $errors -gt 0 ]; then
     exit 1
 fi
 
-echo "✓ All pre-commit checks passed ($(echo "$staged_files" | wc -l | tr -d ' ') file(s) checked)"
+file_count=$(printf '%s' "$staged_files" | grep -c . || echo 0)
+echo "✓ All pre-commit checks passed ($file_count file(s) checked)"
 exit 0

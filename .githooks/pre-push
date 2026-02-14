@@ -22,38 +22,39 @@ else
     echo "    ⚠ Python3 or pytest not available, skipping tests"
 fi
 
-# Check 2: Run shellcheck on ALL shell scripts (not just staged)
+# Check 2: Run shellcheck on ALL shell scripts (scripts/ and tests/)
 echo "  → Running shellcheck on all shell scripts..."
 if command -v shellcheck >/dev/null 2>&1; then
-    sc_errors=0
-    while IFS= read -r script; do
-        if ! shellcheck "$script" 2>/dev/null; then
-            echo "    ✗ shellcheck failed: $script"
-            sc_errors=$((sc_errors + 1))
+    sh_scripts=$(find scripts tests -name "*.sh" -type f 2>/dev/null || true)
+    if [ -n "$sh_scripts" ]; then
+        script_count=$(echo "$sh_scripts" | wc -l | tr -d ' ')
+        # Batch into single shellcheck invocation
+        if ! echo "$sh_scripts" | tr '\n' '\0' | xargs -0 shellcheck; then
+            echo "    ✗ shellcheck failed - push blocked"
+            exit 1
+        else
+            echo "    ✓ All shell scripts passed ($script_count file(s))"
         fi
-    done < <(find scripts -name "*.sh" -type f 2>/dev/null)
-    if [ $sc_errors -gt 0 ]; then
-        echo "    ✗ $sc_errors shell script(s) failed - push blocked"
-        exit 1
     else
-        script_count=$(find scripts -name "*.sh" -type f 2>/dev/null | wc -l | tr -d ' ')
-        echo "    ✓ All shell scripts passed ($script_count file(s))"
+        echo "    ✓ No shell scripts found"
     fi
 else
     echo "    ⚠ shellcheck not installed, skipping"
 fi
 
-# Check 3: Run ruff on all Python files
+# Check 3: Run ruff on all Python files (blocking)
 echo "  → Running ruff check on all Python files..."
 if command -v ruff >/dev/null 2>&1; then
-    ruff_paths=""
-    [ -d "scripts" ] && ruff_paths="scripts/"
-    [ -d "tests" ] && ruff_paths="$ruff_paths tests/"
-    if [ -n "$ruff_paths" ]; then
-        if ruff check $ruff_paths 2>/dev/null; then
+    ruff_paths=()
+    [ -d "scripts" ] && ruff_paths+=("scripts/")
+    [ -d "tests" ] && ruff_paths+=("tests/")
+    [ -d "matrix" ] && ruff_paths+=("matrix/")
+    if [ ${#ruff_paths[@]} -gt 0 ]; then
+        if ruff check "${ruff_paths[@]}"; then
             echo "    ✓ All Python files passed ruff"
         else
-            echo "    ! ruff found issues (non-blocking)"
+            echo "    ✗ ruff found errors - push blocked"
+            exit 1
         fi
     fi
 else
