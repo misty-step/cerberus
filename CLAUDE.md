@@ -93,7 +93,7 @@ Optional fields added by the pipeline:
 
 ## OpenCode CLI
 
-- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`
+- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool` each run.
 - Env vars: `OPENROUTER_API_KEY`
 - Agent config: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - CLI config: `opencode.json` at repo root (auto-discovered)

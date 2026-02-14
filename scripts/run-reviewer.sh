@@ -154,13 +154,39 @@ stage_opencode_project_config
 
 reviewer_meta="$(
   awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+
+    /^[[:space:]]*-[[:space:]]*name:/ {
       if (matched && !printed) { print name "\t" model; printed=1 }
-      name=$3; model=""; matched=0
+      match($0, /name:[[:space:]]*/)
+      name=substr($0, RSTART+RLENGTH)
+      sub(/[[:space:]]+#.*$/, "", name)
+      gsub(/^[\"\047]/, "", name)
+      gsub(/[\"\047]$/, "", name)
+      model=""; matched=0
       next
     }
-    $1=="perspective:" && $2==p { matched=1; next }
-    $1=="model:" { model=$2; next }
+
+    /^[[:space:]]*perspective:/ {
+      match($0, /perspective:[[:space:]]*/)
+      persp=substr($0, RSTART+RLENGTH)
+      sub(/[[:space:]]+#.*$/, "", persp)
+      gsub(/^[\"\047]/, "", persp)
+      gsub(/[\"\047]$/, "", persp)
+      if (persp == p) { matched=1 }
+      next
+    }
+
+    /^[[:space:]]*model:/ {
+      match($0, /model:[[:space:]]*/)
+      model=substr($0, RSTART+RLENGTH)
+      sub(/[[:space:]]+#.*$/, "", model)
+      gsub(/^[\"\047]/, "", model)
+      gsub(/[\"\047]$/, "", model)
+      next
+    }
+
     END { if (matched && !printed) print name "\t" model }
   ' "$config_file"
 )"
@@ -175,11 +201,59 @@ fi
 # Read config default model (optional). Used when input model unset and reviewer has no model.
 config_default_model_raw="$(
   awk '
-    $0 ~ /^model:/ {in_model=1; next}
-    in_model && $0 !~ /^  / {in_model=0}
-    in_model && $0 ~ /^  default:/ {print $2; exit}
+    /^[[:space:]]*$/ {next}
+    /^[[:space:]]*#/ {next}
+    /^model:/ {in_model=1; next}
+    in_model && !/^[[:space:]]/ {in_model=0}
+    in_model && /^[[:space:]]+default:/ {
+      sub(/^[[:space:]]+default:[[:space:]]*/, "")
+      sub(/[[:space:]]+#.*$/, "")
+      gsub(/^[\"\047]/, "")
+      gsub(/[\"\047]$/, "")
+      print
+      exit
+    }
   ' "$config_file"
 )"
+
+# If reviewer model is "pool", randomly select from the model.pool config list.
+if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
+  model_pool=()
+  while IFS= read -r _pool_line; do
+    [[ -n "$_pool_line" ]] && model_pool+=("$_pool_line")
+  done < <(
+    awk '
+      /^[[:space:]]*$/ {next}
+      /^[[:space:]]*#/ {next}
+      /^model:/ {in_model=1; next}
+      in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
+      in_model && /^[[:space:]]+[a-zA-Z_-]+:/ {
+        if (/^[[:space:]]+pool:/) {in_pool=1} else {in_pool=0}
+        next
+      }
+      in_pool && /^[[:space:]]*-/ {
+        sub(/^[[:space:]]*-[[:space:]]*/, "")
+        sub(/[[:space:]]+#.*$/, "")
+        gsub(/^[\"\047]/, "")
+        gsub(/[\"\047]$/, "")
+        print
+      }
+    ' "$config_file"
+  )
+
+  if [[ ${#model_pool[@]} -gt 0 ]]; then
+    if command -v shuf >/dev/null 2>&1; then
+      reviewer_model_raw="$(printf '%s\n' "${model_pool[@]}" | shuf -n 1)"
+    else
+      idx=$((RANDOM % ${#model_pool[@]}))
+      reviewer_model_raw="${model_pool[$idx]}"
+    fi
+    echo "Selected random model from pool: $reviewer_model_raw"
+  else
+    echo "Warning: reviewer uses 'pool' but no pool defined. Falling back to default."
+    reviewer_model_raw=""
+  fi
+fi
 
 # Persist reviewer name for downstream steps (parse, council).
 printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
