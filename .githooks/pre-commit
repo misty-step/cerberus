@@ -1,0 +1,114 @@
+#!/bin/bash
+#
+# Pre-commit hook for Cerberus
+# Fast checks (<5s) on staged files only
+#
+
+set -euo pipefail
+
+echo "🔍 Running pre-commit checks..."
+
+# Get list of staged files
+staged_files=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+
+if [ -z "$staged_files" ]; then
+    echo "✓ No staged files to check"
+    exit 0
+fi
+
+errors=0
+
+# Check shell scripts (*.sh) - only if shellcheck is installed
+if command -v shellcheck >/dev/null 2>&1; then
+    sh_files=$(echo "$staged_files" | grep '\.sh$' || true)
+    if [ -n "$sh_files" ]; then
+        echo "  → Checking shell scripts with shellcheck..."
+        # Check each staged shell script
+        for file in $sh_files; do
+            if [ -f "$file" ]; then
+                if ! shellcheck "$file" 2>/dev/null; then
+                    echo "    ✗ shellcheck failed: $file"
+                    errors=$((errors + 1))
+                else
+                    echo "    ✓ $file"
+                fi
+            fi
+        done
+    fi
+else
+    echo "  → shellcheck not installed, skipping shell script checks"
+fi
+
+# Check Python files in scripts/ and scripts/lib/
+py_files=$(echo "$staged_files" | grep -E '^scripts/.*\.py$' || true)
+if [ -n "$py_files" ]; then
+    echo "  → Checking Python syntax with py_compile..."
+    for file in $py_files; do
+        if [ -f "$file" ]; then
+            if ! python3 -m py_compile "$file" 2>/dev/null; then
+                echo "    ✗ Syntax error in: $file"
+                errors=$((errors + 1))
+            else
+                echo "    ✓ $file"
+            fi
+        fi
+    done
+    
+    # Run ruff lint on Python files (if available)
+    echo "  → Running ruff check (lint only)..."
+    for file in $py_files; do
+        if [ -f "$file" ]; then
+            # Use ruff if available, otherwise skip
+            if command -v ruff >/dev/null 2>&1; then
+                if ! ruff check --select E,W,F --ignore E501 "$file" 2>/dev/null; then
+                    echo "    ! ruff warnings in: $file"
+                    # ruff warnings don't block commit, just inform
+                else
+                    echo "    ✓ $file (ruff)"
+                fi
+            fi
+        fi
+    done
+fi
+
+# Check YAML files
+yaml_files=$(echo "$staged_files" | grep -E '\.(yml|yaml)$' || true)
+if [ -n "$yaml_files" ]; then
+    echo "  → Checking YAML files..."
+    for file in $yaml_files; do
+        if [ -f "$file" ]; then
+            # Basic YAML validation via python
+            if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+                echo "    ✗ Invalid YAML: $file"
+                errors=$((errors + 1))
+            else
+                echo "    ✓ $file"
+            fi
+        fi
+    done
+fi
+
+# Check JSON files (specifically opencode.json)
+json_files=$(echo "$staged_files" | grep '\.json$' || true)
+if [ -n "$json_files" ]; then
+    echo "  → Checking JSON files..."
+    for file in $json_files; do
+        if [ -f "$file" ]; then
+            if ! python3 -c "import json; json.load(open('$file'))" 2>/dev/null; then
+                echo "    ✗ Invalid JSON: $file"
+                errors=$((errors + 1))
+            else
+                echo "    ✓ $file"
+            fi
+        fi
+    done
+fi
+
+if [ $errors -gt 0 ]; then
+    echo ""
+    echo "✗ Pre-commit checks failed with $errors error(s)"
+    exit 1
+fi
+
+echo "✓ All pre-commit checks passed ($(echo "$staged_files" | wc -w) file(s) checked)"
+exit 0
