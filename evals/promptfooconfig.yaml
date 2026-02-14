@@ -250,11 +250,17 @@ tests:
       diff: |
         +const results = [];
         +for (let i = 0; i < items.length; i++) {
-        +  if (items[i].active) results.push(process(items[i]));
+        +  for (let j = 0; j < items.length; j++) {
+        +    for (let k = 0; k < items.length; k++) {
+        +      results.push(process(items[i], items[j], items[k]));
+        +    }
+        +  }
         +}
     assert:
       - type: javascript
-        value: "output.verdict === 'PASS'"
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('loop') || (f.title + f.description).toLowerCase().includes('nested') || (f.title + f.description).toLowerCase().includes('complexity'))"
 
   - description: "Performance - Sync File I/O"
     vars:
@@ -262,13 +268,18 @@ tests:
       pr_author: "developer"
       head_branch: "feature/config"
       base_branch: "main"
-      pr_body: "Load configuration"
+      pr_body: "Load configuration synchronously on every request"
       perspective: "performance"
       diff: |
-        +const config = JSON.parse(fs.readFileSync('config.json'));
+        +function handleRequest(req, res) {
+        +  const config = JSON.parse(fs.readFileSync('config.json'));
+        +  res.json(config);
+        +}
     assert:
       - type: javascript
-        value: "output.verdict === 'PASS'"
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('sync') || (f.title + f.description).toLowerCase().includes('blocking') || (f.title + f.description).toLowerCase().includes('file'))"
 
   - description: "Performance - No Caching"
     vars:
@@ -311,10 +322,13 @@ tests:
       pr_author: "developer"
       head_branch: "feature/payment"
       base_branch: "main"
-      pr_body: "Process payments"
+      pr_body: "Process payments with interface"
       perspective: "architecture"
       diff: |
-        +class StripePayment {
+        +interface PaymentProcessor {
+        +  charge(amount: number): void;
+        +}
+        +class StripePayment implements PaymentProcessor {
         +  charge(amount) { }
         +}
     assert:
@@ -396,11 +410,12 @@ tests:
       pr_author: "developer"
       head_branch: "feature/timeout"
       base_branch: "main"
-      pr_body: "Set request timeout"
+      pr_body: "Set request timeout using named constant from config"
       perspective: "maintainability"
       diff: |
-        +const TIMEOUT = 5000;
-        +fetch(url, { timeout: TIMEOUT });
+        +// Timeout value from API specification
+        +const REQUEST_TIMEOUT_MS = 5000;
+        +fetch(url, { timeout: REQUEST_TIMEOUT_MS });
     assert:
       - type: javascript
         value: "output.verdict === 'PASS'"
@@ -411,15 +426,11 @@ tests:
       pr_author: "developer"
       head_branch: "feature/processor"
       base_branch: "main"
-      pr_body: "Process data"
+      pr_body: "Simple data transformation"
       perspective: "maintainability"
       diff: |
-        +function process() {
-        +  let result = [];
-        +  for (let i = 0; i < 1000; i++) {
-        +    result.push(i * 2);
-        +  }
-        +  return result.filter(x => x > 500).map(x => x + 1);
+        +function double(x) {
+        +  return x * 2;
         +}
     assert:
       - type: javascript
