@@ -23,8 +23,7 @@ if command -v shellcheck >/dev/null 2>&1; then
     sh_files=$(echo "$staged_files" | grep '\.sh$' || true)
     if [ -n "$sh_files" ]; then
         echo "  → Checking shell scripts with shellcheck..."
-        # Check each staged shell script
-        for file in $sh_files; do
+        while IFS= read -r file; do
             if [ -f "$file" ]; then
                 if ! shellcheck "$file" 2>/dev/null; then
                     echo "    ✗ shellcheck failed: $file"
@@ -33,7 +32,7 @@ if command -v shellcheck >/dev/null 2>&1; then
                     echo "    ✓ $file"
                 fi
             fi
-        done
+        done <<< "$sh_files"
     fi
 else
     echo "  → shellcheck not installed, skipping shell script checks"
@@ -43,7 +42,7 @@ fi
 py_files=$(echo "$staged_files" | grep -E '^scripts/.*\.py$' || true)
 if [ -n "$py_files" ]; then
     echo "  → Checking Python syntax with py_compile..."
-    for file in $py_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
             if ! python3 -m py_compile "$file" 2>/dev/null; then
                 echo "    ✗ Syntax error in: $file"
@@ -52,32 +51,26 @@ if [ -n "$py_files" ]; then
                 echo "    ✓ $file"
             fi
         fi
-    done
-    
-    # Run ruff lint on Python files (if available)
-    echo "  → Running ruff check (lint only)..."
-    for file in $py_files; do
-        if [ -f "$file" ]; then
-            # Use ruff if available, otherwise skip
-            if command -v ruff >/dev/null 2>&1; then
-                if ! ruff check --select E,W,F --ignore E501 "$file" 2>/dev/null; then
-                    echo "    ! ruff warnings in: $file"
-                    # ruff warnings don't block commit, just inform
-                else
-                    echo "    ✓ $file (ruff)"
-                fi
-            fi
+    done <<< "$py_files"
+
+    # Run ruff lint on all staged Python files at once (if available)
+    if command -v ruff >/dev/null 2>&1; then
+        echo "  → Running ruff check (lint only)..."
+        # shellcheck disable=SC2086
+        if ! ruff check --select E,W,F --ignore E501 $py_files 2>/dev/null; then
+            echo "    ! ruff found warnings (non-blocking)"
+        else
+            echo "    ✓ ruff clean"
         fi
-    done
+    fi
 fi
 
 # Check YAML files
 yaml_files=$(echo "$staged_files" | grep -E '\.(yml|yaml)$' || true)
 if [ -n "$yaml_files" ]; then
     echo "  → Checking YAML files..."
-    for file in $yaml_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
-            # Basic YAML validation via python
             if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$file" 2>/dev/null; then
                 echo "    ✗ Invalid YAML: $file"
                 errors=$((errors + 1))
@@ -85,14 +78,14 @@ if [ -n "$yaml_files" ]; then
                 echo "    ✓ $file"
             fi
         fi
-    done
+    done <<< "$yaml_files"
 fi
 
 # Check JSON files (specifically opencode.json)
 json_files=$(echo "$staged_files" | grep '\.json$' || true)
 if [ -n "$json_files" ]; then
     echo "  → Checking JSON files..."
-    for file in $json_files; do
+    while IFS= read -r file; do
         if [ -f "$file" ]; then
             if ! python3 -c "import sys, json; json.load(open(sys.argv[1]))" "$file" 2>/dev/null; then
                 echo "    ✗ Invalid JSON: $file"
@@ -101,7 +94,7 @@ if [ -n "$json_files" ]; then
                 echo "    ✓ $file"
             fi
         fi
-    done
+    done <<< "$json_files"
 fi
 
 if [ $errors -gt 0 ]; then
@@ -110,5 +103,5 @@ if [ $errors -gt 0 ]; then
     exit 1
 fi
 
-echo "✓ All pre-commit checks passed ($(echo "$staged_files" | wc -l) file(s) checked)"
+echo "✓ All pre-commit checks passed ($(echo "$staged_files" | wc -l | tr -d ' ') file(s) checked)"
 exit 0

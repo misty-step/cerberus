@@ -12,7 +12,7 @@ start_time=$(date +%s)
 # Check 1: Run full pytest suite
 echo "  → Running full test suite (pytest -x --timeout=30)..."
 if command -v python3 >/dev/null 2>&1; then
-    if python3 -m pytest tests/ -x --timeout=30 -q 2>/dev/null; then
+    if python3 -m pytest tests/ -x --timeout=30 -q; then
         echo "    ✓ All tests passed"
     else
         echo "    ✗ Tests failed - push blocked"
@@ -25,21 +25,19 @@ fi
 # Check 2: Run shellcheck on ALL shell scripts (not just staged)
 echo "  → Running shellcheck on all shell scripts..."
 if command -v shellcheck >/dev/null 2>&1; then
-    sh_scripts=$(find scripts -name "*.sh" -type f 2>/dev/null || true)
-    if [ -n "$sh_scripts" ]; then
-        sc_errors=0
-        for script in $sh_scripts; do
-            if ! shellcheck "$script" 2>/dev/null; then
-                echo "    ✗ shellcheck failed: $script"
-                sc_errors=$((sc_errors + 1))
-            fi
-        done
-        if [ $sc_errors -gt 0 ]; then
-            echo "    ✗ $sc_errors shell script(s) failed - push blocked"
-            exit 1
-        else
-            echo "    ✓ All shell scripts passed ($(echo "$sh_scripts" | wc -w) file(s))"
+    sc_errors=0
+    while IFS= read -r script; do
+        if ! shellcheck "$script" 2>/dev/null; then
+            echo "    ✗ shellcheck failed: $script"
+            sc_errors=$((sc_errors + 1))
         fi
+    done < <(find scripts -name "*.sh" -type f 2>/dev/null)
+    if [ $sc_errors -gt 0 ]; then
+        echo "    ✗ $sc_errors shell script(s) failed - push blocked"
+        exit 1
+    else
+        script_count=$(find scripts -name "*.sh" -type f 2>/dev/null | wc -l | tr -d ' ')
+        echo "    ✓ All shell scripts passed ($script_count file(s))"
     fi
 else
     echo "    ⚠ shellcheck not installed, skipping"
@@ -48,8 +46,7 @@ fi
 # Check 3: Run ruff on all Python files
 echo "  → Running ruff check on all Python files..."
 if command -v ruff >/dev/null 2>&1; then
-    py_files=$(find scripts -name "*.py" -type f 2>/dev/null || true)
-    if [ -n "$py_files" ]; then
+    if [ -d "scripts" ]; then
         if ruff check --select E,W,F --ignore E501 scripts/ 2>/dev/null; then
             echo "    ✓ All Python files passed ruff"
         else

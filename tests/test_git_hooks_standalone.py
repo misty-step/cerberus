@@ -153,8 +153,8 @@ def test_contributing_mentions_hooks():
     print("✓ test_contributing_mentions_hooks passed")
 
 if __name__ == "__main__":
-    os.chdir("/tmp/cerberus")
-    
+    os.chdir(Path(__file__).parent.parent)
+
     tests = [
         test_setup_script_exists,
         test_githooks_directory_exists,
@@ -166,10 +166,10 @@ if __name__ == "__main__":
         test_pre_commits_fails_on_bad_python,
         test_contributing_mentions_hooks,
     ]
-    
+
     passed = 0
     failed = 0
-    
+
     for test in tests:
         try:
             test()
@@ -180,7 +180,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"✗ {test.__name__} errored: {e}")
             failed += 1
-    
+
     print(f"\n{passed}/{len(tests)} tests passed")
     if failed > 0:
         exit(1)
