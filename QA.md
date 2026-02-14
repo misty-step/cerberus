@@ -8,13 +8,16 @@ Cerberus is distributed as a GitHub Action (not a standalone binary). There is n
 
 ### Integration Tests
 ```bash
-# Run integration tests
-cd tests && ./run_tests.sh
-# Or individual test suites:
-cd tests && bash test_perspective.sh <perspective>
-```
+# Run full test suite
+python3 -m pytest tests/ -v
 
-Valid perspectives: `correctness`, `architecture`, `security`, `performance`, `maintainability`, `testing`
+# Or via helper script
+./tests/run-tests.sh
+
+# Run individual test files
+python3 -m pytest tests/test_aggregate_verdict.py -v
+python3 -m pytest tests/test_run_reviewer_runtime.py -v
+```
 
 ### Linting
 ```bash
@@ -92,7 +95,7 @@ Test the triage module:
 
 ### 3. PR in Repo with No Cerberus Config
 - Should fail gracefully with clear error message
-- Fork PRs: should fail with fork protection error
+- Fork PRs: skipped by the recommended consumer workflow (`if` gate); if the gate is removed, should fail with fork protection error
 
 ### 4. Model Provider Failure
 - Test fallback chain: primary → fallback-models → SKIP
