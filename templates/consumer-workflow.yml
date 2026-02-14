@@ -7,8 +7,11 @@
 #
 #   https://github.com/misty-step/cerberus/blob/main/templates/consumer-workflow-minimal.yml
 #
-# Fork PR security: repository secrets are unavailable to forks.
-# Keep review job gated to same-repo PRs to avoid secret access attempts.
+# FORK PR SECURITY:
+# - Repository secrets are unavailable to fork PRs
+# - The GITHUB_TOKEN is read-only for fork PRs
+# - This workflow gates full review to same-repo PRs only
+# - Fork PRs trigger the workflow but skip review jobs
 name: Cerberus Council
 
 on:
@@ -20,8 +23,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Lightweight job that runs for ALL PRs (including forks) to provide feedback
+  # This job only uses read-only permissions and provides context about fork PR limitations
+  triage:
+    permissions:
+      contents: read
+      pull-requests: read
+    name: "PR Context"
+    runs-on: ubuntu-latest
+    outputs:
+      is_fork: ${{ steps.check_fork.outputs.is_fork }}
+    steps:
+      - id: check_fork
+        run: |
+          is_fork="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
+          echo "is_fork=$is_fork" >> $GITHUB_OUTPUT
+          if [ "$is_fork" = "true" ]; then
+            echo "::notice::Fork PR detected. Full Cerberus review requires same-repo PRs due to secret access limitations."
+          fi
+
+  # Full review job - only runs for same-repo PRs
+  # Fork PRs are explicitly blocked here to avoid silent failures
   review:
+    # Require same-repo PR (not a fork) OR explicitly allow fork with read-only
+    # Using full_name check is more precise than fork flag
     if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: triage
     permissions:
       contents: read
       pull-requests: read
@@ -54,18 +81,32 @@ jobs:
           # Optional: force one model for all reviewers (overrides per-reviewer defaults)
           # model: 'openrouter/moonshotai/kimi-k2.5'
           # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5' # default fallback chain
-          # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
+          # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPS (timeout/API error)
 
   verdict:
     name: "Council Verdict"
-    needs: review
+    needs: [triage, review]
     if: always()
+    # Only run verdict if there are actual reviews (not for skipped fork PRs)
+    # This prevents confusion when review jobs are skipped
     permissions:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/verdict@v2
+      - name: Check if reviews ran
+        id: check_reviews
+        run: |
+          # If review jobs were skipped (fork PR), skip verdict too
+          if [ "${{ needs.triage.outputs.is_fork }}" = "true" ]; then
+            echo "Skipping verdict for fork PR - full review unavailable"
+            echo "run_verdict=false" >> $GITHUB_OUTPUT
+          else
+            echo "run_verdict=true" >> $GITHUB_OUTPUT
+          fi
+      
+      - if: steps.check_reviews.outputs.run_verdict == 'true'
+        uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
