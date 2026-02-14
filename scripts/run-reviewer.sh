@@ -159,17 +159,17 @@ reviewer_meta="$(
       if (matched && !printed) { print name "\t" model; printed=1 }
       match($0, /name:[[:space:]]*/)
       name=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]*#.*$/, "", name)
+      sub(/[[:space:]]+#.*$/, "", name)
       gsub(/^[\"\047]/, "", name)
       gsub(/[\"\047]$/, "", name)
       model=""; matched=0
       next
     }
 
-    /perspective:/ {
+    /^[[:space:]]*perspective:/ {
       match($0, /perspective:[[:space:]]*/)
       persp=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]*#.*$/, "", persp)
+      sub(/[[:space:]]+#.*$/, "", persp)
       gsub(/^[\"\047]/, "", persp)
       gsub(/[\"\047]$/, "", persp)
       if (persp == p) { matched=1 }
@@ -179,7 +179,7 @@ reviewer_meta="$(
     /^[[:space:]]*model:/ {
       match($0, /model:[[:space:]]*/)
       model=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]*#.*$/, "", model)
+      sub(/[[:space:]]+#.*$/, "", model)
       gsub(/^[\"\047]/, "", model)
       gsub(/[\"\047]$/, "", model)
       next
@@ -205,7 +205,7 @@ config_default_model_raw="$(
     in_model && !/^[[:space:]]/ {in_model=0}
     in_model && /^[[:space:]]+default:/ {
       sub(/^[[:space:]]+default:[[:space:]]*/, "")
-      sub(/[[:space:]]*#.*$/, "")
+      sub(/[[:space:]]+#.*$/, "")
       gsub(/^[\"\047]/, "")
       gsub(/[\"\047]$/, "")
       print
@@ -231,7 +231,7 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
       }
       in_pool && /^[[:space:]]*-/ {
         sub(/^[[:space:]]*-[[:space:]]*/, "")
-        sub(/[[:space:]]*#.*$/, "")
+        sub(/[[:space:]]+#.*$/, "")
         gsub(/^[\"\047]/, "")
         gsub(/[\"\047]$/, "")
         print
