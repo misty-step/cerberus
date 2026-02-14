@@ -63,7 +63,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "output.findings && output.findings.some(f => f?.category === 'security' || (f?.title || '').toLowerCase().includes('sql') || (f?.description || '').toLowerCase().includes('injection'))"
+        value: "output.findings && output.findings.some(f => f?.category === 'security' || String(f?.title || '').toLowerCase().includes('sql') || String(f?.description || '').toLowerCase().includes('injection'))"
 
   - description: "Security - Hardcoded Secret"
     vars:
@@ -265,7 +265,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "(output.findings || []).some(f => ((f?.title || '') + (f?.description || '')).toLowerCase().includes('loop') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('nested') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('complexity'))"
+        value: "(output.findings || []).some(f => (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('loop') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('nested') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('complexity'))"
 
   - description: "Performance - Sync File I/O"
     vars:
@@ -284,7 +284,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "(output.findings || []).some(f => ((f?.title || '') + (f?.description || '')).toLowerCase().includes('sync') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('blocking') || ((f?.title || '') + (f?.description || '')).toLowerCase().includes('file'))"
+        value: "(output.findings || []).some(f => (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('sync') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('blocking') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('file'))"
 
   - description: "Performance - No Caching"
     vars:
@@ -579,4 +579,41 @@ shareResults: false
   # Default test options
 defaultTest:
   options:
-    transform: "(() => { const normalize = (value) => { if (!value || typeof value !== 'object') { return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] }; } if (typeof value.verdict === 'string') { const normalized = value.verdict.trim().toUpperCase(); if (normalized === 'PASS' || normalized === 'FAIL' || normalized === 'SKIP') { value.verdict = normalized; } } if (!Array.isArray(value.findings)) { value.findings = []; } return value; }; const parseJson = (text) => { try { return normalize(JSON.parse(text)); } catch(e) { return null; } }; const direct = parseJson(output); if (direct) { return direct; } const fences = [...output.matchAll(/```json\\s*([\\s\\S]*?)\\s*```/g)]; for (let i = fences.length - 1; i >= 0; i--) { const parsed = parseJson(fences[i][1]); if (parsed) { return parsed; } } const n = output.match(/\\{[\\s\\S]*\\}/); if (n) { const parsed = parseJson(n[0]); if (parsed) { return parsed; } } return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] } })()"
+    transform: |
+      (() => {
+        const normalize = (value) => {
+          if (!value || typeof value !== 'object') {
+            return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
+          }
+          if (typeof value.verdict === 'string') {
+            const normalized = value.verdict.trim().toUpperCase();
+            if (normalized === 'PASS' || normalized === 'FAIL' || normalized === 'SKIP') {
+              value.verdict = normalized;
+            }
+          }
+          if (!Array.isArray(value.findings)) {
+            value.findings = [];
+          }
+          return value;
+        };
+        const parseJson = (text) => {
+          try {
+            return normalize(JSON.parse(text));
+          } catch(e) {
+            return null;
+          }
+        };
+        const direct = parseJson(output);
+        if (direct) { return direct; }
+        const fences = [...output.matchAll(/```json\\s*([\\s\\S]*?)\\s*```/g)];
+        for (let i = fences.length - 1; i >= 0; i--) {
+          const parsed = parseJson(fences[i][1]);
+          if (parsed) { return parsed; }
+        }
+        const n = output.match(/\\{[\\s\\S]*\\}/);
+        if (n) {
+          const parsed = parseJson(n[0]);
+          if (parsed) { return parsed; }
+        }
+        return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
+      })()

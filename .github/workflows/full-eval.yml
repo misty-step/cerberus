@@ -30,6 +30,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
+          set -o pipefail
           mkdir -p evals/results
           promptfoo eval --config evals/promptfooconfig.yaml \
             --no-cache \
@@ -45,8 +46,8 @@ jobs:
             exit 1
           fi
 
-          TOTAL=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' "$RESULTS")
-          PASS=$(jq '.results.stats.successes' "$RESULTS")
+          TOTAL=$(jq '(.results.stats.successes // 0) + (.results.stats.failures // 0) + (.results.stats.errors // 0)' "$RESULTS")
+          PASS=$(jq '.results.stats.successes // 0' "$RESULTS")
 
           if [ "$TOTAL" -eq 0 ]; then
             echo "No test results found"
