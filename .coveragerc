@@ -1,7 +1,6 @@
 [run]
 source = scripts
     matrix
-concurrency = subprocess
 omit =
     scripts/lib/__init__.py
     tests/*
