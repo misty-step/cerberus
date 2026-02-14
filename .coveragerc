@@ -1,0 +1,26 @@
+[run]
+source = scripts
+    matrix
+omit =
+    scripts/lib/__init__.py
+    tests/*
+    */test_*.py
+branch = true
+
+[report]
+fail_under = 30
+show_missing = true
+skip_covered = false
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

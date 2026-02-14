@@ -30,6 +30,43 @@ def resolve_reviewer(cli_reviewer: str | None) -> str:
     return reviewer or "UNKNOWN"
 
 
+def get_parse_failure_metadata() -> dict[str, list[str] | int | None]:
+    """Read parse-failure retry metadata written by run-reviewer.sh.
+
+    Returns dict with:
+    - models: list of model names attempted for parse recovery
+    - retry_count: number of retry attempts made
+    """
+    perspective = os.environ.get("PERSPECTIVE", "unknown")
+    models_file = Path(f"/tmp/{perspective}-parse-failure-models.txt")
+    retries_file = Path(f"/tmp/{perspective}-parse-failure-retries.txt")
+
+    result: dict[str, list[str] | int | None] = {"models": None, "retry_count": None}
+
+    if models_file.exists():
+        try:
+            models = [line.strip() for line in models_file.read_text().splitlines() if line.strip()]
+            result["models"] = models if models else None
+        except Exception:
+            pass
+        try:
+            os.unlink(models_file)
+        except OSError:
+            pass
+
+    if retries_file.exists():
+        try:
+            result["retry_count"] = int(retries_file.read_text().strip())
+        except (ValueError, Exception):
+            pass
+        try:
+            os.unlink(retries_file)
+        except OSError:
+            pass
+
+    return result
+
+
 def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
     input_path = None
     reviewer = None
@@ -942,13 +979,37 @@ def main() -> None:
                                }])
 
             # Not a scratchpad and not substantive — SKIP (non-blocking).
+            # Include parse-failure retry metadata if available.
+            pf_meta = get_parse_failure_metadata()
+            summary_parts = [f"{PARSE_FAILURE_PREFIX}no ```json block found"]
+            if pf_meta.get("retry_count") is not None:
+                summary_parts.append(f"({pf_meta['retry_count']} parse-recovery retries attempted)")
+            if pf_meta.get("models"):
+                models_str = ", ".join(pf_meta["models"])
+                summary_parts.append(f"Models tried: {models_str}")
+            skip_summary = " ".join(summary_parts)
+
+            # Only attach a finding when retries were actually attempted.
+            skip_findings: list[dict[str, object]] | None = None
+            if pf_meta.get("retry_count") is not None:
+                skip_findings = [{
+                    "severity": "info",
+                    "category": "parse-failure",
+                    "file": "N/A",
+                    "line": 0,
+                    "title": "Review output could not be parsed",
+                    "description": "Reviewer produced output without a structured JSON block after retries. See raw review for details.",
+                    "suggestion": "No action needed; review content is preserved in the raw output section.",
+                }]
+
             write_fallback(
                 REVIEWER_NAME,
                 "no ```json block found",
                 verdict="SKIP",
                 confidence=0.0,
-                summary=f"{PARSE_FAILURE_PREFIX}no ```json block found",
+                summary=skip_summary,
                 raw_review=sanitized_text if sanitized_text else None,
+                findings=skip_findings,
             )
 
         try:

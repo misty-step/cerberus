@@ -10,50 +10,54 @@ echo "🔍 Running pre-push checks..."
 start_time=$(date +%s)
 
 # Check 1: Run full pytest suite
-echo "  → Running full test suite (pytest -x --timeout=30)..."
-if command -v python3 >/dev/null 2>&1; then
-    if python3 -m pytest tests/ -x --timeout=30 -q; then
+echo "  → Running full test suite..."
+if command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" 2>/dev/null; then
+    timeout_flag=""
+    python3 -c "import pytest_timeout" 2>/dev/null && timeout_flag="--timeout=30"
+    # shellcheck disable=SC2086
+    if python3 -m pytest tests/ -x $timeout_flag -q; then
         echo "    ✓ All tests passed"
     else
         echo "    ✗ Tests failed - push blocked"
         exit 1
     fi
 else
-    echo "    ⚠ Python3 not available, skipping tests"
+    echo "    ⚠ Python3 or pytest not available, skipping tests"
 fi
 
-# Check 2: Run shellcheck on ALL shell scripts (not just staged)
+# Check 2: Run shellcheck on ALL shell scripts (scripts/ and tests/)
 echo "  → Running shellcheck on all shell scripts..."
 if command -v shellcheck >/dev/null 2>&1; then
-    sh_scripts=$(find scripts -name "*.sh" -type f 2>/dev/null || true)
+    sh_scripts=$(find scripts tests -name "*.sh" -type f 2>/dev/null || true)
     if [ -n "$sh_scripts" ]; then
-        sc_errors=0
-        while IFS= read -r script; do
-            if ! shellcheck "$script"; then
-                echo "    ✗ shellcheck failed: $script"
-                sc_errors=$((sc_errors + 1))
-            fi
-        done <<< "$sh_scripts"
-        if [ $sc_errors -gt 0 ]; then
-            echo "    ✗ $sc_errors shell script(s) failed - push blocked"
+        script_count=$(echo "$sh_scripts" | wc -l | tr -d ' ')
+        # Batch into single shellcheck invocation
+        if ! echo "$sh_scripts" | tr '\n' '\0' | xargs -0 shellcheck; then
+            echo "    ✗ shellcheck failed - push blocked"
             exit 1
         else
-            echo "    ✓ All shell scripts passed ($(echo "$sh_scripts" | wc -w) file(s))"
+            echo "    ✓ All shell scripts passed ($script_count file(s))"
         fi
+    else
+        echo "    ✓ No shell scripts found"
     fi
 else
     echo "    ⚠ shellcheck not installed, skipping"
 fi
 
-# Check 3: Run ruff on all Python files
+# Check 3: Run ruff on all Python files (blocking)
 echo "  → Running ruff check on all Python files..."
 if command -v ruff >/dev/null 2>&1; then
-    py_files=$(find scripts -name "*.py" -type f 2>/dev/null || true)
-    if [ -n "$py_files" ]; then
-        if ruff check --select E,W,F --ignore E501 scripts/; then
+    ruff_paths=()
+    [ -d "scripts" ] && ruff_paths+=("scripts/")
+    [ -d "tests" ] && ruff_paths+=("tests/")
+    [ -d "matrix" ] && ruff_paths+=("matrix/")
+    if [ ${#ruff_paths[@]} -gt 0 ]; then
+        if ruff check "${ruff_paths[@]}"; then
             echo "    ✓ All Python files passed ruff"
         else
-            echo "    ! ruff found issues (non-blocking)"
+            echo "    ✗ ruff found errors - push blocked"
+            exit 1
         fi
     fi
 else

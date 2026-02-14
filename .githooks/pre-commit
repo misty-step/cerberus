@@ -18,90 +18,127 @@ fi
 
 errors=0
 
-# Check shell scripts (*.sh) - only if shellcheck is installed
+# Check shell scripts (*.sh) — batched into single shellcheck invocation
 if command -v shellcheck >/dev/null 2>&1; then
     sh_files=$(echo "$staged_files" | grep '\.sh$' || true)
     if [ -n "$sh_files" ]; then
         echo "  → Checking shell scripts with shellcheck..."
-        # Check each staged shell script
+        files_to_check=()
         while IFS= read -r file; do
-            if [ -f "$file" ]; then
-                if ! shellcheck "$file" 2>/dev/null; then
-                    echo "    ✗ shellcheck failed: $file"
-                    errors=$((errors + 1))
-                else
-                    echo "    ✓ $file"
-                fi
-            fi
+            [ -f "$file" ] && files_to_check+=("$file")
         done <<< "$sh_files"
+        if [ ${#files_to_check[@]} -gt 0 ]; then
+            if ! shellcheck "${files_to_check[@]}"; then
+                echo "    ✗ shellcheck failed"
+                errors=$((errors + 1))
+            else
+                echo "    ✓ shellcheck passed"
+            fi
+        fi
     fi
 else
     echo "  → shellcheck not installed, skipping shell script checks"
 fi
 
-# Check Python files in scripts/ and scripts/lib/
-py_files=$(echo "$staged_files" | grep -E '^scripts/.*\.py$' || true)
+# Check all staged Python files (scripts/, matrix/, tests/, etc.)
+py_files=$(echo "$staged_files" | grep '\.py$' || true)
 if [ -n "$py_files" ]; then
-    echo "  → Checking Python syntax with py_compile..."
+    py_to_check=()
     while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            if ! python3 -m py_compile "$file" 2>/dev/null; then
-                echo "    ✗ Syntax error in: $file"
+        [ -f "$file" ] && py_to_check+=("$file")
+    done <<< "$py_files"
+
+    if [ ${#py_to_check[@]} -gt 0 ]; then
+        # Syntax check — batched py_compile
+        echo "  → Checking Python syntax..."
+        if ! python3 -m py_compile "${py_to_check[@]}"; then
+            echo "    ✗ Python syntax errors found"
+            errors=$((errors + 1))
+        else
+            echo "    ✓ Python syntax OK"
+        fi
+
+        # Ruff lint (blocking)
+        if command -v ruff >/dev/null 2>&1; then
+            echo "  → Running ruff check..."
+            if ! ruff check "${py_to_check[@]}"; then
+                echo "    ✗ ruff found errors"
                 errors=$((errors + 1))
             else
-                echo "    ✓ $file"
+                echo "    ✓ ruff clean"
             fi
         fi
-    done <<< "$py_files"
-
-    # Run ruff lint on Python files (if available)
-    echo "  → Running ruff check (lint only)..."
-    while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            # Use ruff if available, otherwise skip
-            if command -v ruff >/dev/null 2>&1; then
-                if ! ruff check --select E,W,F --ignore E501 "$file" 2>/dev/null; then
-                    echo "    ! ruff warnings in: $file"
-                    # ruff warnings don't block commit, just inform
-                else
-                    echo "    ✓ $file (ruff)"
-                fi
-            fi
-        fi
-    done <<< "$py_files"
+    fi
 fi
 
-# Check YAML files
+# Check YAML files (only if PyYAML is installed)
 yaml_files=$(echo "$staged_files" | grep -E '\.(yml|yaml)$' || true)
 if [ -n "$yaml_files" ]; then
-    echo "  → Checking YAML files..."
-    while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            # Basic YAML validation via python
-            if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
-                echo "    ✗ Invalid YAML: $file"
+    if python3 -c "import yaml" 2>/dev/null; then
+        yaml_to_check=()
+        while IFS= read -r file; do
+            [ -f "$file" ] && yaml_to_check+=("$file")
+        done <<< "$yaml_files"
+
+        echo "  → Checking YAML files..."
+        if [ ${#yaml_to_check[@]} -gt 0 ]; then
+            if ! python3 - "${yaml_to_check[@]}" <<'PY'
+import sys
+import yaml
+
+failed = False
+
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            yaml.safe_load(f)
+        print(f"    ✓ {path}")
+    except Exception:
+        print(f"    ✗ Invalid YAML: {path}")
+        failed = True
+
+sys.exit(1 if failed else 0)
+PY
+            then
                 errors=$((errors + 1))
-            else
-                echo "    ✓ $file"
             fi
         fi
-    done <<< "$yaml_files"
+    else
+        echo "  → PyYAML not installed, skipping YAML validation"
+    fi
 fi
 
-# Check JSON files (specifically opencode.json)
+# Check JSON files
 json_files=$(echo "$staged_files" | grep '\.json$' || true)
 if [ -n "$json_files" ]; then
     echo "  → Checking JSON files..."
+    json_to_check=()
     while IFS= read -r file; do
-        if [ -f "$file" ]; then
-            if ! python3 -c "import json; json.load(open('$file'))" 2>/dev/null; then
-                echo "    ✗ Invalid JSON: $file"
-                errors=$((errors + 1))
-            else
-                echo "    ✓ $file"
-            fi
-        fi
+        [ -f "$file" ] && json_to_check+=("$file")
     done <<< "$json_files"
+
+    if [ ${#json_to_check[@]} -gt 0 ]; then
+        if ! python3 - "${json_to_check[@]}" <<'PY'
+import json
+import sys
+
+failed = False
+
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            json.load(f)
+        print(f"    ✓ {path}")
+    except Exception:
+        print(f"    ✗ Invalid JSON: {path}")
+        failed = True
+
+sys.exit(1 if failed else 0)
+PY
+        then
+            errors=$((errors + 1))
+        fi
+    fi
 fi
 
 if [ $errors -gt 0 ]; then
@@ -110,5 +147,6 @@ if [ $errors -gt 0 ]; then
     exit 1
 fi
 
-echo "✓ All pre-commit checks passed ($(echo "$staged_files" | wc -w) file(s) checked)"
+file_count=$(printf '%s' "$staged_files" | grep -c . || echo 0)
+echo "✓ All pre-commit checks passed ($file_count file(s) checked)"
 exit 0

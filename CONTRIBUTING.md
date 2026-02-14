@@ -24,7 +24,7 @@ Or use the setup script directly:
 
 | Hook | When | Duration | Checks |
 |------|------|----------|--------|
-| `pre-commit` | Every commit | <5s | Staged files only: shellcheck, py_compile, ruff, YAML validation (Python), JSON validation (Python) |
+| `pre-commit` | Every commit | <5s | Staged files only: shellcheck, py_compile, ruff, YAML/JSON validation (Python) |
 | `pre-push` | Every push | <60s | Full test suite, shellcheck on all scripts, ruff on all Python files |
 
 **Emergency bypass:**
@@ -127,6 +127,14 @@ or:
 
 ```bash
 python -m pytest tests/ -v
+```
+
+### Coverage
+
+CI enforces a minimum coverage threshold (see `.coveragerc`). Run locally:
+
+```bash
+COVERAGE=1 ./tests/run-tests.sh
 ```
 
 ### Security Regression Tests (#56)
