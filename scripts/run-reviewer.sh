@@ -583,9 +583,13 @@ if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_va
     set -e
 
     output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
-    echo "Parse recovery exit=$pf_exit_code stdout=${output_size} bytes model=${pf_model}"
+    scratchpad_size="0"
+    if [[ -f "$scratchpad" ]]; then
+      scratchpad_size=$(wc -c < "$scratchpad" 2>/dev/null || echo "0")
+    fi
+    echo "Parse recovery exit=$pf_exit_code stdout=${output_size} bytes scratchpad=${scratchpad_size} bytes model=${pf_model}"
 
-    if [[ "$pf_exit_code" -eq 0 ]] && [[ "$output_size" -gt 0 ]]; then
+    if [[ "$pf_exit_code" -eq 0 ]] && { [[ "$output_size" -gt 0 ]] || [[ "$scratchpad_size" -gt 0 ]]; }; then
       if has_valid_json_block "$stdout_file" || has_valid_json_block "$scratchpad"; then
         echo "Parse recovery successful: valid JSON block found."
         model_used="$pf_model"

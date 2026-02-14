@@ -49,11 +49,19 @@ def get_parse_failure_metadata() -> dict[str, list[str] | int | None]:
             result["models"] = models if models else None
         except Exception:
             pass
+        try:
+            os.unlink(models_file)
+        except OSError:
+            pass
 
     if retries_file.exists():
         try:
             result["retry_count"] = int(retries_file.read_text().strip())
         except (ValueError, Exception):
+            pass
+        try:
+            os.unlink(retries_file)
+        except OSError:
             pass
 
     return result
