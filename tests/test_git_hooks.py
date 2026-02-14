@@ -51,19 +51,19 @@ class TestPreCommitHook:
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         # Copy hooks
         githooks = REPO_ROOT / ".githooks"
         shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
-        
+
         # Create a shell script with error
         script = repo / "scripts" / "test.sh"
         script.parent.mkdir()
         script.write_text("#!/bin/bash\n[[ $1 == \"test\" ]]")  # Modern bash, should pass
-        
+
         # Stage it
         subprocess.run(["git", "add", "scripts/test.sh"], cwd=repo, check=True)
-        
+
         # Run pre-commit
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-commit"],
@@ -81,17 +81,17 @@ class TestPreCommitHook:
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         githooks = REPO_ROOT / ".githooks"
         shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
-        
+
         # Create a shell script with clear error (undefined variable without check)
         script = repo / "scripts" / "bad.sh"
         script.parent.mkdir()
         script.write_text("#!/bin/sh\necho $UNDEFINED_VAR")
-        
+
         subprocess.run(["git", "add", "scripts/bad.sh"], cwd=repo, check=True)
-        
+
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-commit"],
             cwd=repo,
@@ -107,17 +107,17 @@ class TestPreCommitHook:
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         githooks = REPO_ROOT / ".githooks"
         shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
-        
+
         # Create a valid Python file
         script = repo / "scripts" / "test.py"
         script.parent.mkdir()
         script.write_text("print('hello')")
-        
+
         subprocess.run(["git", "add", "scripts/test.py"], cwd=repo, check=True)
-        
+
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-commit"],
             cwd=repo,
@@ -133,17 +133,17 @@ class TestPreCommitHook:
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         githooks = REPO_ROOT / ".githooks"
         shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
-        
+
         # Create Python file with syntax error
         script = repo / "scripts" / "bad.py"
         script.parent.mkdir()
         script.write_text("print('hello'\n")  # Missing closing paren
-        
+
         subprocess.run(["git", "add", "scripts/bad.py"], cwd=repo, check=True)
-        
+
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-commit"],
             cwd=repo,
@@ -311,16 +311,16 @@ class TestPrePushHook:
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         githooks = REPO_ROOT / ".githooks"
         shutil.copytree(githooks, repo / ".git" / "hooks", dirs_exist_ok=True)
-        
+
         # Create a simple file to commit
         readme = repo / "README.md"
         readme.write_text("# Test")
         subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
-        
+
         # Run pre-push
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-push"],

@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""Aggregate Cerberus quality reports from multiple CI runs.
+
+Usage:
+    python3 scripts/quality-report.py --repo misty-step/moneta --last 20
+    python3 scripts/quality-report.py --artifact-dir ./downloaded-artifacts/
+
+Requires: gh CLI authenticated, or artifact JSON files locally.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+WORKFLOW_FILENAME = "cerberus.yml"
+ARTIFACT_NAME = "cerberus-quality-report"
+GH_TIMEOUT_SECONDS = 30
+
+
+class GHError(Exception):
+    """Raised when a gh CLI command fails."""
+
+
+def run_gh(args: list[str]) -> str:
+    """Run gh CLI and return stdout."""
+    try:
+        result = subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        raise GHError("gh CLI not found — install from https://cli.github.com/")
+    if result.returncode != 0:
+        print(f"gh error: {result.stderr}", file=sys.stderr)
+        raise GHError(result.stderr)
+    return result.stdout
+
+
+def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
+    """Fetch quality report artifacts from recent workflow runs."""
+    # Get recent successful workflow runs for the cerberus council
+    runs_json = run_gh([
+        "run", "list",
+        "--repo", repo,
+        "--workflow", WORKFLOW_FILENAME,
+        "--status", "success",
+        "--limit", str(limit),
+        "--json", "databaseId,headSha,event,number,createdAt",
+    ])
+    runs = json.loads(runs_json)
+
+    # Parallelize gh run view calls to avoid N+1 problem
+    def fetch_run_artifacts(run: dict) -> list[dict]:
+        """Fetch artifacts for a single run."""
+        run_id = run["databaseId"]
+        artifacts = []
+        try:
+            artifacts_json = run_gh([
+                "run", "view",
+                "--repo", repo,
+                str(run_id),
+                "--json", "artifacts",
+            ])
+            run_data = json.loads(artifacts_json)
+            for artifact in run_data.get("artifacts", []):
+                if artifact.get("name") == ARTIFACT_NAME:
+                    artifacts.append({
+                        "run_id": run_id,
+                        "head_sha": run["headSha"],
+                        "pr_number": run.get("number"),
+                        "artifact_id": artifact["databaseId"],
+                        "created_at": run.get("createdAt"),
+                    })
+        except GHError:
+            pass
+        return artifacts
+
+    # Use ThreadPoolExecutor to parallelize artifact fetching
+    artifacts: list[dict] = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_run_artifacts, run): run for run in runs}
+        for future in as_completed(futures):
+            try:
+                artifacts.extend(future.result())
+            except Exception as exc:
+                run = futures[future]
+                print(f"Warning: failed to fetch artifacts for run {run.get('databaseId')}: {exc}", file=sys.stderr)
+
+    # Sort by created_at descending to get most recent first
+    artifacts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return artifacts
+
+
+def download_artifact(repo: str, run_id: int, output_dir: Path) -> tuple[int, Path | None]:
+    """Download a quality report artifact for a given run.
+
+    Returns tuple of (run_id, path_or_none).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        run_gh([
+            "run", "download",
+            "--repo", repo,
+            str(run_id),
+            "--name", ARTIFACT_NAME,
+            "--dir", str(output_dir),
+        ])
+        # Find the downloaded quality-report.json
+        report_path = output_dir / "quality-report.json"
+        if report_path.exists():
+            return (run_id, report_path)
+    except GHError:
+        pass
+    return (run_id, None)
+
+
+def load_quality_reports(artifact_dir: Path) -> list[dict]:
+    """Load all quality-report.json files from a directory."""
+    reports: list[dict] = []
+    for report_path in artifact_dir.rglob("quality-report.json"):
+        try:
+            data = json.loads(report_path.read_text())
+            reports.append(data)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"Warning: could not load {report_path}: {exc}", file=sys.stderr)
+    return reports
+
+
+def aggregate_reports(reports: list[dict]) -> dict:
+    """Aggregate multiple quality reports into summary statistics."""
+    if not reports:
+        return {"error": "No quality reports found"}
+
+    total_runs = len(reports)
+    total_reviewers = sum(r.get("summary", {}).get("total_reviewers", 0) for r in reports)
+    total_skips = sum(r.get("summary", {}).get("skip_count", 0) for r in reports)
+    total_parse_failures = sum(r.get("summary", {}).get("parse_failure_count", 0) for r in reports)
+
+    # Council verdict distribution
+    council_verdicts: dict[str, int] = {}
+    for r in reports:
+        v = r.get("summary", {}).get("council_verdict", "UNKNOWN")
+        council_verdicts[v] = council_verdicts.get(v, 0) + 1
+
+    # Per-model aggregation
+    model_stats: dict[str, dict] = {}
+    for r in reports:
+        for model, stats in r.get("models", {}).items():
+            if model not in model_stats:
+                model_stats[model] = {
+                    "total_count": 0,
+                    "verdicts": {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0},
+                    "total_runtime_seconds": 0,
+                    "runtime_count": 0,
+                    "fallback_count": 0,
+                    "parse_failures": 0,
+                }
+            ms = model_stats[model]
+            count = stats.get("count", 0)
+            ms["total_count"] += count
+            for v in ["PASS", "WARN", "FAIL", "SKIP"]:
+                ms["verdicts"][v] += stats.get("verdicts", {}).get(v, 0)
+            runtime_total = stats.get("total_runtime_seconds", 0)
+            ms["total_runtime_seconds"] += runtime_total
+            # Use runtime_count from report when available (accurate); fall back to count
+            ms["runtime_count"] += stats.get("runtime_count", count if runtime_total > 0 else 0)
+            ms["fallback_count"] += stats.get("fallback_count", 0)
+            ms["parse_failures"] += stats.get("parse_failures", 0)
+
+    # Compute per-model averages and rankings
+    model_summaries = []
+    for model, stats in model_stats.items():
+        count = stats["total_count"]
+        if count == 0:
+            continue
+        avg_runtime = stats["total_runtime_seconds"] / stats["runtime_count"] if stats["runtime_count"] > 0 else 0
+        skip_rate = stats["verdicts"]["SKIP"] / count
+        parse_failure_rate = stats["parse_failures"] / count
+        fallback_rate = stats["fallback_count"] / count
+        success_rate = stats["verdicts"]["PASS"] / count
+
+        model_summaries.append({
+            "model": model,
+            "total_runs": count,
+            "avg_runtime_seconds": round(avg_runtime, 2),
+            "skip_rate": round(skip_rate, 4),
+            "parse_failure_rate": round(parse_failure_rate, 4),
+            "fallback_rate": round(fallback_rate, 4),
+            "success_rate": round(success_rate, 4),
+            "verdict_distribution": stats["verdicts"],
+        })
+
+    # Rank models by success rate (descending), then by avg runtime (ascending)
+    model_summaries.sort(key=lambda x: (-x["success_rate"], x["avg_runtime_seconds"]))
+
+    timestamps = [
+        r.get("meta", {}).get("generated_at")
+        for r in reports
+        if r.get("meta", {}).get("generated_at") is not None
+    ]
+
+    return {
+        "meta": {
+            "total_runs_analyzed": total_runs,
+            "date_range": {
+                "from": min(timestamps) if timestamps else None,
+                "to": max(timestamps) if timestamps else None,
+            },
+        },
+        "summary": {
+            "total_reviewers": total_reviewers,
+            "overall_skip_rate": round(total_skips / total_reviewers, 4) if total_reviewers > 0 else 0,
+            "overall_parse_failure_rate": round(total_parse_failures / total_reviewers, 4) if total_reviewers > 0 else 0,
+            "council_verdict_distribution": council_verdicts,
+        },
+        "model_rankings": model_summaries,
+    }
+
+
+def print_summary(summary: dict) -> None:
+    """Print a human-readable summary."""
+    print("\n" + "=" * 60)
+    print("CERBERUS QUALITY REPORT SUMMARY")
+    print("=" * 60)
+
+    meta = summary.get("meta", {})
+    print(f"\nRuns Analyzed: {meta.get('total_runs_analyzed', 0)}")
+
+    s = summary.get("summary", {})
+    print(f"Total Reviewers: {s.get('total_reviewers', 0)}")
+    print(f"Overall SKIP Rate: {s.get('overall_skip_rate', 0):.2%}")
+    print(f"Overall Parse Failure Rate: {s.get('overall_parse_failure_rate', 0):.2%}")
+
+    print("\nCouncil Verdict Distribution:")
+    for verdict, count in s.get("council_verdict_distribution", {}).items():
+        print(f"  {verdict}: {count}")
+
+    rankings = summary.get("model_rankings", [])
+    if rankings:
+        print("\nModel Rankings (by success rate):")
+        print(f"{'Rank':<6}{'Model':<50}{'Success':<10}{'Skip':<10}{'Parse Fail':<12}{'Avg Runtime'}")
+        print("-" * 100)
+        for i, m in enumerate(rankings, 1):
+            model_name = m["model"][:49]
+            print(f"{i:<6}{model_name:<50}{m['success_rate']:<10.2%}{m['skip_rate']:<10.2%}{m['parse_failure_rate']:<12.2%}{m['avg_runtime_seconds']:.1f}s")
+
+    print("\n" + "=" * 60)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Aggregate Cerberus quality reports from CI runs"
+    )
+    parser.add_argument(
+        "--repo",
+        help="Repository in owner/name format (e.g., misty-step/moneta)",
+    )
+    parser.add_argument(
+        "--last",
+        type=int,
+        default=20,
+        help="Number of recent workflow runs to analyze (default: 20)",
+    )
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        help="Directory containing downloaded quality-report.json files",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output raw JSON instead of human-readable summary",
+    )
+
+    args = parser.parse_args()
+
+    reports: list[dict] = []
+
+    if args.repo and not shutil.which("gh"):
+        print("Error: gh CLI not found — install from https://cli.github.com/", file=sys.stderr)
+        return 1
+
+    if args.artifact_dir:
+        # Load from local directory
+        reports = load_quality_reports(args.artifact_dir)
+    elif args.repo:
+        # Fetch from GitHub
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            print(f"Fetching artifacts from {args.repo} (last {args.last} runs)...", file=sys.stderr)
+            artifacts = fetch_artifacts(args.repo, args.last)
+            print(f"Found {len(artifacts)} quality report artifacts", file=sys.stderr)
+
+            # Parallelize artifact downloads
+            def download_with_meta(artifact: dict) -> tuple[dict, Path | None]:
+                """Download artifact and return (artifact_meta, path)."""
+                artifact_dir = tmp_path / f"run-{artifact['run_id']}"
+                _, report_path = download_artifact(args.repo, artifact["run_id"], artifact_dir)
+                return (artifact, report_path)
+
+            reports = []
+            downloaded = 0
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(download_with_meta, artifact): artifact for artifact in artifacts}
+                for i, future in enumerate(as_completed(futures), 1):
+                    try:
+                        artifact, report_path = future.result()
+                        if report_path:
+                            try:
+                                data = json.loads(report_path.read_text())
+                                # Enrich with run metadata
+                                data["_run_meta"] = {
+                                    "run_id": artifact["run_id"],
+                                    "head_sha": artifact["head_sha"],
+                                    "pr_number": artifact["pr_number"],
+                                }
+                                reports.append(data)
+                                downloaded += 1
+                            except (json.JSONDecodeError, OSError) as exc:
+                                print(f"Warning: could not parse artifact: {exc}", file=sys.stderr)
+                    except Exception as exc:
+                        artifact = futures[future]
+                        print(f"Warning: failed to download artifact: {exc}", file=sys.stderr)
+            
+            print(f"Successfully downloaded {downloaded}/{len(artifacts)} quality reports", file=sys.stderr)
+    else:
+        parser.error("Either --repo or --artifact-dir is required")
+
+    if not reports:
+        print("No quality reports found", file=sys.stderr)
+        return 1
+
+    summary = aggregate_reports(reports)
+
+    if args.json:
+        print(json.dumps(summary, indent=2))
+    else:
+        print_summary(summary)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

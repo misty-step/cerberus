@@ -89,11 +89,11 @@ Optional finding fields:
 
 Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
-- `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Present in fallback/partial verdicts so the council comment can surface the raw analysis.
+- `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Stored in fallback/partial verdicts for debugging via workflow logs/artifacts (not rendered in PR comments).
 
 ## OpenCode CLI
 
-- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`
+- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool` each run.
 - Env vars: `OPENROUTER_API_KEY`
 - Agent config: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - CLI config: `opencode.json` at repo root (auto-discovered)
@@ -104,17 +104,24 @@ Optional fields added by the pipeline:
 
 ```bash
 # Run test suite
-pip install pytest
+pip install pytest pytest-cov pyyaml
 python3 -m pytest tests/ -v
 
 # Or use the helper script
 ./tests/run-tests.sh
+
+# Run with coverage
+COVERAGE=1 ./tests/run-tests.sh
+# Or directly:
+python3 -m pytest tests/ --cov=scripts --cov-report=term-missing
 
 # Lint
 shellcheck scripts/*.sh
 python3 -m py_compile scripts/parse-review.py
 python3 -m py_compile scripts/aggregate-verdict.py
 ```
+
+Coverage is enforced in CI at 30% (see `.coveragerc`). Configuration: `pytest.ini`, `.coveragerc`.
 
 End-to-end testing requires pushing to a branch and having a target repo use `misty-step/cerberus@<branch>`. Current test target: `misty-step/moonbridge`.
 

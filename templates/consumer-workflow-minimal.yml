@@ -1,11 +1,9 @@
-# Cerberus AI Code Review Council
+# Cerberus AI Code Review Council — Minimal Consumer Workflow
 # https://github.com/misty-step/cerberus
 #
-# ⚠️ DEPRECATED: This template hardcodes the reviewer matrix and will drift
-# from the Cerberus roster over time. For a minimal workflow that stays
-# automatically in sync, use consumer-workflow-minimal.yml instead:
-#
-#   https://github.com/misty-step/cerberus/blob/main/templates/consumer-workflow-minimal.yml
+# This workflow uses the dynamic matrix action to automatically stay in sync
+# with the Cerberus reviewer roster. When Cerberus adds or changes reviewers,
+# your workflow automatically uses the updated roster without manual edits.
 #
 # Fork PR security: repository secrets are unavailable to forks.
 # Keep review job gated to same-repo PRs to avoid secret access attempts.
@@ -20,7 +18,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Generate the reviewer matrix from Cerberus defaults/config.yml
+  matrix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      count: ${{ steps.generate.outputs.count }}
+    steps:
+      - uses: misty-step/cerberus/matrix@v2
+        id: generate
+
+  # Run reviews in parallel using the generated matrix
   review:
+    needs: matrix
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
@@ -28,14 +39,7 @@ jobs:
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        include:
-          - { reviewer: APOLLO,    perspective: correctness }
-          - { reviewer: ATHENA,    perspective: architecture }
-          - { reviewer: SENTINEL,  perspective: security }
-          - { reviewer: VULCAN,    perspective: performance }
-          - { reviewer: ARTEMIS,   perspective: maintainability }
-          - { reviewer: CASSANDRA, perspective: testing }
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -50,12 +54,12 @@ jobs:
           # context: |
           #   Moneta is a single-user personal finance and tax tool.
           #   Data volumes are bounded: ~100-500 transactions per user per year.
-          #   FIFO capital gains calculation requires full lot history (no incremental).
           # Optional: force one model for all reviewers (overrides per-reviewer defaults)
           # model: 'openrouter/moonshotai/kimi-k2.5'
-          # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5' # default fallback chain
+          # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
+  # Aggregate all review results into a single verdict comment
   verdict:
     name: "Council Verdict"
     needs: review

@@ -91,10 +91,15 @@ if [[ "$verdict" == "SKIP" ]]; then
 fi
 
 findings_file="/tmp/${perspective}-findings.md"
+server_url="${GITHUB_SERVER_URL:-https://github.com}"
+head_sha="${GH_HEAD_SHA:-$(git rev-parse HEAD)}"
 findings_count="$(
   python3 "$CERBERUS_ROOT/scripts/render-findings.py" \
     --verdict-json "$verdict_file" \
-    --output "$findings_file"
+    --output "$findings_file" \
+    --server "$server_url" \
+    --repo "$GITHUB_REPOSITORY" \
+    --sha "$head_sha"
 )"
 
 # Strip openrouter provider prefix for brevity: openrouter/moonshotai/kimi-k2.5 → kimi-k2.5
@@ -116,7 +121,7 @@ if [[ -n "$model_used" ]]; then
   fi
 fi
 
-sha_short="$(git rev-parse --short HEAD)"
+sha_short="${head_sha:0:7}"
 
 comment_file="/tmp/${perspective}-comment.md"
 {
@@ -133,17 +138,6 @@ comment_file="/tmp/${perspective}-comment.md"
   printf '%s\n' "### Findings (${findings_count})"
   cat "$findings_file"
   printf '\n'
-
-  raw_review="$(jq -r '.raw_review // empty' "$verdict_file")"
-  if [[ -n "$raw_review" ]]; then
-    printf '%s\n' "<details>"
-    printf '%s\n' "<summary>Full review output (click to expand)</summary>"
-    printf '\n'
-    printf '%s\n' "$raw_review"
-    printf '\n'
-    printf '%s\n' "</details>"
-    printf '\n'
-  fi
 
   printf '%s\n' "---"
   printf '%s\n' "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
