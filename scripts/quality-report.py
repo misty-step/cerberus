@@ -11,11 +11,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+WORKFLOW_FILENAME = "cerberus.yml"
+ARTIFACT_NAME = "cerberus-quality-report"
+GH_TIMEOUT_SECONDS = 30
 
 
 class GHError(Exception):
@@ -24,11 +29,15 @@ class GHError(Exception):
 
 def run_gh(args: list[str]) -> str:
     """Run gh CLI and return stdout."""
-    result = subprocess.run(
-        ["gh", *args],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        raise GHError("gh CLI not found — install from https://cli.github.com/")
     if result.returncode != 0:
         print(f"gh error: {result.stderr}", file=sys.stderr)
         raise GHError(result.stderr)
@@ -41,7 +50,7 @@ def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
     runs_json = run_gh([
         "run", "list",
         "--repo", repo,
-        "--workflow", "cerberus.yml",
+        "--workflow", WORKFLOW_FILENAME,
         "--status", "success",
         "--limit", str(limit),
         "--json", "databaseId,headSha,event,number,createdAt",
@@ -62,7 +71,7 @@ def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
             ])
             run_data = json.loads(artifacts_json)
             for artifact in run_data.get("artifacts", []):
-                if artifact.get("name") == "cerberus-quality-report":
+                if artifact.get("name") == ARTIFACT_NAME:
                     artifacts.append({
                         "run_id": run_id,
                         "head_sha": run["headSha"],
@@ -101,7 +110,7 @@ def download_artifact(repo: str, run_id: int, output_dir: Path) -> tuple[int, Pa
             "run", "download",
             "--repo", repo,
             str(run_id),
-            "--name", "cerberus-quality-report",
+            "--name", ARTIFACT_NAME,
             "--dir", str(output_dir),
         ])
         # Find the downloaded quality-report.json
@@ -161,9 +170,8 @@ def aggregate_reports(reports: list[dict]) -> dict:
                 ms["verdicts"][v] += stats.get("verdicts", {}).get(v, 0)
             runtime_total = stats.get("total_runtime_seconds", 0)
             ms["total_runtime_seconds"] += runtime_total
-            # Only count reviews that contributed runtime data
-            if runtime_total > 0:
-                ms["runtime_count"] += count
+            # Use runtime_count from report when available (accurate); fall back to count
+            ms["runtime_count"] += stats.get("runtime_count", count if runtime_total > 0 else 0)
             ms["fallback_count"] += stats.get("fallback_count", 0)
             ms["parse_failures"] += stats.get("parse_failures", 0)
 
@@ -275,6 +283,10 @@ def main() -> int:
     args = parser.parse_args()
 
     reports: list[dict] = []
+
+    if args.repo and not shutil.which("gh"):
+        print("Error: gh CLI not found — install from https://cli.github.com/", file=sys.stderr)
+        return 1
 
     if args.artifact_dir:
         # Load from local directory

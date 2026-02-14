@@ -278,6 +278,7 @@ def generate_quality_report(
         count = stats["count"]
         runtimes = stats.pop("runtimes")
         runtime_count = len(runtimes)
+        stats["runtime_count"] = runtime_count
         stats["avg_runtime_seconds"] = stats["total_runtime_seconds"] / runtime_count if runtime_count > 0 else 0
         stats["median_runtime_seconds"] = statistics.median(runtimes) if runtimes else 0
         stats["skip_rate"] = stats["verdicts"]["SKIP"] / count if count > 0 else 0
