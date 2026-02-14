@@ -14,10 +14,11 @@ evals/
 │   ├── baseline.json     # Baseline for regression detection
 │   ├── smoke-output.txt  # Smoke eval output
 │   └── full-output.txt  # Full eval output
-├── .github/workflows/
-│   ├── smoke-eval.yml    # PR-triggered smoke eval
-│   └── full-eval.yml    # Nightly full eval
 └── README.md             # This file
+
+.github/workflows/
+├── smoke-eval.yml          # PR-triggered smoke eval
+└── full-eval.yml           # Nightly full eval
 ```
 
 ## Running Evals Locally

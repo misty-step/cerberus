@@ -11,6 +11,8 @@ on:
 jobs:
   smoke-eval:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,7 +23,7 @@ jobs:
           node-version: '20'
 
       - name: Install Promptfoo
-        run: npm install -g promptfoo
+        run: npm install -g promptfoo@0.103.5
 
       - name: Run smoke eval
         env:
@@ -35,15 +37,28 @@ jobs:
 
       - name: Check pass rate
         run: |
-          # Extract pass rate from output
-          PASS_RATE=$(grep -oP '\d+(?=%)' evals/results/smoke-output.txt | head -1 || echo "0")
-          echo "Pass rate: $PASS_RATE%"
-          
-          if [ "$PASS_RATE" -lt 80 ]; then
-            echo "❌ Smoke eval failed: $PASS_RATE% < 80% threshold"
+          RESULTS="evals/results/latest.json"
+          if [ ! -f "$RESULTS" ]; then
+            echo "No results file found"
             exit 1
           fi
-          echo "✅ Smoke eval passed: $PASS_RATE% >= 80%"
+
+          TOTAL=$(jq '.results.stats.successes + .results.stats.failures' "$RESULTS")
+          PASS=$(jq '.results.stats.successes' "$RESULTS")
+
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "No test results found"
+            exit 1
+          fi
+
+          PASS_RATE=$((PASS * 100 / TOTAL))
+          echo "Pass rate: $PASS_RATE% ($PASS/$TOTAL)"
+
+          if [ "$PASS_RATE" -lt 80 ]; then
+            echo "Smoke eval failed: $PASS_RATE% < 80% threshold"
+            exit 1
+          fi
+          echo "Smoke eval passed: $PASS_RATE% >= 80%"
 
       - name: Post results as PR comment
         if: github.event_name == 'pull_request'
@@ -51,22 +66,25 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('evals/results/smoke-output.txt', 'utf8');
-            
-            // Extract summary
-            const passMatch = output.match(/(\d+)%/);
-            const passRate = passMatch ? passMatch[1] : 'unknown';
-            
+            const results = JSON.parse(fs.readFileSync('evals/results/latest.json', 'utf8'));
+            const stats = results.results.stats;
+            const total = stats.successes + stats.failures;
+            const passRate = total > 0 ? Math.round(stats.successes * 100 / total) : 0;
+
             const marker = '<!-- cerberus:smoke-eval -->';
-            const body = `${marker}\n## 🤖 Cerberus Smoke Eval Results
-
-            **Pass Rate:** ${passRate}%
-            **Threshold:** 80%
-
-            ${output.slice(-2000)}
-
-            *(Full results: evals/results/smoke-output.txt)*
-            `;
+            const body = [
+              marker,
+              '## Cerberus Smoke Eval Results',
+              '',
+              `**Pass Rate:** ${passRate}% (${stats.successes}/${total})`,
+              `**Threshold:** 80%`,
+              '',
+              `| Metric | Value |`,
+              `|--------|-------|`,
+              `| Successes | ${stats.successes} |`,
+              `| Failures | ${stats.failures} |`,
+              `| Total | ${total} |`,
+            ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
