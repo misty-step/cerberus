@@ -564,4 +564,4 @@ shareResults: false
 # Default test options
 defaultTest:
   options:
-    transform: "(() => { try { return JSON.parse(output) } catch(e) { const m = output.match(/\\{[\\s\\S]*\\}/); return m ? JSON.parse(m[0]) : output } })()"
+    transform: "(() => { try { return JSON.parse(output) } catch(e) {} const fences = [...output.matchAll(/```json\\s*([\\s\\S]*?)\\s*```/g)]; for (let i = fences.length - 1; i >= 0; i--) { try { return JSON.parse(fences[i][1]) } catch(e) {} } const n = output.match(/\\{[\\s\\S]*\\}/); if (n) { try { return JSON.parse(n[0]) } catch(e) {} } return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] } })()"
