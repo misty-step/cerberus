@@ -91,15 +91,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
-
-      - name: Install deps
-        run: pip install pytest pytest-cov pyyaml
-
-      - name: Run tests with coverage
-        run: python3 -m pytest tests/ -v --cov=scripts --cov-report=xml
+          name: coverage-report
 
       - name: Generate coverage comment
         uses: py-cov-action/python-coverage-comment-action@v3
