@@ -118,12 +118,34 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "::error::gh CLI not found on runner (required for PR context fetch)"
+          exit 1
+        fi
         if [[ -z "$PR_NUMBER" ]]; then
           echo "::error::This action must be triggered by a pull_request event"
           exit 1
         fi
-        gh pr diff "$PR_NUMBER" > /tmp/pr.diff
-        gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
+        if ! gh pr diff "$PR_NUMBER" > /tmp/pr.diff; then
+          echo "::error::Failed to fetch PR diff via gh pr diff."
+          echo "Likely cause: missing workflow job permissions (pull-requests: read, contents: read) or incorrect github-token."
+          echo ""
+          echo "Fix (recommended):"
+          echo "permissions:"
+          echo "  contents: read"
+          echo "  pull-requests: read"
+          exit 1
+        fi
+        if ! gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json; then
+          echo "::error::Failed to fetch PR context via gh pr view."
+          echo "Likely cause: missing workflow job permissions (pull-requests: read) or incorrect github-token."
+          echo ""
+          echo "Fix (recommended):"
+          echo "permissions:"
+          echo "  contents: read"
+          echo "  pull-requests: read"
+          exit 1
+        fi
         echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
     - name: Run review

@@ -32,21 +32,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: misty-step/cerberus/validate@v2
+
+  matrix:
+    needs: validate
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - uses: misty-step/cerberus/matrix@v2
+        id: generate
+
   review:
+    needs: matrix
+    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       pull-requests: read
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        include:
-          - { reviewer: APOLLO,    perspective: correctness }
-          - { reviewer: ATHENA,    perspective: architecture }
-          - { reviewer: SENTINEL,  perspective: security }
-          - { reviewer: VULCAN,    perspective: performance }
-          - { reviewer: ARTEMIS,   perspective: maintainability }
-          - { reviewer: CASSANDRA, perspective: testing }
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +74,7 @@ jobs:
   verdict:
     name: "Council Verdict"
     needs: review
-    if: always()
+    if: always() && needs.review.result != 'skipped'
     permissions:
       contents: read
       pull-requests: write
@@ -71,6 +84,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml` (optional) instead of hand-editing YAML.
 
 3. Open a pull request. That's it.
 
@@ -107,7 +122,7 @@ Full review council runs with full access to the `OPENROUTER_API_KEY` secret.
 ### Fork PRs
 - Fork PRs trigger the workflow but skip the review jobs
 - This is intentional: GitHub Actions secrets are **not available** to fork PRs
-- The workflow runs a lightweight triage job that detects fork PRs and posts a notice
+- Gate reviewer jobs to same-repo PRs (`head.repo.full_name == github.repository`) to avoid secret access attempts
 - Full review requires a PR from the same repository (not a fork)
 
 This prevents confusing failures when secret-dependent operations can't access their credentials.
@@ -135,6 +150,12 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `github-token` | yes | - | GitHub token for PR comments |
 | `fail-on-verdict` | no | `true` | Exit 1 if council fails |
 | `fail-on-skip` | no | `false` | Exit 1 if council verdict is SKIP (all reviews skipped) |
+
+### Validate Action (`misty-step/cerberus/validate@v2`)
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `workflow` | no | `.github/workflows/cerberus.yml` | Workflow file to validate |
+| `fail-on-warnings` | no | `false` | Exit 1 if warnings are found |
 
 ## Verdict Rules
 Each reviewer emits:

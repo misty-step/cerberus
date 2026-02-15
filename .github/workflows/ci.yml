@@ -19,6 +19,8 @@ jobs:
           python3 -m py_compile scripts/parse-review.py
           python3 -m py_compile scripts/aggregate-verdict.py
           python3 -m py_compile scripts/triage.py
+          python3 -m py_compile scripts/validate-consumer-workflow.py
+          python3 -m py_compile scripts/lib/consumer_workflow_validator.py
           python3 -m py_compile matrix/generate-matrix.py
 
       - name: YAML validity
@@ -26,7 +28,7 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml']:
+          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml']:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')
