@@ -35,7 +35,7 @@ jobs:
           promptfoo eval --config evals/promptfooconfig.yaml \
             --no-cache \
             --max-concurrency 5 \
-            2>&1 | tee evals/results/full-output.txt
+            2>&1 | tee evals/results/full-output.txt || true
 
       - name: Check pass rate
         id: eval

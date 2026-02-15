@@ -25,16 +25,16 @@ jobs:
       - name: Install Promptfoo
         run: npm install -g promptfoo@0.120.24
 
-      - name: Run smoke eval
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: |
-          set -o pipefail
-          mkdir -p evals/results
-          promptfoo eval --config evals/promptfooconfig.yaml \
-            --no-cache \
-            --max-concurrency 3 \
-            2>&1 | tee evals/results/smoke-output.txt
+	      - name: Run smoke eval
+	        env:
+	          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+	        run: |
+	          set -o pipefail
+	          mkdir -p evals/results
+	          promptfoo eval --config evals/promptfooconfig.yaml \
+	            --no-cache \
+	            --max-concurrency 3 \
+	            2>&1 | tee evals/results/smoke-output.txt || true
 
       - name: Check pass rate
         run: |

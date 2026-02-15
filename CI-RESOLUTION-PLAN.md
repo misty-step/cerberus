@@ -1,12 +1,9 @@
 # CI Resolution Plan
 
 ## Root cause
-- **Classification:** Code issue (expected behavior of merge gate)
-- **Cause:** `Council Verdict` is FAIL because ARTEMIS + CASSANDRA verdicts are FAIL, so the verdict action exits 1 when `fail-on-verdict: true`.
-- **Evidence:** `Cerberus Council` run `22026142556`:
-  - `aggregate-verdict: override ... skipped (invalid or SHA mismatch)`
-  - `ARTEMIS: FAIL` (maintainability)
-  - `CASSANDRA: FAIL` (testing)
+- **Classification:** Code issue
+- **Cause:** `promptfoo eval` fails with `Transform function did not return a value` after converting the transform to multi-line YAML.
+- **Evidence:** `Eval - Smoke` run `22026446425` fails in `Run smoke eval` with exit code `100`.
 
 ## Planned fixes
 
@@ -40,6 +37,23 @@
   Issue: smoke threshold in code was 75% but PR acceptance says 80%; full-eval jq arithmetic was brittle
   Fix: set smoke threshold to 80%; use `// 0` jq defaults in full-eval (and baseline compare)
   Verify: smoke-eval still passes; full-eval arithmetic can’t error on missing fields
+  ```
+
+- [x] [CODE FIX] Ensure multi-line Promptfoo transform returns a value
+  ```
+  Files: evals/promptfooconfig.yaml
+  Issue: Promptfoo reports "Transform function did not return a value" (31 errors)
+  Cause: Promptfoo treats multi-line transform as a function body; the IIFE expression result is not returned
+  Fix: prepend `return` so the transform function returns the IIFE value
+  Verify: rerun `Eval - Smoke` and confirm errors drop to 0
+  ```
+
+- [x] [CI FIX] Don’t fail early on Promptfoo’s non-zero exit codes
+  ```
+  Files: .github/workflows/smoke-eval.yml, .github/workflows/full-eval.yml
+  Issue: promptfoo exits non-zero (e.g. 100) when there are failures/errors, which stops the job before pass-rate logic runs
+  Fix: keep `pipefail` but append `|| true` so pass-rate step is the single gate
+  Verify: promptfoo runs, results json exists, pass-rate step enforces thresholds
   ```
 
 ## Prevention

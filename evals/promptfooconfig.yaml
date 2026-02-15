@@ -610,7 +610,7 @@ shareResults: false
 defaultTest:
   options:
     transform: |
-      (() => {
+      return (() => {
         const normalize = (value) => {
           if (!value || typeof value !== 'object') {
             return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };

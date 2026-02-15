@@ -1,26 +1,19 @@
 # CI Failure Summary
 
 ## Failing check
-- **Workflow:** `Cerberus Council`
-- **Run:** `22026142556`
-- **Job:** `Council Verdict`
-- **Step:** `Run /./verdict`
-- **Exit code:** `1`
+- **Workflow:** `Eval - Smoke`
+- **Run:** `22026446425`
+- **Job:** `smoke-eval`
+- **Step:** `Run smoke eval`
+- **Exit code:** `100` (from `promptfoo eval`)
 
 ## Error summary (exact)
 ```
-aggregate-verdict: override 1/1 from 'phrazzld': skipped (invalid or SHA mismatch)
-Council Verdict: FAIL
-Reviewers:
-- ATHENA (architecture): PASS
-- APOLLO (correctness): PASS
-- ARTEMIS (maintainability): FAIL
-- VULCAN (performance): WARN
-- SENTINEL (security): PASS
-- CASSANDRA (testing): FAIL
-##[error]Council Verdict: FAIL
+Provider call failed during eval
+Error: Transform function did not return a value
+##[error]Process completed with exit code 100.
 ```
 
 ## Notes
-- Smoke eval is green: `Eval - Smoke` run `22026142560` passed with **87%** (27/31).
-- Council is red because 2 reviewers failed (ARTEMIS + CASSANDRA), so verdict action intentionally fails when `fail-on-verdict: true`.
+- Council is green: `Council Verdict` passed on run `22026446412`.
+- This smoke-eval failure happened in the eval step before pass-rate enforcement, so results weren’t meaningful (`31 errors`).
