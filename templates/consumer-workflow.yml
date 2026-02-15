@@ -44,7 +44,7 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          post-comment: 'false'
+          comment-policy: 'never'
           timeout: '600'
           # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
           # context: |

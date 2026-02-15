@@ -34,9 +34,9 @@ inputs:
   opencode-version:
     description: 'OpenCode CLI version to install'
     default: '1.1.49'
-  post-comment:
-    description: 'Post review comment to PR'
-    default: 'true'
+  comment-policy:
+    description: 'When to post review comment: never, non-pass (WARN/FAIL), or always'
+    default: 'never'
   fail-on-skip:
     description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
     default: 'false'
@@ -215,7 +215,7 @@ runs:
         echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
-      if: steps.parse.outcome == 'success' && inputs.post-comment == 'true'
+      if: steps.parse.outcome == 'success' && (inputs.comment-policy == 'always' || (inputs.comment-policy == 'non-pass' && steps.parse.outputs.verdict != 'PASS'))
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}

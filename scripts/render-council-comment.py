@@ -489,13 +489,41 @@ def _build_comment(
     if size_note:
         lines.extend(["", size_note])
 
+    # Progressive disclosure: collapse details on PASS, show key findings on WARN/FAIL
+    is_pass = verdict == "PASS"
+    is_fail_or_warn = verdict in ("FAIL", "WARN")
+
     if reviewers:
+        # Always wrap in <details> for progressive disclosure
         lines.extend(["", "### Reviewer Overview"])
-        lines.extend(format_reviewer_overview_lines(reviewers))
+        if is_pass:
+            # On PASS: collapse reviewer overview
+            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
+            lines.extend(format_reviewer_overview_lines(reviewers))
+            lines.extend(["", "</details>"])
+        else:
+            # On WARN/FAIL: show reviewer overview (still collapsed for consistency)
+            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
+            lines.extend(format_reviewer_overview_lines(reviewers))
+            lines.extend(["", "</details>"])
 
     if include_key_findings:
         lines.extend(["", "### Key Findings"])
-        lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
+        if is_pass:
+            # On PASS: collapse key findings
+            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
+            lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
+            lines.extend(["", "</details>"])
+        elif is_fail_or_warn:
+            # On WARN/FAIL: show key findings expanded by default
+            lines.extend(["<details open>", "<summary>(show less)</summary>", ""])
+            lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
+            lines.extend(["", "</details>"])
+        else:
+            # For SKIP or other verdicts: show collapsed
+            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
+            lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
+            lines.extend(["", "</details>"])
 
     if include_reviewer_details and detail_reviewers:
         lines.extend(["", *format_reviewer_details_block(detail_reviewers, max_findings=max_findings)])
