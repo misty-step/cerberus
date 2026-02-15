@@ -7,7 +7,7 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 ## Modules
 
 ### Module 1: Council Review (GitHub Action) — **v1.0**
-**What:** Multi-AI code review council. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified council comment.
+**What:** Multi-AI code review council. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified council comment and a PR review with inline comments.
 
 **Status:** Working. Deployed across all Misty Step repos. Needs hardening.
 
