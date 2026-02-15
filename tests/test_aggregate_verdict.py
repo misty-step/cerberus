@@ -647,7 +647,7 @@ def test_partial_model_metadata_propagates_present_values(tmp_path):
 # Phase 2: Unit tests via importlib (no subprocess)
 # ---------------------------------------------------------------------------
 
-from tests.conftest import aggregate_verdict
+from conftest import aggregate_verdict
 from lib.overrides import Override
 
 _parse_override = aggregate_verdict.parse_override
@@ -918,7 +918,7 @@ class TestPipelineIntegration:
     """End-to-end: parse raw reviewer output, then aggregate verdicts."""
 
     def test_parse_then_aggregate_pass(self, tmp_path):
-        from tests.conftest import parse_review
+        from conftest import parse_review
         # Simulate three PASS reviews
         for name in ["APOLLO", "ATHENA", "SENTINEL"]:
             raw = json.dumps({

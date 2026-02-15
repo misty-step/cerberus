@@ -104,6 +104,111 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert "/council override sha=abcdef123456" in body
 
 
+def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
+    council = {
+        "verdict": "WARN",
+        "summary": "3 reviewers. Failures: 0, warnings: 1, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+                "runtime_seconds": 10,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "src/hot1.py",
+                        "line": 10,
+                        "title": "Shared issue",
+                        "description": "short",
+                        "suggestion": "short fix",
+                    },
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "src/hot2.py",
+                        "line": 3,
+                        "title": "Solo issue",
+                        "description": "only one reviewer",
+                        "suggestion": "fix it",
+                    },
+                ],
+                "stats": {"critical": 0, "major": 2, "minor": 0, "info": 0},
+            },
+            {
+                "reviewer": "ATHENA",
+                "perspective": "architecture",
+                "verdict": "WARN",
+                "confidence": 0.8,
+                "summary": "one issue",
+                "runtime_seconds": 20,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "src/hot1.py",
+                        "line": 10,
+                        "title": "Shared issue",
+                        "description": "a second reviewer",
+                        "suggestion": "this is a much longer suggested fix that should win",
+                    },
+                    {
+                        "severity": "minor",
+                        "category": "style",
+                        "file": "src/hot1.py",
+                        "line": 99,
+                        "title": "Minor nit",
+                        "description": "nit",
+                        "suggestion": "",
+                    },
+                ],
+                "stats": {"critical": 0, "major": 1, "minor": 1, "info": 0},
+            },
+            {
+                "reviewer": "CASSANDRA",
+                "perspective": "testing",
+                "verdict": "PASS",
+                "confidence": 0.85,
+                "summary": "ok",
+                "runtime_seconds": 15,
+                "findings": [
+                    {
+                        "severity": "minor",
+                        "category": "tests",
+                        "file": "src/hot1.py",
+                        "line": 55,
+                        "title": "Add coverage",
+                        "description": "add tests",
+                        "suggestion": "add tests",
+                    }
+                ],
+                "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+            },
+        ],
+        "stats": {"total": 3, "pass": 2, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+    assert code == 0, err
+    assert "### Fix Order" in body
+    assert "### Hotspots" in body
+
+    fix_section = body.split("### Fix Order", 1)[1].split("### Hotspots", 1)[0]
+    first = next(ln for ln in fix_section.splitlines() if ln.startswith("1. "))
+    second = next(ln for ln in fix_section.splitlines() if ln.startswith("2. "))
+    assert "Shared issue" in first
+    assert "Solo issue" in second
+    assert "much longer suggested fix" in fix_section
+
+    hot_section = body.split("### Hotspots", 1)[1].split("### Reviewer Overview", 1)[0]
+    first_hot = next(ln for ln in hot_section.splitlines() if ln.startswith("- "))
+    assert "blob/abcdef1234567890/src/hot1.py" in first_hot
+
+
 def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
     council = {
         "verdict": "WARN",
@@ -399,4 +504,6 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     assert "<summary>(click to expand)</summary>" in body
     assert "### Key Findings" in body
     assert "<summary>(show less)</summary>" in body
-    assert body.count("**Finding ") == 5
+    key_section = body.split("### Key Findings", 1)[1]
+    key_section = key_section.split("\n---\n", 1)[0]
+    assert key_section.count("**Finding ") == 5
