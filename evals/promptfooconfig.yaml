@@ -1,0 +1,657 @@
+# Cerberus Reviewer Eval Configuration
+# Uses Promptfoo for LLM-as-judge evaluation
+
+description: "Cerberus reviewer accuracy evals"
+
+# Prompts to evaluate - uses the review prompt template
+prompts:
+  - id: "review-prompt"
+    raw: |
+      Review this pull request from your specialized perspective.
+
+      ## PR Context
+      - **Title:** {{pr_title}}
+      - **Author:** {{pr_author}}
+      - **Branch:** {{head_branch}} → {{base_branch}}
+      - **Description:**
+      {{pr_body}}
+
+      ## Diff
+      The PR diff is:
+      ```diff
+      {{diff}}
+      ```
+
+      ## Your Perspective
+      You are a {{perspective}} reviewer.
+
+      ## Instructions
+      1. Analyze the diff from the {{perspective}} perspective
+      2. Identify any issues relevant to this perspective
+      3. Output your verdict as JSON
+
+      If you find no issues, output:
+      ```json
+      {"verdict": "PASS", "findings": [], "summary": "No issues found"}
+      ```
+
+      If you find issues, output:
+      ```json
+      {"verdict": "FAIL", "findings": [{"severity": "critical|major|minor", "category": "{{perspective}}", "file": "FILE", "line": LINE, "title": "TITLE", "description": "DESC"}], "summary": "SUMMARY"}
+      ```
+
+# Model providers - use OpenRouter
+providers:
+  - id: openrouter:moonshotai/kimi-k2.5
+    config:
+      temperature: 0
+      max_tokens: 4000
+
+# Test cases
+tests:
+  - description: "Security - SQL Injection"
+    vars:
+      pr_title: "Fix user query"
+      pr_author: "developer"
+      head_branch: "fix/query"
+      base_branch: "main"
+      pr_body: "Fixes SQL injection vulnerability"
+      perspective: "security"
+      diff: |
+        +    query = f"SELECT * FROM users WHERE id = {user_id}"
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: "output.findings && output.findings.some(f => f?.category === 'security' || String(f?.title || '').toLowerCase().includes('sql') || String(f?.description || '').toLowerCase().includes('injection'))"
+
+  - description: "Security - Hardcoded Secret"
+    vars:
+      pr_title: "Add API client"
+      pr_author: "developer"
+      head_branch: "feature/api"
+      base_branch: "main"
+      pr_body: "Add API client module"
+      perspective: "security"
+      diff: |
+        +const API_KEY = "test-key-1234567890abcdef";
+        +function callApi() { }
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Security - XSS Vulnerability"
+    vars:
+      pr_title: "Add user display"
+      pr_author: "developer"
+      head_branch: "feature/display"
+      base_branch: "main"
+      pr_body: "Display user input"
+      perspective: "security"
+      diff: |
+        +function displayUser(name) {
+        +  document.innerHTML = name;
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Security - Path Traversal"
+    vars:
+      pr_title: "Add file reader"
+      pr_author: "developer"
+      head_branch: "feature/files"
+      base_branch: "main"
+      pr_body: "Read files from disk"
+      perspective: "security"
+      diff: |
+        +const fs = require('fs');
+        +function readFile(path) {
+        +  return fs.readFileSync(path);
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Security - Command Injection"
+    vars:
+      pr_title: "Add shell execution"
+      pr_author: "developer"
+      head_branch: "feature/shell"
+      base_branch: "main"
+      pr_body: "Execute shell commands"
+      perspective: "security"
+      diff: |
+        +const { exec } = require('child_process');
+        +function run(cmd) {
+        +  exec(cmd);
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Correctness - Bug Fix Detection"
+    vars:
+      pr_title: "Fix calculation"
+      pr_author: "developer"
+      head_branch: "fix/calc"
+      base_branch: "main"
+      pr_body: "Fix off-by-one error"
+      perspective: "correctness"
+      diff: |
+        -  for (let i = 0; i <= arr.length; i++) {
+        +  for (let i = 0; i < arr.length; i++) {
+    assert:
+      - type: javascript
+        value: "output.verdict === 'PASS'"
+
+  - description: "Correctness - Null Pointer"
+    vars:
+      pr_title: "Add user lookup"
+      pr_author: "developer"
+      head_branch: "feature/user"
+      base_branch: "main"
+      pr_body: "Lookup user by ID"
+      perspective: "correctness"
+      diff: |
+        +function getUser(id) {
+        +  return users.find(u => u.id === id).name;
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Correctness - Logic Error"
+    vars:
+      pr_title: "Fix login check"
+      pr_author: "developer"
+      head_branch: "fix/auth"
+      base_branch: "main"
+      pr_body: "Fix authentication logic"
+      perspective: "correctness"
+      diff: |
+        -  if (user && user.isAdmin || user.isOwner) {
+        +  if (user && (user.isAdmin || user.isOwner)) {
+    assert:
+      - type: javascript
+        value: "output.verdict === 'PASS'"
+
+  - description: "Correctness - Type Safety"
+    vars:
+      pr_title: "Add type conversion"
+      pr_author: "developer"
+      head_branch: "feature/types"
+      base_branch: "main"
+      pr_body: "Convert between types"
+      perspective: "correctness"
+      diff: |
+        +const num = "5";
+        +const result = num + 10;
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Correctness - Error Handling"
+    vars:
+      pr_title: "Add API call"
+      pr_author: "developer"
+      head_branch: "feature/api"
+      base_branch: "main"
+      pr_body: "Call external API"
+      perspective: "correctness"
+      diff: |
+        +async function fetchData() {
+        +  const data = await fetch(url);
+        +  return data.json();
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Performance - N+1 Query"
+    vars:
+      pr_title: "Add user posts"
+      pr_author: "developer"
+      head_branch: "feature/posts"
+      base_branch: "main"
+      pr_body: "Get all user posts"
+      perspective: "performance"
+      diff: |
+        +function getUserPosts(userIds) {
+        +  return userIds.map(id => db.query(`SELECT * FROM posts WHERE user_id = ${id}`));
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Performance - Memory Leak"
+    vars:
+      pr_title: "Add event listener"
+      pr_author: "developer"
+      head_branch: "feature/events"
+      base_branch: "main"
+      pr_body: "Add click handler"
+      perspective: "performance"
+      diff: |
+        +button.addEventListener('click', handler);
+        +function mount() {
+        +  for (let i = 0; i < 10; i++) {
+        +    button.addEventListener('click', handler);
+        +  }
+        +}
+        +mount();
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Performance - Inefficient Loop"
+    vars:
+      pr_title: "Filter large array"
+      pr_author: "developer"
+      head_branch: "feature/filter"
+      base_branch: "main"
+      pr_body: "Filter data"
+      perspective: "performance"
+      diff: |
+        +const results = [];
+        +for (let i = 0; i < items.length; i++) {
+        +  for (let j = 0; j < items.length; j++) {
+        +    for (let k = 0; k < items.length; k++) {
+        +      results.push(process(items[i], items[j], items[k]));
+        +    }
+        +  }
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: "(output.findings || []).some(f => (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('loop') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('nested') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('complexity'))"
+
+  - description: "Performance - Sync File I/O"
+    vars:
+      pr_title: "Read config file"
+      pr_author: "developer"
+      head_branch: "feature/config"
+      base_branch: "main"
+      pr_body: "Load configuration synchronously on every request"
+      perspective: "performance"
+      diff: |
+        +function handleRequest(req, res) {
+        +  const config = JSON.parse(fs.readFileSync('config.json'));
+        +  res.json(config);
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: "(output.findings || []).some(f => (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('sync') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('blocking') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('file'))"
+
+  - description: "Performance - No Caching"
+    vars:
+      pr_title: "Add lookup function"
+      pr_author: "developer"
+      head_branch: "feature/lookup"
+      base_branch: "main"
+      pr_body: "Lookup values frequently"
+      perspective: "performance"
+      diff: |
+        +function getUser(id) {
+        +  return db.query('SELECT * FROM users WHERE id = ?', id);
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Architecture - Tight Coupling"
+    vars:
+      pr_title: "Add database call"
+      pr_author: "developer"
+      head_branch: "feature/db"
+      base_branch: "main"
+      pr_body: "Query database directly"
+      perspective: "architecture"
+      diff: |
+        +class UserController {
+        +  get() {
+        +    const db = new MySQL();
+        +    return db.query('SELECT * FROM users');
+        +  }
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Architecture - Missing Interface"
+    vars:
+      pr_title: "Add payment processor"
+      pr_author: "developer"
+      head_branch: "feature/payment"
+      base_branch: "main"
+      pr_body: "Process payments by coupling directly to Stripe"
+      perspective: "architecture"
+      diff: |
+        +class StripePayment {
+        +  charge(amount: number): void {
+        +    /* ... */
+        +  }
+        +}
+        +
+        +class CheckoutService {
+        +  constructor() {
+        +    // Missing abstraction: business logic depends on concrete gateway
+        +    this.processor = new StripePayment();
+        +  }
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Architecture - God Object"
+    vars:
+      pr_title: "Add service class"
+      pr_author: "developer"
+      head_branch: "feature/service"
+      base_branch: "main"
+      pr_body: "Main service class"
+      perspective: "architecture"
+      diff: |
+        +class Service {
+        +  doAuth() { }
+        +  doPayment() { }
+        +  doEmail() { }
+        +  doStorage() { }
+        +  doLogging() { }
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Architecture - Circular Dependency"
+    vars:
+      pr_title: "Add modules"
+      pr_author: "developer"
+      head_branch: "feature/modules"
+      base_branch: "main"
+      pr_body: "Create module structure"
+      perspective: "architecture"
+      diff: |
+        +// a.js
+        +const b = require('./b');
+        +// b.js
+        +const a = require('./a');
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Architecture - Missing Abstraction"
+    vars:
+      pr_title: "Add data access"
+      pr_author: "developer"
+      head_branch: "feature/data"
+      base_branch: "main"
+      pr_body: "Direct SQL in controllers"
+      perspective: "architecture"
+      diff: |
+        +app.get('/users', (req, res) => {
+        +  const users = db.query('SELECT * FROM users');
+        +  res.json(users);
+        +});
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Maintainability - Code Duplication"
+    vars:
+      pr_title: "Add helpers"
+      pr_author: "developer"
+      head_branch: "feature/helpers"
+      base_branch: "main"
+      pr_body: "Utility functions"
+      perspective: "maintainability"
+      diff: |
+        +function formatUser(u) { return u.name.toUpperCase(); }
+        +function formatAdmin(a) { return a.name.toUpperCase(); }
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Maintainability - Magic Numbers"
+    vars:
+      pr_title: "Add timeout"
+      pr_author: "developer"
+      head_branch: "feature/timeout"
+      base_branch: "main"
+      pr_body: "Set request timeout using named constant from config"
+      perspective: "maintainability"
+      diff: |
+        +const REQUEST_TIMEOUT_MS = 5000;
+        +fetch(url, { timeout: REQUEST_TIMEOUT_MS });
+    assert:
+      - type: javascript
+        value: "output.verdict === 'PASS'"
+
+  - description: "Maintainability - Long Function"
+    vars:
+      pr_title: "Add processor"
+      pr_author: "developer"
+      head_branch: "feature/processor"
+      base_branch: "main"
+      pr_body: "Business logic in one big function"
+      perspective: "maintainability"
+      diff: |
+        +function processOrders(orders) {
+        +  let total = 0;
+        +  for (const order of orders) {
+        +    if (!order) continue;
+        +    if (order.status === 'cancelled') continue;
+        +
+        +    if (order.status === 'refunded') {
+        +      total -= order.amount;
+        +    } else {
+        +      total += order.amount;
+        +    }
+        +
+        +    if (order.items) {
+        +      for (const item of order.items) {
+        +        if (item.type === 'digital') total += item.price * 0.9;
+        +        else if (item.type === 'physical') total += item.price;
+        +        else if (item.type === 'service') total += item.price * 1.1;
+        +      }
+        +    }
+        +
+        +    if (order.coupon) {
+        +      if (order.coupon.type === 'percent') total *= (1 - order.coupon.value);
+        +      else if (order.coupon.type === 'fixed') total -= order.coupon.value;
+        +    }
+        +  }
+        +  return Math.round(total * 100) / 100;
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Maintainability - Poor Naming"
+    vars:
+      pr_title: "Add helper"
+      pr_author: "developer"
+      head_branch: "feature/naming"
+      base_branch: "main"
+      pr_body: "Utility function"
+      perspective: "maintainability"
+      diff: |
+        +function doIt(x) {
+        +  return x.filter(y => y.z === 1).map(a => a.b);
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Maintainability - No Documentation"
+    vars:
+      pr_title: "Add complex function"
+      pr_author: "developer"
+      head_branch: "feature/docs"
+      base_branch: "main"
+      pr_body: "Complex business logic"
+      perspective: "maintainability"
+      diff: |
+        +function calculate(a, b, c, d, e) {
+        +  return ((a + b) * c - d) / e;
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Testing - No Test Coverage"
+    vars:
+      pr_title: "Add core function"
+      pr_author: "developer"
+      head_branch: "feature/core"
+      base_branch: "main"
+      pr_body: "Core business logic"
+      perspective: "testing"
+      diff: |
+        +function calculateTax(income) {
+        +  return income * 0.25;
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Testing - Assert on Implementation"
+    vars:
+      pr_title: "Add test"
+      pr_author: "developer"
+      head_branch: "feature/test"
+      base_branch: "main"
+      pr_body: "Unit test"
+      perspective: "testing"
+      diff: |
+        +test('getUser', () => {
+        +  expect(getUser(1).name).toBe('John');
+        +});
+    assert:
+      - type: javascript
+        value: "output.verdict === 'PASS'"
+
+  - description: "Testing - Mock External API"
+    vars:
+      pr_title: "Add API test"
+      pr_author: "developer"
+      head_branch: "feature/api-test"
+      base_branch: "main"
+      pr_body: "Test external API"
+      perspective: "testing"
+      diff: |
+        +test('fetchUser', async () => {
+        +  jest.spyOn(global, 'fetch').mockResolvedValue({ json: () => ({ name: 'John' }) });
+        +  expect(await fetchUser(1)).toEqual({ name: 'John' });
+        +});
+    assert:
+      - type: javascript
+        value: "output.verdict === 'PASS'"
+
+  - description: "Testing - Missing Edge Cases"
+    vars:
+      pr_title: "Add validation"
+      pr_author: "developer"
+      head_branch: "feature/validate"
+      base_branch: "main"
+      pr_body: "Form validation"
+      perspective: "testing"
+      diff: |
+        +function validateEmail(email) {
+        +  return email.includes('@');
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Testing - Test Without Assertion"
+    vars:
+      pr_title: "Add test"
+      pr_author: "developer"
+      head_branch: "feature/bad-test"
+      base_branch: "main"
+      pr_body: "Test function"
+      perspective: "testing"
+      diff: |
+        +test('process', () => {
+        +  process();
+        +});
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+
+  - description: "Clean Code - No Issues"
+    vars:
+      pr_title: "Add simple function"
+      pr_author: "developer"
+      head_branch: "feature/simple"
+      base_branch: "main"
+      pr_body: "Simple addition"
+      perspective: "correctness"
+      diff: |
+        +function add(a, b) {
+        +  return a + b;
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'PASS'"
+      - type: not-contains
+        value: "FAIL"
+        metric: "Clean code should pass"
+
+# Output options
+outputPath: evals/results/latest.json
+shareResults: false
+
+  # Default test options
+defaultTest:
+  options:
+    transform: |
+      return (() => {
+        const normalize = (value) => {
+          if (!value || typeof value !== 'object') {
+            return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
+          }
+
+          if (typeof value.verdict === 'string') {
+            const normalized = value.verdict.trim().toUpperCase();
+            if (normalized === 'PASS' || normalized === 'FAIL' || normalized === 'SKIP') {
+              value.verdict = normalized;
+            }
+          }
+
+          if (!Array.isArray(value.findings)) {
+            value.findings = [];
+          }
+
+          return value;
+        };
+
+        const parseJson = (text) => {
+          try {
+            return normalize(JSON.parse(text));
+          } catch (e) {
+            return null;
+          }
+        };
+
+        const direct = parseJson(output);
+        if (direct) return direct;
+
+        const fences = [...output.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
+        for (let i = fences.length - 1; i >= 0; i--) {
+          const parsed = parseJson(fences[i][1]);
+          if (parsed) return parsed;
+        }
+
+        const n = output.match(/\{[\s\S]*\}/);
+        if (n) {
+          const parsed = parseJson(n[0]);
+          if (parsed) return parsed;
+        }
+
+        return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
+      })()

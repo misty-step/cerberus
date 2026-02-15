@@ -1367,25 +1367,25 @@ class TestScratchpadInput:
         assert data["findings"][0]["severity"] == "info"
 
     def test_partial_scratchpad_extracts_verdict_from_header(self):
-        """Scratchpad without JSON block but with ## Verdict: PASS header extracts PASS."""
+        """Scratchpad without JSON block but with ## Verdict: PASS header is treated as SKIP (non-blocking)."""
         code, out, _ = run_parse_file(
             FIXTURES / "sample-scratchpad-partial.md",
             env_extra={"REVIEWER_NAME": "APOLLO"},
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert data["reviewer"] == "APOLLO"
         assert data["confidence"] < 0.5  # low confidence for partial
 
     def test_partial_scratchpad_defaults_to_warn(self):
-        """Scratchpad without JSON block or verdict header defaults to WARN."""
+        """Scratchpad without JSON block or verdict header is treated as SKIP (non-blocking)."""
         # Write a scratchpad with investigation notes but no verdict header
         partial_text = "# Review\n\n## Investigation Notes\n- Checked files\n- Found nothing yet\n"
         code, out, _ = run_parse(partial_text, env_extra={"REVIEWER_NAME": "TEST"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "WARN"
+        assert data["verdict"] == "SKIP"
 
     def test_partial_scratchpad_includes_notes_in_summary(self):
         """Partial scratchpad includes investigation notes in the summary."""
@@ -1757,7 +1757,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "SENTINEL"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert "raw_review" in data
         assert "I'll start by reading" not in data["raw_review"]
         assert "Investigation Notes" in data["raw_review"]
@@ -1803,7 +1803,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert "raw_review" in data
         assert "Investigation Notes" in data["raw_review"]
 
@@ -1831,7 +1831,7 @@ class TestRawReviewPreservation:
         assert "looks good" not in data["summary"].lower()
 
     def test_extract_review_summary_with_verdict_header(self):
-        """Text with ## Verdict: header is treated as scratchpad and uses that verdict."""
+        """Text with ## Verdict: header is treated as scratchpad and is SKIP (non-blocking)."""
         text = (
             "# Review\n\n## Verdict: PASS\nNo issues found in the codebase.\n\n"
             "## Analysis\n" + "Checked various code paths for problems. " * 20
@@ -1840,8 +1840,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
         assert code == 0
         data = json.loads(out)
-        # Scratchpad path extracts verdict from ## Verdict: PASS header
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert "raw_review" in data
 
     def test_substantive_warn_fallback_has_info_finding(self):
@@ -1871,7 +1870,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert len(data["findings"]) == 1
         finding = data["findings"][0]
         assert finding["severity"] == "info"
