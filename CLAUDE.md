@@ -60,11 +60,13 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `action.yml` - review composite action entrypoint
 - `verdict/action.yml` - council verdict composite action entrypoint
 - `triage/action.yml` - triage composite action entrypoint
+- `validate/action.yml` - consumer workflow validator (misconfig guardrail)
 - `defaults/config.yml` - council settings, reviewer list, verdict thresholds, override rules
 - `.opencode/agents/<perspective>.md` - OpenCode agent config (YAML frontmatter) + system prompt (body)
 - `opencode.json` - OpenCode CLI config (provider, model, permissions)
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
 - `templates/consumer-workflow.yml` - recommended workflow for downstream repositories
+- `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
 - `scripts/run-reviewer.sh` - orchestrates one reviewer: builds prompt, invokes `opencode run`
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency

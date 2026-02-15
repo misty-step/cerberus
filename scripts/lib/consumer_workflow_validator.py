@@ -1,0 +1,380 @@
+"""Cerberus consumer workflow validator.
+
+Goal: fail fast on common misconfigs with actionable GitHub Actions annotations.
+
+Note: GitHub Actions workflow YAML uses the key `on:` which PyYAML (YAML 1.1)
+can misparse as boolean True. We disable bool resolution for on/off/yes/no.
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass(frozen=True)
+class Finding:
+    level: str  # "error" | "warning"
+    message: str
+
+
+def _workflow_yaml_loader() -> type[yaml.SafeLoader]:
+    class Loader(yaml.SafeLoader):
+        pass
+
+    # Prevent YAML 1.1 implicit bool coercion of keys like "on:" / "off:".
+    # Keep true/false parsing (t/T/f/F) intact.
+    for ch in "OoYyNn":
+        resolvers = Loader.yaml_implicit_resolvers.get(ch)
+        if not resolvers:
+            continue
+        Loader.yaml_implicit_resolvers[ch] = [
+            (tag, regexp)
+            for (tag, regexp) in resolvers
+            if tag != "tag:yaml.org,2002:bool"
+        ]
+
+    return Loader
+
+
+_WORKFLOW_LOADER = _workflow_yaml_loader()
+
+
+def _extract_events(on_block: Any) -> set[str]:
+    if on_block is None:
+        return set()
+    if isinstance(on_block, str):
+        return {on_block}
+    if isinstance(on_block, list):
+        return {str(x) for x in on_block}
+    if isinstance(on_block, dict):
+        return {str(k) for k in on_block.keys()}
+    return set()
+
+
+def _cerberus_action_kind(uses: str) -> str | None:
+    prefix = "misty-step/cerberus"
+    if not uses.startswith(prefix):
+        return None
+    rest = uses[len(prefix) :]
+    if rest.startswith("@"):
+        return "review"
+    if rest.startswith("/verdict@"):
+        return "verdict"
+    if rest.startswith("/triage@"):
+        return "triage"
+    if rest.startswith("/matrix@"):
+        return "matrix"
+    if rest.startswith("/validate@"):
+        return "validate"
+    return "other"
+
+
+def _with(step: dict[str, Any], key: str) -> Any | None:
+    with_block = step.get("with")
+    if isinstance(with_block, dict):
+        return with_block.get(key)
+    return None
+
+
+def _boolish(value: Any | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    s = str(value).strip().lower()
+    if s in {"true", "1", "yes", "y", "on"}:
+        return True
+    if s in {"false", "0", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _effective_permissions(workflow: dict[str, Any], job: dict[str, Any]) -> Any | None:
+    # Job-level permissions override workflow-level permissions.
+    if "permissions" in job:
+        return job.get("permissions")
+    return workflow.get("permissions")
+
+
+def _perm_allows(perms: Any | None, perm: str, need: str) -> bool | None:
+    """Return True/False when explicit, else None when unknown/unset."""
+    if perms is None:
+        return None
+
+    if isinstance(perms, str):
+        p = perms.strip()
+        if p == "read-all":
+            return need == "read"
+        if p == "write-all":
+            return True
+        if p == "none":
+            return False
+        return None
+
+    if isinstance(perms, dict):
+        # GitHub semantics: unspecified keys become "none" once a permissions
+        # mapping exists at the workflow/job level.
+        raw = perms.get(perm, "none")
+        v = str(raw).strip()
+        if v == "write":
+            return True
+        if v == "read":
+            return need == "read"
+        if v == "none":
+            return False
+        return None
+
+    return None
+
+
+def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Finding]:
+    findings: list[Finding] = []
+
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict):
+        return [Finding("error", f"{source}: missing top-level `jobs:` mapping")]
+
+    # YAML 1.1 parsers can load `on:` as boolean True. We still guard in case
+    # someone used a different loader upstream.
+    on_block = workflow.get("on")
+    if on_block is None and True in workflow:
+        on_block = workflow.get(True)
+    events = _extract_events(on_block)
+
+    uses_cerberus = False
+
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        steps = job.get("steps")
+        if not isinstance(steps, list):
+            continue
+
+        perms = _effective_permissions(workflow, job)
+
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            uses = step.get("uses")
+            if not isinstance(uses, str):
+                continue
+            kind = _cerberus_action_kind(uses)
+            if kind is None:
+                continue
+            uses_cerberus = True
+
+            if kind in {"review", "verdict", "triage"}:
+                if not _with(step, "github-token"):
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but is missing `with: github-token`",
+                        )
+                    )
+
+            if kind == "review":
+                pr_read = _perm_allows(perms, "pull-requests", "read")
+                contents_read = _perm_allows(perms, "contents", "read")
+                if pr_read is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` lacks `permissions: pull-requests: read` (required to fetch PR diff/context)",
+                        )
+                    )
+                elif pr_read is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` has no explicit `permissions` for `pull-requests` (defaults vary; set `pull-requests: read`)",
+                        )
+                    )
+
+                if contents_read is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` lacks `permissions: contents: read`",
+                        )
+                    )
+                elif contents_read is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` has no explicit `permissions` for `contents` (defaults vary; set `contents: read`)",
+                        )
+                    )
+
+                post_comment = _boolish(_with(step, "post-comment"), default=True)
+                if post_comment:
+                    pr_write = _perm_allows(perms, "pull-requests", "write")
+                    if pr_write is False:
+                        findings.append(
+                            Finding(
+                                "error",
+                                f"{source}: job `{job_name}` will post per-reviewer comments (input `post-comment` defaults to true) but lacks `permissions: pull-requests: write`. Fix: set `post-comment: 'false'` OR grant `pull-requests: write`.",
+                            )
+                        )
+                    elif pr_write is None:
+                        findings.append(
+                            Finding(
+                                "warning",
+                                f"{source}: job `{job_name}` may post per-reviewer comments (input `post-comment` defaults to true) but permissions are not explicit. Ensure `pull-requests: write` OR set `post-comment: 'false'`.",
+                            )
+                        )
+
+                if _with(step, "api-key") is None and _with(step, "kimi-api-key") is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` without `with: api-key`. This is fine only if `CERBERUS_API_KEY`/`OPENROUTER_API_KEY` is set at job env.",
+                        )
+                    )
+
+            if kind == "verdict":
+                pr_write = _perm_allows(perms, "pull-requests", "write")
+                contents_read = _perm_allows(perms, "contents", "read")
+                if pr_write is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post council comment/review)",
+                        )
+                    )
+                elif pr_write is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `pull-requests` (set `pull-requests: write`)",
+                        )
+                    )
+
+                if contents_read is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: contents: read` (required for checkout)",
+                        )
+                    )
+                elif contents_read is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `contents` (set `contents: read`)",
+                        )
+                    )
+
+            if kind == "triage":
+                pr_write = _perm_allows(perms, "pull-requests", "write")
+                contents_write = _perm_allows(perms, "contents", "write")
+                if pr_write is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write`",
+                        )
+                    )
+                elif pr_write is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `pull-requests` (set `pull-requests: write`)",
+                        )
+                    )
+
+                if contents_write is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: contents: write`",
+                        )
+                    )
+                elif contents_write is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `contents` (set `contents: write`)",
+                        )
+                    )
+
+    if uses_cerberus:
+        if "pull_request_target" in events:
+            findings.append(
+                Finding(
+                    "error",
+                    f"{source}: workflow uses `pull_request_target`. Cerberus must run on `pull_request` (not `pull_request_target`) to avoid secret exposure.",
+                )
+            )
+        if "pull_request" not in events:
+            findings.append(
+                Finding(
+                    "error",
+                    f"{source}: workflow does not declare `on: pull_request`. Cerberus review/verdict actions require a PR event payload.",
+                )
+            )
+
+    return findings
+
+
+def validate_workflow_file(path: Path) -> tuple[list[Finding], str | None]:
+    try:
+        raw = path.read_text()
+    except OSError as exc:
+        return ([Finding("error", f"{path}: unable to read workflow file: {exc}")], None)
+
+    try:
+        loaded = yaml.load(raw, Loader=_WORKFLOW_LOADER)
+    except Exception as exc:  # noqa: BLE001 - show YAML error as user-facing ::error::
+        return (
+            [Finding("error", f"{path}: invalid YAML: {exc}")],
+            None,
+        )
+
+    if not isinstance(loaded, dict):
+        return ([Finding("error", f"{path}: workflow YAML must be a mapping")], None)
+
+    findings = validate_workflow_dict(loaded, source=str(path))
+    return (findings, None)
+
+
+def _emit(findings: list[Finding]) -> None:
+    for f in findings:
+        if f.level == "error":
+            print(f"::error::{f.message}")
+        else:
+            print(f"::warning::{f.message}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Validate a Cerberus consumer workflow for common misconfigurations."
+    )
+    parser.add_argument("workflow", help="Path to workflow file (e.g. .github/workflows/cerberus.yml)")
+    parser.add_argument(
+        "--fail-on-warnings",
+        default="false",
+        help="Exit non-zero when warnings exist (default: false)",
+    )
+    args = parser.parse_args()
+
+    path = Path(args.workflow)
+    findings, _ = validate_workflow_file(path)
+    _emit(findings)
+
+    errors = [f for f in findings if f.level == "error"]
+    warnings = [f for f in findings if f.level != "error"]
+
+    if errors:
+        raise SystemExit(1)
+    if _boolish(args.fail_on_warnings, default=False) and warnings:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
+

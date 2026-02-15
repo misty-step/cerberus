@@ -18,8 +18,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Preflight: validate workflow structure (permissions, required inputs, etc)
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: misty-step/cerberus/validate@v2
+
   # Generate the reviewer matrix from Cerberus defaults/config.yml
   matrix:
+    needs: validate
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
@@ -63,7 +73,7 @@ jobs:
   verdict:
     name: "Council Verdict"
     needs: review
-    if: always()
+    if: always() && needs.review.result != 'skipped'
     permissions:
       contents: read
       pull-requests: write

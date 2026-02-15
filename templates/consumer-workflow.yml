@@ -42,13 +42,24 @@ jobs:
             echo "::notice::Fork PR detected. Full Cerberus review requires same-repo PRs due to secret access limitations."
           fi
 
+  # Preflight: validate workflow structure (permissions, required inputs, etc)
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: triage
+    permissions:
+      contents: read
+    name: "Workflow Validate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/validate@v2
+
   # Full review job - only runs for same-repo PRs
   # Fork PRs are explicitly blocked here to avoid silent failures
   review:
     # Require same-repo PR (not a fork) OR explicitly allow fork with read-only
     # Using full_name check is more precise than fork flag
     if: github.event.pull_request.head.repo.full_name == github.repository
-    needs: triage
+    needs: [triage, validate]
     permissions:
       contents: read
       pull-requests: read
