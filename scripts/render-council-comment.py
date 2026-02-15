@@ -348,6 +348,177 @@ def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple
     return sorted(items, key=_sort_key)[:max_total]
 
 
+def _norm_key(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _best_text(a: object, b: object) -> str:
+    """Prefer the longer non-empty string (keeps more context without merging prose)."""
+    a_text = str(a or "").strip()
+    b_text = str(b or "").strip()
+    if not a_text:
+        return b_text
+    if not b_text:
+        return a_text
+    return b_text if len(b_text) > len(a_text) else a_text
+
+
+def format_reviewer_list(reviewers: list[str]) -> str:
+    names = [str(r or "").strip() for r in reviewers]
+    names = [n for n in names if n]
+    if not names:
+        return "unknown"
+    if len(names) <= 3:
+        return ", ".join(names)
+    return f"{names[0]}, {names[1]}, +{len(names) - 2}"
+
+
+def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
+    """Aggregate duplicate findings across reviewers into 'issues' keyed by (file,line,category,title)."""
+    grouped: dict[tuple[str, int, str, str], dict] = {}
+    for reviewer in reviewers:
+        rname = reviewer_name(reviewer)
+        for finding in findings_for(reviewer):
+            file = str(finding.get("file") or "").strip()
+            if not file or file.upper() == "N/A":
+                continue
+
+            line = as_int(finding.get("line")) or 0
+            if line < 0:
+                line = 0
+
+            severity = normalize_severity(finding.get("severity"))
+            category = str(finding.get("category") or "").strip() or "uncategorized"
+            title = str(finding.get("title") or "").strip() or "Untitled finding"
+
+            key = (file, line, _norm_key(category), _norm_key(title))
+            existing = grouped.get(key)
+            if existing is None:
+                grouped[key] = {
+                    "severity": severity,
+                    "category": category,
+                    "file": file,
+                    "line": line,
+                    "title": title,
+                    "suggestion": str(finding.get("suggestion") or "").strip(),
+                    "reviewers": {rname},
+                }
+                continue
+
+            existing["reviewers"].add(rname)
+            if SEVERITY_ORDER.get(severity, 99) < SEVERITY_ORDER.get(existing.get("severity"), 99):
+                existing["severity"] = severity
+            existing["suggestion"] = _best_text(existing.get("suggestion"), finding.get("suggestion"))
+
+    out: list[dict] = []
+    for item in grouped.values():
+        reviewers = sorted(str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip())
+        item["reviewers"] = reviewers
+        out.append(item)
+
+    def _sort_key(item: dict) -> tuple[int, int, str, int, str]:
+        return (
+            SEVERITY_ORDER.get(normalize_severity(item.get("severity")), 99),
+            -len(item.get("reviewers") or []),
+            str(item.get("file") or ""),
+            int(item.get("line") or 0),
+            str(item.get("title") or ""),
+        )
+
+    out.sort(key=_sort_key)
+    return out
+
+
+def format_fix_order_lines(reviewers: list[dict], *, max_items: int) -> list[str]:
+    items = collect_issue_groups(reviewers)
+    if not items:
+        return ["_No findings reported._"]
+
+    server, repo, sha = repo_context()
+    lines: list[str] = []
+    for i, item in enumerate(items[:max_items], start=1):
+        severity = normalize_severity(item.get("severity"))
+        sev_icon = severity_icon(severity)
+        title = truncate(item.get("title"), max_len=200) or "Untitled finding"
+        category = truncate(item.get("category"), max_len=80) or "uncategorized"
+        file = str(item.get("file") or "").strip()
+        line = as_int(item.get("line"))
+        if line is not None and line <= 0:
+            line = None
+        location = location_link(file, line, server=server, repo=repo, sha=sha, missing_label="location n/a")
+        who = format_reviewer_list(item.get("reviewers") or [])
+        fix = truncate(item.get("suggestion"), max_len=240)
+
+        lines.append(f"{i}. {sev_icon} **{title}** (`{category}`) at {location} ({who})")
+        if fix:
+            lines.append(f"   Fix: {fix}")
+
+    return lines
+
+
+def collect_hotspots(reviewers: list[dict]) -> list[dict]:
+    by_file: dict[str, dict] = {}
+    for reviewer in reviewers:
+        rname = reviewer_name(reviewer)
+        for finding in findings_for(reviewer):
+            file = str(finding.get("file") or "").strip()
+            if not file or file.upper() == "N/A":
+                continue
+            severity = normalize_severity(finding.get("severity"))
+            entry = by_file.get(file)
+            if entry is None:
+                entry = {
+                    "file": file,
+                    "reviewers": set(),
+                    "counts": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                    "worst": 99,
+                    "total": 0,
+                }
+                by_file[file] = entry
+            entry["reviewers"].add(rname)
+            entry["counts"][severity] = entry["counts"].get(severity, 0) + 1
+            entry["total"] += 1
+            entry["worst"] = min(entry["worst"], SEVERITY_ORDER.get(severity, 99))
+
+    out: list[dict] = []
+    for entry in by_file.values():
+        entry["reviewers"] = sorted(str(r or "").strip() for r in entry.get("reviewers", set()) if str(r or "").strip())
+        out.append(entry)
+
+    def _sort_key(item: dict) -> tuple[int, int, int, int, int, str]:
+        counts = item.get("counts") or {}
+        return (
+            -len(item.get("reviewers") or []),
+            int(item.get("worst") or 99),
+            -int(counts.get("critical") or 0),
+            -int(counts.get("major") or 0),
+            -int(item.get("total") or 0),
+            str(item.get("file") or ""),
+        )
+
+    out.sort(key=_sort_key)
+    return out
+
+
+def format_hotspots_lines(reviewers: list[dict], *, max_files: int) -> list[str]:
+    hotspots = collect_hotspots(reviewers)[:max_files]
+    if not hotspots:
+        return ["_No hotspots detected._"]
+
+    server, repo, sha = repo_context()
+    lines: list[str] = []
+    for item in hotspots:
+        file = str(item.get("file") or "").strip()
+        counts = item.get("counts") or {}
+        who = len(item.get("reviewers") or [])
+        link = location_link(file, None, server=server, repo=repo, sha=sha, missing_label="location n/a")
+        lines.append(
+            f"- {link} — {who} reviewers | {counts.get('critical', 0)} critical | "
+            f"{counts.get('major', 0)} major | {counts.get('minor', 0)} minor"
+        )
+    return lines
+
+
 def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[str]:
     items = collect_key_findings(reviewers, max_total=max_total)
     if not items:
@@ -445,8 +616,12 @@ def _build_comment(
     override: dict | None,
     reviewers: list[dict],
     detail_reviewers: list[dict],
+    include_fix_order: bool,
+    include_hotspots: bool,
     include_key_findings: bool,
     include_reviewer_details: bool,
+    max_fix_items: int,
+    max_hotspots: int,
     max_findings: int,
     max_key_findings: int,
     raw_output_note: str = "",
@@ -490,8 +665,15 @@ def _build_comment(
         lines.extend(["", size_note])
 
     # Progressive disclosure: collapse details on PASS, show key findings on WARN/FAIL
-    is_pass = verdict == "PASS"
     is_fail_or_warn = verdict in ("FAIL", "WARN")
+
+    if include_fix_order and is_fail_or_warn:
+        lines.extend(["", "### Fix Order"])
+        lines.extend(format_fix_order_lines(reviewers, max_items=max_fix_items))
+
+    if include_hotspots and is_fail_or_warn:
+        lines.extend(["", "### Hotspots"])
+        lines.extend(format_hotspots_lines(reviewers, max_files=max_hotspots))
 
     if reviewers:
         # Always wrap in <details> for progressive disclosure
@@ -568,6 +750,8 @@ def render_comment(
 
     total_findings = sum(len(findings_for(r)) for r in reviewers)
     include_key_findings = total_findings > 0
+    include_fix_order = verdict in ("FAIL", "WARN") and total_findings > 0
+    include_hotspots = verdict in ("FAIL", "WARN") and total_findings > 0
 
     detail_reviewers = [
         r for r in reviewers
@@ -591,8 +775,12 @@ def render_comment(
         override=council.get("override"),
         reviewers=reviewers,
         detail_reviewers=detail_reviewers,
+        include_fix_order=include_fix_order,
+        include_hotspots=include_hotspots,
         include_key_findings=include_key_findings,
         include_reviewer_details=include_reviewer_details,
+        max_fix_items=3,
+        max_hotspots=5,
         max_findings=max_findings,
         max_key_findings=max_key_findings,
         raw_output_note=raw_note,

@@ -16,11 +16,19 @@ import sys
 from pathlib import Path
 
 from lib.diff_positions import build_newline_to_position
-from lib.github import CommentPermissionError, TransientGitHubError
+from lib.github import (
+    CommentPermissionError,
+    TransientGitHubError,
+    fetch_comments,
+    find_comment_url_by_marker,
+)
 from lib.github_reviews import ReviewComment, create_pr_review, find_review_id_by_marker, list_pr_files, list_pr_reviews
 from lib.markdown import severity_icon
 
 MAX_INLINE_COMMENTS = 30
+MAX_INLINE_PER_FILE = 3
+
+INLINE_SEVERITIES = {"critical", "major"}
 
 _SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
 
@@ -70,16 +78,24 @@ def read_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def read_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as exc:
-        fail(f"unable to read {path}: {exc}")
-
-
 def review_marker(head_sha: str) -> str:
     short = head_sha[:12] if head_sha else "<head-sha>"
     return f"<!-- cerberus:council-review sha={short} -->"
+
+
+def _norm_key(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _best_text(a: str, b: str) -> str:
+    """Prefer the longer non-empty string (keeps more context without merging prose)."""
+    a = (a or "").strip()
+    b = (b or "").strip()
+    if not a:
+        return b
+    if not b:
+        return a
+    return b if len(b) > len(a) else a
 
 
 def collect_inline_findings(council: dict) -> list[dict]:
@@ -87,7 +103,7 @@ def collect_inline_findings(council: dict) -> list[dict]:
     if not isinstance(reviewers, list):
         return []
 
-    out: list[dict] = []
+    grouped: dict[tuple[str, int, str, str], dict] = {}
     for reviewer in reviewers:
         if not isinstance(reviewer, dict):
             continue
@@ -102,19 +118,40 @@ def collect_inline_findings(council: dict) -> list[dict]:
             line = as_int(finding.get("line"))
             if not file or line is None or line <= 0:
                 continue
-            out.append(
-                {
-                    "reviewer": rname,
-                    "severity": normalize_severity(finding.get("severity")),
-                    "category": str(finding.get("category") or "").strip() or "uncategorized",
+            severity = normalize_severity(finding.get("severity"))
+            if severity not in INLINE_SEVERITIES:
+                continue
+            category = str(finding.get("category") or "").strip() or "uncategorized"
+            title = str(finding.get("title") or "").strip() or "Untitled finding"
+
+            key = (file, line, _norm_key(category), _norm_key(title))
+            existing = grouped.get(key)
+            if existing is None:
+                grouped[key] = {
+                    "reviewers": {rname},
+                    "severity": severity,
+                    "category": category,
                     "file": file,
                     "line": line,
-                    "title": str(finding.get("title") or "").strip() or "Untitled finding",
+                    "title": title,
                     "description": str(finding.get("description") or "").strip(),
                     "suggestion": str(finding.get("suggestion") or "").strip(),
                     "evidence": str(finding.get("evidence") or "").strip(),
                 }
-            )
+                continue
+
+            existing["reviewers"].add(rname)
+            if _SEVERITY_ORDER[severity] < _SEVERITY_ORDER[existing.get("severity")]:
+                existing["severity"] = severity
+            existing["description"] = _best_text(existing.get("description", ""), str(finding.get("description") or ""))
+            existing["suggestion"] = _best_text(existing.get("suggestion", ""), str(finding.get("suggestion") or ""))
+            existing["evidence"] = _best_text(existing.get("evidence", ""), str(finding.get("evidence") or ""))
+
+    out: list[dict] = []
+    for item in grouped.values():
+        reviewers = sorted(str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip())
+        item["reviewers"] = reviewers
+        out.append(item)
     return out
 
 
@@ -124,12 +161,27 @@ def truncate(text: str, *, max_len: int) -> str:
     return text[: max_len - 1].rstrip() + "…"
 
 
+def format_reviewers(value: object) -> str:
+    reviewers: list[str] = []
+    if isinstance(value, list):
+        reviewers = [str(v or "").strip() for v in value]
+    elif isinstance(value, str):
+        reviewers = [value.strip()]
+
+    reviewers = [r for r in reviewers if r]
+    if not reviewers:
+        return "unknown"
+    if len(reviewers) <= 3:
+        return ", ".join(reviewers)
+    return f"{reviewers[0]}, {reviewers[1]}, +{len(reviewers) - 2}"
+
+
 def render_inline_comment(finding: dict) -> str:
     sev = normalize_severity(finding.get("severity"))
     icon = severity_icon(sev)
     title = truncate(str(finding.get("title") or "Untitled finding"), max_len=200)
     category = truncate(str(finding.get("category") or "uncategorized"), max_len=80)
-    reviewer = truncate(str(finding.get("reviewer") or "unknown"), max_len=40)
+    reviewer = truncate(format_reviewers(finding.get("reviewers")), max_len=60)
     description = truncate(str(finding.get("description") or ""), max_len=700)
     suggestion = truncate(str(finding.get("suggestion") or ""), max_len=700)
     evidence = truncate(str(finding.get("evidence") or ""), max_len=900)
@@ -187,7 +239,7 @@ def main() -> None:
     p.add_argument(
         "--body-file",
         default="/tmp/council-comment.md",
-        help="Council markdown body file (used as review body).",
+        help="Council markdown body file (unused; council issue comment is canonical).",
     )
     args = p.parse_args()
 
@@ -204,12 +256,11 @@ def main() -> None:
             return
 
         council = read_json(Path(args.council_json))
-        council_body = read_text(Path(args.body_file)).strip()
 
         findings = collect_inline_findings(council)
         patch_index = build_patch_index(args.repo, args.pr)
 
-        mapped: list[tuple[ReviewComment, tuple[int, str, int, str, str]]] = []
+        mapped: list[tuple[ReviewComment, tuple[int, str, int, str]]] = []
         for finding in findings:
             path_key = normalize_path(finding.get("file"))
             line = as_int(finding.get("line"))
@@ -232,30 +283,66 @@ def main() -> None:
                 _SEVERITY_ORDER[normalize_severity(finding.get("severity"))],
                 canonical_path,
                 line,
-                str(finding.get("reviewer") or ""),
                 str(finding.get("title") or ""),
             )
             mapped.append((comment, sort_key))
 
         mapped.sort(key=lambda item: item[1])
-        inline = [c for (c, _k) in mapped[:MAX_INLINE_COMMENTS]]
+        inline: list[ReviewComment] = []
+        per_file: dict[str, int] = {}
+        for (comment, _k) in mapped:
+            if len(inline) >= MAX_INLINE_COMMENTS:
+                break
+            count = per_file.get(comment.path, 0)
+            if count >= MAX_INLINE_PER_FILE:
+                continue
+            inline.append(comment)
+            per_file[comment.path] = count + 1
 
         eligible = len(findings)
+        anchorable = len(mapped)
         posted = len(inline)
-        omitted = max(0, eligible - posted)
+        omitted = max(0, anchorable - posted)
+        unanchored = max(0, eligible - anchorable)
         limit_note = ""
-        if omitted:
-            limit_note = f" (top {posted}/{eligible}; GitHub cap {MAX_INLINE_COMMENTS})"
+        if omitted or unanchored:
+            bits: list[str] = []
+            if omitted:
+                bits.append(f"top {posted}/{anchorable} anchored (cap {MAX_INLINE_COMMENTS}, {MAX_INLINE_PER_FILE}/file)")
+            if unanchored:
+                bits.append(f"{unanchored} unanchored")
+            limit_note = f" ({'; '.join(bits)})"
 
+        if posted == 0:
+            if eligible == 0:
+                notice("No critical/major findings eligible for inline comments. Skipping PR review.")
+            else:
+                notice(f"No inline comments could be anchored to the diff{limit_note}. Skipping PR review.")
+            return
+
+        council_comment_url = ""
+        try:
+            comments = fetch_comments(args.repo, args.pr)
+            council_comment_url = find_comment_url_by_marker(comments, "<!-- cerberus:council -->") or ""
+        except Exception:
+            council_comment_url = ""
+
+        council_verdict = str(council.get("verdict") or "").strip().upper() or "UNKNOWN"
+        council_summary = str(council.get("summary") or "").strip()
+        sha_short = head_sha[:12]
+
+        link_line = f"[council report]({council_comment_url})" if council_comment_url else "council report (timeline)"
         review_body = "\n".join(
             [
                 marker,
-                f"> Inline comments posted: {posted}/{eligible}{limit_note}. Full details also in council issue comment.",
+                f"**Cerberus inline comments** for `{sha_short}`",
                 "",
-                council_body,
+                f"- Inline comments posted: {posted}/{eligible}{limit_note}",
+                f"- Canonical report: {link_line}",
+                f"- Council verdict: `{council_verdict}`" + (f" ({council_summary})" if council_summary else ""),
                 "",
             ]
-        ).strip() + "\n"
+        )
 
         try:
             create_pr_review(
@@ -267,19 +354,7 @@ def main() -> None:
             )
             notice(f"Posted council PR review for sha={head_sha[:12]} with {posted} inline comments.")
         except subprocess.CalledProcessError as exc:
-            # If the review rejects inline comments (bad positions), retry with body-only.
-            if inline:
-                warn(f"Review with inline comments failed; retrying body-only. ({exc.stderr or exc})")
-                create_pr_review(
-                    repo=args.repo,
-                    pr_number=args.pr,
-                    commit_id=head_sha,
-                    body=review_body,
-                    comments=[],
-                )
-                notice(f"Posted council PR review (body-only) for sha={head_sha[:12]}.")
-            else:
-                raise
+            warn(f"Review with inline comments failed; skipping PR review. ({exc.stderr or exc})")
 
     except CommentPermissionError as exc:
         warn(str(exc))

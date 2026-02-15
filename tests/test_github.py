@@ -130,7 +130,7 @@ class TestUpsertPrComment:
 
         def mock_run_gh(args, *, check=True):
             calls.append(args)
-            if args[1].endswith("per_page=100") and "-F" not in args:
+            if "per_page=100&page=1" in args[1] and "-F" not in args:
                 return subprocess.CompletedProcess(
                     args=args,
                     returncode=0,

@@ -399,4 +399,6 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     assert "<summary>(click to expand)</summary>" in body
     assert "### Key Findings" in body
     assert "<summary>(show less)</summary>" in body
-    assert body.count("**Finding ") == 5
+    key_section = body.split("### Key Findings", 1)[1]
+    key_section = key_section.split("\n---\n", 1)[0]
+    assert key_section.count("**Finding ") == 5
