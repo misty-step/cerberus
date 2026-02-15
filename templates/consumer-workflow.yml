@@ -89,7 +89,7 @@ jobs:
           #   Moneta is a single-user personal finance and tax tool.
           #   Data volumes are bounded: ~100-500 transactions per user per year.
           #   FIFO capital gains calculation requires full lot history (no incremental).
-          # Optional: force one model for all reviewers (overrides per-reviewer defaults)
+          # Optional (not recommended): force one model for all reviewers (pins models; Cerberus will warn)
           # model: 'openrouter/moonshotai/kimi-k2.5'
           # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5' # default fallback chain
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPS (timeout/API error)

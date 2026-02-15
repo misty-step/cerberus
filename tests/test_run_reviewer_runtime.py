@@ -63,7 +63,7 @@ def cleanup_tmp_outputs() -> None:
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
         "fast-path-stderr.log", "model-used",
-        "primary-model",
+        "primary-model", "configured-model",
     )
     for perspective in PERSPECTIVES:
         for suffix in suffixes:

@@ -307,19 +307,38 @@ input_model="$(sanitize_model "${OPENCODE_MODEL:-}")"
 reviewer_model="$(sanitize_model "${reviewer_model_raw:-}")"
 config_default_model="$(sanitize_model "${config_default_model_raw:-}")"
 
-primary_model="openrouter/moonshotai/kimi-k2.5"
+# Model resolution precedence:
+# - config model.default
+# - reviewer model (incl pool selection)
+# - action input model (OPENCODE_MODEL)
+base_default_model="openrouter/moonshotai/kimi-k2.5"
+configured_model="$base_default_model"
 if [[ -n "$config_default_model" ]]; then
-  primary_model="$config_default_model"
+  configured_model="$config_default_model"
 fi
 if [[ -n "$reviewer_model" ]]; then
-  primary_model="$reviewer_model"
+  configured_model="$reviewer_model"
 fi
+
+primary_model="$configured_model"
 if [[ -n "$input_model" ]]; then
   primary_model="$input_model"
 fi
 
+# Persist "what we'd use without input override" for downstream (council/debug).
+printf '%s' "$configured_model" > "/tmp/${perspective}-configured-model"
+
 # Persist primary model for downstream steps (parse, comment metadata).
 printf '%s' "$primary_model" > "/tmp/${perspective}-primary-model"
+
+# Make overrides visible. Avoid `::warning::` when redundant (matches configured).
+if [[ -n "$input_model" ]]; then
+  if [[ "$primary_model" != "$configured_model" ]]; then
+    echo "::warning::Model override active for ${reviewer_name} (${perspective}): using '${primary_model}' (configured: '${configured_model}'). Remove the 'model' input to use per-reviewer defaults."
+  else
+    echo "::notice::Model override set for ${reviewer_name} (${perspective}) but matches configured model ('${configured_model}'). Remove 'model' to stay auto-updated as Cerberus defaults evolve."
+  fi
+fi
 
 # Build ordered model list: primary + optional fallbacks.
 models=("$primary_model")
