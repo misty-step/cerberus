@@ -94,6 +94,10 @@ runs:
       with:
         python-version: '3.12'
 
+    - name: Install Python deps
+      shell: bash
+      run: pip install pyyaml --quiet
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:

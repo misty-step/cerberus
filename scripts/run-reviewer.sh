@@ -153,46 +153,13 @@ stage_opencode_project_config() {
 stage_opencode_project_config
 
 reviewer_meta="$(
-  awk -v p="$perspective" '
-    /^[[:space:]]*$/ {next}
-    /^[[:space:]]*#/ {next}
-
-    /^[[:space:]]*-[[:space:]]*name:/ {
-      if (matched && !printed) { print name "\t" model; printed=1 }
-      match($0, /name:[[:space:]]*/)
-      name=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]+#.*$/, "", name)
-      gsub(/^[\"\047]/, "", name)
-      gsub(/[\"\047]$/, "", name)
-      model=""; matched=0
-      next
-    }
-
-    /^[[:space:]]*perspective:/ {
-      match($0, /perspective:[[:space:]]*/)
-      persp=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]+#.*$/, "", persp)
-      gsub(/^[\"\047]/, "", persp)
-      gsub(/[\"\047]$/, "", persp)
-      if (persp == p) { matched=1 }
-      next
-    }
-
-    /^[[:space:]]*model:/ {
-      match($0, /model:[[:space:]]*/)
-      model=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]+#.*$/, "", model)
-      gsub(/^[\"\047]/, "", model)
-      gsub(/[\"\047]$/, "", model)
-      next
-    }
-
-    END { if (matched && !printed) print name "\t" model }
-  ' "$config_file"
+  python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" reviewer-meta \
+    --config "$config_file" \
+    --perspective "$perspective"
 )"
 reviewer_name=""
 reviewer_model_raw=""
-IFS=$'\t' read -r reviewer_name reviewer_model_raw <<< "${reviewer_meta}"
+IFS=$'\t' read -r reviewer_name reviewer_model_raw _ <<< "${reviewer_meta}"
 if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2
@@ -200,20 +167,8 @@ fi
 
 # Read config default model (optional). Used when input model unset and reviewer has no model.
 config_default_model_raw="$(
-  awk '
-    /^[[:space:]]*$/ {next}
-    /^[[:space:]]*#/ {next}
-    /^model:/ {in_model=1; next}
-    in_model && !/^[[:space:]]/ {in_model=0}
-    in_model && /^[[:space:]]+default:/ {
-      sub(/^[[:space:]]+default:[[:space:]]*/, "")
-      sub(/[[:space:]]+#.*$/, "")
-      gsub(/^[\"\047]/, "")
-      gsub(/[\"\047]$/, "")
-      print
-      exit
-    }
-  ' "$config_file"
+  python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-default \
+    --config "$config_file"
 )"
 
 # If reviewer model is "pool", randomly select from the model.pool config list.
@@ -222,23 +177,8 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
   while IFS= read -r _pool_line; do
     [[ -n "$_pool_line" ]] && model_pool+=("$_pool_line")
   done < <(
-    awk '
-      /^[[:space:]]*$/ {next}
-      /^[[:space:]]*#/ {next}
-      /^model:/ {in_model=1; next}
-      in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
-      in_model && /^[[:space:]]+[a-zA-Z_-]+:/ {
-        if (/^[[:space:]]+pool:/) {in_pool=1} else {in_pool=0}
-        next
-      }
-      in_pool && /^[[:space:]]*-/ {
-        sub(/^[[:space:]]*-[[:space:]]*/, "")
-        sub(/[[:space:]]+#.*$/, "")
-        gsub(/^[\"\047]/, "")
-        gsub(/[\"\047]$/, "")
-        print
-      }
-    ' "$config_file"
+    python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-pool \
+      --config "$config_file"
   )
 
   if [[ ${#model_pool[@]} -gt 0 ]]; then

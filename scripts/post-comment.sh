@@ -27,26 +27,19 @@ fi
 marker="<!-- cerberus:${perspective} -->"
 
 reviewer_info="$(
-  awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {if (found) exit; name=$3}
-    $1=="perspective:" && $2==p {found=1}
-    found && $1=="description:" {
-      desc=$0
-      sub(/^[[:space:]]*description:[[:space:]]*/, "", desc)
-      gsub(/^"|"$/, "", desc)
-      print name "\t" desc
-      exit
-    }
-  ' "$config_file"
+  python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" reviewer-meta \
+    --config "$config_file" \
+    --perspective "$perspective"
 )"
 
-reviewer_name="${reviewer_info%%$'\t'*}"
-reviewer_desc="${reviewer_info#*$'\t'}"
+reviewer_name=""
+reviewer_desc=""
+IFS=$'\t' read -r reviewer_name _ reviewer_desc <<< "${reviewer_info}"
 
 if [[ -z "$reviewer_name" ]]; then
   reviewer_name="${perspective^^}"
 fi
-if [[ "$reviewer_desc" == "$reviewer_info" ]]; then
+if [[ -z "$reviewer_desc" ]]; then
   reviewer_desc="$perspective"
 fi
 

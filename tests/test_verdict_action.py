@@ -66,7 +66,7 @@ def test_action_pins_opencode_install_version() -> None:
     assert "default: '1.1.49'" in match.group(0)
     assert "Invalid opencode-version format" in content
     assert 'npm i -g "opencode-ai@${OPENCODE_VERSION}"' in content
-    assert "pip install" not in content
+    assert "pip install pyyaml" in content
 
 
 def test_action_reads_primary_model_file_when_present() -> None:
