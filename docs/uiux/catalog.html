@@ -1,0 +1,1658 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Cerberus UI/UX Design Catalog</title>
+    <meta
+      name="description"
+      content="Design exploration for Cerberus GitHub PR review UX. Options, constraints, and mockups."
+    />
+    <style>
+      :root {
+        --paper: #fcfaf5;
+        --paper-2: #f3efe6;
+        --paper-3: #efe9dc;
+        --ink: #141312;
+        --muted: #5f5b55;
+        --muted-2: #7a756e;
+        --line: rgba(20, 19, 18, 0.14);
+        --line-2: rgba(20, 19, 18, 0.08);
+        --shadow: 0 18px 60px rgba(20, 19, 18, 0.12);
+        --shadow-2: 0 12px 30px rgba(20, 19, 18, 0.1);
+
+        --accent: #0c6b67;
+        --accent-2: #0f766e;
+        --pass: #1a7f37;
+        --warn: #b45309;
+        --fail: #b42318;
+        --info: #1d4ed8;
+
+        --radius: 18px;
+        --radius-sm: 12px;
+        --max: 1200px;
+
+        --font-body: "Avenir Next", Avenir, "Gill Sans", "Trebuchet MS", sans-serif;
+        --font-head: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, serif;
+        --font-mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        font-family: var(--font-body);
+        letter-spacing: 0.01em;
+        background:
+          radial-gradient(1200px 800px at 14% -20%, rgba(12, 107, 103, 0.14), transparent 58%),
+          radial-gradient(1100px 700px at 92% -10%, rgba(180, 83, 9, 0.12), transparent 56%),
+          radial-gradient(900px 600px at 50% 120%, rgba(29, 78, 216, 0.08), transparent 58%),
+          linear-gradient(180deg, var(--paper-2), var(--paper));
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          repeating-linear-gradient(
+            0deg,
+            rgba(20, 19, 18, 0.035) 0px,
+            rgba(20, 19, 18, 0.035) 1px,
+            transparent 1px,
+            transparent 22px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            rgba(20, 19, 18, 0.022) 0px,
+            rgba(20, 19, 18, 0.022) 1px,
+            transparent 1px,
+            transparent 28px
+          );
+        opacity: 0.55;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .wrap {
+        position: relative;
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 28px 20px 80px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 18px;
+        align-items: end;
+        padding: 22px 22px 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(252, 250, 245, 0.94), rgba(252, 250, 245, 0.7));
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      header::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(700px 340px at 12% 0%, rgba(12, 107, 103, 0.1), transparent 60%),
+          radial-gradient(540px 300px at 80% 20%, rgba(180, 83, 9, 0.08), transparent 62%);
+        pointer-events: none;
+        opacity: 0.95;
+      }
+
+      header > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-family: var(--font-head);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        font-size: 34px;
+        line-height: 1.08;
+      }
+
+      .sub {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.45;
+        max-width: 64ch;
+      }
+
+      .meta {
+        display: grid;
+        gap: 10px;
+        justify-items: end;
+        text-align: right;
+      }
+
+      .pillrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: end;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 10px;
+        background: rgba(252, 250, 245, 0.74);
+        font-size: 12px;
+        color: var(--muted);
+        box-shadow: 0 8px 20px rgba(20, 19, 18, 0.06);
+        white-space: nowrap;
+      }
+
+      .pill strong {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      nav {
+        position: sticky;
+        top: 18px;
+        align-self: start;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(252, 250, 245, 0.76);
+        box-shadow: var(--shadow-2);
+        padding: 14px 14px 10px;
+      }
+
+      nav .title {
+        font-family: var(--font-head);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        font-size: 14px;
+        margin: 2px 4px 10px;
+      }
+
+      nav a {
+        display: block;
+        padding: 8px 10px;
+        margin: 2px 0;
+        border-radius: 12px;
+        color: var(--muted);
+        border: 1px solid transparent;
+      }
+
+      nav a:hover {
+        background: rgba(12, 107, 103, 0.08);
+        border-color: rgba(12, 107, 103, 0.18);
+        text-decoration: none;
+        color: var(--ink);
+      }
+
+      main {
+        display: grid;
+        gap: 18px;
+      }
+
+      section {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(252, 250, 245, 0.86);
+        box-shadow: var(--shadow-2);
+        padding: 18px;
+        overflow: hidden;
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-family: var(--font-head);
+        letter-spacing: 0.01em;
+        font-weight: 750;
+        font-size: 20px;
+      }
+
+      .lede {
+        margin: 0 0 14px;
+        color: var(--muted);
+        line-height: 1.5;
+        max-width: 90ch;
+        font-size: 14px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(252, 250, 245, 0.88), rgba(252, 250, 245, 0.68));
+        box-shadow: 0 10px 30px rgba(20, 19, 18, 0.08);
+        padding: 14px;
+        overflow: hidden;
+      }
+
+      .card h3 {
+        margin: 0 0 8px;
+        font-family: var(--font-head);
+        font-weight: 740;
+        letter-spacing: 0.01em;
+        font-size: 16px;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+        font-size: 13px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0 0;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 8px;
+        font-size: 11px;
+        color: var(--muted);
+        background: rgba(252, 250, 245, 0.6);
+        white-space: nowrap;
+      }
+
+      .chip strong {
+        color: var(--ink);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 10px;
+        background: rgba(252, 250, 245, 0.68);
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--muted-2);
+        box-shadow: 0 0 0 3px rgba(20, 19, 18, 0.05);
+      }
+
+      .dot.pass {
+        background: var(--pass);
+        box-shadow: 0 0 0 3px rgba(26, 127, 55, 0.14);
+      }
+      .dot.warn {
+        background: var(--warn);
+        box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.15);
+      }
+      .dot.fail {
+        background: var(--fail);
+        box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.14);
+      }
+      .dot.info {
+        background: var(--info);
+        box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+      }
+
+      .two {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1.1fr 0.9fr;
+        align-items: start;
+      }
+
+      .rulelist {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .rulelist li {
+        margin: 7px 0;
+      }
+
+      .mock-pr {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(252, 250, 245, 0.5);
+        overflow: hidden;
+      }
+
+      .mock-pr .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(239, 233, 220, 0.9), rgba(252, 250, 245, 0.7));
+      }
+
+      .mock-pr .bar .lhs {
+        display: grid;
+        gap: 4px;
+      }
+
+      .mock-pr .bar .t {
+        font-weight: 750;
+        letter-spacing: 0.01em;
+        font-size: 13px;
+      }
+
+      .mock-pr .bar .s {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .mock-pr .bar .rhs {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: end;
+      }
+
+      .surface {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        border-top: 1px solid var(--line-2);
+      }
+
+      .pane {
+        padding: 10px 10px 12px;
+        border-right: 1px solid var(--line-2);
+        min-height: 126px;
+        background: rgba(252, 250, 245, 0.56);
+      }
+
+      .pane:last-child {
+        border-right: 0;
+      }
+
+      .pane .name {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted-2);
+        margin-bottom: 8px;
+      }
+
+      .pane .item {
+        display: grid;
+        gap: 6px;
+        padding: 10px;
+        border: 1px solid var(--line-2);
+        border-radius: 14px;
+        background: rgba(252, 250, 245, 0.72);
+        box-shadow: 0 10px 20px rgba(20, 19, 18, 0.05);
+        margin-bottom: 8px;
+      }
+
+      .pane .item .k {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .pane .item .k strong {
+        font-size: 12px;
+        letter-spacing: 0.01em;
+      }
+
+      .pane .item .v {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .mock-comment {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(252, 250, 245, 0.86);
+        box-shadow: 0 16px 40px rgba(20, 19, 18, 0.09);
+        overflow: hidden;
+      }
+
+      .mock-comment .head {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(239, 233, 220, 0.9), rgba(252, 250, 245, 0.65));
+      }
+
+      .mock-comment .head .who {
+        display: grid;
+        gap: 4px;
+      }
+
+      .mock-comment .head .who .by {
+        font-weight: 780;
+        letter-spacing: 0.01em;
+        font-size: 13px;
+      }
+
+      .mock-comment .head .who .when {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .mock-comment .body {
+        padding: 14px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .h {
+        font-family: var(--font-head);
+        font-weight: 780;
+        letter-spacing: 0.01em;
+        font-size: 15px;
+      }
+
+      .kv {
+        display: grid;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .kv .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: baseline;
+      }
+
+      .kv code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: rgba(20, 19, 18, 0.06);
+        border: 1px solid rgba(20, 19, 18, 0.08);
+        border-radius: 8px;
+        padding: 1px 6px;
+        color: var(--ink);
+      }
+
+      .finder {
+        display: grid;
+        gap: 8px;
+      }
+
+      .finding {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(252, 250, 245, 0.7);
+        padding: 10px 10px 8px;
+      }
+
+      .finding .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .finding .top .l {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .finding .top .t {
+        font-weight: 750;
+        font-size: 13px;
+        letter-spacing: 0.01em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .finding .meta2 {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .finding details {
+        margin-top: 6px;
+      }
+
+      details summary {
+        cursor: pointer;
+        color: var(--accent);
+        font-size: 12px;
+        user-select: none;
+      }
+
+      pre {
+        margin: 8px 0 0;
+        padding: 10px;
+        border: 1px solid var(--line-2);
+        border-radius: 14px;
+        background: rgba(20, 19, 18, 0.05);
+        overflow: auto;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.45;
+        color: rgba(20, 19, 18, 0.92);
+      }
+
+      .foot {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line-2);
+        color: var(--muted-2);
+        font-size: 12px;
+      }
+
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(12, 107, 103, 0.22);
+        background: rgba(12, 107, 103, 0.1);
+        color: var(--ink);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        font-size: 13px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .btn:hover {
+        border-color: rgba(12, 107, 103, 0.32);
+        background: rgba(12, 107, 103, 0.14);
+      }
+
+      .kbd {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        border: 1px solid var(--line);
+        border-bottom-color: rgba(20, 19, 18, 0.24);
+        border-radius: 8px;
+        padding: 2px 6px;
+        background: rgba(252, 250, 245, 0.62);
+        color: var(--muted);
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        background: rgba(20, 19, 18, 0.55);
+        padding: 26px;
+        z-index: 50;
+      }
+
+      .modal.open {
+        display: grid;
+        place-items: center;
+      }
+
+      .modal .panel {
+        width: min(1100px, 100%);
+        max-height: min(86vh, 920px);
+        overflow: auto;
+        border-radius: 20px;
+        border: 1px solid rgba(252, 250, 245, 0.5);
+        background: linear-gradient(180deg, rgba(252, 250, 245, 0.98), rgba(252, 250, 245, 0.9));
+        box-shadow: 0 26px 120px rgba(20, 19, 18, 0.5);
+        padding: 14px;
+      }
+
+      .modal .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 10px 14px;
+      }
+
+      .modal .topbar .x {
+        border: 1px solid var(--line);
+        background: rgba(252, 250, 245, 0.75);
+        color: var(--ink);
+        border-radius: 14px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 750;
+        letter-spacing: 0.01em;
+        font-size: 13px;
+      }
+
+      .modal .topbar .x:hover {
+        background: rgba(252, 250, 245, 0.92);
+      }
+
+      .fade {
+        animation: fadeUp 520ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+      }
+
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 980px) {
+        header {
+          grid-template-columns: 1fr;
+        }
+        .meta {
+          justify-items: start;
+          text-align: left;
+        }
+        .pillrow {
+          justify-content: start;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        nav {
+          position: relative;
+          top: auto;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .two {
+          grid-template-columns: 1fr;
+        }
+        .surface {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .fade {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="fade">
+        <div>
+          <h1>Cerberus UI/UX Design Catalog</h1>
+          <p class="sub">
+            Design exploration for Cerberus review output in GitHub pull requests. Constraint-aware. Human scan
+            first. AI parse friendly. Timeline hygiene obsessed.
+          </p>
+        </div>
+        <div class="meta">
+          <div class="pillrow">
+            <div class="pill"><strong>Surfaces:</strong> issue comment, PR review, inline threads, checks</div>
+            <div class="pill"><strong>Goal:</strong> one glance, then drill down</div>
+            <div class="pill"><strong>Strategy:</strong> progressive disclosure everywhere</div>
+          </div>
+          <div class="cta">
+            <span class="kbd">Tip</span>
+            <span class="sub" style="max-width: 44ch; margin: 0">
+              Open this file locally, skim variants, pick 1 direction, then we spec exact comment formats.
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <div class="layout">
+        <nav class="fade" style="animation-delay: 60ms">
+          <div class="title">Catalog Index</div>
+          <a href="#platform">Platform Primitives</a>
+          <a href="#goals">Design Goals</a>
+          <a href="#variants">Output Strategies</a>
+          <a href="#formatting">Formatting Patterns</a>
+          <a href="#inline">Inline Comment Patterns</a>
+          <a href="#ai">AI Consumption</a>
+          <a href="#naming">Naming and Copy</a>
+        </nav>
+
+        <main>
+          <section id="platform" class="fade" style="animation-delay: 110ms">
+            <h2>Platform Primitives (GitHub Reality)</h2>
+            <p class="lede">
+              Cerberus can only "design" within GitHub primitives. No custom UI. Only markdown (plus a tiny HTML
+              subset). Treat output surfaces as products with different jobs.
+            </p>
+            <div class="grid">
+              <div class="card">
+                <h3>Issue Comment (PR timeline)</h3>
+                <p>
+                  Best for a single council report. Upsertable via hidden marker. Great for commands (override,
+                  triage). Weak: not sticky; can get buried.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Strength</strong>: idempotent</span>
+                  <span class="chip"><strong>Weak</strong>: no pin</span>
+                  <span class="chip"><strong>Limit</strong>: body size budget</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>PR Review (summary + inline comments)</h3>
+                <p>
+                  Best for anchoring findings to diff context. Creates review events per commit. Great for "top N"
+                  guidance. Weak: review spam if repeated pushes.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Strength</strong>: in-context</span>
+                  <span class="chip"><strong>Weak</strong>: per-SHA churn</span>
+                  <span class="chip"><strong>Limit</strong>: comment count needs cap</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Check Summary (Actions UI)</h3>
+                <p>
+                  Best for a canonical dashboard: always attached to the check run. Weak: buried behind clicks.
+                  Strong fit for "report" style, not discussion.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Strength</strong>: stable home</span>
+                  <span class="chip"><strong>Weak</strong>: discoverability</span>
+                  <span class="chip"><strong>Use</strong>: high signal badges</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Annotations (Checks inline markers)</h3>
+                <p>
+                  Best for lots of line-level hits without threads. Feels like a linter. Weak: no conversation.
+                  Suggestion text must stay short.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Strength</strong>: zero timeline noise</span>
+                  <span class="chip"><strong>Weak</strong>: no thread / no back-and-forth</span>
+                  <span class="chip"><strong>Best</strong>: clear "what + why + fix"</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="goals" class="fade" style="animation-delay: 160ms">
+            <h2>Design Goals (First Principles)</h2>
+            <div class="two">
+              <div>
+                <p class="lede" style="margin-bottom: 10px">
+                  Cerberus is a merge gate, not a chat bot. Output should be scannable like a build report and
+                  actionable like a good human review.
+                </p>
+                <ol class="rulelist">
+                  <li><strong>One glance</strong>: verdict, scope, hotspot files, top 5 issues.</li>
+                  <li><strong>One click</strong>: expand to reviewer breakdown and evidence.</li>
+                  <li><strong>One source of truth</strong>: exactly one canonical council report per SHA.</li>
+                  <li><strong>Noise budget</strong>: never flood timeline or diff threads.</li>
+                  <li><strong>Machine readable</strong>: stable markers, versioned schema, small payloads.</li>
+                </ol>
+              </div>
+              <div class="card">
+                <h3>Failure Mode Design</h3>
+                <p>
+                  Big PRs, truncated patches, API hiccups: the report should degrade gracefully.
+                  Always: keep verdict visible. Never: hide critical issues behind scroll walls.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Policy</strong>: progressive disclosure</span>
+                  <span class="chip"><strong>Policy</strong>: cap inline items</span>
+                  <span class="chip"><strong>Policy</strong>: link to artifacts when needed</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="variants" class="fade" style="animation-delay: 210ms">
+            <h2>Output Strategies (Pick a Direction)</h2>
+            <p class="lede">
+              Each strategy chooses a primary surface (where humans look first), a secondary surface (where details
+              live), and a machine surface (for bots, scripts, future agents).
+            </p>
+
+            <div class="grid">
+              <div class="card">
+                <h3>Strategy A: Timeline Report (Council Comment as Home)</h3>
+                <p>
+                  Single upserted council comment is the product. Inline comments only for critical and major. No
+                  per-reviewer comments by default.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Timeline</strong>: 1 report</span>
+                  <span class="chip"><strong>Inline</strong>: top hits only</span>
+                  <span class="chip"><strong>AI</strong>: embed mini JSON in details</span>
+                </div>
+                <div class="mock-pr" style="margin-top: 10px">
+                  <div class="bar">
+                    <div class="lhs">
+                      <div class="t">PR: Harden webhook signature verification</div>
+                      <div class="s">Council verdict shown in timeline; details expandable</div>
+                    </div>
+                    <div class="rhs">
+                      <span class="badge"><span class="dot fail"></span><strong>BLOCK</strong> (FAIL)</span>
+                      <span class="badge"><span class="dot warn"></span>1 major</span>
+                      <span class="badge"><span class="dot info"></span>3 minor</span>
+                    </div>
+                  </div>
+                  <div class="surface">
+                    <div class="pane">
+                      <div class="name">Timeline</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Cerberus council report</strong>
+                          <span class="badge"><span class="dot fail"></span>FAIL</span>
+                        </div>
+                        <div class="v">One comment, edited per run. Top issues visible without expanding.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Checks</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Status</strong>
+                          <span class="badge"><span class="dot fail"></span>failure</span>
+                        </div>
+                        <div class="v">Check gate only. Summary link points to timeline report.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Review</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Optional</strong>
+                          <span class="badge"><span class="dot warn"></span>0 to few</span>
+                        </div>
+                        <div class="v">Only when we have clean diff anchors (critical or major).</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Files Changed</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Threads</strong>
+                          <span class="badge"><span class="dot info"></span>minimal</span>
+                        </div>
+                        <div class="v">No floods. Dedupe per file. No "one thread per nit".</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="cta" style="margin-top: 10px">
+                  <button class="btn" data-open="#mockA">View mock council comment</button>
+                  <span class="sub" style="margin: 0">Best when timeline is the primary place humans look.</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>Strategy B: Review First (Inline Review as Home)</h3>
+                <p>
+                  The PR review is the product: one council review per SHA with inline comments. The council issue
+                  comment becomes a slim index + commands.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Timeline</strong>: slim index</span>
+                  <span class="chip"><strong>Inline</strong>: primary</span>
+                  <span class="chip"><strong>AI</strong>: scrape review + index comment marker</span>
+                </div>
+                <div class="mock-pr" style="margin-top: 10px">
+                  <div class="bar">
+                    <div class="lhs">
+                      <div class="t">PR: Add caching around expensive query</div>
+                      <div class="s">Review drives action: scroll in diff, resolve threads</div>
+                    </div>
+                    <div class="rhs">
+                      <span class="badge"><span class="dot warn"></span><strong>HOLD</strong> (WARN)</span>
+                      <span class="badge"><span class="dot warn"></span>1 major</span>
+                      <span class="badge"><span class="dot info"></span>2 minor</span>
+                    </div>
+                  </div>
+                  <div class="surface">
+                    <div class="pane">
+                      <div class="name">Timeline</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Council index + commands</strong>
+                          <span class="badge"><span class="dot warn"></span>WARN</span>
+                        </div>
+                        <div class="v">Minimal summary, links to review + artifacts.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Checks</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Status</strong>
+                          <span class="badge"><span class="dot warn"></span>neutral</span>
+                        </div>
+                        <div class="v">Gate stays on check status, not on approvals.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Review</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Council review</strong>
+                          <span class="badge"><span class="dot warn"></span>inline</span>
+                        </div>
+                        <div class="v">Top N comments. Dedupe per file and per issue.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Files Changed</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Resolve loop</strong>
+                          <span class="badge"><span class="dot info"></span>threaded</span>
+                        </div>
+                        <div class="v">Feels like human review. Risk: repeated pushes create more reviews.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="cta" style="margin-top: 10px">
+                  <button class="btn" data-open="#mockB">View mock review comment style</button>
+                  <span class="sub" style="margin: 0">Best when teams live in the diff, not the timeline.</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>Strategy C: Check First (Dashboard in Checks)</h3>
+                <p>
+                  Make the check summary the canonical report. Post timeline comment only on non-pass and for
+                  commands. Inline as annotations, not threads.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Timeline</strong>: quiet</span>
+                  <span class="chip"><strong>Inline</strong>: annotations</span>
+                  <span class="chip"><strong>AI</strong>: fetch check output + optional JSON comment</span>
+                </div>
+                <div class="mock-pr" style="margin-top: 10px">
+                  <div class="bar">
+                    <div class="lhs">
+                      <div class="t">PR: Split monolith module</div>
+                      <div class="s">Open checks, see dashboard. Timeline stays clean.</div>
+                    </div>
+                    <div class="rhs">
+                      <span class="badge"><span class="dot pass"></span><strong>OK</strong> (PASS)</span>
+                      <span class="badge"><span class="dot info"></span>0 major</span>
+                      <span class="badge"><span class="dot info"></span>2 minor</span>
+                    </div>
+                  </div>
+                  <div class="surface">
+                    <div class="pane">
+                      <div class="name">Timeline</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>No comment on PASS</strong>
+                          <span class="badge"><span class="dot pass"></span>quiet</span>
+                        </div>
+                        <div class="v">Only non-pass gets timeline content to reduce spam.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Checks</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Council dashboard</strong>
+                          <span class="badge"><span class="dot pass"></span>PASS</span>
+                        </div>
+                        <div class="v">Tables, hotspots, drilldown sections, artifact links.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Review</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>None</strong>
+                          <span class="badge"><span class="dot info"></span>0</span>
+                        </div>
+                        <div class="v">No review objects, no review noise.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Files Changed</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Annotations</strong>
+                          <span class="badge"><span class="dot warn"></span>lint-like</span>
+                        </div>
+                        <div class="v">Markers inline, no threads. Great for large volumes.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="cta" style="margin-top: 10px">
+                  <button class="btn" data-open="#mockC">View mock check dashboard</button>
+                  <span class="sub" style="margin: 0">Best when PR timelines must stay quiet.</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>Strategy D: Split Human and Machine Outputs</h3>
+                <p>
+                  Two comments: one human report (short), one machine ledger (structured JSON). Humans never see a
+                  scroll wall. Agents always find parseable data.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Timeline</strong>: 1 short + 1 hidden ledger</span>
+                  <span class="chip"><strong>Inline</strong>: optional</span>
+                  <span class="chip"><strong>AI</strong>: stable marker + versioned JSON</span>
+                </div>
+                <div class="mock-pr" style="margin-top: 10px">
+                  <div class="bar">
+                    <div class="lhs">
+                      <div class="t">PR: Add new billing webhook event</div>
+                      <div class="s">Humans get story. Machines get ledger.</div>
+                    </div>
+                    <div class="rhs">
+                      <span class="badge"><span class="dot fail"></span><strong>BLOCK</strong> (FAIL)</span>
+                      <span class="badge"><span class="dot fail"></span>1 critical</span>
+                      <span class="badge"><span class="dot warn"></span>2 major</span>
+                    </div>
+                  </div>
+                  <div class="surface">
+                    <div class="pane">
+                      <div class="name">Timeline</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Human report</strong>
+                          <span class="badge"><span class="dot fail"></span>FAIL</span>
+                        </div>
+                        <div class="v">Top 5. Hotspots. Commands. Links to inline and ledger.</div>
+                      </div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Machine ledger</strong>
+                          <span class="badge"><span class="dot info"></span>JSON</span>
+                        </div>
+                        <div class="v">Collapsed by default. Small but complete schema.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Checks</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Status</strong>
+                          <span class="badge"><span class="dot fail"></span>failure</span>
+                        </div>
+                        <div class="v">Gate is still the check, not the review object.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Review</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Optional</strong>
+                          <span class="badge"><span class="dot warn"></span>top 10</span>
+                        </div>
+                        <div class="v">Inline only for issues that benefit from context.</div>
+                      </div>
+                    </div>
+                    <div class="pane">
+                      <div class="name">Files Changed</div>
+                      <div class="item">
+                        <div class="k">
+                          <strong>Threads</strong>
+                          <span class="badge"><span class="dot info"></span>minimal</span>
+                        </div>
+                        <div class="v">If present, threads map 1:1 to top issues, not to every finding.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="cta" style="margin-top: 10px">
+                  <button class="btn" data-open="#mockD">View mock machine ledger</button>
+                  <span class="sub" style="margin: 0">Best when you care about agents and audits.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="formatting" class="fade" style="animation-delay: 260ms">
+            <h2>Formatting Patterns (Readable Under Stress)</h2>
+            <p class="lede">
+              Concrete patterns that read well in GitHub markdown. No heavy tables unless they earn their bytes.
+              Make the top 20 lines do 80 percent of the work.
+            </p>
+            <div class="grid">
+              <div class="card">
+                <h3>Fixed Header Template</h3>
+                <p>Always: verdict, scope, hotspots, top findings, commands. Never: novel structure per run.</p>
+                <div class="chips">
+                  <span class="chip"><strong>Rule</strong>: stable headings</span>
+                  <span class="chip"><strong>Rule</strong>: 1-2 lines per metric</span>
+                  <span class="chip"><strong>Rule</strong>: links not walls</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Hotspot-First Disclosure</h3>
+                <p>
+                  Group by file when multiple reviewers converge. Show the 3 hottest files even if you hide the full
+                  list.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Signal</strong>: "more than one reviewer hit this"</span>
+                  <span class="chip"><strong>Link</strong>: file anchor</span>
+                  <span class="chip"><strong>Limit</strong>: avoid file lists over 20</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Evidence as Collapsed Payload</h3>
+                <p>
+                  Humans need trust, but not at the cost of scroll. Evidence belongs behind a single click (details).
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Default</strong>: collapsed</span>
+                  <span class="chip"><strong>When open</strong>: only on FAIL</span>
+                  <span class="chip"><strong>Format</strong>: fenced code</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Runbook Footer</h3>
+                <p>
+                  End with tiny operational metadata: version, run link, override policy, commands. Make it skimmable
+                  and copyable.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Rule</strong>: footer is single line</span>
+                  <span class="chip"><strong>Rule</strong>: commands in monospace</span>
+                  <span class="chip"><strong>Rule</strong>: no surprises</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="inline" class="fade" style="animation-delay: 310ms">
+            <h2>Inline Comment Patterns (Threads Are Expensive)</h2>
+            <div class="two">
+              <div>
+                <p class="lede" style="margin-bottom: 10px">
+                  Inline threads should be rare, surgical, and obviously tied to an actionable change. Every thread
+                  has a social cost: it implies a conversation and resolution.
+                </p>
+                <ol class="rulelist">
+                  <li><strong>Select</strong>: only critical or major, plus "high leverage minor" when clear.</li>
+                  <li><strong>Dedupe</strong>: if two reviewers point at same issue, post one thread.</li>
+                  <li><strong>Compress</strong>: title, why, fix sketch, evidence in details.</li>
+                  <li><strong>Don’t nit</strong>: no bikeshed formatting or micro-style inline.</li>
+                  <li><strong>Anchor health</strong>: if diff patch missing, fall back to report links.</li>
+                </ol>
+              </div>
+              <div class="card">
+                <h3>Inline Comment Body Template</h3>
+                <p>Optimized for quick resolve in GitHub UI.</p>
+                <pre>Title: [SECURITY] Verify signature with constant-time compare
+Why: HMAC compare is timing sensitive; attacker can brute prefix.
+Fix sketch: Use constant-time compare + fail closed on missing header.
+Evidence: (collapsed) exact lines and context</pre>
+                <div class="chips">
+                  <span class="chip"><strong>Max</strong>: 12 lines visible</span>
+                  <span class="chip"><strong>Evidence</strong>: details</span>
+                  <span class="chip"><strong>Meta</strong>: reviewer + category tag</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="ai" class="fade" style="animation-delay: 360ms">
+            <h2>AI Consumption (Make Parsing Boring)</h2>
+            <div class="two">
+              <div>
+                <p class="lede" style="margin-bottom: 10px">
+                  Humans want narrative. Agents want stability. Give both: a short human report, plus a compact
+                  machine ledger with a version tag and strict schema.
+                </p>
+                <ol class="rulelist">
+                  <li><strong>Stable marker</strong>: HTML comment marker per council SHA.</li>
+                  <li><strong>Versioned schema</strong>: `cerberus.schema=1` in JSON.</li>
+                  <li><strong>Small payload</strong>: avoid full evidence; include references only.</li>
+                  <li><strong>Deterministic ordering</strong>: sort by severity, then file, then line.</li>
+                  <li><strong>Portable links</strong>: store `{file,line,sha}` not raw blob URLs.</li>
+                </ol>
+              </div>
+              <div class="card">
+                <h3>Example Machine Ledger (Collapsed)</h3>
+                <p>Fits in a timeline comment without becoming human-visible noise.</p>
+                <details>
+                  <summary>cerberus ledger (json)</summary>
+                  <pre>{
+  "cerberus": { "schema": 1, "sha": "3b15c52a9f71", "verdict": "FAIL" },
+  "summary": { "reviewers_total": 6, "fail": 1, "warn": 2, "pass": 3, "skip": 0 },
+  "top": [
+    {
+      "severity": "critical",
+      "reviewer": "SENTINEL",
+      "category": "auth",
+      "file": "api/webhooks/stripe.ts",
+      "line": 118,
+      "title": "Signature check can be bypassed on missing header",
+      "suggestion": "Fail closed; verify header exists; constant-time compare."
+    },
+    {
+      "severity": "major",
+      "reviewer": "APOLLO",
+      "category": "correctness",
+      "file": "api/webhooks/stripe.ts",
+      "line": 141,
+      "title": "Retries can double-charge if idempotency key missing",
+      "suggestion": "Add idempotency key and persist event id."
+    }
+  ]
+}</pre>
+                </details>
+                <div class="chips">
+                  <span class="chip"><strong>Rule</strong>: no prose in ledger</span>
+                  <span class="chip"><strong>Rule</strong>: strict keys</span>
+                  <span class="chip"><strong>Rule</strong>: stable sorting</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="naming" class="fade" style="animation-delay: 410ms">
+            <h2>Naming and Copy (Reduce Cognitive Load)</h2>
+            <p class="lede">
+              Names should communicate meaning, not vibe. Avoid clever labels where ambiguity creates delay.
+              Keep the "verdict words" consistent across surfaces.
+            </p>
+            <div class="grid">
+              <div class="card">
+                <h3>Verdict Words</h3>
+                <p>
+                  Use one set of terms everywhere: <code>PASS/WARN/FAIL/SKIP</code>. Add a human alias, but never
+                  replace the canonical token.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Canonical</strong>: PASS/WARN/FAIL/SKIP</span>
+                  <span class="chip"><strong>Alias</strong>: OK/HOLD/BLOCK/NO-SIGNAL</span>
+                  <span class="chip"><strong>Rule</strong>: alias always includes canonical</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Reviewer Labels</h3>
+                <p>
+                  Show both: the council name and the perspective. Example: <code>APOLLO (Correctness)</code>.
+                  Humans remember roles; machines match identifiers.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Human</strong>: APOLLO</span>
+                  <span class="chip"><strong>Role</strong>: Correctness</span>
+                  <span class="chip"><strong>Machine</strong>: perspective slug</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Commands</h3>
+                <p>
+                  Commands should be short, consistent, and always shown where needed. Put them in monospace and
+                  always include required args.
+                </p>
+                <pre>/council override sha=3b15c52 (reason required)
+/cerberus triage mode=diagnose</pre>
+                <div class="chips">
+                  <span class="chip"><strong>Rule</strong>: copyable in 1 drag</span>
+                  <span class="chip"><strong>Rule</strong>: never rely on implied args</span>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Finding Titles</h3>
+                <p>
+                  Titles should be deterministic, not essay. Prefix only when needed: <code>[SECURITY]</code>,
+                  <code>[PERF]</code>, <code>[TEST]</code>.
+                </p>
+                <div class="chips">
+                  <span class="chip"><strong>Rule</strong>: 80 chars target</span>
+                  <span class="chip"><strong>Rule</strong>: no trailing punctuation</span>
+                  <span class="chip"><strong>Rule</strong>: one idea</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="fade" style="animation-delay: 460ms">
+            <h2>Next Step</h2>
+            <p class="lede" style="margin-bottom: 10px">
+              Pick one strategy (A to D). Then we do a tight spec: exact markdown template, exactly which fields show
+              by default, exact inline selection rules, and exact marker scheme.
+            </p>
+            <div class="chips">
+              <span class="chip"><strong>Fast pick</strong>: A or D are most compatible with timeline hygiene.</span>
+              <span class="chip"><strong>Diff-native teams</strong>: B is great if review spam is acceptable.</span>
+              <span class="chip"><strong>Ops teams</strong>: C is best if checks are the dashboard.</span>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="modal" id="modal">
+      <div class="panel">
+        <div class="topbar">
+          <div class="title" id="modalTitle">Mock</div>
+          <button class="x" id="closeModal">Close</button>
+        </div>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <template id="mockA">
+      <div class="mock-comment">
+        <div class="head">
+          <div class="who">
+            <div class="by">Cerberus Council</div>
+            <div class="when">Edited just now (upserted report)</div>
+          </div>
+          <div class="pillrow" style="margin-top: 2px">
+            <span class="badge"><span class="dot fail"></span><strong>BLOCK</strong> (FAIL)</span>
+            <span class="badge"><span class="dot warn"></span>Findings: 1 critical, 1 major, 3 minor</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="h">Merge Gate: BLOCK (FAIL)</div>
+          <div class="kv">
+            <div class="row">
+              <span><strong>Scope</strong>: 7 files changed, +214 / -96</span>
+              <span><strong>Run</strong>: #184021 (Actions)</span>
+            </div>
+            <div class="row">
+              <span><strong>Hotspots</strong>: <code>api/webhooks/stripe.ts</code>, <code>billing/ledger.ts</code></span>
+            </div>
+            <div class="row">
+              <span><strong>Commands</strong>: <code>/council override sha=3b15c52</code> (reason required)</span>
+            </div>
+          </div>
+
+          <div class="finder">
+            <div class="h">Top Findings (5)</div>
+
+            <div class="finding">
+              <div class="top">
+                <div class="l">
+                  <span class="badge"><span class="dot fail"></span>critical</span>
+                  <div class="t">Signature check can be bypassed on missing header</div>
+                </div>
+                <span class="chip"><strong>SENTINEL</strong> auth</span>
+              </div>
+              <div class="meta2">
+                Location: <code>api/webhooks/stripe.ts:118</code><br />
+                Fix sketch: fail closed on missing header; constant-time compare; log event id.
+              </div>
+              <details>
+                <summary>Evidence (click)</summary>
+                <pre>const sig = req.headers["stripe-signature"];
+if (!sig) return next(); // lets request through
+const expected = sign(payload, secret);
+if (sig === expected) return ok();</pre>
+              </details>
+            </div>
+
+            <div class="finding">
+              <div class="top">
+                <div class="l">
+                  <span class="badge"><span class="dot warn"></span>major</span>
+                  <div class="t">Retries can double-charge if idempotency key missing</div>
+                </div>
+                <span class="chip"><strong>APOLLO</strong> correctness</span>
+              </div>
+              <div class="meta2">
+                Location: <code>api/webhooks/stripe.ts:141</code><br />
+                Fix sketch: store Stripe event id; enforce idempotency key in client; add tests for retry.
+              </div>
+              <details>
+                <summary>Details (click)</summary>
+                <pre>Risk: webhook retries + non-idempotent handler.
+Suggested: persist processed event ids; reject duplicates; test retry path.</pre>
+              </details>
+            </div>
+          </div>
+
+          <details>
+            <summary>Reviewer breakdown (click)</summary>
+            <pre>APOLLO (Correctness): FAIL, conf 0.86, runtime 48s
+ATHENA (Architecture): WARN, conf 0.72, runtime 52s
+SENTINEL (Security): FAIL, conf 0.91, runtime 44s
+VULCAN (Performance): PASS, conf 0.76, runtime 39s
+ARTEMIS (Maintainability): WARN, conf 0.78, runtime 41s
+CASSANDRA (Testing): WARN, conf 0.80, runtime 47s</pre>
+          </details>
+
+          <div class="foot">
+            Cerberus Council v2.0.0 | Override policy <code>pr_author</code> | Commands always shown in report footer
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="mockB">
+      <div class="mock-comment">
+        <div class="head">
+          <div class="who">
+            <div class="by">Cerberus Council Review</div>
+            <div class="when">Review object (one per SHA)</div>
+          </div>
+          <div class="pillrow" style="margin-top: 2px">
+            <span class="badge"><span class="dot warn"></span><strong>HOLD</strong> (WARN)</span>
+            <span class="badge"><span class="dot warn"></span>Inline threads: 9 posted</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="h">Review Summary</div>
+          <div class="kv">
+            <div class="row">
+              <span><strong>Intent</strong>: anchor top issues in diff context</span>
+              <span><strong>Rule</strong>: threads map to "issues", not to "nits"</span>
+            </div>
+            <div class="row">
+              <span><strong>Link</strong>: timeline index comment for full report and commands</span>
+            </div>
+          </div>
+
+          <div class="finder">
+            <div class="h">Inline Comment Example</div>
+            <div class="finding">
+              <div class="top">
+                <div class="l">
+                  <span class="badge"><span class="dot warn"></span>major</span>
+                  <div class="t">Cache key ignores user scoping</div>
+                </div>
+                <span class="chip"><strong>VULCAN</strong> perf</span>
+              </div>
+              <div class="meta2">
+                Why: shared cache across users can leak data and break correctness.<br />
+                Fix sketch: include user id in cache key; add test for cross-user access.
+              </div>
+              <details>
+                <summary>Evidence (click)</summary>
+                <pre>const key = `dashboard:${range}`;
+const cached = await cache.get(key);</pre>
+              </details>
+            </div>
+          </div>
+
+          <div class="foot">
+            Review is always <code>COMMENT</code> event (no approvals). Merge gate stays on checks.
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="mockC">
+      <div class="mock-comment">
+        <div class="head">
+          <div class="who">
+            <div class="by">Cerberus Check Dashboard</div>
+            <div class="when">Check summary (canonical home)</div>
+          </div>
+          <div class="pillrow" style="margin-top: 2px">
+            <span class="badge"><span class="dot pass"></span><strong>OK</strong> (PASS)</span>
+            <span class="badge"><span class="dot info"></span>0 major</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="h">Dashboard Top</div>
+          <div class="kv">
+            <div class="row">
+              <span><strong>Verdict</strong>: <code>PASS</code></span>
+              <span><strong>Confidence</strong>: <code>0.79</code> avg</span>
+              <span><strong>Scope</strong>: <code>12 files</code>, <code>+410</code>, <code>-220</code></span>
+            </div>
+            <div class="row">
+              <span><strong>Hotspots</strong>: <code>none</code></span>
+              <span><strong>Notes</strong>: minor naming nits only</span>
+            </div>
+          </div>
+          <details open>
+            <summary>Reviewer table</summary>
+            <pre>APOLLO  PASS  conf 0.81  0 findings
+ATHENA  PASS  conf 0.73  0 findings
+SENTINEL PASS conf 0.78  0 findings
+VULCAN  WARN  conf 0.74  2 minor
+ARTEMIS WARN  conf 0.80  1 minor
+CASSANDRA PASS conf 0.86  0 findings</pre>
+          </details>
+          <details>
+            <summary>Annotations policy</summary>
+            <pre>Annotations emit: critical/major only.
+Minors stay in report to avoid "diff confetti".</pre>
+          </details>
+          <div class="foot">Timeline comment only on non-pass; commands live there.</div>
+        </div>
+      </div>
+    </template>
+
+    <template id="mockD">
+      <div class="mock-comment">
+        <div class="head">
+          <div class="who">
+            <div class="by">Cerberus Machine Ledger</div>
+            <div class="when">Second comment, collapsed by default</div>
+          </div>
+          <div class="pillrow" style="margin-top: 2px">
+            <span class="badge"><span class="dot info"></span><strong>JSON</strong> payload</span>
+            <span class="badge"><span class="dot info"></span>schema v1</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="h">Marker + Ledger</div>
+          <pre>&lt;!-- cerberus:council-ledger sha=3b15c52 schema=1 --&gt;
+```json
+{
+  "cerberus": { "schema": 1, "sha": "3b15c52a9f71", "verdict": "FAIL" },
+  "reviewers": [
+    { "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL", "confidence": 0.86 },
+    { "reviewer": "SENTINEL", "perspective": "security", "verdict": "FAIL", "confidence": 0.91 }
+  ],
+  "findings": [
+    {
+      "severity": "critical",
+      "reviewer": "SENTINEL",
+      "category": "auth",
+      "file": "api/webhooks/stripe.ts",
+      "line": 118,
+      "title": "Signature check can be bypassed on missing header"
+    }
+  ]
+}
+```</pre>
+          <div class="foot">
+            Humans ignore this. Agents use it to extract state without scraping prose.
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      (function () {
+        function el(id) {
+          return document.getElementById(id);
+        }
+
+        const modal = el("modal");
+        const modalTitle = el("modalTitle");
+        const modalBody = el("modalBody");
+        const closeModal = el("closeModal");
+
+        function close() {
+          modal.classList.remove("open");
+          modalBody.innerHTML = "";
+        }
+
+        closeModal.addEventListener("click", close);
+        modal.addEventListener("click", function (e) {
+          if (e.target === modal) close();
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") close();
+        });
+
+        document.querySelectorAll("[data-open]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const sel = btn.getAttribute("data-open");
+            const tpl = document.querySelector(sel);
+            if (!tpl || !tpl.content) return;
+            modalTitle.textContent = "Mock";
+            modalBody.innerHTML = "";
+            modalBody.appendChild(tpl.content.cloneNode(true));
+            modal.classList.add("open");
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
+
