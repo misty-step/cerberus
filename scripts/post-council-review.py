@@ -294,7 +294,8 @@ def main() -> None:
 
         council_comment_url = ""
         try:
-            comments = fetch_comments(args.repo, args.pr)
+            # Use stop_on_marker for early exit - we only need to find the council comment
+            comments = fetch_comments(args.repo, args.pr, stop_on_marker="<!-- cerberus:council -->")
             council_comment_url = find_comment_url_by_marker(comments, "<!-- cerberus:council -->") or ""
         except (CommentPermissionError, TransientGitHubError, subprocess.CalledProcessError) as exc:
             warn(f"Unable to fetch council comment URL: {exc}")

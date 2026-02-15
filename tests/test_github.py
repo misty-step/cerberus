@@ -221,6 +221,138 @@ class TestUpsertPrComment:
         assert [c.get("id") for c in comments] == [1, 2, 3]
         assert len(calls) == 2  # stopped when page size < per_page
 
+    def test_fetch_comments_stop_on_marker_exits_early(self, monkeypatch):
+        """Test that stop_on_marker stops pagination when marker is found."""
+        import json
+        import subprocess
+
+        import lib.github as mod
+
+        calls = []
+
+        def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
+            calls.append(args)
+            endpoint = args[1]
+            if "page=1" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 1, "body": "first comment"},
+                            {"id": 2, "body": "<!-- cerberus:council -->\nCouncil verdict"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            if "page=2" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 3, "body": "third comment"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+
+        comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20, stop_on_marker="<!-- cerberus:council -->")
+        # Should stop at page 1 because marker was found
+        assert [c.get("id") for c in comments] == [1, 2]
+        assert len(calls) == 1  # Only one API call made
+
+    def test_fetch_comments_stop_on_marker_not_found_fetches_all(self, monkeypatch):
+        """Test that all pages are fetched when marker is not found."""
+        import json
+        import subprocess
+
+        import lib.github as mod
+
+        calls = []
+
+        def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
+            calls.append(args)
+            endpoint = args[1]
+            if "page=1" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 1, "body": "first comment"},
+                            {"id": 2, "body": "second comment"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            if "page=2" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 3, "body": "third comment"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+
+        comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20, stop_on_marker="<!-- not-found -->")
+        # Should fetch all pages since marker not found
+        assert [c.get("id") for c in comments] == [1, 2, 3]
+        assert len(calls) == 2  # Both pages fetched
+
+    def test_fetch_comments_without_stop_on_marker_fetches_all(self, monkeypatch):
+        """Test that default behavior (no stop_on_marker) fetches all pages."""
+        import json
+        import subprocess
+
+        import lib.github as mod
+
+        calls = []
+
+        def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
+            calls.append(args)
+            endpoint = args[1]
+            if "page=1" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 1, "body": "<!-- cerberus:council -->"},
+                            {"id": 2, "body": "second"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            if "page=2" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 3, "body": "third"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+
+        # Without stop_on_marker, should fetch all pages even with marker present
+        comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20)
+        assert [c.get("id") for c in comments] == [1, 2, 3]
+        assert len(calls) == 2  # Both pages fetched
+
     def test_multiple_markers_dont_conflict(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"
         body_file.write_text("Body for council")
