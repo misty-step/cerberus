@@ -1,0 +1,93 @@
+name: Eval - Full
+
+on:
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Use baseline results for comparison'
+        required: false
+        default: 'true'
+
+jobs:
+  full-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Promptfoo
+        run: npm install -g promptfoo
+
+      - name: Run full eval
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          promptfoo eval --config evals/promptfooconfig.yaml \
+            --no-cache \
+            --max-concurrency 5 \
+            2>&1 | tee evals/results/full-output.txt
+
+      - name: Check pass rate
+        run: |
+          # Extract pass rate from output
+          PASS_RATE=$(grep -oP '\d+(?=%)' evals/results/full-output.txt | head -1 || echo "0")
+          echo "Pass rate: $PASS_RATE%"
+          
+          if [ "$PASS_RATE" -lt 85 ]; then
+            echo "❌ Full eval failed: $PASS_RATE% < 85% threshold"
+            exit 1
+          fi
+          echo "✅ Full eval passed: $PASS_RATE% >= 85%"
+
+      - name: Compare with baseline
+        if: github.event.inputs.baseline != 'false'
+        run: |
+          if [ -f "evals/results/baseline.json" ]; then
+            echo "Comparing with baseline..."
+            # Simple comparison - could be enhanced with more detailed analysis
+            BASELINE_RATE=$(grep -oP '\d+(?=%)' evals/results/baseline.txt || echo "0")
+            CURRENT_RATE=$(grep -oP '\d+(?=%)' evals/results/full-output.txt | head -1 || echo "0")
+            
+            DIFF=$((CURRENT_RATE - BASELINE_RATE))
+            echo "Baseline: $BASELINE_RATE%, Current: $CURRENT_RATE%, Diff: $DIFF%"
+            
+            if [ "$DIFF" -lt -5 ]; then
+              echo "⚠️ Regression detected: $DIFF% drop from baseline"
+              echo "regression=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No baseline found, saving current as baseline"
+            cp evals/results/full-output.txt evals/results/baseline.txt
+            cp evals/results/latest.json evals/results/baseline.json
+          fi
+
+      - name: Save baseline
+        if: github.event.inputs.baseline == 'true'
+        run: |
+          cp evals/results/full-output.txt evals/results/baseline.txt
+          cp evals/results/latest.json evals/results/baseline.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-eval-results
+          path: evals/results/
+          retention-days: 90
+
+      - name: Upload baseline
+        if: github.event.inputs.baseline == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-baseline
+          path: |
+            evals/results/baseline.txt
+            evals/results/baseline.json
+          retention-days: 365

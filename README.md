@@ -68,7 +68,7 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          post-comment: 'false'
+          comment-policy: 'never'
           timeout: '600'
 
   verdict:
@@ -141,7 +141,7 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
 | `opencode-version` | no | `1.1.49` | OpenCode CLI version |
-| `post-comment` | no | `true` | Post review comment |
+| `comment-policy` | no | `never` | When to post comment: `never`, `non-pass` (WARN/FAIL), or `always` |
 | `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
 
 ### Verdict Action (`misty-step/cerberus/verdict@v2`)

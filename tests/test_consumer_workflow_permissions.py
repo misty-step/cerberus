@@ -3,7 +3,7 @@
 The consumer workflow template must enforce:
 - review jobs: read-only (no pull-requests: write)
 - verdict job: pull-requests: write (only job that posts comments)
-- review jobs: post-comment disabled (artifact-only output)
+- review jobs: comment-policy: 'never' (artifact-only output, single council comment)
 """
 
 import re
@@ -70,7 +70,10 @@ def test_review_job_disables_post_comment():
     assert review_block is not None, "review job not found in template"
     block = review_block.group(0)
 
-    assert re.search(r"post-comment:\s*['\"]?false['\"]?", block), (
-        "review job must set post-comment: 'false' — "
+    # Either old post-comment: 'false' or new comment-policy: 'never' is acceptable
+    has_old_style = re.search(r"post-comment:\s*['\"]?false['\"]?", block)
+    has_new_style = re.search(r"comment-policy:\s*['\"]?never['\"]?", block)
+    assert has_old_style or has_new_style, (
+        "review job must set comment-policy: 'never' (or legacy post-comment: 'false') — "
         "only the verdict job should post PR comments"
     )

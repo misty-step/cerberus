@@ -95,7 +95,8 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert "## ❌ Council Verdict: FAIL" in body
     assert "**Summary:** 1/2 reviewers passed. 1 failed (VULCAN)." in body
     assert "**Review Scope:** 7 files changed, +120 / -44 lines" in body
-    assert "<summary>Reviewer Overview</summary>" in body
+    assert "### Reviewer Overview" in body
+    assert "<summary>(click to expand)</summary>" in body
     assert "VULCAN" in body
     assert "runtime `1m 5s`" in body
     assert "Reviewer details (click to expand)" in body
@@ -394,6 +395,8 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     assert "Reviewer details (click to expand)" not in body
     # Structural content should still be present
     assert "## ⚠️ Council Verdict: WARN" in body
-    assert "<summary>Reviewer Overview</summary>" in body
-    assert "<summary>Key Findings</summary>" in body
+    assert "### Reviewer Overview" in body
+    assert "<summary>(click to expand)</summary>" in body
+    assert "### Key Findings" in body
+    assert "<summary>(show less)</summary>" in body
     assert body.count("**Finding ") == 5
