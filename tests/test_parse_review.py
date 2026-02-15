@@ -146,7 +146,7 @@ class TestParseErrors:
         code, out, err = run_parse("```json\n{invalid json}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
         assert "invalid json" in err.lower() or "invalid" in err.lower()
 
@@ -155,7 +155,7 @@ class TestParseErrors:
         code, out, err = run_parse(f"```json\n{incomplete}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
     def test_invalid_verdict_value(self):
@@ -167,7 +167,7 @@ class TestParseErrors:
         code, out, err = run_parse(f"```json\n{bad}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
     def test_confidence_out_of_range(self):
@@ -179,7 +179,7 @@ class TestParseErrors:
         code, out, err = run_parse(f"```json\n{bad}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
     def test_uses_last_json_block(self):
@@ -265,7 +265,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args(["--reviewer"])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert "--reviewer requires" in err.lower()
 
     def test_unknown_flag(self):
@@ -273,7 +273,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args(["--bogus"])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert "unknown argument" in err.lower()
 
     def test_too_many_positional_args(self, tmp_path):
@@ -285,7 +285,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args([str(f1), str(f2)])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
 
     def test_file_not_found(self):
         """Nonexistent file produces fallback."""
@@ -1269,7 +1269,7 @@ def test_fallback_on_invalid_json():
     )
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
     assert data["reviewer"] == "APOLLO"
 
@@ -1315,7 +1315,7 @@ def test_non_numeric_line_produces_fallback():
     code, out, _ = run_parse(f"```json\n{review}\n```")
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
 
 
@@ -1334,7 +1334,7 @@ def test_invalid_finding_severity():
     code, out, _ = run_parse(f"```json\n{review}\n```")
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
 
 
@@ -1345,6 +1345,56 @@ def test_root_not_object():
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Changed: extract_json_block regex only matches objects, not arrays
     assert data["confidence"] == 0.0
+
+
+def test_missing_reviewer_field_salvaged():
+    """Model output missing reviewer/perspective fields is salvaged by injecting known values."""
+    # Reproduces the exact scenario from issue #175: model returns valid review
+    # JSON but omits the "reviewer" root field.
+    incomplete = json.dumps({
+        "verdict": "PASS",
+        "confidence": 0.85,
+        "summary": "Code looks clean",
+        "findings": [],
+        "stats": {"files_reviewed": 3, "files_with_issues": 0,
+                  "critical": 0, "major": 0, "minor": 0, "info": 0},
+    })
+    code, out, _ = run_parse(
+        f"```json\n{incomplete}\n```",
+        env_extra={"REVIEWER_NAME": "VULCAN", "PERSPECTIVE": "performance"},
+    )
+    assert code == 0
+    data = json.loads(out)
+    # Should be salvaged with injected fields, NOT a SKIP/FAIL fallback.
+    assert data["verdict"] == "PASS"
+    assert data["reviewer"] == "VULCAN"
+    assert data["perspective"] == "performance"
+    assert data["confidence"] == 0.85
+
+
+def test_missing_reviewer_only_salvaged():
+    """Model output missing only 'reviewer' is salvaged; 'perspective' present."""
+    incomplete = json.dumps({
+        "perspective": "security",
+        "verdict": "WARN",
+        "confidence": 0.75,
+        "summary": "Auth concern",
+        "findings": [{
+            "severity": "major", "category": "auth", "file": "auth.py",
+            "line": 10, "title": "Weak check", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 1, "minor": 0, "info": 0},
+    })
+    code, out, _ = run_parse(
+        f"```json\n{incomplete}\n```",
+        env_extra={"REVIEWER_NAME": "SENTINEL"},
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "WARN"
+    assert data["reviewer"] == "SENTINEL"
+    assert data["perspective"] == "security"
 
 
 class TestScratchpadInput:
