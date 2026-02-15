@@ -474,6 +474,64 @@ def validate(obj: dict) -> None:
             fail(f"stats field not int: {skey}")
 
 
+def validate_and_correct_stats(obj: dict) -> None:
+    """Validate LLM-reported stats against actual findings; correct if mismatched.
+
+    Replaces hallucinated severity counts with programmatically counted values.
+    Adds _stats_discrepancy to the output when a mismatch is detected.
+    """
+    findings = obj.get("findings", [])
+    if not isinstance(findings, list):
+        return
+
+    stats = obj.get("stats")
+    if not isinstance(stats, dict):
+        return
+
+    actual_critical = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "critical")
+    actual_major = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "major")
+    actual_minor = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "minor")
+    actual_info = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "info")
+
+    unique_files = {
+        str(f.get("file", "")).strip()
+        for f in findings
+        if isinstance(f, dict) and str(f.get("file", "")).strip() not in {"", "N/A"}
+    }
+    actual_files_with_issues = len(unique_files)
+
+    reported = {
+        "critical": stats.get("critical", 0),
+        "major": stats.get("major", 0),
+        "minor": stats.get("minor", 0),
+        "info": stats.get("info", 0),
+        "files_with_issues": stats.get("files_with_issues", 0),
+    }
+    actual = {
+        "critical": actual_critical,
+        "major": actual_major,
+        "minor": actual_minor,
+        "info": actual_info,
+        "files_with_issues": actual_files_with_issues,
+    }
+
+    if reported != actual:
+        print(
+            f"parse-review: stats discrepancy detected — reported: {reported}, actual: {actual}",
+            file=sys.stderr,
+        )
+        stats["critical"] = actual_critical
+        stats["major"] = actual_major
+        stats["minor"] = actual_minor
+        stats["info"] = actual_info
+        stats["files_with_issues"] = actual_files_with_issues
+        obj["_stats_discrepancy"] = {
+            "reported": reported,
+            "actual": actual,
+            "discrepancy": True,
+        }
+
+
 def enforce_verdict_consistency(obj: dict) -> None:
     """Recompute verdict from findings to prevent LLM verdict manipulation."""
     if obj.get("verdict") == "SKIP":
@@ -1028,6 +1086,7 @@ def main() -> None:
             fail("root must be object")
 
         validate(obj)
+        validate_and_correct_stats(obj)
         downgrade_unverified_findings(obj)
         downgrade_speculative_suggestions(obj)
         downgrade_stale_knowledge_findings(obj)
