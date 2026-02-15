@@ -159,8 +159,7 @@ reviewer_meta="$(
 )"
 reviewer_name=""
 reviewer_model_raw=""
-reviewer_desc=""
-IFS=$'\t' read -r reviewer_name reviewer_model_raw reviewer_desc <<< "${reviewer_meta}"
+IFS=$'\t' read -r reviewer_name reviewer_model_raw _ <<< "${reviewer_meta}"
 if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2

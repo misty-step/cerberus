@@ -33,9 +33,8 @@ reviewer_info="$(
 )"
 
 reviewer_name=""
-reviewer_model=""
 reviewer_desc=""
-IFS=$'\t' read -r reviewer_name reviewer_model reviewer_desc <<< "${reviewer_info}"
+IFS=$'\t' read -r reviewer_name _ reviewer_desc <<< "${reviewer_info}"
 
 if [[ -z "$reviewer_name" ]]; then
   reviewer_name="${perspective^^}"
