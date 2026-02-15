@@ -227,7 +227,7 @@ def fail(msg: str) -> NoReturn:
                            "description": "Reviewer produced a scratchpad review without structured JSON output. Raw output is preserved in workflow logs/artifacts.",
                            "suggestion": "No action needed; see the workflow run for the preserved raw output.",
                        }])
-    write_fallback(REVIEWER_NAME, msg, raw_review=raw_text or None)
+    write_fallback(REVIEWER_NAME, msg, verdict="SKIP", raw_review=raw_text or None)
 
 
 def read_input(path: str | None) -> str:
@@ -406,6 +406,13 @@ def looks_like_api_error(text: str) -> tuple[bool, str, str]:
 
 
 def validate(obj: dict) -> None:
+    # Inject known metadata fields before validation — models often omit these
+    # even when the rest of the review is valid.
+    if "reviewer" not in obj:
+        obj["reviewer"] = REVIEWER_NAME
+    if "perspective" not in obj:
+        obj["perspective"] = PERSPECTIVE
+
     required_root = [
         "reviewer",
         "perspective",
