@@ -496,31 +496,19 @@ def _build_comment(
     if reviewers:
         # Always wrap in <details> for progressive disclosure
         lines.extend(["", "### Reviewer Overview"])
-        if is_pass:
-            # On PASS: collapse reviewer overview
-            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
-            lines.extend(format_reviewer_overview_lines(reviewers))
-            lines.extend(["", "</details>"])
-        else:
-            # On WARN/FAIL: show reviewer overview (still collapsed for consistency)
-            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
-            lines.extend(format_reviewer_overview_lines(reviewers))
-            lines.extend(["", "</details>"])
+        lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
+        lines.extend(format_reviewer_overview_lines(reviewers))
+        lines.extend(["", "</details>"])
 
     if include_key_findings:
         lines.extend(["", "### Key Findings"])
-        if is_pass:
-            # On PASS: collapse key findings
-            lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
-            lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
-            lines.extend(["", "</details>"])
-        elif is_fail_or_warn:
+        if is_fail_or_warn:
             # On WARN/FAIL: show key findings expanded by default
             lines.extend(["<details open>", "<summary>(show less)</summary>", ""])
             lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
             lines.extend(["", "</details>"])
         else:
-            # For SKIP or other verdicts: show collapsed
+            # PASS, SKIP, or other verdicts: collapse by default
             lines.extend(["<details>", "<summary>(click to expand)</summary>", ""])
             lines.extend(format_key_findings_lines(reviewers, max_total=max_key_findings))
             lines.extend(["", "</details>"])

@@ -11,6 +11,8 @@ on:
 jobs:
   smoke-eval:
     runs-on: ubuntu-latest
+    # Skip for forked PRs to prevent secret access
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,12 +23,13 @@ jobs:
           node-version: '20'
 
       - name: Install Promptfoo
-        run: npm install -g promptfoo
+        run: npm install -g promptfoo@0.103.5  # pin to tested version
 
       - name: Run smoke eval
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
+          mkdir -p evals/results
           promptfoo eval --config evals/promptfooconfig.yaml \
             --no-cache \
             --max-concurrency 3 \
@@ -35,7 +38,8 @@ jobs:
       - name: Check pass rate
         run: |
           # Extract pass rate from output
-          PASS_RATE=$(grep -oP '\d+(?=%)' evals/results/smoke-output.txt | head -1 || echo "0")
+          PASS_RATE=$(grep -oP '\d+(?=%)' evals/results/smoke-output.txt | head -1)
+          PASS_RATE=${PASS_RATE:-0}
           echo "Pass rate: $PASS_RATE%"
           
           if [ "$PASS_RATE" -lt 80 ]; then

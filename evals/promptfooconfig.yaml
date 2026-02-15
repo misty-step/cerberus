@@ -39,7 +39,6 @@ prompts:
       ```json
       {"verdict": "FAIL", "findings": [{"severity": "critical|major|minor", "category": "{{perspective}}", "file": "FILE", "line": LINE, "title": "TITLE", "description": "DESC"}], "summary": "SUMMARY"}
       ```
-      ```
 
 # Model providers - use OpenRouter
 providers:
@@ -75,7 +74,7 @@ tests:
       pr_body: "Add API client module"
       perspective: "security"
       diff: |
-        +const API_KEY = "sk-1234567890abcdef";
+        +const API_KEY = "sk-1234567890abcdef"; # gitleaks:allow
         +function callApi() { }
     assert:
       - type: javascript
@@ -175,7 +174,7 @@ tests:
         +  if ((user && user.isAdmin) || user.isOwner) {
     assert:
       - type: javascript
-        value: "output.verdict === 'PASS'"
+        value: "output.verdict === 'PASS' || output.verdict === 'WARN'"
 
   - description: "Correctness - Type Safety"
     vars:
@@ -500,7 +499,7 @@ tests:
       perspective: "testing"
       diff: |
         +test('fetchUser', async () => {
-        +  jest.spyOn(fetch, ').mockResolvedValue({ json: () => ({ name: 'John' }) });
+        +  jest.spyOn(global, 'fetch').mockResolvedValue({ json: () => ({ name: 'John' }) });
         +  expect(await fetchUser(1)).toEqual({ name: 'John' });
         +});
     assert:

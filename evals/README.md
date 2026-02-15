@@ -43,12 +43,12 @@ promptfoo eval --config evals/promptfooconfig.yaml --no-cache --max-concurrency 
 
 ## Test Cases
 
-The eval includes 30 test cases across 6 perspectives:
+The eval includes 31 test cases across 6 perspectives:
 
 | Perspective | Count | Description |
 |------------|-------|-------------|
 | security   | 5     | SQL injection, XSS, secrets, etc. |
-| correctness| 5     | Bugs, null pointers, logic errors |
+| correctness| 6     | Bugs, null pointers, logic errors |
 | performance| 5     | N+1 queries, memory leaks, I/O |
 | architecture| 5    | Coupling, interfaces, layering |
 | maintainability| 5 | Duplication, naming, docs |
