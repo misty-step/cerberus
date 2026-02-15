@@ -26,7 +26,9 @@ consumer workflow (.github/workflows/cerberus.yml)
         └── uses: misty-step/cerberus/verdict@v2  (verdict/action.yml)
             ├── download verdict artifacts
             ├── aggregate-verdict.py  (override handling + council decision)
-            └── post council comment + optional fail on FAIL
+            ├── post council comment
+            ├── post PR review w/ inline comments
+            └── optional fail on FAIL
 
     └── triage job (optional, separate workflow/job)
         └── uses: misty-step/cerberus/triage@v2  (triage/action.yml)
@@ -58,15 +60,18 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `action.yml` - review composite action entrypoint
 - `verdict/action.yml` - council verdict composite action entrypoint
 - `triage/action.yml` - triage composite action entrypoint
+- `validate/action.yml` - consumer workflow validator (misconfig guardrail)
 - `defaults/config.yml` - council settings, reviewer list, verdict thresholds, override rules
 - `.opencode/agents/<perspective>.md` - OpenCode agent config (YAML frontmatter) + system prompt (body)
 - `opencode.json` - OpenCode CLI config (provider, model, permissions)
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
 - `templates/consumer-workflow.yml` - recommended workflow for downstream repositories
+- `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
 - `scripts/run-reviewer.sh` - orchestrates one reviewer: builds prompt, invokes `opencode run`
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
 - `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes council verdict
+- `scripts/post-council-review.py` - posts a single PR review with inline comments (best-effort) for council findings
 - `scripts/triage.py` - triage trigger router + circuit breaker + diagnosis/fix runtime
 
 ## Verdict Logic
@@ -93,7 +98,7 @@ Optional fields added by the pipeline:
 
 ## OpenCode CLI
 
-- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`
+- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool` each run.
 - Env vars: `OPENROUTER_API_KEY`
 - Agent config: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - CLI config: `opencode.json` at repo root (auto-discovered)
@@ -104,17 +109,24 @@ Optional fields added by the pipeline:
 
 ```bash
 # Run test suite
-pip install pytest
+pip install pytest pytest-cov pyyaml
 python3 -m pytest tests/ -v
 
 # Or use the helper script
 ./tests/run-tests.sh
+
+# Run with coverage
+COVERAGE=1 ./tests/run-tests.sh
+# Or directly:
+python3 -m pytest tests/ --cov=scripts --cov-report=term-missing
 
 # Lint
 shellcheck scripts/*.sh
 python3 -m py_compile scripts/parse-review.py
 python3 -m py_compile scripts/aggregate-verdict.py
 ```
+
+Coverage is enforced in CI at 30% (see `.coveragerc`). Configuration: `pytest.ini`, `.coveragerc`.
 
 End-to-end testing requires pushing to a branch and having a target repo use `misty-step/cerberus@<branch>`. Current test target: `misty-step/moonbridge`.
 

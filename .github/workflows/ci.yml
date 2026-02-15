@@ -19,6 +19,8 @@ jobs:
           python3 -m py_compile scripts/parse-review.py
           python3 -m py_compile scripts/aggregate-verdict.py
           python3 -m py_compile scripts/triage.py
+          python3 -m py_compile scripts/validate-consumer-workflow.py
+          python3 -m py_compile scripts/lib/consumer_workflow_validator.py
           python3 -m py_compile matrix/generate-matrix.py
 
       - name: YAML validity
@@ -26,7 +28,7 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml']:
+          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml']:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')
@@ -48,7 +50,71 @@ jobs:
           python-version: '3.12'
 
       - name: Install test deps
-        run: pip install pytest pyyaml
+        run: pip install pytest pytest-cov pyyaml
 
-      - name: Run tests
-        run: python3 -m pytest tests/ -v
+      - name: Run tests with coverage
+        run: python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html --cov-report=xml
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            htmlcov/
+            coverage.xml
+            .coverage
+          retention-days: 30
+
+  coverage-comment:
+    runs-on: ubuntu-latest
+    needs: test
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download coverage artifact
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+        continue-on-error: true
+
+      - name: Post coverage comment
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          BODY=$(python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.get('line-rate', 0)) * 100
+          branch_rate = float(root.get('branch-rate', 0)) * 100
+          lines_valid = int(root.get('lines-valid', 0))
+          lines_covered = int(root.get('lines-covered', 0))
+          icon = ':white_check_mark:' if line_rate >= 30 else ':x:'
+          print(f'## {icon} Test Coverage: {line_rate:.1f}%')
+          print()
+          print(f'| Metric | Value |')
+          print(f'|--------|-------|')
+          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) |')
+          print(f'| Branch coverage | {branch_rate:.1f}% |')
+          print(f'| Threshold | 30% |')
+          print()
+          print('<!-- cerberus:coverage -->')
+          ")
+          # Upsert comment using marker
+          EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | contains("<!-- cerberus:coverage -->")) | .id' | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${EXISTING}" \
+              -X PATCH -f body="$BODY"
+          else
+            gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -f body="$BODY"
+          fi

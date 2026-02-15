@@ -146,7 +146,7 @@ class TestParseErrors:
         code, out, err = run_parse("```json\n{invalid json}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
         assert "invalid json" in err.lower() or "invalid" in err.lower()
 
@@ -155,7 +155,7 @@ class TestParseErrors:
         code, out, err = run_parse(f"```json\n{incomplete}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
     def test_invalid_verdict_value(self):
@@ -167,7 +167,7 @@ class TestParseErrors:
         code, out, err = run_parse(f"```json\n{bad}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
     def test_confidence_out_of_range(self):
@@ -179,7 +179,7 @@ class TestParseErrors:
         code, out, err = run_parse(f"```json\n{bad}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
     def test_uses_last_json_block(self):
@@ -265,7 +265,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args(["--reviewer"])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert "--reviewer requires" in err.lower()
 
     def test_unknown_flag(self):
@@ -273,7 +273,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args(["--bogus"])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert "unknown argument" in err.lower()
 
     def test_too_many_positional_args(self, tmp_path):
@@ -285,7 +285,7 @@ class TestParseArgs:
         code, out, err = run_parse_with_args([str(f1), str(f2)])
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
 
     def test_file_not_found(self):
         """Nonexistent file produces fallback."""
@@ -1269,7 +1269,7 @@ def test_fallback_on_invalid_json():
     )
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
     assert data["reviewer"] == "APOLLO"
 
@@ -1315,7 +1315,7 @@ def test_non_numeric_line_produces_fallback():
     code, out, _ = run_parse(f"```json\n{review}\n```")
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
 
 
@@ -1334,7 +1334,7 @@ def test_invalid_finding_severity():
     code, out, _ = run_parse(f"```json\n{review}\n```")
     assert code == 0
     data = json.loads(out)
-    assert data["verdict"] == "FAIL"
+    assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
 
 
@@ -1345,6 +1345,56 @@ def test_root_not_object():
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Changed: extract_json_block regex only matches objects, not arrays
     assert data["confidence"] == 0.0
+
+
+def test_missing_reviewer_field_salvaged():
+    """Model output missing reviewer/perspective fields is salvaged by injecting known values."""
+    # Reproduces the exact scenario from issue #175: model returns valid review
+    # JSON but omits the "reviewer" root field.
+    incomplete = json.dumps({
+        "verdict": "PASS",
+        "confidence": 0.85,
+        "summary": "Code looks clean",
+        "findings": [],
+        "stats": {"files_reviewed": 3, "files_with_issues": 0,
+                  "critical": 0, "major": 0, "minor": 0, "info": 0},
+    })
+    code, out, _ = run_parse(
+        f"```json\n{incomplete}\n```",
+        env_extra={"REVIEWER_NAME": "VULCAN", "PERSPECTIVE": "performance"},
+    )
+    assert code == 0
+    data = json.loads(out)
+    # Should be salvaged with injected fields, NOT a SKIP/FAIL fallback.
+    assert data["verdict"] == "PASS"
+    assert data["reviewer"] == "VULCAN"
+    assert data["perspective"] == "performance"
+    assert data["confidence"] == 0.85
+
+
+def test_missing_reviewer_only_salvaged():
+    """Model output missing only 'reviewer' is salvaged; 'perspective' present."""
+    incomplete = json.dumps({
+        "perspective": "security",
+        "verdict": "WARN",
+        "confidence": 0.75,
+        "summary": "Auth concern",
+        "findings": [{
+            "severity": "major", "category": "auth", "file": "auth.py",
+            "line": 10, "title": "Weak check", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 1, "minor": 0, "info": 0},
+    })
+    code, out, _ = run_parse(
+        f"```json\n{incomplete}\n```",
+        env_extra={"REVIEWER_NAME": "SENTINEL"},
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["verdict"] == "WARN"
+    assert data["reviewer"] == "SENTINEL"
+    assert data["perspective"] == "security"
 
 
 class TestScratchpadInput:
@@ -1367,25 +1417,25 @@ class TestScratchpadInput:
         assert data["findings"][0]["severity"] == "info"
 
     def test_partial_scratchpad_extracts_verdict_from_header(self):
-        """Scratchpad without JSON block but with ## Verdict: PASS header extracts PASS."""
+        """Scratchpad without JSON block but with ## Verdict: PASS header is treated as SKIP (non-blocking)."""
         code, out, _ = run_parse_file(
             FIXTURES / "sample-scratchpad-partial.md",
             env_extra={"REVIEWER_NAME": "APOLLO"},
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert data["reviewer"] == "APOLLO"
         assert data["confidence"] < 0.5  # low confidence for partial
 
     def test_partial_scratchpad_defaults_to_warn(self):
-        """Scratchpad without JSON block or verdict header defaults to WARN."""
+        """Scratchpad without JSON block or verdict header is treated as SKIP (non-blocking)."""
         # Write a scratchpad with investigation notes but no verdict header
         partial_text = "# Review\n\n## Investigation Notes\n- Checked files\n- Found nothing yet\n"
         code, out, _ = run_parse(partial_text, env_extra={"REVIEWER_NAME": "TEST"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "WARN"
+        assert data["verdict"] == "SKIP"
 
     def test_partial_scratchpad_includes_notes_in_summary(self):
         """Partial scratchpad includes investigation notes in the summary."""
@@ -1757,7 +1807,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "SENTINEL"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert "raw_review" in data
         assert "I'll start by reading" not in data["raw_review"]
         assert "Investigation Notes" in data["raw_review"]
@@ -1803,7 +1853,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert "raw_review" in data
         assert "Investigation Notes" in data["raw_review"]
 
@@ -1831,7 +1881,7 @@ class TestRawReviewPreservation:
         assert "looks good" not in data["summary"].lower()
 
     def test_extract_review_summary_with_verdict_header(self):
-        """Text with ## Verdict: header is treated as scratchpad and uses that verdict."""
+        """Text with ## Verdict: header is treated as scratchpad and is SKIP (non-blocking)."""
         text = (
             "# Review\n\n## Verdict: PASS\nNo issues found in the codebase.\n\n"
             "## Analysis\n" + "Checked various code paths for problems. " * 20
@@ -1840,8 +1890,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
         assert code == 0
         data = json.loads(out)
-        # Scratchpad path extracts verdict from ## Verdict: PASS header
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert "raw_review" in data
 
     def test_substantive_warn_fallback_has_info_finding(self):
@@ -1871,7 +1920,7 @@ class TestRawReviewPreservation:
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "SKIP"
         assert len(data["findings"]) == 1
         finding = data["findings"][0]
         assert finding["severity"] == "info"
@@ -2112,3 +2161,160 @@ class TestSpeculativeSuggestionDowngrade:
         assert data["findings"][0]["severity"] == "info"
         assert not data["findings"][0]["title"].startswith("[speculative] ")
         assert data["verdict"] == "PASS"
+
+
+class TestStatsValidation:
+    """Tests for validating LLM-reported stats against actual findings (#16)."""
+
+    def test_matching_stats_no_discrepancy(self):
+        """When LLM stats match actual findings, no discrepancy is reported."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "One major issue",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert "_stats_discrepancy" not in data
+
+    def test_llm_over_reports_corrected(self):
+        """When LLM reports more issues than actually exist, stats are corrected."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issues found",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "stats": {"files_reviewed": 5, "files_with_issues": 3,
+                      "critical": 2, "major": 3, "minor": 1, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["critical"] == 0
+        assert data["stats"]["major"] == 1
+        assert data["stats"]["minor"] == 0
+        assert data["stats"]["info"] == 0
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_stats_discrepancy"]["reported"]["critical"] == 2
+        assert data["_stats_discrepancy"]["actual"]["critical"] == 0
+
+    def test_llm_under_reports_corrected(self):
+        """When LLM reports fewer issues than actually exist, stats are corrected."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "Looks fine",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "bug",
+                    "file": "app.py",
+                    "line": 10,
+                    "title": "Bug 1",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+                {
+                    "severity": "minor",
+                    "category": "style",
+                    "file": "utils.py",
+                    "line": 5,
+                    "title": "Style issue",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+            ],
+            "stats": {"files_reviewed": 1, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["major"] == 1
+        assert data["stats"]["minor"] == 1
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_stats_discrepancy"]["reported"]["major"] == 0
+        assert data["_stats_discrepancy"]["actual"]["major"] == 1
+
+    def test_zero_findings_stats_zeroed(self):
+        """When there are zero findings, all severity stats should be zero."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "All clean",
+            "findings": [],
+            "stats": {"files_reviewed": 5, "files_with_issues": 2,
+                      "critical": 1, "major": 1, "minor": 1, "info": 1}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["critical"] == 0
+        assert data["stats"]["major"] == 0
+        assert data["stats"]["minor"] == 0
+        assert data["stats"]["info"] == 0
+        assert data["stats"]["files_with_issues"] == 0
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+
+    def test_files_with_issues_corrected(self):
+        """files_with_issues is corrected to match unique files in findings."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issues",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "bug",
+                    "file": "app.py",
+                    "line": 10,
+                    "title": "Bug 1",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+                {
+                    "severity": "minor",
+                    "category": "style",
+                    "file": "app.py",
+                    "line": 20,
+                    "title": "Style",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+            ],
+            "stats": {"files_reviewed": 3, "files_with_issues": 3,
+                      "critical": 0, "major": 1, "minor": 1, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["files_with_issues"] == 1
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+
+    def test_discrepancy_logged_to_stderr(self):
+        """Stats discrepancy is logged to stderr."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "Clean",
+            "findings": [],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, err = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        assert "stats discrepancy" in err.lower()

@@ -32,21 +32,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: misty-step/cerberus/validate@v2
+
+  matrix:
+    needs: validate
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - uses: misty-step/cerberus/matrix@v2
+        id: generate
+
   review:
+    needs: matrix
+    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       pull-requests: read
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        include:
-          - { reviewer: APOLLO,    perspective: correctness }
-          - { reviewer: ATHENA,    perspective: architecture }
-          - { reviewer: SENTINEL,  perspective: security }
-          - { reviewer: VULCAN,    perspective: performance }
-          - { reviewer: ARTEMIS,   perspective: maintainability }
-          - { reviewer: CASSANDRA, perspective: testing }
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +74,7 @@ jobs:
   verdict:
     name: "Council Verdict"
     needs: review
-    if: always()
+    if: always() && needs.review.result != 'skipped'
     permissions:
       contents: read
       pull-requests: write
@@ -72,14 +85,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml` (optional) instead of hand-editing YAML.
+
 3. Open a pull request. That's it.
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
 2. OpenCode CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
-4. Each reviewer posts a structured comment with findings
-5. The verdict job aggregates all reviews into a verdict-first council comment with collapsible reviewer sections, severity-tagged findings, file/line references, review scope, and per-reviewer timing
+4. Each reviewer uploads a structured verdict artifact (optionally posts a per-reviewer PR comment)
+5. The verdict job aggregates all reviews, posts a council comment, and posts a PR review with inline comments (up to 30) anchored to diff lines
 6. Council verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
 
 ## Auto-Triage (v1.1)
@@ -96,6 +111,21 @@ Use `templates/triage-workflow.yml` to enable:
 - automatic triage on council `FAIL`
 - manual triage via PR comment: `/cerberus triage` (optional `mode=fix`)
 - scheduled triage for stale unresolved council failures
+
+## Fork PRs
+
+Cerberus supports both same-repo and fork PRs with appropriate security handling:
+
+### Same-Repo PRs
+Full review council runs with full access to the `OPENROUTER_API_KEY` secret.
+
+### Fork PRs
+- Fork PRs trigger the workflow but skip the review jobs
+- This is intentional: GitHub Actions secrets are **not available** to fork PRs
+- Gate reviewer jobs to same-repo PRs (`head.repo.full_name == github.repository`) to avoid secret access attempts
+- Full review requires a PR from the same repository (not a fork)
+
+This prevents confusing failures when secret-dependent operations can't access their credentials.
 
 ## Inputs
 ### Review Action (`misty-step/cerberus@v2`)
@@ -120,6 +150,12 @@ Use `templates/triage-workflow.yml` to enable:
 | `github-token` | yes | - | GitHub token for PR comments |
 | `fail-on-verdict` | no | `true` | Exit 1 if council fails |
 | `fail-on-skip` | no | `false` | Exit 1 if council verdict is SKIP (all reviews skipped) |
+
+### Validate Action (`misty-step/cerberus/validate@v2`)
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `workflow` | no | `.github/workflows/cerberus.yml` | Workflow file to validate |
+| `fail-on-warnings` | no | `false` | Exit 1 if warnings are found |
 
 ## Verdict Rules
 Each reviewer emits:

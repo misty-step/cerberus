@@ -31,6 +31,14 @@ def test_verdict_action_uses_shared_upsert() -> None:
     assert "--marker" in content
 
 
+def test_verdict_action_posts_inline_review_comments() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    assert "scripts/post-council-review.py" in content
+    assert "--council-json /tmp/council-verdict.json" in content
+    assert "--body-file /tmp/council-comment.md" in content
+
+
 def test_post_comment_uses_shared_upsert() -> None:
     content = POST_COMMENT_SCRIPT.read_text()
 

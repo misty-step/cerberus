@@ -12,11 +12,13 @@ Multi-agent AI PR review council. Six parallel reviewers. Single council verdict
 
 ## Key Paths
 - action: `action.yml` (review) + `verdict/action.yml` (council) + `triage/action.yml` (auto-triage)
+- validate: `validate/action.yml` (consumer workflow validator)
 - config: `defaults/config.yml`
 - agents: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - scripts: `scripts/`
 - templates: `templates/review-prompt.md`
 - consumer template: `templates/consumer-workflow.yml`
+- workflow lint template: `templates/workflow-lint.yml`
 - tests: `tests/`
 - CI: `.github/workflows/ci.yml`
 
