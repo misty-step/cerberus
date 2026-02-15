@@ -321,6 +321,10 @@ fi
 # Persist primary model for downstream steps (parse, comment metadata).
 printf '%s' "$primary_model" > "/tmp/${perspective}-primary-model"
 
+# Persist the reviewer's default model (from config) for override detection.
+# This is the model the reviewer would use if no global override was provided.
+printf '%s' "$reviewer_model" > "/tmp/${perspective}-reviewer-default-model"
+
 # Build ordered model list: primary + optional fallbacks.
 models=("$primary_model")
 if [[ -n "${CERBERUS_FALLBACK_MODELS:-}" ]]; then

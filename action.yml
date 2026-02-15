@@ -228,6 +228,15 @@ runs:
             "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
           mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
         fi
+
+        # Warn when global model input overrides per-reviewer defaults (issue #155)
+        REVIEWER_DEFAULT_MODEL_FILE="/tmp/${PERSPECTIVE}-reviewer-default-model"
+        if [[ -s "$REVIEWER_DEFAULT_MODEL_FILE" && -n "$PRIMARY_MODEL" ]]; then
+          reviewer_default_model="$(cat "$REVIEWER_DEFAULT_MODEL_FILE")"
+          if [[ "$reviewer_default_model" != "$PRIMARY_MODEL" ]]; then
+            echo "::warning::Global model override active for ${REVIEWER_NAME}: using '${PRIMARY_MODEL}' instead of per-reviewer default '${reviewer_default_model}'. Remove the 'model' input to use recommended models."
+          fi
+        fi
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
         if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then
           echo "::error::Invalid verdict value from parser: $VERDICT"
