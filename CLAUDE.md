@@ -26,7 +26,9 @@ consumer workflow (.github/workflows/cerberus.yml)
         └── uses: misty-step/cerberus/verdict@v2  (verdict/action.yml)
             ├── download verdict artifacts
             ├── aggregate-verdict.py  (override handling + council decision)
-            └── post council comment + optional fail on FAIL
+            ├── post council comment
+            ├── post PR review w/ inline comments
+            └── optional fail on FAIL
 
     └── triage job (optional, separate workflow/job)
         └── uses: misty-step/cerberus/triage@v2  (triage/action.yml)
@@ -67,6 +69,7 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
 - `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes council verdict
+- `scripts/post-council-review.py` - posts a single PR review with inline comments (best-effort) for council findings
 - `scripts/triage.py` - triage trigger router + circuit breaker + diagnosis/fix runtime
 
 ## Verdict Logic

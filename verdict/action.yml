@@ -134,6 +134,23 @@ runs:
           --marker "<!-- cerberus:council -->" \
           --body-file /tmp/council-comment.md
 
+    - name: Post council inline review comments
+      if: always() && steps.aggregate.outcome == 'success'
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/post-council-review.py" \
+          --repo "$REPO" \
+          --pr "$PR_NUMBER" \
+          --head-sha "$GH_HEAD_SHA" \
+          --council-json /tmp/council-verdict.json \
+          --body-file /tmp/council-comment.md
+
     - name: Upload quality report artifact
       if: always() && steps.aggregate.outcome == 'success'
       uses: actions/upload-artifact@v4
