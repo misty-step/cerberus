@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from lib.diff_positions import build_newline_to_position
+from lib.findings import best_text, format_reviewer_list, norm_key
 from lib.github import (
     CommentPermissionError,
     TransientGitHubError,
@@ -83,21 +84,6 @@ def review_marker(head_sha: str) -> str:
     return f"<!-- cerberus:council-review sha={short} -->"
 
 
-def _norm_key(value: object) -> str:
-    return " ".join(str(value or "").strip().lower().split())
-
-
-def _best_text(a: str, b: str) -> str:
-    """Prefer the longer non-empty string (keeps more context without merging prose)."""
-    a = (a or "").strip()
-    b = (b or "").strip()
-    if not a:
-        return b
-    if not b:
-        return a
-    return b if len(b) > len(a) else a
-
-
 def collect_inline_findings(council: dict) -> list[dict]:
     reviewers = council.get("reviewers")
     if not isinstance(reviewers, list):
@@ -124,7 +110,7 @@ def collect_inline_findings(council: dict) -> list[dict]:
             category = str(finding.get("category") or "").strip() or "uncategorized"
             title = str(finding.get("title") or "").strip() or "Untitled finding"
 
-            key = (file, line, _norm_key(category), _norm_key(title))
+            key = (file, line, norm_key(category), norm_key(title))
             existing = grouped.get(key)
             if existing is None:
                 grouped[key] = {
@@ -143,9 +129,9 @@ def collect_inline_findings(council: dict) -> list[dict]:
             existing["reviewers"].add(rname)
             if _SEVERITY_ORDER[severity] < _SEVERITY_ORDER[existing.get("severity")]:
                 existing["severity"] = severity
-            existing["description"] = _best_text(existing.get("description", ""), str(finding.get("description") or ""))
-            existing["suggestion"] = _best_text(existing.get("suggestion", ""), str(finding.get("suggestion") or ""))
-            existing["evidence"] = _best_text(existing.get("evidence", ""), str(finding.get("evidence") or ""))
+            existing["description"] = best_text(existing.get("description", ""), finding.get("description"))
+            existing["suggestion"] = best_text(existing.get("suggestion", ""), finding.get("suggestion"))
+            existing["evidence"] = best_text(existing.get("evidence", ""), finding.get("evidence"))
 
     out: list[dict] = []
     for item in grouped.values():
@@ -161,27 +147,12 @@ def truncate(text: str, *, max_len: int) -> str:
     return text[: max_len - 1].rstrip() + "…"
 
 
-def format_reviewers(value: object) -> str:
-    reviewers: list[str] = []
-    if isinstance(value, list):
-        reviewers = [str(v or "").strip() for v in value]
-    elif isinstance(value, str):
-        reviewers = [value.strip()]
-
-    reviewers = [r for r in reviewers if r]
-    if not reviewers:
-        return "unknown"
-    if len(reviewers) <= 3:
-        return ", ".join(reviewers)
-    return f"{reviewers[0]}, {reviewers[1]}, +{len(reviewers) - 2}"
-
-
 def render_inline_comment(finding: dict) -> str:
     sev = normalize_severity(finding.get("severity"))
     icon = severity_icon(sev)
     title = truncate(str(finding.get("title") or "Untitled finding"), max_len=200)
     category = truncate(str(finding.get("category") or "uncategorized"), max_len=80)
-    reviewer = truncate(format_reviewers(finding.get("reviewers")), max_len=60)
+    reviewer = truncate(format_reviewer_list(finding.get("reviewers")), max_len=60)
     description = truncate(str(finding.get("description") or ""), max_len=700)
     suggestion = truncate(str(finding.get("suggestion") or ""), max_len=700)
     evidence = truncate(str(finding.get("evidence") or ""), max_len=900)
@@ -258,6 +229,11 @@ def main() -> None:
         council = read_json(Path(args.council_json))
 
         findings = collect_inline_findings(council)
+        eligible = len(findings)
+        if eligible == 0:
+            notice("No critical/major findings eligible for inline comments. Skipping PR review.")
+            return
+
         patch_index = build_patch_index(args.repo, args.pr)
 
         mapped: list[tuple[ReviewComment, tuple[int, str, int, str]]] = []
@@ -299,7 +275,6 @@ def main() -> None:
             inline.append(comment)
             per_file[comment.path] = count + 1
 
-        eligible = len(findings)
         anchorable = len(mapped)
         posted = len(inline)
         omitted = max(0, anchorable - posted)
@@ -314,17 +289,15 @@ def main() -> None:
             limit_note = f" ({'; '.join(bits)})"
 
         if posted == 0:
-            if eligible == 0:
-                notice("No critical/major findings eligible for inline comments. Skipping PR review.")
-            else:
-                notice(f"No inline comments could be anchored to the diff{limit_note}. Skipping PR review.")
+            notice(f"No inline comments could be anchored to the diff{limit_note}. Skipping PR review.")
             return
 
         council_comment_url = ""
         try:
             comments = fetch_comments(args.repo, args.pr)
             council_comment_url = find_comment_url_by_marker(comments, "<!-- cerberus:council -->") or ""
-        except Exception:
+        except (CommentPermissionError, TransientGitHubError, subprocess.CalledProcessError) as exc:
+            warn(f"Unable to fetch council comment URL: {exc}")
             council_comment_url = ""
 
         council_verdict = str(council.get("verdict") or "").strip().upper() or "UNKNOWN"

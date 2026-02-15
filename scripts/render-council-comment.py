@@ -10,6 +10,7 @@ import re
 import sys
 from pathlib import Path
 
+from lib.findings import best_text, format_reviewer_list, norm_key
 from lib.markdown import details_block, location_link, repo_context, severity_icon
 
 # GitHub PR comments are silently rejected above 65,536 bytes.
@@ -348,31 +349,6 @@ def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple
     return sorted(items, key=_sort_key)[:max_total]
 
 
-def _norm_key(value: object) -> str:
-    return " ".join(str(value or "").strip().lower().split())
-
-
-def _best_text(a: object, b: object) -> str:
-    """Prefer the longer non-empty string (keeps more context without merging prose)."""
-    a_text = str(a or "").strip()
-    b_text = str(b or "").strip()
-    if not a_text:
-        return b_text
-    if not b_text:
-        return a_text
-    return b_text if len(b_text) > len(a_text) else a_text
-
-
-def format_reviewer_list(reviewers: list[str]) -> str:
-    names = [str(r or "").strip() for r in reviewers]
-    names = [n for n in names if n]
-    if not names:
-        return "unknown"
-    if len(names) <= 3:
-        return ", ".join(names)
-    return f"{names[0]}, {names[1]}, +{len(names) - 2}"
-
-
 def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
     """Aggregate duplicate findings across reviewers into 'issues' keyed by (file,line,category,title)."""
     grouped: dict[tuple[str, int, str, str], dict] = {}
@@ -391,7 +367,7 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
             category = str(finding.get("category") or "").strip() or "uncategorized"
             title = str(finding.get("title") or "").strip() or "Untitled finding"
 
-            key = (file, line, _norm_key(category), _norm_key(title))
+            key = (file, line, norm_key(category), norm_key(title))
             existing = grouped.get(key)
             if existing is None:
                 grouped[key] = {
@@ -408,7 +384,7 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
             existing["reviewers"].add(rname)
             if SEVERITY_ORDER.get(severity, 99) < SEVERITY_ORDER.get(existing.get("severity"), 99):
                 existing["severity"] = severity
-            existing["suggestion"] = _best_text(existing.get("suggestion"), finding.get("suggestion"))
+            existing["suggestion"] = best_text(existing.get("suggestion"), finding.get("suggestion"))
 
     out: list[dict] = []
     for item in grouped.values():
