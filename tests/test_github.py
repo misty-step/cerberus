@@ -55,6 +55,25 @@ class TestFindCommentByMarker:
         assert find_comment_by_marker(comments, "<!-- cerberus:council -->") == 100
 
 
+class TestFindCommentUrlByMarker:
+    def test_returns_url_for_matching_comment(self):
+        from lib.github import find_comment_url_by_marker
+
+        comments = [
+            {"id": 1, "body": "nope", "html_url": "https://x/1"},
+            {"id": 2, "body": "<!-- cerberus:council -->\nVerdict", "html_url": "https://x/2"},
+        ]
+        assert find_comment_url_by_marker(comments, "<!-- cerberus:council -->") == "https://x/2"
+
+    def test_returns_none_when_url_missing(self):
+        from lib.github import find_comment_url_by_marker
+
+        comments = [
+            {"id": 2, "body": "<!-- cerberus:council -->\nVerdict", "html_url": ""},
+        ]
+        assert find_comment_url_by_marker(comments, "<!-- cerberus:council -->") is None
+
+
 class TestUpsertPrComment:
     def test_creates_comment_when_none_exists(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"
@@ -159,6 +178,48 @@ class TestUpsertPrComment:
             "-F",
             f"body=@{body_file}",
         ]
+
+    def test_fetch_comments_paginates(self, monkeypatch):
+        import json
+        import subprocess
+
+        import lib.github as mod
+
+        calls = []
+
+        def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
+            calls.append(args)
+            endpoint = args[1]
+            if "page=1" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 1, "body": "a"},
+                            {"id": 2, "body": "b"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            if "page=2" in endpoint:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {"id": 3, "body": "c"},
+                        ]
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+
+        comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20)
+        assert [c.get("id") for c in comments] == [1, 2, 3]
+        assert len(calls) == 2  # stopped when page size < per_page
 
     def test_multiple_markers_dont_conflict(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"
