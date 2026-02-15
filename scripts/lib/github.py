@@ -106,8 +106,28 @@ def _run_gh(
     raise RuntimeError("_run_gh retry loop exited unexpectedly")
 
 
-def fetch_comments(repo: str, pr_number: int, *, per_page: int = 100, max_pages: int = 20) -> list[dict]:
-    """Fetch all issue comments for a PR (paginated)."""
+def fetch_comments(
+    repo: str,
+    pr_number: int,
+    *,
+    per_page: int = 100,
+    max_pages: int = 20,
+    stop_on_marker: str | None = None,
+) -> list[dict]:
+    """Fetch all issue comments for a PR (paginated).
+
+    Args:
+        repo: Repository in owner/repo format
+        pr_number: Pull request number
+        per_page: Number of comments per page (max 100)
+        max_pages: Maximum number of pages to fetch
+        stop_on_marker: If provided, stop pagination early when a comment
+            containing this marker is found. Useful for finding specific
+            comments without fetching all pages on noisy PRs.
+
+    Returns:
+        List of comment dictionaries fetched up to the stopping point
+    """
     comments: list[dict] = []
     for page in range(1, max_pages + 1):
         endpoint = f"repos/{repo}/issues/{pr_number}/comments?per_page={per_page}&page={page}"
@@ -119,6 +139,13 @@ def fetch_comments(repo: str, pr_number: int, *, per_page: int = 100, max_pages:
         if not isinstance(payload, list) or not payload:
             break
         comments.extend([c for c in payload if isinstance(c, dict)])
+
+        # Early exit: check if marker found in this page
+        if stop_on_marker is not None:
+            for comment in payload:
+                if isinstance(comment, dict) and stop_on_marker in str(comment.get("body", "")):
+                    return comments
+
         if len(payload) < per_page:
             break
     return comments
