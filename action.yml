@@ -35,8 +35,8 @@ inputs:
     description: 'OpenCode CLI version to install'
     default: '1.1.49'
   post-comment:
-    description: 'Post review comment to PR'
-    default: 'true'
+    description: 'When to post reviewer comment to PR: never, non-pass (only on WARN/FAIL), or always'
+    default: 'never'
   fail-on-skip:
     description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
     default: 'false'
@@ -237,7 +237,7 @@ runs:
         echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
-      if: steps.parse.outcome == 'success' && inputs.post-comment == 'true'
+      if: steps.parse.outcome == 'success'
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
@@ -245,7 +245,35 @@ runs:
         PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
         PERSPECTIVE: ${{ inputs.perspective }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        POST_COMMENT: ${{ inputs.post-comment }}
+        VERDICT: ${{ steps.parse.outputs.verdict }}
       run: |
+        # Determine if comment should be posted based on post-comment policy
+        # Supports: never, non-pass, always (and legacy true/false for back-compat)
+        should_post="false"
+        case "$POST_COMMENT" in
+          never|false|'')
+            should_post="false"
+            ;;
+          always|true)
+            should_post="true"
+            ;;
+          non-pass)
+            if [[ "$VERDICT" == "WARN" || "$VERDICT" == "FAIL" || "$VERDICT" == "SKIP" ]]; then
+              should_post="true"
+            fi
+            ;;
+          *)
+            echo "::warning::Unknown post-comment value '$POST_COMMENT', defaulting to never"
+            should_post="false"
+            ;;
+        esac
+
+        if [[ "$should_post" != "true" ]]; then
+          echo "Skipping PR comment (post-comment=$POST_COMMENT, verdict=$VERDICT)"
+          exit 0
+        fi
+
         chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
         "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "/tmp/${PERSPECTIVE}-verdict.json"
 
