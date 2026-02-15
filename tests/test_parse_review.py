@@ -2161,3 +2161,160 @@ class TestSpeculativeSuggestionDowngrade:
         assert data["findings"][0]["severity"] == "info"
         assert not data["findings"][0]["title"].startswith("[speculative] ")
         assert data["verdict"] == "PASS"
+
+
+class TestStatsValidation:
+    """Tests for validating LLM-reported stats against actual findings (#16)."""
+
+    def test_matching_stats_no_discrepancy(self):
+        """When LLM stats match actual findings, no discrepancy is reported."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "One major issue",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert "_stats_discrepancy" not in data
+
+    def test_llm_over_reports_corrected(self):
+        """When LLM reports more issues than actually exist, stats are corrected."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issues found",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "stats": {"files_reviewed": 5, "files_with_issues": 3,
+                      "critical": 2, "major": 3, "minor": 1, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["critical"] == 0
+        assert data["stats"]["major"] == 1
+        assert data["stats"]["minor"] == 0
+        assert data["stats"]["info"] == 0
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_stats_discrepancy"]["reported"]["critical"] == 2
+        assert data["_stats_discrepancy"]["actual"]["critical"] == 0
+
+    def test_llm_under_reports_corrected(self):
+        """When LLM reports fewer issues than actually exist, stats are corrected."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "Looks fine",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "bug",
+                    "file": "app.py",
+                    "line": 10,
+                    "title": "Bug 1",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+                {
+                    "severity": "minor",
+                    "category": "style",
+                    "file": "utils.py",
+                    "line": 5,
+                    "title": "Style issue",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+            ],
+            "stats": {"files_reviewed": 1, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["major"] == 1
+        assert data["stats"]["minor"] == 1
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_stats_discrepancy"]["reported"]["major"] == 0
+        assert data["_stats_discrepancy"]["actual"]["major"] == 1
+
+    def test_zero_findings_stats_zeroed(self):
+        """When there are zero findings, all severity stats should be zero."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "All clean",
+            "findings": [],
+            "stats": {"files_reviewed": 5, "files_with_issues": 2,
+                      "critical": 1, "major": 1, "minor": 1, "info": 1}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["critical"] == 0
+        assert data["stats"]["major"] == 0
+        assert data["stats"]["minor"] == 0
+        assert data["stats"]["info"] == 0
+        assert data["stats"]["files_with_issues"] == 0
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+
+    def test_files_with_issues_corrected(self):
+        """files_with_issues is corrected to match unique files in findings."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issues",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "bug",
+                    "file": "app.py",
+                    "line": 10,
+                    "title": "Bug 1",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+                {
+                    "severity": "minor",
+                    "category": "style",
+                    "file": "app.py",
+                    "line": 20,
+                    "title": "Style",
+                    "description": "desc",
+                    "suggestion": "fix",
+                },
+            ],
+            "stats": {"files_reviewed": 3, "files_with_issues": 3,
+                      "critical": 0, "major": 1, "minor": 1, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["stats"]["files_with_issues"] == 1
+        assert data["_stats_discrepancy"]["discrepancy"] is True
+
+    def test_discrepancy_logged_to_stderr(self):
+        """Stats discrepancy is logged to stderr."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.9, "summary": "Clean",
+            "findings": [],
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 1, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, err = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        assert "stats discrepancy" in err.lower()
