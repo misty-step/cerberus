@@ -77,6 +77,13 @@ def test_action_reads_primary_model_file_when_present() -> None:
     assert "primary-model" in content
 
 
+def test_action_reads_configured_model_file_when_present() -> None:
+    content = ACTION_FILE.read_text()
+
+    assert "CONFIGURED_MODEL_FILE" in content
+    assert "configured-model" in content
+
+
 def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
