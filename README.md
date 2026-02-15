@@ -211,6 +211,8 @@ By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
 Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow.yml` for a full example.
 
+If you set `model`, Cerberus annotates the run with the configured model it would have used vs the override. Prefer leaving `model` unset to stay in sync with evolving per-reviewer defaults.
+
 ```yaml
 matrix:
   include:

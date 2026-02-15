@@ -20,7 +20,7 @@ inputs:
     description: 'Deprecated alias for api-key (OpenRouter API key)'
     required: false
   model:
-    description: 'Model name (optional; defaults to per-reviewer config)'
+    description: 'Model name (optional). If set, overrides per-reviewer config for this review (Cerberus will annotate when overridden).'
     default: ''
   fallback-models:
     description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
@@ -218,13 +218,18 @@ runs:
           else
             primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
           fi
+          CONFIGURED_MODEL_FILE="/tmp/${PERSPECTIVE}-configured-model"
+          configured_model=""
+          if [[ -s "$CONFIGURED_MODEL_FILE" ]]; then
+            configured_model="$(cat "$CONFIGURED_MODEL_FILE")"
+          fi
           fallback_used="false"
           if [[ "$model_used" != "$primary_model" ]]; then
             fallback_used="true"
           fi
           tmp_json="/tmp/${PERSPECTIVE}-verdict.model.json"
-          jq --arg mu "$model_used" --arg pm "$primary_model" --argjson fb "$fallback_used" \
-            '.model_used = $mu | .primary_model = $pm | .fallback_used = $fb' \
+          jq --arg mu "$model_used" --arg pm "$primary_model" --arg cm "$configured_model" --argjson fb "$fallback_used" \
+            '.model_used = $mu | .primary_model = $pm | .configured_model = $cm | .fallback_used = $fb' \
             "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
           mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
         fi
