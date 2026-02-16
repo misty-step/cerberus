@@ -12,7 +12,7 @@ CodeRabbit: $30/seat/mo (GitHub Marketplace). Single-model, single-pass review w
 
 Cerberus differentiators:
 - **Multi-perspective council** — 6 specialized reviewers vs single-pass
-- **Model diversity** — each reviewer can use a different model (Kimi, Gemini, DeepSeek, GLM, Minimax, Qwen)
+- **Model diversity** — each reviewer can use a different model (Kimi, Gemini, GLM, Minimax)
 - **Council verdict with override protocol** — not binary pass/fail
 - **Open core** — OSS GitHub Action (BYOK) + optional managed Cerberus Cloud
 - **Agentic triage** — findings auto-remediated via fix PRs

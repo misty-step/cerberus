@@ -226,8 +226,8 @@ matrix:
     - { reviewer: ATHENA,    perspective: architecture,    model: 'openrouter/z-ai/glm-5' }
     - { reviewer: SENTINEL,  perspective: security,        model: 'openrouter/minimax/minimax-m2.5' }
     - { reviewer: VULCAN,    perspective: performance,     model: 'openrouter/google/gemini-3-flash-preview' }
-    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/qwen/qwen3-max-thinking' }
-    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/qwen/qwen3-max-thinking' }
+    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/moonshotai/kimi-k2.5' }
+    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/google/gemini-3-flash-preview' }
 ```
 
 If a reviewer's primary model fails with a transient error (429, 5xx, network), it retries with exponential backoff then falls through to the `fallback-models` chain before emitting SKIP.

@@ -80,7 +80,7 @@ reviewers:
 
   - name: ARTEMIS
     perspective: maintainability
-    model: "openrouter/qwen/qwen3-max-thinking"  # upgraded: flagship Qwen reasoning model
+    model: "openrouter/moonshotai/kimi-k2.5"  # replaced qwen3-max-thinking (frequent fallbacks)
     description: "Maintainability & DX — Think like the next developer"
     override: pr_author
     tools:
@@ -88,7 +88,7 @@ reviewers:
 
   - name: CASSANDRA
     perspective: testing
-    model: "openrouter/qwen/qwen3-max-thinking"  # rotated from qwen3-coder-next (empty output 4x)
+    model: "openrouter/google/gemini-3-flash-preview"  # replaced qwen3-max-thinking (frequent fallbacks)
     description: "Testing & Coverage — See what will break"
     override: pr_author
     tools:

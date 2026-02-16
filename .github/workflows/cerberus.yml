@@ -63,8 +63,8 @@ jobs:
           - { reviewer: ATHENA,    perspective: architecture,     model: 'openrouter/z-ai/glm-5' }
           - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/minimax/minimax-m2.5' }
           - { reviewer: VULCAN,    perspective: performance,      model: 'openrouter/google/gemini-3-flash-preview' }
-          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/qwen/qwen3-max-thinking' }
-          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/qwen/qwen3-max-thinking' }
+          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/moonshotai/kimi-k2.5' }
+          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/google/gemini-3-flash-preview' }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
