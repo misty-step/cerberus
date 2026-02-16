@@ -239,6 +239,59 @@ class TestParseErrors:
         assert data["perspective"] == "security"
 
 
+class TestParseFailureMetadata:
+    def test_parse_failure_metadata_is_preserved_in_summary(self):
+        """Recovery metadata is surfaced when parse retries were attempted."""
+        perspective = "PARSE_META"
+        models_file = Path("/tmp") / f"{perspective}-parse-failure-models.txt"
+        retries_file = Path("/tmp") / f"{perspective}-parse-failure-retries.txt"
+
+        models_file.write_text("gpt-4o-mini\ngpt-4.1\n")
+        retries_file.write_text("2")
+
+        try:
+            code, out, _ = run_parse(
+                "Reviewer output was not structured.",
+                env_extra={
+                    "PERSPECTIVE": perspective,
+                    "REVIEWER_NAME": "VULCAN",
+                },
+            )
+        finally:
+            models_file.unlink(missing_ok=True)
+            retries_file.unlink(missing_ok=True)
+
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["confidence"] == 0.0
+        assert "2 parse-recovery retries attempted" in data["summary"]
+        assert "Models tried: gpt-4o-mini, gpt-4.1" in data["summary"]
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["category"] == "parse-failure"
+        assert finding["severity"] == "info"
+        assert "structured JSON block after retries" in finding["description"]
+
+
+class TestParseRecoveryAndMalformedInput:
+    def test_malformed_or_partial_json_is_skip(self):
+        """Malformed and truncated JSON both produce non-blocking SKIP verdicts."""
+        cases = [
+            "```json\n{invalid json}\n```",
+            "```json\n{\"verdict\": \"PASS\",",
+        ]
+        for input_text in cases:
+            code, out, err = run_parse(input_text)
+            assert code == 0
+            data = json.loads(out)
+            assert data["verdict"] == "SKIP"
+            assert data["confidence"] == 0.0
+            assert data["summary"].startswith("Review output could not be parsed:")
+            assert len(data["findings"]) == 0
+            assert "invalid json" in err.lower() or "unexpected end of json input" in err.lower() or "json" in err.lower()
+
+
 class TestParseArgs:
     def test_reviewer_flag_space(self, tmp_path):
         """--reviewer APOLLO sets reviewer name in fallback."""
