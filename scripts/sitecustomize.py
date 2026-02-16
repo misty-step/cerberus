@@ -21,11 +21,15 @@ def _maybe_start_coverage() -> None:
         return
     try:
         import coverage
-    except Exception:
+    except ImportError:
         return
 
-    coverage.process_startup()
+    try:
+        coverage.process_startup()
+    except Exception:
+        # Never break the subprocess if coverage is misconfigured.
+        # Our smoke test should catch regressions when coverage is expected.
+        return
 
 
 _maybe_start_coverage()
-
