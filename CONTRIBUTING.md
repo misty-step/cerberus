@@ -137,6 +137,8 @@ CI enforces a minimum coverage threshold (see `.coveragerc`). Run locally:
 COVERAGE=1 ./tests/run-tests.sh
 ```
 
+This wrapper exports `COVERAGE_PROCESS_START`/`COVERAGE_FILE` so Python subprocess script runs count toward coverage.
+
 ### Security Regression Tests (#56)
 
 ```bash

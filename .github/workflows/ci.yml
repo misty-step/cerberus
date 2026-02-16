@@ -53,6 +53,9 @@ jobs:
         run: pip install pytest pytest-cov pyyaml
 
       - name: Run tests with coverage
+        env:
+          COVERAGE_PROCESS_START: ${{ github.workspace }}/.coveragerc
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage
         run: python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html --cov-report=xml
 
       - name: Upload coverage artifacts
