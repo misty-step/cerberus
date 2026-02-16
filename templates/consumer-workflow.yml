@@ -16,16 +16,54 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
+  draft-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.check.outputs.is_draft }}
+    steps:
+      - name: Check PR draft status
+        id: check
+        run: |
+          is_draft="${{ github.event.pull_request.draft }}"
+          echo "is_draft=$is_draft" >> $GITHUB_OUTPUT
+          
+          if [ "$is_draft" = "true" ]; then
+            echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
+            # Post a comment explaining the skip - use EOF to preserve formatting
+            comment_body=$(cat <<'EOFCOMMENT'
+          ## 🏛️ Cerberus Council: Draft PR Detected
+
+          This PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**.
+
+          ### What's Next
+          1. Click **Ready for review** in the GitHub PR UI when your changes are complete
+          2. Cerberus will then run the full council review
+
+          ---
+          *Cerberus Council | Skip reason: draft PR*
+          EOFCOMMENT
+            )
+            
+            # Use gh to post the comment
+            gh pr comment ${{ github.event.pull_request.number }} --body "$comment_body" || echo "Failed to post draft PR comment"
+          fi
+
   # Lightweight job that runs for ALL PRs (including forks) to provide feedback
   # This job only uses read-only permissions and provides context about fork PR limitations
   triage:
+    needs: draft-check
     permissions:
       contents: read
       pull-requests: read
@@ -44,8 +82,8 @@ jobs:
 
   # Preflight: validate workflow structure (permissions, required inputs, etc)
   validate:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    needs: triage
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
+    needs: [triage, draft-check]
     permissions:
       contents: read
     name: "Workflow Validate"
@@ -58,8 +96,8 @@ jobs:
   review:
     # Require same-repo PR (not a fork) OR explicitly allow fork with read-only
     # Using full_name check is more precise than fork flag
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    needs: [triage, validate]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
+    needs: [triage, validate, draft-check]
     permissions:
       contents: read
       pull-requests: read
@@ -96,9 +134,9 @@ jobs:
 
   verdict:
     name: "Council Verdict"
-    needs: [triage, review]
+    needs: [triage, review, draft-check]
     if: always()
-    # Only run verdict if there are actual reviews (not for skipped fork PRs)
+    # Only run verdict if there are actual reviews (not for skipped fork PRs or draft PRs)
     # This prevents confusion when review jobs are skipped
     permissions:
       contents: read
@@ -111,6 +149,10 @@ jobs:
           # If review jobs were skipped (fork PR), skip verdict too
           if [ "${{ needs.triage.outputs.is_fork }}" = "true" ]; then
             echo "Skipping verdict for fork PR - full review unavailable"
+            echo "run_verdict=false" >> $GITHUB_OUTPUT
+          # If PR is a draft, skip verdict too
+          elif [ "${{ needs.draft-check.outputs.is_draft }}" = "true" ]; then
+            echo "Skipping verdict for draft PR - review will run when ready"
             echo "run_verdict=false" >> $GITHUB_OUTPUT
           else
             echo "run_verdict=true" >> $GITHUB_OUTPUT

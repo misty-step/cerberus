@@ -111,3 +111,15 @@ def test_invalid_yaml_is_error(tmp_path: Path, bad_yaml: str):
     findings, _ = validate_workflow_file(wf)
     assert _errors(findings) != []
 
+
+def test_minimal_template_includes_ready_for_review_trigger():
+    """Test that minimal workflow template includes ready_for_review trigger."""
+    content = (ROOT / "templates/consumer-workflow-minimal.yml").read_text()
+    assert "ready_for_review" in content
+
+
+def test_minimal_template_has_draft_check_job():
+    """Test that minimal workflow template has draft-check job."""
+    content = (ROOT / "templates/consumer-workflow-minimal.yml").read_text()
+    assert "draft-check" in content
+
