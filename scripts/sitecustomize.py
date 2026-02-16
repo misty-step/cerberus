@@ -16,20 +16,19 @@ How it works:
 import os
 
 
-def _maybe_start_coverage() -> None:
-    if not os.environ.get("COVERAGE_PROCESS_START"):
-        return
+_CERBERUS_COVERAGE_STARTED = False
+
+if os.environ.get("COVERAGE_PROCESS_START"):
     try:
         import coverage
     except ImportError:
-        return
-
-    try:
-        coverage.process_startup()
-    except Exception:
-        # Never break the subprocess if coverage is misconfigured.
-        # Our smoke test should catch regressions when coverage is expected.
-        return
-
-
-_maybe_start_coverage()
+        pass
+    else:
+        try:
+            coverage.process_startup()
+        except Exception:  # noqa: BLE001
+            # Never break the subprocess if coverage is misconfigured.
+            # Our smoke test should catch regressions when coverage is expected.
+            pass
+        else:
+            _CERBERUS_COVERAGE_STARTED = True

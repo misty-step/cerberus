@@ -3,7 +3,6 @@ source = scripts
     matrix
 omit =
     scripts/lib/__init__.py
-    scripts/sitecustomize.py
     tests/*
     */test_*.py
 branch = true

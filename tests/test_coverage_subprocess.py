@@ -4,7 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import coverage
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -16,6 +15,7 @@ def test_subprocess_script_contributes_coverage(tmp_path: Path) -> None:
     config_file = os.environ.get("COVERAGE_PROCESS_START")
     if not config_file:
         pytest.skip("requires COVERAGE_PROCESS_START (run tests with coverage enabled)")
+    coverage = pytest.importorskip("coverage")
 
     verdict_path = tmp_path / "verdict.json"
     out_path = tmp_path / "findings.md"

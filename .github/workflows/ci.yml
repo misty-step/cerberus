@@ -57,10 +57,13 @@ jobs:
           COVERAGE_PROCESS_START: ${{ github.workspace }}/.coveragerc
           COVERAGE_FILE: ${{ github.workspace }}/.coverage
         run: |
-          python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html --cov-report=xml
+          python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing
           if ls .coverage.* >/dev/null 2>&1; then
             python3 -m coverage combine
           fi
+          python3 -m coverage report --show-missing
+          python3 -m coverage xml
+          python3 -m coverage html
 
       - name: Upload coverage artifacts
         if: always()
