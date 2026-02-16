@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel OpenCode CLI reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a council action aggregates their verdicts into a single merge-gating check.
 
+Repo scope: this repository is the OSS BYOK GitHub Actions distribution. Cerberus Cloud (managed GitHub App) is planned as a separate repo/product (see `docs/adr/002-oss-core-and-cerberus-cloud.md`).
+
 ## Architecture
 
 ```text
