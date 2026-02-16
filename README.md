@@ -246,4 +246,4 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
 - Permissions: `pull-requests: read` on review jobs, `pull-requests: write` on verdict job only
 
 ## License
-MIT
+Apache-2.0 (see [LICENSE](LICENSE))
