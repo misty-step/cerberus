@@ -159,7 +159,8 @@ reviewer_meta="$(
 )"
 reviewer_name=""
 reviewer_model_raw=""
-IFS=$'\t' read -r reviewer_name reviewer_model_raw _ <<< "${reviewer_meta}"
+reviewer_desc=""
+IFS=$'\t' read -r reviewer_name reviewer_model_raw reviewer_desc <<< "${reviewer_meta}"
 if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2
@@ -197,6 +198,9 @@ fi
 
 # Persist reviewer name for downstream steps (parse, council).
 printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
+if [[ -n "${reviewer_desc:-}" ]]; then
+  printf '%s' "$reviewer_desc" > "/tmp/${perspective}-reviewer-desc"
+fi
 
 diff_file=""
 if [[ -n "${GH_DIFF_FILE:-}" && -f "${GH_DIFF_FILE:-}" ]]; then

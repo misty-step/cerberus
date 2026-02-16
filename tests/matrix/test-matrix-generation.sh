@@ -26,7 +26,7 @@ actual_matrix=$(echo "$actual_output" | sed -n '1p')
 actual_count=$(echo "$actual_output" | sed -n '2p')
 actual_names=$(echo "$actual_output" | sed -n '3p')
 
-expected_matrix='{"include": [{"reviewer": "TEST1", "perspective": "correctness"}, {"reviewer": "TEST2", "perspective": "security"}]}'
+expected_matrix='{"include": [{"reviewer": "TEST1", "perspective": "correctness", "reviewer_label": "Correctness", "reviewer_codename": "Test1"}, {"reviewer": "TEST2", "perspective": "security", "reviewer_label": "Security", "reviewer_codename": "Test2"}]}'
 expected_count="2"
 expected_names="TEST1,TEST2"
 

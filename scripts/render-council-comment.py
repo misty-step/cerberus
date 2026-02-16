@@ -86,6 +86,51 @@ def perspective_name(reviewer: dict) -> str:
     return str(perspective or "unknown")
 
 
+_CODENAME_RE = re.compile(r"^[A-Z0-9_]+$")
+
+
+def friendly_codename(value: object) -> str:
+    raw = str(value or "").strip() or "unknown"
+    # Config uses ALLCAPS codenames; render as Title Case for readability.
+    if raw.isupper() and _CODENAME_RE.match(raw):
+        return raw.title()
+    return raw
+
+
+def split_reviewer_description(value: object) -> tuple[str, str]:
+    """Split 'Role — Tagline' into (role, tagline)."""
+    text = str(value or "").strip()
+    if not text:
+        return ("", "")
+    if "—" in text:
+        left, right = text.split("—", 1)
+        return (left.strip(), right.strip())
+    if " - " in text:
+        left, right = text.split(" - ", 1)
+        return (left.strip(), right.strip())
+    return (text, "")
+
+
+def reviewer_label(reviewer: dict) -> str:
+    role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
+    if role:
+        return role
+    perspective = perspective_name(reviewer)
+    if perspective and perspective != "unknown":
+        return perspective.replace("_", " ").title()
+    return friendly_codename(reviewer_name(reviewer))
+
+
+def reviewer_overview_title(reviewer: dict) -> str:
+    label = reviewer_label(reviewer)
+    code = friendly_codename(reviewer_name(reviewer))
+    if not code or code == "unknown":
+        return f"**{label}**"
+    if label == code:
+        return f"**{label}**"
+    return f"**{label}** ({code})"
+
+
 def findings_for(reviewer: dict) -> list[dict]:
     findings = reviewer.get("findings")
     if isinstance(findings, list):
@@ -147,7 +192,7 @@ def summarize_reviewers(reviewers: list[dict]) -> str:
         "SKIP": [],
     }
     for reviewer in reviewers:
-        groups[normalize_verdict(reviewer.get("verdict"))].append(reviewer_name(reviewer))
+        groups[normalize_verdict(reviewer.get("verdict"))].append(reviewer_label(reviewer))
 
     parts = [f"{len(groups['PASS'])}/{total} reviewers passed"]
     if groups["FAIL"]:
@@ -301,15 +346,14 @@ def format_reviewer_overview_lines(reviewers: list[dict]) -> list[str]:
     for reviewer in reviewers:
         verdict = normalize_verdict(reviewer.get("verdict"))
         icon = VERDICT_ICON[verdict]
-        name = reviewer_name(reviewer)
-        perspective = perspective_name(reviewer)
+        title = reviewer_overview_title(reviewer)
         runtime = format_runtime(reviewer.get("runtime_seconds"))
         confidence = format_confidence(reviewer.get("confidence"))
         model_label = format_model(reviewer)
         finding_count = len(findings_for(reviewer))
 
         parts = [
-            f"{icon} **{name}** ({perspective})",
+            f"{icon} {title}",
             f"`{verdict}`",
             f"{finding_count} findings",
             f"conf `{confidence}`",
@@ -333,7 +377,7 @@ def has_raw_output(reviewers: list[dict]) -> bool:
 def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple[str, dict]]:
     items: list[tuple[str, dict]] = []
     for reviewer in reviewers:
-        rname = reviewer_name(reviewer)
+        rname = reviewer_label(reviewer)
         for finding in findings_for(reviewer):
             items.append((rname, finding))
 
@@ -353,7 +397,7 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
     """Aggregate duplicate findings across reviewers into 'issues' keyed by (file,line,category,title)."""
     grouped: dict[tuple[str, int, str, str], dict] = {}
     for reviewer in reviewers:
-        rname = reviewer_name(reviewer)
+        rname = reviewer_label(reviewer)
         for finding in findings_for(reviewer):
             file = str(finding.get("file") or "").strip()
             if not file or file.upper() == "N/A":
@@ -435,7 +479,7 @@ def format_fix_order_lines(reviewers: list[dict], *, max_items: int) -> list[str
 def collect_hotspots(reviewers: list[dict]) -> list[dict]:
     by_file: dict[str, dict] = {}
     for reviewer in reviewers:
-        rname = reviewer_name(reviewer)
+        rname = reviewer_label(reviewer)
         for finding in findings_for(reviewer):
             file = str(finding.get("file") or "").strip()
             if not file or file.upper() == "N/A":
@@ -532,20 +576,27 @@ def format_reviewer_details_block(reviewers: list[dict], *, max_findings: int) -
     for reviewer in reviewers:
         verdict = normalize_verdict(reviewer.get("verdict"))
         icon = VERDICT_ICON[verdict]
-        name = reviewer_name(reviewer)
-        perspective = perspective_name(reviewer)
+        label = reviewer_label(reviewer)
+        code = friendly_codename(reviewer_name(reviewer))
+        _, tagline = split_reviewer_description(reviewer.get("reviewer_description"))
         runtime = format_runtime(reviewer.get("runtime_seconds"))
         confidence = format_confidence(reviewer.get("confidence"))
         model_label = format_model(reviewer)
         findings = findings_for(reviewer)
         summary = truncate(reviewer.get("summary"), max_len=2000) or "No summary provided."
 
-        lines.append(f"#### {icon} {name} ({perspective}) — {verdict}")
+        if code and code != "unknown" and code != label:
+            header = f"{label} ({code})"
+        else:
+            header = label
+        lines.append(f"#### {icon} {header} — {verdict}")
         lines.append("")
         lines.append(f"- Confidence: `{confidence}`")
         if model_label:
             lines.append(f"- Model: {model_label}")
         lines.append(f"- Runtime: `{runtime}`")
+        if tagline:
+            lines.append(f"- Focus: {tagline}")
         lines.append(f"- Summary: {summary}")
         lines.append("")
 

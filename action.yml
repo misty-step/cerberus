@@ -237,6 +237,15 @@ runs:
             "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
           mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
         fi
+
+        # Inject reviewer description (human-friendly label) from run-reviewer.sh.
+        REVIEWER_DESC_FILE="/tmp/${PERSPECTIVE}-reviewer-desc"
+        if [[ -s "$REVIEWER_DESC_FILE" ]]; then
+          reviewer_desc="$(cat "$REVIEWER_DESC_FILE")"
+          tmp_json="/tmp/${PERSPECTIVE}-verdict.desc.json"
+          jq --arg rd "$reviewer_desc" '.reviewer_description = $rd' "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+          mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
+        fi
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
         if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then
           echo "::error::Invalid verdict value from parser: $VERDICT"

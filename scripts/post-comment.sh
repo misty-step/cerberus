@@ -117,8 +117,12 @@ fi
 sha_short="${head_sha:0:7}"
 
 comment_file="/tmp/${perspective}-comment.md"
+reviewer_code="$(
+  python3 -c 'import re,sys; s=sys.argv[1].strip(); print(s.title() if re.fullmatch(r"[A-Z0-9_]+", s) else s)' \
+    "$reviewer_name"
+)"
 {
-  printf '%s\n' "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
+  printf '%s\n' "## ${verdict_emoji} ${reviewer_desc} (${reviewer_code})"
   printf '%s\n' "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}${model_display}"
   printf '\n'
   if [[ -n "$skip_banner" ]]; then

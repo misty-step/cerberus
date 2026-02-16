@@ -63,17 +63,17 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    name: "${{ matrix.reviewer }}"
+    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - { reviewer: APOLLO,    perspective: correctness }
-          - { reviewer: ATHENA,    perspective: architecture }
-          - { reviewer: SENTINEL,  perspective: security }
-          - { reviewer: VULCAN,    perspective: performance }
-          - { reviewer: ARTEMIS,   perspective: maintainability }
-          - { reviewer: CASSANDRA, perspective: testing }
+          - { reviewer: APOLLO,    perspective: correctness,      reviewer_label: "Correctness & Logic" }
+          - { reviewer: ATHENA,    perspective: architecture,     reviewer_label: "Architecture & Design" }
+          - { reviewer: SENTINEL,  perspective: security,         reviewer_label: "Security & Threat Model" }
+          - { reviewer: VULCAN,    perspective: performance,      reviewer_label: "Performance & Scalability" }
+          - { reviewer: ARTEMIS,   perspective: maintainability,  reviewer_label: "Maintainability & DX" }
+          - { reviewer: CASSANDRA, perspective: testing,          reviewer_label: "Testing & Coverage" }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4

@@ -20,16 +20,16 @@ concurrency:
 jobs:
   review:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    name: "${{ matrix.reviewer }}"
+    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - { reviewer: APOLLO, perspective: correctness }
-          - { reviewer: ATHENA, perspective: architecture }
-          - { reviewer: SENTINEL, perspective: security }
-          - { reviewer: VULCAN, perspective: performance }
-          - { reviewer: ARTEMIS, perspective: maintainability }
+          - { reviewer: APOLLO, perspective: correctness,      reviewer_label: "Correctness & Logic" }
+          - { reviewer: ATHENA, perspective: architecture,     reviewer_label: "Architecture & Design" }
+          - { reviewer: SENTINEL, perspective: security,        reviewer_label: "Security & Threat Model" }
+          - { reviewer: VULCAN, perspective: performance,       reviewer_label: "Performance & Scalability" }
+          - { reviewer: ARTEMIS, perspective: maintainability,  reviewer_label: "Maintainability & DX" }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4

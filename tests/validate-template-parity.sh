@@ -31,7 +31,7 @@ print(','.join(sorted(result)))
 # Extract reviewers from consumer-workflow.yml
 template_reviewers=$(grep -A 20 'matrix:' templates/consumer-workflow.yml | \
     grep -E '^\s+- \{ reviewer:' | \
-    sed -E 's/.*reviewer: ([^,]+),.*perspective: ([^}]+).*/\1:\2/' | \
+    sed -E 's/.*reviewer: ([^,}]+).*perspective: ([^,}]+).*/\1:\2/' | \
     sed 's/[[:space:]]*$//' | \
     sort | \
     tr '\n' ',' | \

@@ -56,6 +56,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
             {
                 "reviewer": "VULCAN",
                 "perspective": "performance",
+                "reviewer_description": "Performance & Scalability — Think at runtime.",
                 "verdict": "FAIL",
                 "confidence": 0.82,
                 "summary": "N+1 query in hot path.",
@@ -76,6 +77,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
             {
                 "reviewer": "APOLLO",
                 "perspective": "correctness",
+                "reviewer_description": "Correctness & Logic — Find the bug.",
                 "verdict": "PASS",
                 "confidence": 0.93,
                 "summary": "No correctness regressions.",
@@ -93,11 +95,11 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert code == 0, err
     assert "<!-- cerberus:council -->" in body
     assert "## ❌ Council Verdict: FAIL" in body
-    assert "**Summary:** 1/2 reviewers passed. 1 failed (VULCAN)." in body
+    assert "**Summary:** 1/2 reviewers passed. 1 failed (Performance & Scalability)." in body
     assert "**Review Scope:** 7 files changed, +120 / -44 lines" in body
     assert "### Reviewer Overview" in body
     assert "<summary>(click to expand)</summary>" in body
-    assert "VULCAN" in body
+    assert "Vulcan" in body
     assert "runtime `1m 5s`" in body
     assert "Reviewer details (click to expand)" in body
     assert "blob/abcdef1234567890/src/service.py#L42" in body
@@ -217,6 +219,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
             {
                 "reviewer": "SENTINEL",
                 "perspective": "security",
+                "reviewer_description": "Security & Threat Model — Think like an attacker.",
                 "verdict": "SKIP",
                 "confidence": 0.0,
                 "summary": "Review skipped due to API credits depleted.",
@@ -237,6 +240,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
             {
                 "reviewer": "ATHENA",
                 "perspective": "architecture",
+                "reviewer_description": "Architecture & Design — Zoom out.",
                 "verdict": "WARN",
                 "confidence": 0.75,
                 "summary": "One major design issue.",
@@ -253,7 +257,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "API credits depleted for one or more reviewers" in body
-    assert "**Summary:** 0/2 reviewers passed. 1 warned (ATHENA). 1 skipped (SENTINEL)." in body
+    assert "**Summary:** 0/2 reviewers passed. 1 warned (Architecture & Design). 1 skipped (Security & Threat Model)." in body
     assert "[#12345](https://github.com/misty-step/cerberus/actions/runs/12345)" in body
 
 
