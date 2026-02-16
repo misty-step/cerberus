@@ -5,14 +5,14 @@ Multi-agent AI code review council for GitHub PRs.
 Six specialized reviewers analyze every pull request in parallel, then a council verdict gates merge.
 
 ## Reviewers
-| Name | Perspective | Focus |
-|------|------------|-------|
-| APOLLO | correctness | Logic bugs, edge cases, type mismatches |
-| ATHENA | architecture | Design patterns, module boundaries, coupling |
-| SENTINEL | security | Injection, auth flaws, data exposure |
-| VULCAN | performance | Runtime efficiency, N+1 queries, scalability |
-| ARTEMIS | maintainability | Readability, naming, future maintenance cost |
-| CASSANDRA | testing | Test coverage gaps, regression risk |
+| Role | Codename | Focus |
+|------|----------|-------|
+| Correctness & Logic | Apollo | Logic bugs, edge cases, type mismatches |
+| Architecture & Design | Athena | Design patterns, module boundaries, coupling |
+| Security & Threat Model | Sentinel | Injection, auth flaws, data exposure |
+| Performance & Scalability | Vulcan | Runtime efficiency, N+1 queries, scalability |
+| Maintainability & DX | Artemis | Readability, naming, future maintenance cost |
+| Testing & Coverage | Cassandra | Test coverage gaps, regression risk |
 
 ## Quick Start
 1. Add one secret to your repository (Settings -> Secrets -> Actions):
@@ -56,7 +56,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    name: "${{ matrix.reviewer }}"
+    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
@@ -88,6 +88,12 @@ jobs:
 Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml` (optional) instead of hand-editing YAML.
 
 3. Open a pull request. That's it.
+
+## Docs
+
+- OSS vs Cloud: `docs/OSS-VS-CLOUD.md`
+- Troubleshooting: `docs/TROUBLESHOOTING.md`
+- Architecture: `docs/ARCHITECTURE.md`
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job

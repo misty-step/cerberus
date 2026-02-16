@@ -8,15 +8,20 @@ Replace CodeRabbit. Ship a GitHub-native platform where AI agents review code, f
 
 ## Competitive Position
 
-CodeRabbit: $24/seat/mo. Single-model, single-pass review with inline comments and conversational follow-up.
+CodeRabbit: $30/seat/mo (GitHub Marketplace). Single-model, single-pass review with inline comments and conversational follow-up.
 
 Cerberus differentiators:
 - **Multi-perspective council** — 6 specialized reviewers vs single-pass
 - **Model diversity** — each reviewer can use a different model (Kimi, Gemini, DeepSeek, GLM, Minimax, Qwen)
 - **Council verdict with override protocol** — not binary pass/fail
-- **Open architecture** — GitHub Action, not SaaS lock-in
+- **Open core** — OSS GitHub Action (BYOK) + optional managed Cerberus Cloud
 - **Agentic triage** — findings auto-remediated via fix PRs
 - **Observability modules** — health checks, error tracking, status pages (future)
+
+## Packaging
+
+- **OSS**: GitHub Actions (bring your own model key)
+- **Cloud**: GitHub App + GitHub Marketplace billing (managed keys, quotas, org controls)
 
 ## Target User
 Engineering teams (2-50 devs) who want automated code review that catches what humans miss, without drowning in noise. Willing to pay for quality signal.
@@ -47,5 +52,5 @@ Each module triggers auto-triage on failures.
 - **Zero-config defaults, deep config when needed**
 
 ---
-*Last updated: 2026-02-12*
-*Updated during: /groom session*
+*Last updated: 2026-02-16*
+*Updated during: productization discussion*

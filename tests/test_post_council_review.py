@@ -21,6 +21,8 @@ def test_collect_inline_findings_filters_dedupes_and_merges() -> None:
         "reviewers": [
             {
                 "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "reviewer_description": "Correctness & Logic — Find the bug",
                 "findings": [
                     {
                         "severity": "minor",
@@ -46,6 +48,8 @@ def test_collect_inline_findings_filters_dedupes_and_merges() -> None:
             },
             {
                 "reviewer": "SENTINEL",
+                "perspective": "security",
+                "reviewer_description": "Security & Threat Model — Think like an attacker",
                 "findings": [
                     {
                         "severity": "critical",
@@ -78,7 +82,7 @@ def test_collect_inline_findings_filters_dedupes_and_merges() -> None:
     assert finding["file"] == "x.py"
     assert finding["line"] == 10
     assert finding["severity"] == "critical"  # worst wins
-    assert finding["reviewers"] == ["APOLLO", "SENTINEL"]
+    assert finding["reviewers"] == ["Correctness & Logic", "Security & Threat Model"]
     assert finding["description"] == "this description is longer"
     assert finding["suggestion"] == "this suggestion is longer too"
     assert finding["evidence"] == "evidence line 1\nline 2"
@@ -103,4 +107,3 @@ def test_render_inline_comment_includes_collapsed_evidence() -> None:
     assert "<summary>Evidence</summary>" in body
     assert "```text" in body
     assert "if sig == expected: ok()" in body
-

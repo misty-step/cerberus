@@ -34,6 +34,27 @@ INLINE_SEVERITIES = {"critical", "major"}
 _SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
 
 
+def split_reviewer_description(value: object) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if not text:
+        return ("", "")
+    if "—" in text:
+        left, right = text.split("—", 1)
+        return (left.strip(), right.strip())
+    if " - " in text:
+        left, right = text.split(" - ", 1)
+        return (left.strip(), right.strip())
+    return (text, "")
+
+
+def reviewer_label(reviewer: dict) -> str:
+    role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
+    if role:
+        return role
+    perspective = str(reviewer.get("perspective") or "").strip()
+    return perspective.replace("_", " ").title() if perspective else "unknown"
+
+
 def fail(message: str, code: int = 2) -> None:
     print(f"post-council-review: {message}", file=sys.stderr)
     sys.exit(code)
@@ -93,7 +114,7 @@ def collect_inline_findings(council: dict) -> list[dict]:
     for reviewer in reviewers:
         if not isinstance(reviewer, dict):
             continue
-        rname = str(reviewer.get("reviewer") or reviewer.get("perspective") or "unknown")
+        rname = reviewer_label(reviewer)
         findings = reviewer.get("findings")
         if not isinstance(findings, list):
             continue
