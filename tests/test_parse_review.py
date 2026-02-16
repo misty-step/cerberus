@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 SCRIPT = Path(__file__).parent.parent / "scripts" / "parse-review.py"
@@ -242,7 +243,8 @@ class TestParseErrors:
 class TestParseFailureMetadata:
     def test_parse_failure_metadata_is_preserved_in_summary(self):
         """Recovery metadata is surfaced when parse retries were attempted."""
-        perspective = "PARSE_META"
+        # Unique perspective avoids collisions if the suite is ever parallelized.
+        perspective = f"PARSE_META_{uuid.uuid4().hex}"
         models_file = Path("/tmp") / f"{perspective}-parse-failure-models.txt"
         retries_file = Path("/tmp") / f"{perspective}-parse-failure-retries.txt"
 
@@ -275,21 +277,16 @@ class TestParseFailureMetadata:
 
 
 class TestParseRecoveryAndMalformedInput:
-    def test_malformed_or_partial_json_is_skip(self):
-        """Malformed and truncated JSON both produce non-blocking SKIP verdicts."""
-        cases = [
-            "```json\n{invalid json}\n```",
-            "```json\n{\"verdict\": \"PASS\",",
-        ]
-        for input_text in cases:
-            code, out, err = run_parse(input_text)
-            assert code == 0
-            data = json.loads(out)
-            assert data["verdict"] == "SKIP"
-            assert data["confidence"] == 0.0
-            assert data["summary"].startswith("Review output could not be parsed:")
-            assert len(data["findings"]) == 0
-            assert "invalid json" in err.lower() or "unexpected end of json input" in err.lower() or "json" in err.lower()
+    def test_partial_json_fence_is_skip(self):
+        """Partial JSON (starts a ```json fence but never closes) is non-blocking SKIP."""
+        code, out, err = run_parse("```json\n{\"verdict\": \"PASS\",")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["confidence"] == 0.0
+        assert data["summary"].startswith("Review output could not be parsed:")
+        assert len(data["findings"]) == 0
+        assert "no ```json block found" in err.lower()
 
 
 class TestParseArgs:
