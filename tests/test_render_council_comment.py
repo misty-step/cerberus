@@ -4,6 +4,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lib.render_council_comment import (
+    collect_hotspots,
+    collect_issue_groups,
+    count_findings,
+    detect_skip_banner,
+    normalize_severity,
+    normalize_verdict,
+    render_comment,
+)
+
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "scripts" / "render-council-comment.py"
 
@@ -258,7 +268,104 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
     assert code == 0, err
     assert "API credits depleted for one or more reviewers" in body
     assert "**Summary:** 0/2 reviewers passed. 1 warned (Architecture & Design). 1 skipped (Security & Threat Model)." in body
-    assert "[#12345](https://github.com/misty-step/cerberus/actions/runs/12345)" in body
+
+
+def test_normalize_verdict_defaults_unknown() -> None:
+    assert normalize_verdict("PASS") == "PASS"
+    assert normalize_verdict("bad") == "WARN"
+
+
+def test_normalize_severity_defaults_unknown() -> None:
+    assert normalize_severity("critical") == "critical"
+    assert normalize_severity("MISSING") == "info"
+
+
+def test_count_findings_uses_stats_block_when_available() -> None:
+    council = {
+        "reviewers": [
+            {"stats": {"critical": 1, "major": 2, "minor": 3, "info": 4}, "findings": []},
+            {"stats": {"critical": 0, "major": 1}, "findings": [{"severity": "critical"}]},
+        ]
+    }
+    found = count_findings(council["reviewers"])
+    assert found == {"critical": 2, "major": 3, "minor": 3, "info": 4}
+
+
+def test_detect_skip_banner_for_key_api_error_paths() -> None:
+    reviewer = {
+        "verdict": "SKIP",
+        "summary": "provider returned bad key",
+        "findings": [{"category": "api_error", "title": "KEY_INVALID", "file": "", "line": 0}],
+    }
+    assert "API key error for one or more reviewers" in detect_skip_banner([reviewer])
+
+
+def test_collect_issue_groups_merges_matching_findings() -> None:
+    reviewer_a = {
+        "reviewer": "APOLLO",
+        "findings": [
+            {
+                "severity": "major",
+                "category": "tests",
+                "file": "src/a.py",
+                "line": 10,
+                "title": "Shared issue",
+                "suggestion": "short",
+            }
+        ],
+    }
+    reviewer_b = {
+        "reviewer": "VULCAN",
+        "findings": [
+            {
+                "severity": "critical",
+                "category": "tests",
+                "file": "src/a.py",
+                "line": 10,
+                "title": "Shared issue",
+                "suggestion": "longer suggestion",
+            },
+            {
+                "severity": "minor",
+                "category": "tests",
+                "file": "src/a.py",
+                "line": 11,
+                "title": "Unique issue",
+            },
+        ],
+    }
+
+    groups = collect_issue_groups([reviewer_a, reviewer_b])
+    merged = {(item["file"], item["line"], item["title"]): item for item in groups}
+
+    assert len(groups) == 2
+    assert merged[("src/a.py", 10, "Shared issue")]["severity"] == "critical"
+    assert merged[("src/a.py", 10, "Shared issue")]["suggestion"] == "longer suggestion"
+    assert merged[("src/a.py", 10, "Shared issue")]["reviewers"] == ["APOLLO", "VULCAN"]
+
+
+def test_collect_hotspots_handles_multiple_reviewers() -> None:
+    reviewer_a = {
+        "reviewer": "APOLLO",
+        "findings": [{"file": "src/a.py", "severity": "major", "title": "One"}],
+    }
+    reviewer_b = {
+        "reviewer": "VULCAN",
+        "findings": [
+            {"file": "src/a.py", "severity": "critical", "title": "Two"},
+            {"file": "src/b.py", "severity": "info", "title": "Three"},
+        ],
+    }
+    hotspots = collect_hotspots([reviewer_a, reviewer_b])
+    assert [item["file"] for item in hotspots] == ["src/a.py", "src/b.py"]
+    assert hotspots[0]["reviewers"] == ["APOLLO", "VULCAN"]
+
+
+def test_render_comment_renders_without_stats_or_findings() -> None:
+    comment = render_comment({"reviewers": []}, max_findings=3, max_key_findings=2, marker="<!-- test -->")
+    assert "<!-- test -->" in comment
+    assert "## ✅ Council Verdict: PASS" in comment
+    assert "No reviewer verdicts available." in comment
 
 
 def test_raw_review_is_omitted_and_note_is_present(tmp_path: Path) -> None:

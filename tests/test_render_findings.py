@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lib.render_findings import render_findings
+
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "scripts" / "render-findings.py"
 
@@ -99,3 +101,25 @@ def test_renders_blob_links_when_context_provided(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "[`src/app.py:12`](https://github.com/misty-step/cerberus/blob/deadbeef/src/app.py#L12)" in body
+
+
+def test_render_findings_renders_markdown_with_defaults() -> None:
+    lines = render_findings(
+        [
+            {
+                "severity": "minor",
+                "file": "src/app.py",
+                "line": 12,
+                "title": "Example",
+                "description": "desc",
+                "suggestion": "fix it",
+            }
+        ],
+        server="https://github.com",
+        repo="misty-step/cerberus",
+        sha="deadbeef",
+    )
+
+    assert "[`src/app.py:12`](https://github.com/misty-step/cerberus/blob/deadbeef/src/app.py#L12)" in lines[0]
+    assert any("Description: desc" in line for line in lines)
+    assert "- [`src/app.py:12`]" not in lines
