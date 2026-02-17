@@ -116,6 +116,14 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert "/council override sha=abcdef123456" in body
 
 
+def test_exits_nonzero_on_non_object_json(tmp_path: Path) -> None:
+    code, body, err = run_render(tmp_path, ["not an object"])
+
+    assert code == 2
+    assert body == ""
+    assert "expected object" in err
+
+
 def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
     council = {
         "verdict": "WARN",

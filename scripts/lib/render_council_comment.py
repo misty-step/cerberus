@@ -46,11 +46,14 @@ def fail(message: str, code: int = 2) -> None:
 
 def read_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise IOError(f"unable to read {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"invalid JSON in {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"invalid JSON in {path}: expected object")
+    return data
 
 
 def as_int(value: object) -> int | None:
