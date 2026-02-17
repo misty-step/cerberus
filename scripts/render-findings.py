@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 """Render findings markdown from a verdict JSON file."""
 
 import sys
