@@ -63,6 +63,8 @@ def _cerberus_action_kind(uses: str) -> str | None:
     rest = uses[len(prefix) :]
     if rest.startswith("@"):
         return "review"
+    if rest.startswith("/draft-check@"):
+        return "draft-check"
     if rest.startswith("/verdict@"):
         return "verdict"
     if rest.startswith("/triage@"):
@@ -194,12 +196,29 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                 continue
             uses_cerberus = True
 
-            if kind in {"review", "verdict", "triage"}:
+            if kind in {"review", "draft-check", "verdict", "triage"}:
                 if not _with(step, "github-token"):
                     findings.append(
                         Finding(
                             "error",
                             f"{source}: job `{job_name}` uses `{uses}` but is missing `with: github-token`",
+                        )
+                    )
+
+            if kind == "draft-check":
+                pr_write = _perm_allows(perms, "pull-requests", "write")
+                if pr_write is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post skip comment)",
+                        )
+                    )
+                elif pr_write is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `pull-requests` (set `pull-requests: write` to post skip comment)",
                         )
                     )
 
@@ -233,8 +252,8 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                         Finding(
                             "warning",
                             f"{source}: job `{job_name}` has no explicit `permissions` for `contents` (defaults vary; set `contents: read`)",
-                            )
                         )
+                    )
 
                 comment_policy, unknown_policy = _comment_policy(step)
                 if unknown_policy:

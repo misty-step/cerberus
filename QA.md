@@ -132,7 +132,7 @@ Test the triage module:
 |-------|--------------|-----|
 | All reviews SKIP | API key missing or invalid | Check `OPENROUTER_API_KEY` secret |
 | Verdict never runs | Missing `needs: review` | Add dependency in workflow |
-| No comments on PR | `post-comment: 'false'` | Set to `true` or remove |
+| No comments on PR | `comment-policy: 'never'` | Set to `non-pass` or `always` |
 | Fork PR fails | Fork security | Use `if: github.event.pull_request.head.repo.full_name == github.repository` |
 
 ## Manual Testing Checklist

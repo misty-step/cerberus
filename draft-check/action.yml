@@ -1,0 +1,63 @@
+name: "Cerberus Draft Check"
+description: "Detect draft PRs and optionally post an explanatory PR comment"
+author: "misty-step"
+
+inputs:
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+
+outputs:
+  is_draft:
+    description: "Whether the PR is a draft"
+    value: ${{ steps.check.outputs.is_draft }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check PR draft status
+      id: check
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        ACTION: ${{ github.event.action }}
+        IS_DRAFT: ${{ github.event.pull_request.draft }}
+      run: |
+        echo "is_draft=$IS_DRAFT" >> "$GITHUB_OUTPUT"
+
+        if [ "$IS_DRAFT" != "true" ]; then
+          exit 0
+        fi
+
+        echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
+
+        # Avoid comment spam on synchronize and reopened.
+        if [ "$ACTION" != "opened" ] && [ "$ACTION" != "converted_to_draft" ]; then
+          exit 0
+        fi
+
+        marker="<!-- cerberus:draft-check -->"
+        comment_file="/tmp/cerberus-draft-check-comment.md"
+        {
+          printf '%s\n' "## 🏛️ Cerberus Council: Draft PR Detected"
+          printf '\n'
+          printf '%s\n' "This PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**."
+          printf '\n'
+          printf '%s\n' "### Next Steps"
+          printf '%s\n' "1. Click **Ready for review** in the GitHub PR UI when your changes are complete"
+          printf '%s\n' "2. Cerberus will then run the full council review"
+          printf '\n'
+          printf '%s\n' "---"
+          printf '%s\n' "*Cerberus Council | Skip reason: draft PR*"
+          printf '%s\n' "$marker"
+        } > "$comment_file"
+
+        python3 "$CERBERUS_ROOT/scripts/lib/github.py" \
+          --repo "$REPO" \
+          --pr "$PR_NUMBER" \
+          --marker "$marker" \
+          --body-file "$comment_file" || echo "::warning::Failed to post draft PR comment"
+

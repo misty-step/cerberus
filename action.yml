@@ -266,13 +266,14 @@ runs:
         PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
         PERSPECTIVE: ${{ inputs.perspective }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        POST_COMMENT: ${{ inputs.comment-policy || inputs.post-comment }}
+        COMMENT_POLICY: ${{ inputs.comment-policy || inputs.post-comment }}
         VERDICT: ${{ steps.parse.outputs.verdict }}
       run: |
-        # Determine if comment should be posted based on post-comment policy
-        # Supports: never, non-pass, always (and legacy true/false for back-compat)
+        # Determine if comment should be posted based on comment policy.
+        # Supports: never, non-pass, always (and legacy true/false for back-compat).
+        comment_policy="$(printf '%s' "$COMMENT_POLICY" | tr '[:upper:]' '[:lower:]')"
         should_post="false"
-        case "$POST_COMMENT" in
+        case "$comment_policy" in
           never|false|0|no|n|off|'')
             should_post="false"
             ;;
@@ -285,13 +286,13 @@ runs:
             fi
             ;;
           *)
-            echo "::warning::Unknown post-comment value '$POST_COMMENT', defaulting to never"
+            echo "::warning::Unknown comment-policy value '$COMMENT_POLICY', defaulting to never"
             should_post="false"
             ;;
         esac
 
         if [[ "$should_post" != "true" ]]; then
-          echo "Skipping PR comment (post-comment=$POST_COMMENT, verdict=$VERDICT)"
+          echo "Skipping PR comment (comment-policy=$comment_policy, verdict=$VERDICT)"
           exit 0
         fi
 

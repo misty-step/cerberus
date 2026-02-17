@@ -26,32 +26,12 @@ jobs:
       contents: read
       pull-requests: write
     outputs:
-      is_draft: ${{ steps.check.outputs.is_draft }}
+      is_draft: ${{ steps.draft.outputs.is_draft }}
     steps:
-      - name: Check PR draft status
-        id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          ACTION: ${{ github.event.action }}
-          IS_DRAFT: ${{ github.event.pull_request.draft }}
-        run: |
-          echo "is_draft=$IS_DRAFT" >> "$GITHUB_OUTPUT"
-
-          if [ "$IS_DRAFT" != "true" ]; then
-            exit 0
-          fi
-
-          echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
-
-          # Avoid comment spam on synchronize and reopened.
-          if [ "$ACTION" != "opened" ] && [ "$ACTION" != "converted_to_draft" ]; then
-            exit 0
-          fi
-
-          comment_body=$'## 🏛️ Cerberus Council: Draft PR Detected\n\nThis PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**.\n\n### Next Steps\n1. Click **Ready for review** in the GitHub PR UI when your changes are complete\n2. Cerberus will then run the full council review\n\n---\n*Cerberus Council | Skip reason: draft PR*'
-
-          gh pr comment "$PR_NUMBER" --body "$comment_body" || echo "Failed to post draft PR comment"
+      - uses: misty-step/cerberus/draft-check@v2
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # Preflight: validate workflow structure (permissions, required inputs, etc)
   validate:
@@ -94,7 +74,6 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          post-comment: 'false'
           comment-policy: 'never'
           timeout: '600'
           # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
