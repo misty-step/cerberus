@@ -273,10 +273,10 @@ runs:
         # Supports: never, non-pass, always (and legacy true/false for back-compat)
         should_post="false"
         case "$POST_COMMENT" in
-          never|false|'')
+          never|false|0|no|n|off|'')
             should_post="false"
             ;;
-          always|true)
+          always|true|1|yes|y|on)
             should_post="true"
             ;;
           non-pass)

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from lib.consumer_workflow_validator import _WORKFLOW_LOADER, validate_workflow_file
+from lib.consumer_workflow_validator import _comment_policy, _WORKFLOW_LOADER, validate_workflow_file
 
 
 ROOT = Path(__file__).parent.parent
@@ -144,6 +144,46 @@ jobs:
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("never", ("never", False)),
+        ("always", ("always", False)),
+        ("non-pass", ("non-pass", False)),
+        ("true", ("always", False)),
+        ("false", ("never", False)),
+        ("1", ("always", False)),
+        ("0", ("never", False)),
+        ("yes", ("always", False)),
+        ("no", ("never", False)),
+        ("on", ("always", False)),
+        ("off", ("never", False)),
+        ("", ("never", False)),
+        ("wat", ("never", True)),
+    ],
+)
+def test__comment_policy_parses_variants(value: str, expected: tuple[str, bool]):
+    assert _comment_policy({"with": {"comment-policy": value}}) == expected
+
+
+def test__comment_policy_falls_back_to_post_comment_when_comment_policy_unset():
+    assert _comment_policy({"with": {"post-comment": "always"}}) == ("always", False)
+
+
+def test__comment_policy_falls_back_to_post_comment_when_comment_policy_empty():
+    assert _comment_policy({"with": {"comment-policy": "", "post-comment": "always"}}) == (
+        "always",
+        False,
+    )
+
+
+def test__comment_policy_comment_policy_wins_when_non_empty():
+    assert _comment_policy({"with": {"comment-policy": "never", "post-comment": "always"}}) == (
+        "never",
+        False,
+    )
+
+
+@pytest.mark.parametrize(
     "path",
     [
         ROOT / ".github/workflows/cerberus.yml",
@@ -159,6 +199,15 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
     assert "converted_to_draft" in types
 
 
-def test_minimal_template_has_draft_check_job():
-    wf = _load_workflow(ROOT / "templates/consumer-workflow-minimal.yml")
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / ".github/workflows/cerberus.yml",
+        ROOT / "templates/consumer-workflow-minimal.yml",
+        ROOT / "templates/consumer-workflow.yml",
+        ROOT / "templates/triage-workflow.yml",
+    ],
+)
+def test_workflows_have_draft_check_job(path: Path):
+    wf = _load_workflow(path)
     assert "draft-check" in wf["jobs"]

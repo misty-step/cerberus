@@ -88,17 +88,21 @@ def _comment_policy(step: dict[str, Any]) -> tuple[str, bool]:
     Back-compat input: `post-comment`.
     """
     raw = _with(step, "comment-policy")
+    # Match action.yml behavior: empty comment-policy is falsy and falls back to
+    # post-comment.
+    if raw is not None and str(raw).strip() == "":
+        raw = None
     if raw is None:
         raw = _with(step, "post-comment")
     if raw is None:
         return ("never", False)
 
     s = str(raw).strip().lower()
-    if s in {"", "never", "false", "0", "no", "n"}:
+    if s in {"", "never", "false", "0", "no", "n", "off"}:
         return ("never", False)
     if s in {"always", "non-pass"}:
         return (s, False)
-    if s in {"true", "1", "yes", "y"}:
+    if s in {"true", "1", "yes", "y", "on"}:
         return ("always", False)
     return ("never", True)
 
