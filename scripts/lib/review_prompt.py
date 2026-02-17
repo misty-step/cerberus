@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -17,6 +18,14 @@ from .prompt_sanitize import escape_untrusted_xml
 
 MAX_PROJECT_CONTEXT_CHARS = 4000
 TOKEN_RE = re.compile(r"\{\{[A-Z0-9_]+\}\}")
+
+
+def require_env(name: str, env: Mapping[str, str]) -> str:
+    value = env.get(name, "")
+    if not value:
+        print(f"missing required env var: {name}", file=sys.stderr)
+        raise SystemExit(2)
+    return value
 
 
 @dataclass(frozen=True)
@@ -150,4 +159,19 @@ def render_review_prompt_file(
             perspective=perspective,
             project_context=project_context,
         )
+    )
+
+
+def render_review_prompt_from_env(*, env: Mapping[str, str]) -> None:
+    cerberus_root = Path(require_env("CERBERUS_ROOT", env))
+    diff_file = require_env("DIFF_FILE", env)
+    perspective = require_env("PERSPECTIVE", env)
+    output_path = Path(require_env("PROMPT_OUTPUT", env))
+
+    render_review_prompt_file(
+        cerberus_root=cerberus_root,
+        env=env,
+        diff_file=diff_file,
+        perspective=perspective,
+        output_path=output_path,
     )

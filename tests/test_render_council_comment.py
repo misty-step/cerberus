@@ -11,6 +11,7 @@ from lib.render_council_comment import (
     detect_skip_banner,
     normalize_severity,
     normalize_verdict,
+    main as render_council_comment_main,
     render_comment,
 )
 
@@ -631,3 +632,48 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     key_section = body.split("### Key Findings", 1)[1]
     key_section = key_section.split("\n---\n", 1)[0]
     assert key_section.count("**Finding ") == 5
+
+
+def test_main_allows_direct_arg_parsing(tmp_path: Path) -> None:
+    council = {"verdict": "PASS", "stats": {"total": 0, "pass": 0, "warn": 0, "fail": 0, "skip": 0}}
+    council_path = tmp_path / "council.json"
+    output_path = tmp_path / "comment.md"
+    council_path.write_text(json.dumps(council), encoding="utf-8")
+
+    code = render_council_comment_main(
+        [
+            "--council-json",
+            str(council_path),
+            "--output",
+            str(output_path),
+            "--max-findings",
+            "5",
+            "--max-key-findings",
+            "5",
+        ]
+    )
+    body = output_path.read_text(encoding="utf-8")
+
+    assert code == 0
+    assert "<!-- cerberus:council -->" in body
+
+
+def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
+    council_path = tmp_path / "council.json"
+    output_path = tmp_path / "comment.md"
+    council_path.write_text(json.dumps({"verdict": "PASS"}), encoding="utf-8")
+
+    code = render_council_comment_main(
+        [
+            "--council-json",
+            str(council_path),
+            "--output",
+            str(output_path),
+            "--max-findings",
+            "0",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "max-findings must be >= 1" in captured.err

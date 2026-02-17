@@ -1,8 +1,11 @@
 from pathlib import Path
+import pytest
 
 from lib.review_prompt import (
     MAX_PROJECT_CONTEXT_CHARS,
     PullRequestContext,
+    require_env,
+    render_review_prompt_from_env,
     render_review_prompt_text,
 )
 
@@ -60,3 +63,31 @@ def test_project_context_truncated() -> None:
     )
     assert "TAIL" not in rendered
     assert "(Note: context truncated to" in rendered
+
+
+def test_require_env_errors_for_missing_value() -> None:
+    with pytest.raises(SystemExit):
+        require_env("MISSING", {})
+
+
+def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    output_path = tmp_path / "prompt.md"
+    env = {
+        "CERBERUS_ROOT": str(root),
+        "DIFF_FILE": "/tmp/pr.diff",
+        "PERSPECTIVE": "security",
+        "PROMPT_OUTPUT": str(output_path),
+        "GH_PR_TITLE": "Security fix",
+        "GH_PR_AUTHOR": "reviewer",
+        "GH_HEAD_BRANCH": "feature",
+        "GH_BASE_BRANCH": "main",
+        "GH_PR_BODY": "Adds validation.",
+    }
+
+    render_review_prompt_from_env(env=env)
+
+    rendered = output_path.read_text(encoding="utf-8")
+    assert '<pr_title trust="UNTRUSTED">Security fix</pr_title>' in rendered
+    assert "<pr_description trust=\"UNTRUSTED\">" in rendered
+    assert "The PR diff is at: `/tmp/pr.diff`" in rendered

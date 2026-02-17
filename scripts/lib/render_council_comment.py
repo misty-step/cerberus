@@ -39,9 +39,9 @@ VERDICT_ORDER = {
 }
 
 
-def fail(message: str, code: int = 2) -> None:
+def fail(message: str, code: int = 2) -> int:
     print(f"render-council-comment: {message}", file=sys.stderr)
-    sys.exit(code)
+    return code
 
 
 def read_json(path: Path) -> dict:
@@ -833,7 +833,7 @@ def render_comment(
     return result
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render Cerberus council comment markdown.")
     parser.add_argument(
         "--council-json",
@@ -862,15 +862,15 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help="Maximum findings to show in the Key Findings section.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     if args.max_findings < 1:
-        fail("--max-findings must be >= 1")
+        return fail("--max-findings must be >= 1")
     if args.max_key_findings < 1:
-        fail("--max-key-findings must be >= 1")
+        return fail("--max-key-findings must be >= 1")
 
     council_path = Path(args.council_json)
     output_path = Path(args.output)
@@ -878,7 +878,7 @@ def main() -> None:
     try:
         council = read_json(council_path)
     except (OSError, ValueError) as exc:
-        fail(str(exc))
+        return fail(str(exc))
     markdown = render_comment(
         council,
         max_findings=args.max_findings,
@@ -889,8 +889,10 @@ def main() -> None:
     try:
         output_path.write_text(markdown, encoding="utf-8")
     except OSError as exc:
-        fail(f"unable to write {output_path}: {exc}")
+        return fail(f"unable to write {output_path}: {exc}")
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
