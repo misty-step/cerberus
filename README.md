@@ -25,15 +25,30 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  validate:
+  draft-check:
     if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.draft.outputs.is_draft }}
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  validate:
+    needs: draft-check
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,8 +66,8 @@ jobs:
         id: generate
 
   review:
-    needs: matrix
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: [matrix, draft-check]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: read
@@ -73,8 +88,8 @@ jobs:
 
   verdict:
     name: "Council Verdict"
-    needs: review
-    if: always() && needs.review.result != 'skipped'
+    needs: [review, draft-check]
+    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: write

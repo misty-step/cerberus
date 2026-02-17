@@ -11,16 +11,32 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
+  draft-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.draft.outputs.is_draft }}
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   # Preflight: validate workflow structure (permissions, required inputs, etc)
   validate:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: draft-check
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,8 +57,8 @@ jobs:
 
   # Run reviews in parallel using the generated matrix
   review:
-    needs: matrix
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: [matrix, draft-check]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: read
@@ -58,7 +74,6 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          post-comment: 'false'
           comment-policy: 'never'
           timeout: '600'
           # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
@@ -73,8 +88,8 @@ jobs:
   # Aggregate all review results into a single verdict comment
   verdict:
     name: "Council Verdict"
-    needs: review
-    if: always() && needs.review.result != 'skipped'
+    needs: [review, draft-check]
+    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: write

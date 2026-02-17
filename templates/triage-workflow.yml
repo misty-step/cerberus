@@ -3,7 +3,7 @@ name: Cerberus Triage
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   issue_comment:
     types: [created]
   schedule:
@@ -18,8 +18,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  review:
+  # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
+  draft-check:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.draft.outputs.is_draft }}
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  review:
+    needs: draft-check
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
@@ -43,8 +59,8 @@ jobs:
 
   verdict:
     name: "Council Verdict"
-    needs: review
-    if: github.event_name == 'pull_request'
+    needs: [review, draft-check]
+    if: github.event_name == 'pull_request' && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     outputs:
       verdict: ${{ steps.council.outputs.verdict }}
@@ -57,8 +73,8 @@ jobs:
 
   triage-auto:
     name: "Cerberus Triage (Auto)"
-    needs: verdict
-    if: github.event_name == 'pull_request' && needs.verdict.outputs.verdict == 'FAIL'
+    needs: [verdict, draft-check]
+    if: github.event_name == 'pull_request' && needs.verdict.outputs.verdict == 'FAIL' && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
