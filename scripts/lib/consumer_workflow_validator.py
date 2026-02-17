@@ -81,6 +81,28 @@ def _with(step: dict[str, Any], key: str) -> Any | None:
     return None
 
 
+def _comment_policy(step: dict[str, Any]) -> tuple[str, bool]:
+    """Return the effective per-reviewer comment policy for the review action.
+
+    Canonical input: `comment-policy` (docs/templates).
+    Back-compat input: `post-comment`.
+    """
+    raw = _with(step, "comment-policy")
+    if raw is None:
+        raw = _with(step, "post-comment")
+    if raw is None:
+        return ("never", False)
+
+    s = str(raw).strip().lower()
+    if s in {"", "never", "false", "0", "no", "n"}:
+        return ("never", False)
+    if s in {"always", "non-pass"}:
+        return (s, False)
+    if s in {"true", "1", "yes", "y"}:
+        return ("always", False)
+    return ("never", True)
+
+
 def _boolish(value: Any | None, *, default: bool) -> bool:
     if value is None:
         return default
@@ -207,24 +229,32 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                         Finding(
                             "warning",
                             f"{source}: job `{job_name}` has no explicit `permissions` for `contents` (defaults vary; set `contents: read`)",
+                            )
+                        )
+
+                comment_policy, unknown_policy = _comment_policy(step)
+                if unknown_policy:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` sets an unknown comment policy; expected `comment-policy` (preferred) or legacy `post-comment` of never/non-pass/always/true/false. Cerberus will default to never.",
                         )
                     )
 
-                post_comment = _boolish(_with(step, "post-comment"), default=True)
-                if post_comment:
+                if comment_policy != "never":
                     pr_write = _perm_allows(perms, "pull-requests", "write")
                     if pr_write is False:
                         findings.append(
                             Finding(
                                 "error",
-                                f"{source}: job `{job_name}` will post per-reviewer comments (input `post-comment` defaults to true) but lacks `permissions: pull-requests: write`. Fix: set `post-comment: 'false'` OR grant `pull-requests: write`.",
+                                f"{source}: job `{job_name}` will post per-reviewer PR comments (comment policy is not `never`) but lacks `permissions: pull-requests: write`. Fix: set `comment-policy: 'never'` OR grant `pull-requests: write`.",
                             )
                         )
                     elif pr_write is None:
                         findings.append(
                             Finding(
                                 "warning",
-                                f"{source}: job `{job_name}` may post per-reviewer comments (input `post-comment` defaults to true) but permissions are not explicit. Ensure `pull-requests: write` OR set `post-comment: 'false'`.",
+                                f"{source}: job `{job_name}` may post per-reviewer PR comments (comment policy is not `never`) but permissions are not explicit. Ensure `pull-requests: write` OR set `comment-policy: 'never'`.",
                             )
                         )
 
@@ -377,4 +407,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

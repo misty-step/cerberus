@@ -35,35 +35,32 @@ jobs:
     steps:
       - name: Check PR draft status
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
-          is_draft="${{ github.event.pull_request.draft }}"
-          echo "is_draft=$is_draft" >> $GITHUB_OUTPUT
-          
-          if [ "$is_draft" = "true" ]; then
-            echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
-            # Post a comment explaining the skip - use EOF to preserve formatting
-            comment_body=$(cat <<'EOFCOMMENT'
-          ## 🏛️ Cerberus Council: Draft PR Detected
+          echo "is_draft=$IS_DRAFT" >> "$GITHUB_OUTPUT"
 
-          This PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**.
-
-          ### What's Next
-          1. Click **Ready for review** in the GitHub PR UI when your changes are complete
-          2. Cerberus will then run the full council review
-
-          ---
-          *Cerberus Council | Skip reason: draft PR*
-          EOFCOMMENT
-            )
-            
-            # Use gh to post the comment
-            gh pr comment ${{ github.event.pull_request.number }} --body "$comment_body" || echo "Failed to post draft PR comment"
+          if [ "$IS_DRAFT" != "true" ]; then
+            exit 0
           fi
+
+          echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
+
+          # Avoid comment spam on synchronize and reopened.
+          if [ "$ACTION" != "opened" ] && [ "$ACTION" != "converted_to_draft" ]; then
+            exit 0
+          fi
+
+          comment_body=$'## 🏛️ Cerberus Council: Draft PR Detected\n\nThis PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**.\n\n### Next Steps\n1. Click **Ready for review** in the GitHub PR UI when your changes are complete\n2. Cerberus will then run the full council review\n\n---\n*Cerberus Council | Skip reason: draft PR*'
+
+          gh pr comment "$PR_NUMBER" --body "$comment_body" || echo "Failed to post draft PR comment"
 
   # Lightweight job that runs for ALL PRs (including forks) to provide feedback
   # This job only uses read-only permissions and provides context about fork PR limitations
   triage:
-    needs: draft-check
     permissions:
       contents: read
       pull-requests: read
@@ -75,7 +72,7 @@ jobs:
       - id: check_fork
         run: |
           is_fork="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
-          echo "is_fork=$is_fork" >> $GITHUB_OUTPUT
+          echo "is_fork=$is_fork" >> "$GITHUB_OUTPUT"
           if [ "$is_fork" = "true" ]; then
             echo "::notice::Fork PR detected. Full Cerberus review requires same-repo PRs due to secret access limitations."
           fi
@@ -149,13 +146,13 @@ jobs:
           # If review jobs were skipped (fork PR), skip verdict too
           if [ "${{ needs.triage.outputs.is_fork }}" = "true" ]; then
             echo "Skipping verdict for fork PR - full review unavailable"
-            echo "run_verdict=false" >> $GITHUB_OUTPUT
+            echo "run_verdict=false" >> "$GITHUB_OUTPUT"
           # If PR is a draft, skip verdict too
           elif [ "${{ needs.draft-check.outputs.is_draft }}" = "true" ]; then
             echo "Skipping verdict for draft PR - review will run when ready"
-            echo "run_verdict=false" >> $GITHUB_OUTPUT
+            echo "run_verdict=false" >> "$GITHUB_OUTPUT"
           else
-            echo "run_verdict=true" >> $GITHUB_OUTPUT
+            echo "run_verdict=true" >> "$GITHUB_OUTPUT"
           fi
       
       - if: steps.check_reviews.outputs.run_verdict == 'true'

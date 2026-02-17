@@ -17,6 +17,7 @@ concurrency:
 jobs:
   # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
   draft-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,30 +27,28 @@ jobs:
     steps:
       - name: Check PR draft status
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
-          is_draft="${{ github.event.pull_request.draft }}"
-          echo "is_draft=$is_draft" >> $GITHUB_OUTPUT
-          
-          if [ "$is_draft" = "true" ]; then
-            echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
-            # Post a comment explaining the skip - use EOF to preserve formatting
-            comment_body=$(cat <<'EOFCOMMENT'
-          ## 🏛️ Cerberus Council: Draft PR Detected
+          echo "is_draft=$IS_DRAFT" >> "$GITHUB_OUTPUT"
 
-          This PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**.
-
-          ### What's Next
-          1. Click **Ready for review** in the GitHub PR UI when your changes are complete
-          2. Cerberus will then run the full council review
-
-          ---
-          *Cerberus Council | Skip reason: draft PR*
-          EOFCOMMENT
-            )
-            
-            # Use gh to post the comment
-            gh pr comment ${{ github.event.pull_request.number }} --body "$comment_body" || echo "Failed to post draft PR comment"
+          if [ "$IS_DRAFT" != "true" ]; then
+            exit 0
           fi
+
+          echo "::notice::Draft PR detected. Cerberus will run when PR is marked ready for review."
+
+          # Avoid comment spam on synchronize and reopened.
+          if [ "$ACTION" != "opened" ] && [ "$ACTION" != "converted_to_draft" ]; then
+            exit 0
+          fi
+
+          comment_body=$'## 🏛️ Cerberus Council: Draft PR Detected\n\nThis PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**.\n\n### Next Steps\n1. Click **Ready for review** in the GitHub PR UI when your changes are complete\n2. Cerberus will then run the full council review\n\n---\n*Cerberus Council | Skip reason: draft PR*'
+
+          gh pr comment "$PR_NUMBER" --body "$comment_body" || echo "Failed to post draft PR comment"
 
   review:
     needs: draft-check
@@ -79,7 +78,7 @@ jobs:
   verdict:
     name: "Council Verdict"
     needs: [review, draft-check]
-    if: always() && needs.draft-check.outputs.is_draft != 'true'
+    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -34,8 +34,11 @@ inputs:
   opencode-version:
     description: 'OpenCode CLI version to install'
     default: '1.1.49'
+  comment-policy:
+    description: 'When to post reviewer comment to PR: never, non-pass (WARN/FAIL/SKIP), or always'
+    default: ''
   post-comment:
-    description: 'When to post reviewer comment to PR: never, non-pass (only on WARN/FAIL), or always'
+    description: 'Deprecated alias for comment-policy (back-compat): never, non-pass, always, true/false'
     default: 'never'
   fail-on-skip:
     description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
@@ -263,7 +266,7 @@ runs:
         PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
         PERSPECTIVE: ${{ inputs.perspective }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        POST_COMMENT: ${{ inputs.post-comment }}
+        POST_COMMENT: ${{ inputs.comment-policy || inputs.post-comment }}
         VERDICT: ${{ steps.parse.outputs.verdict }}
       run: |
         # Determine if comment should be posted based on post-comment policy
