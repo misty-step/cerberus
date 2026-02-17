@@ -118,6 +118,60 @@ def test_load_pr_context_errors_when_context_file_missing_and_no_fallback_fields
         load_pr_context({"GH_PR_CONTEXT": str(missing)})
 
 
+def test_load_pr_context_from_json_parses_expected_fields(tmp_path: Path) -> None:
+    import json
+
+    from lib.review_prompt import PullRequestContext, _load_pr_context_from_json
+
+    p = tmp_path / "ctx.json"
+    p.write_text(
+        json.dumps(
+            {
+                "title": "t",
+                "author": {"login": "alice"},
+                "headRefName": "feat",
+                "baseRefName": "master",
+                "body": "b",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _load_pr_context_from_json(p) == PullRequestContext(
+        title="t",
+        author="alice",
+        head_branch="feat",
+        base_branch="master",
+        body="b",
+    )
+
+
+def test_load_pr_context_from_json_errors_on_missing_file(tmp_path: Path) -> None:
+    from lib.review_prompt import _load_pr_context_from_json
+
+    missing = tmp_path / "missing.json"
+    with pytest.raises(OSError, match=r"unable to read PR context JSON"):
+        _load_pr_context_from_json(missing)
+
+
+def test_load_pr_context_from_json_errors_on_invalid_json(tmp_path: Path) -> None:
+    from lib.review_prompt import _load_pr_context_from_json
+
+    p = tmp_path / "ctx.json"
+    p.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"invalid JSON in PR context file"):
+        _load_pr_context_from_json(p)
+
+
+def test_load_pr_context_from_json_errors_on_non_object_json(tmp_path: Path) -> None:
+    from lib.review_prompt import _load_pr_context_from_json
+
+    p = tmp_path / "ctx.json"
+    p.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"expected object"):
+        _load_pr_context_from_json(p)
+
+
 def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     output_path = tmp_path / "prompt.md"
