@@ -5,4 +5,4 @@
 from lib.render_council_comment import main
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

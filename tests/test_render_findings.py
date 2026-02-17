@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from lib.render_findings import render_findings
+from lib.render_findings import main as render_findings_main
 
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "scripts" / "render-findings.py"
@@ -124,3 +125,41 @@ def test_render_findings_renders_markdown_with_defaults() -> None:
     assert any(line.strip() == "desc" for line in lines)
     assert any("Suggestion: fix it" in line for line in lines)
     assert "- [`src/app.py:12`]" not in lines
+
+
+def test_main_renders_output_directly(tmp_path: Path) -> None:
+    verdict_path = tmp_path / "verdict.json"
+    output_path = tmp_path / "out.md"
+    verdict_path.write_text(json.dumps({"findings": []}), encoding="utf-8")
+
+    code = render_findings_main(
+        [
+            "--verdict-json",
+            str(verdict_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+    body = output_path.read_text(encoding="utf-8")
+
+    assert code == 0
+    assert body == "- None"
+
+
+def test_main_fails_on_invalid_json(tmp_path: Path, capsys) -> None:
+    verdict_path = tmp_path / "verdict.json"
+    output_path = tmp_path / "out.md"
+    verdict_path.write_text("not-json", encoding="utf-8")
+
+    code = render_findings_main(
+        [
+            "--verdict-json",
+            str(verdict_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "failed to read or parse" in captured.err

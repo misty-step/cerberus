@@ -70,8 +70,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args(sys.argv[1:])
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
 
     verdict_path = Path(args.verdict_json)
     out_path = Path(args.output)
