@@ -48,9 +48,9 @@ def read_json(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
-        fail(f"unable to read {path}: {exc}")
+        raise IOError(f"unable to read {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
-        fail(f"invalid JSON in {path}: {exc}")
+        raise ValueError(f"invalid JSON in {path}: {exc}") from exc
 
 
 def as_int(value: object) -> int | None:
@@ -872,7 +872,10 @@ def main() -> None:
     council_path = Path(args.council_json)
     output_path = Path(args.output)
 
-    council = read_json(council_path)
+    try:
+        council = read_json(council_path)
+    except (OSError, ValueError) as exc:
+        fail(str(exc))
     markdown = render_comment(
         council,
         max_findings=args.max_findings,

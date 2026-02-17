@@ -76,17 +76,29 @@ def main() -> int:
     verdict_path = Path(args.verdict_json)
     out_path = Path(args.output)
 
-    data = json.loads(verdict_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(verdict_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"render-findings: failed to read or parse {verdict_path}: {exc}", file=sys.stderr)
+        return 1
+
+    if not isinstance(data, dict):
+        print(f"render-findings: invalid verdict JSON in {verdict_path}: expected object", file=sys.stderr)
+        return 1
     findings = data.get("findings", [])
     if not isinstance(findings, list):
         findings = []
 
     server, repo, sha = repo_context(server=args.server or None, repo=args.repo or None, sha=args.sha or None)
 
-    out_path.write_text(
-        "\n".join(render_findings(findings, server=server, repo=repo, sha=sha)),
-        encoding="utf-8",
-    )
+    try:
+        out_path.write_text(
+            "\n".join(render_findings(findings, server=server, repo=repo, sha=sha)),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"render-findings: failed to write {out_path}: {exc}", file=sys.stderr)
+        return 1
     print(len(findings))
     return 0
 
