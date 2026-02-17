@@ -121,5 +121,6 @@ def test_render_findings_renders_markdown_with_defaults() -> None:
     )
 
     assert "[`src/app.py:12`](https://github.com/misty-step/cerberus/blob/deadbeef/src/app.py#L12)" in lines[0]
-    assert any("Description: desc" in line for line in lines)
+    assert any(line.strip() == "desc" for line in lines)
+    assert any("Suggestion: fix it" in line for line in lines)
     assert "- [`src/app.py:12`]" not in lines

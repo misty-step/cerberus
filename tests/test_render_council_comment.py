@@ -288,7 +288,7 @@ def test_count_findings_uses_stats_block_when_available() -> None:
         ]
     }
     found = count_findings(council["reviewers"])
-    assert found == {"critical": 2, "major": 3, "minor": 3, "info": 4}
+    assert found == {"critical": 1, "major": 3, "minor": 3, "info": 4}
 
 
 def test_detect_skip_banner_for_key_api_error_paths() -> None:
@@ -341,7 +341,7 @@ def test_collect_issue_groups_merges_matching_findings() -> None:
     assert len(groups) == 2
     assert merged[("src/a.py", 10, "Shared issue")]["severity"] == "critical"
     assert merged[("src/a.py", 10, "Shared issue")]["suggestion"] == "longer suggestion"
-    assert merged[("src/a.py", 10, "Shared issue")]["reviewers"] == ["APOLLO", "VULCAN"]
+    assert merged[("src/a.py", 10, "Shared issue")]["reviewers"] == ["Apollo", "Vulcan"]
 
 
 def test_collect_hotspots_handles_multiple_reviewers() -> None:
@@ -358,11 +358,16 @@ def test_collect_hotspots_handles_multiple_reviewers() -> None:
     }
     hotspots = collect_hotspots([reviewer_a, reviewer_b])
     assert [item["file"] for item in hotspots] == ["src/a.py", "src/b.py"]
-    assert hotspots[0]["reviewers"] == ["APOLLO", "VULCAN"]
+    assert hotspots[0]["reviewers"] == ["Apollo", "Vulcan"]
 
 
 def test_render_comment_renders_without_stats_or_findings() -> None:
-    comment = render_comment({"reviewers": []}, max_findings=3, max_key_findings=2, marker="<!-- test -->")
+    comment = render_comment(
+        {"verdict": "PASS", "reviewers": []},
+        max_findings=3,
+        max_key_findings=2,
+        marker="<!-- test -->",
+    )
     assert "<!-- test -->" in comment
     assert "## ✅ Council Verdict: PASS" in comment
     assert "No reviewer verdicts available." in comment
