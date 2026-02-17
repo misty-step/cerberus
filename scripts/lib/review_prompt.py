@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -23,8 +22,7 @@ TOKEN_RE = re.compile(r"\{\{[A-Z0-9_]+\}\}")
 def require_env(name: str, env: Mapping[str, str]) -> str:
     value = env.get(name, "")
     if not value:
-        print(f"missing required env var: {name}", file=sys.stderr)
-        raise SystemExit(2)
+        raise ValueError(f"missing required env var: {name}")
     return value
 
 
@@ -38,7 +36,16 @@ class PullRequestContext:
 
 
 def _load_pr_context_from_json(path: Path) -> PullRequestContext:
-    ctx = json.loads(path.read_text())
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"unable to read PR context JSON {path}: {exc}") from exc
+    try:
+        ctx = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in PR context file {path}: {exc}") from exc
+    if not isinstance(ctx, dict):
+        raise ValueError(f"invalid PR context JSON in {path}: expected object")
 
     title = ctx.get("title", "")
     author = ctx.get("author", "")
@@ -147,19 +154,24 @@ def render_review_prompt_file(
     output_path: Path,
 ) -> None:
     template_path = cerberus_root / "templates" / "review-prompt.md"
-    template_text = template_path.read_text()
+    try:
+        template_text = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"unable to read template {template_path}: {exc}") from exc
     pr_context = load_pr_context(env)
     project_context = env.get("CERBERUS_CONTEXT", "") or ""
 
-    output_path.write_text(
-        render_review_prompt_text(
-            template_text=template_text,
-            pr_context=pr_context,
-            diff_file=diff_file,
-            perspective=perspective,
-            project_context=project_context,
-        )
+    rendered = render_review_prompt_text(
+        template_text=template_text,
+        pr_context=pr_context,
+        diff_file=diff_file,
+        perspective=perspective,
+        project_context=project_context,
     )
+    try:
+        output_path.write_text(rendered, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"unable to write prompt output {output_path}: {exc}") from exc
 
 
 def render_review_prompt_from_env(*, env: Mapping[str, str]) -> None:

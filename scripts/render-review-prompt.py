@@ -16,13 +16,19 @@ PR context (either):
 """
 
 import os
+import sys
 
 
-def main() -> None:
+def main() -> int:
     from lib.review_prompt import render_review_prompt_from_env  # noqa: PLC0415
 
-    render_review_prompt_from_env(env=os.environ)
+    try:
+        render_review_prompt_from_env(env=os.environ)
+    except (OSError, ValueError) as exc:
+        print(f"render-review-prompt: {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
