@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 SCRIPT = Path(__file__).parent.parent / "scripts" / "parse-review.py"
@@ -237,6 +238,55 @@ class TestParseErrors:
         assert data["verdict"] == "SKIP"
         assert data["reviewer"] == "SENTINEL"
         assert data["perspective"] == "security"
+
+
+class TestParseFailureMetadata:
+    def test_parse_failure_metadata_is_preserved_in_summary(self):
+        """Recovery metadata is surfaced when parse retries were attempted."""
+        # Unique perspective avoids collisions if the suite is ever parallelized.
+        perspective = f"PARSE_META_{uuid.uuid4().hex}"
+        models_file = Path("/tmp") / f"{perspective}-parse-failure-models.txt"
+        retries_file = Path("/tmp") / f"{perspective}-parse-failure-retries.txt"
+
+        models_file.write_text("gpt-4o-mini\ngpt-4.1\n")
+        retries_file.write_text("2")
+
+        try:
+            code, out, _ = run_parse(
+                "Reviewer output was not structured.",
+                env_extra={
+                    "PERSPECTIVE": perspective,
+                    "REVIEWER_NAME": "VULCAN",
+                },
+            )
+        finally:
+            models_file.unlink(missing_ok=True)
+            retries_file.unlink(missing_ok=True)
+
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["confidence"] == 0.0
+        assert "2 parse-recovery retries attempted" in data["summary"]
+        assert "Models tried: gpt-4o-mini, gpt-4.1" in data["summary"]
+        assert len(data["findings"]) == 1
+        finding = data["findings"][0]
+        assert finding["category"] == "parse-failure"
+        assert finding["severity"] == "info"
+        assert "structured JSON block after retries" in finding["description"]
+
+
+class TestParseRecoveryAndMalformedInput:
+    def test_partial_json_fence_is_skip(self):
+        """Partial JSON (starts a ```json fence but never closes) is non-blocking SKIP."""
+        code, out, err = run_parse("```json\n{\"verdict\": \"PASS\",")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["confidence"] == 0.0
+        assert data["summary"].startswith("Review output could not be parsed:")
+        assert len(data["findings"]) == 0
+        assert "no ```json block found" in err.lower()
 
 
 class TestParseArgs:
