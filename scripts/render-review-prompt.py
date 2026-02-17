@@ -15,13 +15,13 @@ PR context (either):
   or GH_PR_TITLE, GH_PR_AUTHOR, GH_HEAD_BRANCH, GH_BASE_BRANCH, GH_PR_BODY
 """
 
-import sys
+import os
 
 
 def main() -> None:
     from lib.review_prompt import render_review_prompt_from_env  # noqa: PLC0415
 
-    render_review_prompt_from_env(env=sys.environ)
+    render_review_prompt_from_env(env=os.environ)
 
 
 if __name__ == "__main__":
