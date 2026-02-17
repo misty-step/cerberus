@@ -70,6 +70,19 @@ def load_pr_context(env: Mapping[str, str]) -> PullRequestContext:
         p = Path(pr_context_file)
         if p.exists():
             return _load_pr_context_from_json(p)
+        # If a PR context file is explicitly configured, fail loudly unless the
+        # caller provided the inline fallback fields (GH_PR_*).
+        if not any(
+            env.get(key, "")
+            for key in (
+                "GH_PR_TITLE",
+                "GH_PR_AUTHOR",
+                "GH_HEAD_BRANCH",
+                "GH_BASE_BRANCH",
+                "GH_PR_BODY",
+            )
+        ):
+            raise ValueError(f"missing PR context file: {p}")
 
     return PullRequestContext(
         title=str(env.get("GH_PR_TITLE", "") or ""),

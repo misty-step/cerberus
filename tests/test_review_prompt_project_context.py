@@ -108,6 +108,16 @@ def test_render_review_prompt_from_env_raises_on_output_write_error(tmp_path: Pa
         render_review_prompt_from_env(env=env)
 
 
+def test_load_pr_context_errors_when_context_file_missing_and_no_fallback_fields(
+    tmp_path: Path,
+) -> None:
+    from lib.review_prompt import load_pr_context
+
+    missing = tmp_path / "missing.json"
+    with pytest.raises(ValueError):
+        load_pr_context({"GH_PR_CONTEXT": str(missing)})
+
+
 def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     output_path = tmp_path / "prompt.md"
