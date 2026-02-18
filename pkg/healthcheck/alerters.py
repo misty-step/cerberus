@@ -44,7 +44,11 @@ class WebhookAlertSink:
             "error": transition.result.error,
         }
         writer = self.write_payload or (lambda data: _default_webhook_writer(data, self.webhook_url))
-        writer(payload)
+        try:
+            writer(payload)
+        except Exception:
+            # Best-effort: webhook failures should not crash the caller.
+            return
 
 
 @dataclass(frozen=True)

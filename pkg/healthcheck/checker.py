@@ -10,7 +10,7 @@ from urllib import request
 from .config import HealthCheckConfig
 
 
-HealthHttpOpen = Callable[[request.Request, float], object]
+HealthHttpOpen = Callable[[request.Request, int], object]
 HealthStatus = str
 
 HEALTHY = "healthy"
@@ -41,7 +41,7 @@ class HealthChecker:
 
     def __post_init__(self) -> None:
         if self.opener is None:
-            self.opener = request.urlopen  # type: ignore[assignment]
+            self.opener = _default_opener
 
     def _build_response(self, health_id: str, status: HealthStatus, status_code: int | None, started: float, error: str | None = None) -> HealthCheckResult:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -72,37 +72,46 @@ class HealthChecker:
             return raw
         return ""
 
+    def _evaluate_response(self, config: HealthCheckConfig, status_code: int, body: str, started: float) -> HealthCheckResult:
+        if status_code != config.expected_status:
+            return self._build_response(
+                config.id,
+                UNHEALTHY,
+                status_code,
+                started,
+                f"expected status {config.expected_status}, got {status_code}",
+            )
+
+        body_error = self._check_expected_body(body, config.expected_body)
+        if body_error is not None:
+            return self._build_response(
+                config.id,
+                UNHEALTHY,
+                status_code,
+                started,
+                body_error,
+            )
+
+        return self._build_response(config.id, HEALTHY, status_code, started)
+
     def perform_check(self, config: HealthCheckConfig) -> HealthCheckResult:
         started = time.perf_counter()
         req = request.Request(config.url, method=config.http_method)
         opener = self.opener
         if opener is None:
-            opener = request.urlopen
+            opener = _default_opener
 
         try:
-            with opener(req, timeout=config.timeout_seconds) as response:
+            with opener(req, config.timeout_seconds) as response:
                 status_code = int(getattr(response, "status", 0))
                 body = self._read_body(response)
-                if status_code != config.expected_status:
-                    return self._build_response(
-                        config.id,
-                        UNHEALTHY,
-                        status_code,
-                        started,
-                        f"expected status {config.expected_status}, got {status_code}",
-                    )
+                return self._evaluate_response(config, status_code, body, started)
 
-                body_error = self._check_expected_body(body, config.expected_body)
-                if body_error is not None:
-                    return self._build_response(
-                        config.id,
-                        UNHEALTHY,
-                        status_code,
-                        started,
-                        body_error,
-                    )
-
-                return self._build_response(config.id, HEALTHY, status_code, started)
+        except error.HTTPError as exc:
+            # urllib turns non-2xx responses into exceptions, but those still carry a status code + body.
+            status_code = int(getattr(exc, "code", 0))
+            body = self._read_body(exc)
+            return self._evaluate_response(config, status_code, body, started)
 
         except error.URLError as exc:
             return self._build_response(
@@ -144,9 +153,17 @@ class HealthMonitor:
                 for sink in self._sinks:
                     send = getattr(sink, "send", None)
                     if callable(send):
-                        send(transition)
+                        try:
+                            send(transition)
+                        except Exception:
+                            # Alert sinks are best-effort: never block checks.
+                            pass
                 alerts.append(transition)
 
             self._previous_statuses[cfg.id] = result.status
 
         return results, alerts
+
+
+def _default_opener(req: request.Request, timeout_seconds: int) -> object:
+    return request.urlopen(req, timeout=timeout_seconds)

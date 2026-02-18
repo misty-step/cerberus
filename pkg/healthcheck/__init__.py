@@ -7,13 +7,13 @@ from .config import HealthCheckConfig
 __all__ = [
     "AlertSink",
     "GitHubIssueAlertSink",
-    "PRCommentAlertSink",
-    "WebhookAlertSink",
+    "HEALTHY",
     "HealthCheckConfig",
     "HealthChecker",
-    "HEALTHY",
-    "UNHEALTHY",
     "HealthCheckResult",
-    "HealthTransition",
     "HealthMonitor",
+    "HealthTransition",
+    "PRCommentAlertSink",
+    "UNHEALTHY",
+    "WebhookAlertSink",
 ]

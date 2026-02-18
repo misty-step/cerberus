@@ -63,7 +63,7 @@ class HealthCheckConfig:
         check_id = _coerce_str(raw["id"], "id")
         url = _coerce_str(raw["url"], "url")
 
-        method = str(raw.get("method", raw.get("httpMethod", "GET"))).strip().upper()
+        method = str(raw.get("method") or raw.get("httpMethod") or raw.get("http_method") or "GET").strip().upper()
         if method not in HTTP_METHODS:
             raise ValueError(f"method '{method}' is not supported")
 
@@ -71,10 +71,14 @@ class HealthCheckConfig:
             raw.get("expectedStatus", raw.get("expected_status", 200))
         )
         interval_seconds = _coerce_optional_int(
-            raw.get("intervalSeconds"), "intervalSeconds", DEFAULT_INTERVAL_SECONDS
+            raw.get("intervalSeconds", raw.get("interval_seconds")),
+            "intervalSeconds",
+            DEFAULT_INTERVAL_SECONDS,
         )
         timeout_seconds = _coerce_optional_int(
-            raw.get("timeoutSeconds"), "timeoutSeconds", DEFAULT_TIMEOUT_SECONDS
+            raw.get("timeoutSeconds", raw.get("timeout_seconds")),
+            "timeoutSeconds",
+            DEFAULT_TIMEOUT_SECONDS,
         )
 
         return cls(
@@ -83,6 +87,6 @@ class HealthCheckConfig:
             http_method=method,
             expected_status=expected_status,
             interval_seconds=interval_seconds,
-            expected_body=_coerce_optional_str(raw.get("expectedBody")),
+            expected_body=_coerce_optional_str(raw.get("expectedBody", raw.get("expected_body"))),
             timeout_seconds=timeout_seconds,
         )
