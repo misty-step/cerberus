@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import io
 import pytest
 from urllib import error
 
 from pkg.healthcheck import (
+    GitHubIssueAlertSink,
     HealthCheckConfig,
     HealthCheckResult,
     HealthMonitor,
     HealthChecker,
     HEALTHY,
+    PRCommentAlertSink,
     UNHEALTHY,
+    WebhookAlertSink,
 )
 from pkg.healthcheck.checker import HealthTransition
 
@@ -112,6 +116,52 @@ def test_healthchecker_marks_timeout_as_unhealthy():
     assert result.error is not None
 
 
+def test_healthchecker_handles_http_error_status_code():
+    cfg = HealthCheckConfig.from_dict({"id": "api", "url": "https://example.test", "expectedStatus": 200})
+    http_error = error.HTTPError(
+        url=cfg.url,
+        code=503,
+        msg="service unavailable",
+        hdrs=None,
+        fp=io.BytesIO(b"unavailable"),
+    )
+    checker = HealthChecker(
+        opener=lambda _req, _timeout: (_ for _ in ()).throw(http_error)
+    )
+    result = checker.perform_check(cfg)
+    assert result.status == UNHEALTHY
+    assert result.status_code == 503
+    assert "expected status 200, got 503" in (result.error or "")
+
+
+def test_healthchecker_allows_expected_http_error_status_code():
+    cfg = HealthCheckConfig.from_dict({"id": "api", "url": "https://example.test", "expectedStatus": 503})
+    http_error = error.HTTPError(
+        url=cfg.url,
+        code=503,
+        msg="service unavailable",
+        hdrs=None,
+        fp=io.BytesIO(b"maintenance"),
+    )
+    checker = HealthChecker(
+        opener=lambda _req, _timeout: (_ for _ in ()).throw(http_error)
+    )
+    result = checker.perform_check(cfg)
+    assert result.status == HEALTHY
+    assert result.status_code == 503
+    assert result.error is None
+
+
+def test_healthchecker_marks_generic_exception_as_unhealthy():
+    cfg = HealthCheckConfig.from_dict({"id": "api", "url": "https://example.test", "expectedStatus": 200})
+    checker = HealthChecker(
+        opener=lambda _req, _timeout: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    result = checker.perform_check(cfg)
+    assert result.status == UNHEALTHY
+    assert "boom" in (result.error or "")
+
+
 class _RecordingSink:
     def __init__(self) -> None:
         self.events: list[HealthTransition] = []
@@ -142,3 +192,58 @@ def test_health_monitor_alerts_only_on_state_transitions():
     assert sink.events[0].current_status == UNHEALTHY
     assert sink.events[1].previous_status == UNHEALTHY
     assert sink.events[1].current_status == HEALTHY
+
+
+def _transition() -> HealthTransition:
+    result = HealthCheckResult(
+        id="api",
+        status=UNHEALTHY,
+        status_code=500,
+        response_time_ms=15,
+        timestamp="2026-02-18T15:00:00+00:00",
+        error="failure",
+    )
+    return HealthTransition(
+        id="api",
+        previous_status=HEALTHY,
+        current_status=UNHEALTHY,
+        result=result,
+    )
+
+
+def test_webhook_alert_sink_writes_payload():
+    seen: list[dict[str, object]] = []
+
+    def writer(payload: dict[str, object]) -> None:
+        seen.append(payload)
+
+    sink = WebhookAlertSink(webhook_url="https://hooks.example.test", write_payload=writer)
+    sink.send(_transition())
+    assert len(seen) == 1
+    assert seen[0]["check_id"] == "api"
+    assert seen[0]["previous_status"] == HEALTHY
+    assert seen[0]["current_status"] == UNHEALTHY
+
+
+def test_webhook_alert_sink_swallows_writer_errors():
+    sink = WebhookAlertSink(
+        webhook_url="https://hooks.example.test",
+        write_payload=lambda _payload: (_ for _ in ()).throw(RuntimeError("down")),
+    )
+    sink.send(_transition())
+
+
+def test_pr_comment_alert_sink_posts_payload():
+    seen: list[dict[str, object]] = []
+    sink = PRCommentAlertSink(post_comment=lambda payload: seen.append(payload))
+    sink.send(_transition())
+    assert len(seen) == 1
+    assert seen[0]["state"] == "healthy -> unhealthy"
+
+
+def test_github_issue_alert_sink_posts_payload():
+    seen: list[dict[str, object]] = []
+    sink = GitHubIssueAlertSink(create_issue=lambda payload: seen.append(payload))
+    sink.send(_transition())
+    assert len(seen) == 1
+    assert "HealthCheck" in str(seen[0]["title"])
