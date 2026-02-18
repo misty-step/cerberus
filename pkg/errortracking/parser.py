@@ -11,6 +11,13 @@ from typing import Any
 
 from .config import ErrorSourceConfig
 
+ISO_PREFIX_RE = re.compile(
+    r"^\[?(?P<ts>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)\]?\s*[-:|]?\s*(?P<body>.*)$"
+)
+EPOCH_PREFIX_RE = re.compile(
+    r"^\[?(?P<ts>\d{10}(?:\.\d+)?)\]?\s*[-:|]?\s*(?P<body>.*)$"
+)
+
 
 @dataclass(frozen=True)
 class ParsedError:
@@ -61,8 +68,6 @@ def _parse_datetime(value: Any, now_ts: float) -> tuple[float, str]:
 def _read_lines(config: ErrorSourceConfig) -> list[str]:
     try:
         with open(config.log_file, "r", encoding="utf-8", errors="replace") as stream:
-            if config.poll_lines is None:
-                return stream.read().splitlines()
             return list(deque(stream, maxlen=config.poll_lines))
     except FileNotFoundError:
         return []
@@ -83,6 +88,28 @@ class LogParser:
     def _parse_timestamp(self, raw: Any, fallback_ts: float) -> tuple[float, str]:
         return _parse_datetime(raw, fallback_ts)
 
+    def _extract_plain_timestamp(self, line: str, fallback_ts: float) -> tuple[float, str, str]:
+        normalized = line.strip()
+        if not normalized:
+            return self._parse_timestamp(None, fallback_ts) + ("",)
+
+        iso_match = ISO_PREFIX_RE.match(normalized)
+        if iso_match:
+            ts_raw = iso_match.group("ts")
+            body = iso_match.group("body").strip()
+            ts, ts_iso = self._parse_timestamp(ts_raw.replace(" ", "T"), fallback_ts)
+            return ts, ts_iso, body or normalized
+
+        epoch_match = EPOCH_PREFIX_RE.match(normalized)
+        if epoch_match:
+            ts_raw = epoch_match.group("ts")
+            body = epoch_match.group("body").strip()
+            ts, ts_iso = self._parse_timestamp(float(ts_raw), fallback_ts)
+            return ts, ts_iso, body or normalized
+
+        ts, ts_iso = self._parse_timestamp(None, fallback_ts)
+        return ts, ts_iso, normalized
+
     def _match(self, text: str) -> str | None:
         for regex in self._pattern_regex:
             if regex.search(text):
@@ -90,16 +117,16 @@ class LogParser:
         return None
 
     def _parse_plain_line(self, line: str, now_ts: float) -> ParsedError | None:
-        matched = self._match(line)
+        seen_ts, seen_iso, message = self._extract_plain_timestamp(line, now_ts)
+        matched = self._match(message)
         if matched is None:
             return None
 
-        seen_ts, seen_iso = self._parse_timestamp(None, now_ts)
-        signature = self._build_signature(line, stack_trace=None)
+        signature = self._build_signature(message, stack_trace=None)
         return ParsedError(
             error_key=f"{self._source.source_id}:{signature}",
             signature=signature,
-            message=line.strip(),
+            message=message,
             source_id=self._source.source_id,
             seen_at=seen_ts,
             seen_at_iso=seen_iso,
@@ -128,7 +155,10 @@ class LogParser:
         if matched is None:
             return None
 
-        raw_ts = record.get(self._source.timestamp_field) if self._source.timestamp_field else None
+        if self._source.timestamp_field:
+            raw_ts = record.get(self._source.timestamp_field)
+        else:
+            raw_ts = record.get("timestamp", record.get("time", record.get("ts")))
         seen_ts, seen_iso = self._parse_timestamp(raw_ts, now_ts)
         signature = self._build_signature(message, stack_trace=stack_trace)
         return ParsedError(

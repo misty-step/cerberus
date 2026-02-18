@@ -36,12 +36,11 @@ class ErrorGroup:
             self.first_seen = event.seen_at_iso
         if event.source_id not in self.source_ids:
             self.source_ids.append(event.source_id)
-        self.source_ids.sort()
+            self.source_ids.sort()
         self.timestamps.append(event.seen_at)
 
-    def trim(self, keep_seconds: float, now_ts: float) -> None:
-        cutoff = now_ts - keep_seconds
-        while self.timestamps and self.timestamps[0] < cutoff:
+    def trim(self, cutoff_ts: float) -> None:
+        while self.timestamps and self.timestamps[0] < cutoff_ts:
             self.timestamps.popleft()
 
 
@@ -84,6 +83,7 @@ class ErrorGrouper:
     trend_bucket_seconds: int = 300
     trend_buckets: int = 12
     _groups: dict[str, ErrorGroup] = field(default_factory=dict, init=False, repr=False)
+    _sink_errors: list[str] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.spike_window_seconds <= 0:
@@ -123,8 +123,21 @@ class ErrorGrouper:
             buckets[bucket] += 1
         return buckets
 
+    def _dispatch_alert(self, alert: ErrorAlert, sinks: list[ErrorAlertSink] | None) -> None:
+        if not sinks:
+            return
+        for sink in sinks:
+            try:
+                sink.send(alert)
+            except Exception as exc:
+                self._sink_errors.append(f"{type(exc).__name__}: {exc}")
+
     def ingest(self, errors: Iterable[ParsedError], sinks: list[ErrorAlertSink] | None = None) -> tuple[list[ErrorGroup], list[ErrorAlert]]:
         alerts: list[ErrorAlert] = []
+        self._sink_errors.clear()
+        latest_event_by_group: dict[str, ParsedError] = {}
+        new_group_keys: set[str] = set()
+
         for event in errors:
             group = self._groups.setdefault(
                 event.error_key,
@@ -138,13 +151,16 @@ class ErrorGrouper:
             is_new_group = group.count == 0
             now_ts = event.seen_at
             group.add(event)
+            latest_event_by_group[event.error_key] = event
 
             cutoff = self._window_bounds(now_ts)
-            group.trim(cutoff, now_ts)
+            group.trim(cutoff)
 
-            current_count, previous_count = _build_window_counts(group.timestamps, now_ts, self.spike_window_seconds)
-            alert: ErrorAlert | None = None
             if is_new_group:
+                new_group_keys.add(event.error_key)
+                current_count, previous_count = _build_window_counts(
+                    group.timestamps, now_ts, self.spike_window_seconds
+                )
                 alert = ErrorAlert(
                     code="new_error_type",
                     error_key=event.error_key,
@@ -155,29 +171,32 @@ class ErrorGrouper:
                     source_ids=list(group.source_ids),
                     timestamp=event.seen_at_iso,
                 )
-            elif not group.is_spiking and self._is_rate_spike(current_count, previous_count):
+                alerts.append(alert)
+                self._dispatch_alert(alert, sinks)
+
+        for error_key, latest_event in latest_event_by_group.items():
+            if error_key in new_group_keys and self._groups[error_key].count == 1:
+                continue
+
+            group = self._groups[error_key]
+            current_count, previous_count = _build_window_counts(
+                group.timestamps, latest_event.seen_at, self.spike_window_seconds
+            )
+            is_spike = self._is_rate_spike(current_count, previous_count)
+            if not group.is_spiking and is_spike:
                 alert = ErrorAlert(
                     code="error_rate_spike",
-                    error_key=event.error_key,
-                    message=event.message,
+                    error_key=group.error_key,
+                    message=group.message,
                     count=group.count,
                     current_window_count=current_count,
                     previous_window_count=previous_count,
                     source_ids=list(group.source_ids),
-                    timestamp=event.seen_at_iso,
+                    timestamp=latest_event.seen_at_iso,
                 )
-                group.is_spiking = True
-            elif current_count < max(int(self.spike_multiplier * previous_count), self.spike_min_count):
-                group.is_spiking = False
-
-            if alert is not None:
                 alerts.append(alert)
-                if sinks:
-                    for sink in sinks:
-                        try:
-                            sink.send(alert)
-                        except Exception:
-                            continue
+                self._dispatch_alert(alert, sinks)
+            group.is_spiking = is_spike
 
         return list(self._groups.values()), alerts
 
@@ -215,3 +234,7 @@ class ErrorGrouper:
     @property
     def groups(self) -> dict[str, ErrorGroup]:
         return dict(self._groups)
+
+    @property
+    def sink_errors(self) -> list[str]:
+        return list(self._sink_errors)

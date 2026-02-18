@@ -7,6 +7,17 @@ from pkg.errortracking.grouper import ErrorGrouper
 from pkg.errortracking.parser import LogParser, ParsedError
 
 
+def test_error_tracking_config_defaults_work_when_fields_missing() -> None:
+    from pkg.errortracking.config import ErrorTrackingConfig
+
+    cfg = ErrorTrackingConfig.from_dict({})
+    assert cfg.spike_window_seconds == 3600
+    assert cfg.spike_multiplier == 2.5
+    assert cfg.spike_min_count == 5
+    assert cfg.trend_bucket_seconds == 300
+    assert cfg.trend_buckets == 12
+
+
 def _make_error(source: str, signature: str, ts: float, message: str = "Database error") -> ParsedError:
     return ParsedError(
         error_key=f"{source}:{signature}",
@@ -48,6 +59,27 @@ def test_log_parser_detects_plain_patterns(tmp_path: Path) -> None:
     assert len(parsed) == 2
     assert parsed[0].source_id == "api"
     assert parsed[0].signature != parsed[1].signature
+
+
+def test_log_parser_plain_uses_embedded_timestamp_when_present(tmp_path: Path) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("2026-02-18T10:11:12Z ERROR worker crashed\n")
+
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "format": "plain",
+                "errorPatterns": ["ERROR"],
+            }
+        )
+    )
+    parsed = parser.parse()
+
+    assert len(parsed) == 1
+    assert parsed[0].seen_at_iso.startswith("2026-02-18T10:11:12")
+    assert parsed[0].message == "ERROR worker crashed"
 
 
 def test_log_parser_detects_json_errors_and_extracts_stack(tmp_path: Path) -> None:
@@ -118,4 +150,5 @@ def test_grouper_build_dashboard_includes_trend_and_counts() -> None:
     assert item["count"] == 6
     assert "trend" in item
     assert item["trend"]["bucket_seconds"] == 60
-    assert sum(item["trend"]["buckets"]) == 6
+    assert sum(item["trend"]["buckets"]) == 4
+    assert item["trend"]["current_window_count"] + item["trend"]["previous_window_count"] == 6
