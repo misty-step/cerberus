@@ -86,7 +86,7 @@ def test_healthchecker_marks_unhealthy_on_body_mismatch():
     cfg = HealthCheckConfig.from_dict(
         {"id": "api", "url": "https://example.test", "expectedStatus": 200, "expectedBody": "green"}
     )
-    checker = HealthChecker(opener=lambda _req, _timeout: _ContextResponse(200, "not green"))
+    checker = HealthChecker(opener=lambda _req, _timeout: _ContextResponse(200, "all red"))
     result = checker.perform_check(cfg)
     assert result.status == UNHEALTHY
     assert "expected text" in result.error
