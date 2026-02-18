@@ -102,7 +102,12 @@ class ErrorSourceConfig:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ErrorSourceConfig":
         source_id = _coerce_str(raw.get("id"), "id")
-        raw_log_file = _coerce_str(raw.get("path", raw.get("logFile", raw.get("file")),), "path")
+        raw_log_file_value = raw.get("path")
+        if raw_log_file_value is None:
+            raw_log_file_value = raw.get("logFile")
+        if raw_log_file_value is None:
+            raw_log_file_value = raw.get("file")
+        raw_log_file = _coerce_str(raw_log_file_value, "path")
         log_file, base_dir = _resolve_log_path(
             raw_log_file,
             raw.get("baseDir", raw.get("base_dir")),

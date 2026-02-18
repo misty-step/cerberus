@@ -148,6 +148,22 @@ def test_error_source_config_rejects_non_string_format(tmp_path: Path) -> None:
         )
 
 
+def test_error_source_config_accepts_file_alias(tmp_path: Path) -> None:
+    log = tmp_path / "alias.log"
+    log.write_text("ERROR boom")
+
+    config = ErrorSourceConfig.from_dict(
+        {
+            "id": "api",
+            "file": "alias.log",
+            "baseDir": str(tmp_path),
+            "format": "plain",
+            "errorPatterns": ["ERROR"],
+        }
+    )
+    assert config.log_file == str(log.resolve())
+
+
 def test_log_parser_returns_empty_for_missing_file(tmp_path: Path) -> None:
     parser = LogParser(
         ErrorSourceConfig.from_dict(
