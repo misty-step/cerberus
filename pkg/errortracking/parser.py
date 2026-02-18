@@ -1,0 +1,229 @@
+"""Log parsing for agentic error tracking."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+from .config import ErrorSourceConfig
+
+ISO_PREFIX_RE = re.compile(
+    r"^\[?(?P<ts>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)\]?\s*[-:|]?\s*(?P<body>.*)$"
+)
+EPOCH_PREFIX_RE = re.compile(
+    r"^\[?(?P<ts>\d{10}(?:\.\d+)?)\]?\s*[-:|]?\s*(?P<body>.*)$"
+)
+MAX_SIGNATURE_SOURCE_CHARS = 4096
+MAX_TAIL_BYTES = 10 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ParsedError:
+    """A single detected error event extracted from a log source."""
+
+    error_key: str
+    signature: str
+    message: str
+    source_id: str
+    seen_at: float
+    seen_at_iso: str
+    matched_pattern: str
+    stack_trace: str | None = None
+    raw_record: str | dict[str, object] | None = None
+
+
+def _normalize_signature(text: str) -> str:
+    text = (text or "")[:MAX_SIGNATURE_SOURCE_CHARS]
+    normalized = " ".join((text or "").split()).lower()
+    normalized = re.sub(r"\b0x[0-9a-f]+\b", "0x<id>", normalized)
+    normalized = re.sub(r"\b[0-9a-f]{8,}\b", "<id>", normalized)
+    normalized = re.sub(r"\b\d+\b", "<num>", normalized)
+    return normalized.strip() or "error"
+
+
+def _parse_datetime(value: Any, now_ts: float) -> tuple[float, str]:
+    if value is None:
+        dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+        return now_ts, dt.isoformat()
+    if isinstance(value, (int, float)):
+        dt = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        return dt.timestamp(), dt.isoformat()
+    if not isinstance(value, str):
+        dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+        return now_ts, dt.isoformat()
+
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+        return dt.timestamp(), dt.isoformat()
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    return dt.timestamp(), dt.isoformat()
+
+
+def _tail_lines(path: str, max_lines: int) -> list[str]:
+    if max_lines <= 0:
+        return []
+
+    chunk_size = 4096
+    chunks: list[bytes] = []
+    newline_count = 0
+    bytes_loaded = 0
+    with open(path, "rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        remaining = stream.tell()
+        while remaining > 0:
+            budget = MAX_TAIL_BYTES - bytes_loaded
+            if budget <= 0:
+                break
+            read_size = min(chunk_size, remaining, budget)
+            remaining -= read_size
+            stream.seek(remaining)
+            chunk = stream.read(read_size)
+            chunks.append(chunk)
+            newline_count += chunk.count(b"\n")
+            bytes_loaded += len(chunk)
+            if newline_count > max_lines or bytes_loaded >= MAX_TAIL_BYTES:
+                break
+
+    buffer = b"".join(reversed(chunks))
+    lines = buffer.splitlines()[-max_lines:]
+    return [line.decode("utf-8", errors="replace") for line in lines]
+
+
+def _validate_runtime_path(config: ErrorSourceConfig) -> str:
+    base = Path(config.base_dir).expanduser().resolve()
+    target = Path(config.log_file).expanduser().resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("log_file must resolve within base_dir") from exc
+    return str(target)
+
+
+def _read_lines(config: ErrorSourceConfig) -> list[str]:
+    try:
+        log_path = _validate_runtime_path(config)
+        return _tail_lines(log_path, config.poll_lines)
+    except (FileNotFoundError, PermissionError):
+        return []
+
+
+class LogParser:
+    """Parses log files into typed `ParsedError` events."""
+
+    def __init__(self, source: ErrorSourceConfig) -> None:
+        self._source = source
+        self._pattern_regex = tuple(re.compile(pattern, re.IGNORECASE) for pattern in source.error_patterns)
+
+    def _build_signature(self, message: str, stack_trace: str | None) -> str:
+        if stack_trace:
+            return _normalize_signature(stack_trace)
+        return _normalize_signature(message)
+
+    def _parse_timestamp(self, raw: Any, fallback_ts: float) -> tuple[float, str]:
+        return _parse_datetime(raw, fallback_ts)
+
+    def _extract_plain_timestamp(self, line: str, fallback_ts: float) -> tuple[float, str, str]:
+        normalized = line.strip()
+        if not normalized:
+            return self._parse_timestamp(None, fallback_ts) + ("",)
+
+        iso_match = ISO_PREFIX_RE.match(normalized)
+        if iso_match:
+            ts_raw = iso_match.group("ts")
+            body = iso_match.group("body").strip()
+            ts, ts_iso = self._parse_timestamp(ts_raw.replace(" ", "T"), fallback_ts)
+            return ts, ts_iso, body or normalized
+
+        epoch_match = EPOCH_PREFIX_RE.match(normalized)
+        if epoch_match:
+            ts_raw = epoch_match.group("ts")
+            body = epoch_match.group("body").strip()
+            ts, ts_iso = self._parse_timestamp(float(ts_raw), fallback_ts)
+            return ts, ts_iso, body or normalized
+
+        ts, ts_iso = self._parse_timestamp(None, fallback_ts)
+        return ts, ts_iso, normalized
+
+    def _match(self, text: str) -> str | None:
+        for regex in self._pattern_regex:
+            if regex.search(text):
+                return regex.pattern
+        return None
+
+    def _parse_plain_line(self, line: str, now_ts: float) -> ParsedError | None:
+        seen_ts, seen_iso, message = self._extract_plain_timestamp(line, now_ts)
+        matched = self._match(message)
+        if matched is None:
+            return None
+
+        signature = self._build_signature(message, stack_trace=None)
+        return ParsedError(
+            error_key=f"{self._source.source_id}:{signature}",
+            signature=signature,
+            message=message,
+            source_id=self._source.source_id,
+            seen_at=seen_ts,
+            seen_at_iso=seen_iso,
+            matched_pattern=matched,
+            raw_record=line,
+        )
+
+    def _parse_json_line(self, line: str, now_ts: float) -> ParsedError | None:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(record, dict):
+            return None
+
+        message = record.get(self._source.message_field) or record.get("message") or ""
+        message = str(message)
+        stack_trace = record.get(self._source.stack_field)
+        if not isinstance(stack_trace, str):
+            stack_trace = None
+
+        searchable = message
+        if stack_trace:
+            searchable = f"{searchable} {stack_trace}"
+        matched = self._match(searchable)
+        if matched is None:
+            return None
+
+        if self._source.timestamp_field:
+            raw_ts = record.get(self._source.timestamp_field)
+        else:
+            raw_ts = record.get("timestamp", record.get("time", record.get("ts")))
+        seen_ts, seen_iso = self._parse_timestamp(raw_ts, now_ts)
+        signature = self._build_signature(message, stack_trace=stack_trace)
+        return ParsedError(
+            error_key=f"{self._source.source_id}:{signature}",
+            signature=signature,
+            message=message,
+            source_id=self._source.source_id,
+            seen_at=seen_ts,
+            seen_at_iso=seen_iso,
+            matched_pattern=matched,
+            stack_trace=stack_trace,
+            raw_record=record,
+        )
+
+    def parse(self) -> list[ParsedError]:
+        parser = self._parse_plain_line if self._source.log_format == "plain" else self._parse_json_line
+        now_ts = datetime.now(tz=timezone.utc).timestamp()
+        parsed: list[ParsedError] = []
+
+        for line in _read_lines(self._source):
+            parsed_error = parser(line, now_ts)
+            if parsed_error is not None:
+                parsed.append(parsed_error)
+        return parsed
