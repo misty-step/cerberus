@@ -61,6 +61,11 @@ def test_config_from_dict_blocks_private_ip():
         HealthCheckConfig.from_dict({"id": "bad", "url": "http://192.168.1.10/health"})
 
 
+def test_config_from_dict_blocks_alibaba_metadata_ip():
+    with pytest.raises(ValueError, match="blocked"):
+        HealthCheckConfig.from_dict({"id": "bad", "url": "http://100.100.100.200/latest/meta-data"})
+
+
 class _ContextResponse:
     def __init__(self, status: int, body: str = ""):
         self.status = status

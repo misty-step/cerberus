@@ -15,7 +15,10 @@ BLOCKED_HOSTS = {
     "metadata.google.internal",
     "metadata",
     "169.254.169.254",
+    "100.100.100.200",
+    "100.100.100.201",
 }
+BLOCKED_CIDRS = (ipaddress.ip_network("100.64.0.0/10"),)
 
 
 def _coerce_optional_str(value: Any) -> str | None:
@@ -59,6 +62,7 @@ def _is_blocked_ip(host: str) -> bool:
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
+        or any(ip in network for network in BLOCKED_CIDRS)
     )
 
 
