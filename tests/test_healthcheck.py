@@ -183,7 +183,7 @@ def test_health_monitor_alerts_only_on_state_transitions():
     monitor = HealthMonitor(checker=checker, sinks=(sink,))
     results = []
     for _ in range(5):
-        run_results, alerts = monitor.run_checks([cfg])
+        run_results, _alerts = monitor.run_checks([cfg])
         results.extend(run_results)
 
     assert len(results) == 5
