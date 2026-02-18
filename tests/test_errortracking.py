@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from pkg.errortracking.config import ErrorSourceConfig
-from pkg.errortracking.grouper import ErrorGrouper
-from pkg.errortracking.parser import LogParser, ParsedError
+from pkg.errortracking.grouper import ErrorAlert, ErrorGrouper
+from pkg.errortracking.parser import LogParser, ParsedError, _normalize_signature
 
 
 def test_error_tracking_config_defaults_work_when_fields_missing() -> None:
@@ -182,6 +182,101 @@ def test_log_parser_skips_invalid_json_line(tmp_path: Path) -> None:
     assert parsed[0].message == "DatabaseError: boom"
 
 
+def test_log_parser_respects_poll_lines_limit(tmp_path: Path) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("\n".join(f"ERROR line {idx}" for idx in range(10)))
+
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "pollLines": 2,
+                "errorPatterns": ["ERROR"],
+            }
+        )
+    )
+
+    parsed = parser.parse()
+    assert [item.message for item in parsed] == ["ERROR line 8", "ERROR line 9"]
+
+
+def test_log_parser_handles_permission_error_from_tail_reader(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("ERROR denied\n")
+
+    def _raise_permission_error(_path: str, _max_lines: int) -> list[str]:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("pkg.errortracking.parser._tail_lines", _raise_permission_error)
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "errorPatterns": ["ERROR"],
+            }
+        )
+    )
+    assert parser.parse() == []
+
+
+def test_log_parser_parses_space_separated_json_timestamp(tmp_path: Path) -> None:
+    log = tmp_path / "app.log"
+    log.write_text('{"timestamp":"2026-02-18 10:11:12","message":"DatabaseError: boom"}\n')
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "worker",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "json",
+                "errorPatterns": ["DatabaseError"],
+            }
+        )
+    )
+    parsed = parser.parse()
+    assert len(parsed) == 1
+    assert parsed[0].seen_at_iso.startswith("2026-02-18T10:11:12")
+
+
+def test_normalize_signature_masks_ids_and_numbers() -> None:
+    normalized = _normalize_signature("DB failure user=42 request=0xABCD1234 trace deadbeefcafebabe")
+    assert normalized == "db failure user=<num> request=0x<id> trace <id>"
+
+
+def test_error_source_config_rejects_bool_poll_lines_and_empty_patterns(tmp_path: Path) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("ERROR boom")
+
+    with pytest.raises(ValueError, match="pollLines must be an integer"):
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "pollLines": True,
+                "errorPatterns": ["ERROR"],
+            }
+        )
+
+    with pytest.raises(ValueError, match="errorPatterns cannot be empty"):
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "errorPatterns": [],
+            }
+        )
+
+
 def test_error_grouper_creates_new_error_alert_once() -> None:
     grouper = ErrorGrouper(spike_window_seconds=300, spike_multiplier=1.5, spike_min_count=4, trend_bucket_seconds=60, trend_buckets=4)
     events = [
@@ -216,9 +311,23 @@ def test_error_grouper_handles_out_of_order_timestamps_and_eviction() -> None:
     ]
     groups, _alerts = grouper.ingest(fresh)
 
-    group_keys = {g.error_key for g in groups}
-    assert "api:stale" not in group_keys
-    assert "api:fresh" in group_keys
+    by_key = {group.error_key: group for group in groups}
+    assert "api:stale" not in by_key
+    assert "api:fresh" in by_key
+    assert by_key["api:fresh"].first_seen.startswith("1970-01-01T00:13:20")
+    assert by_key["api:fresh"].last_seen.startswith("1970-01-01T00:16:40")
+
+
+def test_error_grouper_records_sink_failures() -> None:
+    grouper = ErrorGrouper(spike_window_seconds=300, spike_multiplier=1.5, spike_min_count=4, trend_bucket_seconds=60, trend_buckets=4)
+
+    class FailingSink:
+        def send(self, _alert: ErrorAlert) -> None:
+            raise RuntimeError("sink exploded")
+
+    _groups, alerts = grouper.ingest([_make_error("api", "database connection failure", 1000.0)], sinks=[FailingSink()])
+    assert any(alert.code == "new_error_type" for alert in alerts)
+    assert any("RuntimeError: sink exploded" in value for value in grouper.sink_errors)
 
 
 def test_grouper_build_dashboard_includes_trend_and_counts() -> None:

@@ -27,22 +27,38 @@ class ErrorGroup:
     last_seen: str = ""
     source_ids: list[str] = field(default_factory=list)
     timestamps: deque[float] = field(default_factory=deque)
+    first_seen_ts: float | None = field(default=None, repr=False)
+    last_seen_ts: float = field(default=0.0, repr=False)
+    _timestamps_sorted: bool = field(default=True, repr=False)
     is_spiking: bool = False
 
     def add(self, event: ParsedError) -> None:
         self.count += 1
-        self.last_seen = event.seen_at_iso
-        if not self.first_seen:
+        if self.first_seen_ts is None or event.seen_at < self.first_seen_ts:
+            self.first_seen_ts = event.seen_at
             self.first_seen = event.seen_at_iso
+        if event.seen_at >= self.last_seen_ts:
+            self.last_seen_ts = event.seen_at
+            self.last_seen = event.seen_at_iso
         if event.source_id not in self.source_ids:
             self.source_ids.append(event.source_id)
             self.source_ids.sort()
+        if self.timestamps and event.seen_at < self.timestamps[-1]:
+            self._timestamps_sorted = False
         self.timestamps.append(event.seen_at)
+        if self.last_seen_ts == 0.0:
+            self.last_seen_ts = event.seen_at
 
-    def trim(self, cutoff_ts: float) -> None:
+    def trim(self, cutoff_ts: float, max_timestamps: int) -> None:
         if not self.timestamps:
             return
-        self.timestamps = deque(ts for ts in self.timestamps if ts >= cutoff_ts)
+        if not self._timestamps_sorted:
+            self.timestamps = deque(sorted(self.timestamps))
+            self._timestamps_sorted = True
+        while self.timestamps and self.timestamps[0] < cutoff_ts:
+            self.timestamps.popleft()
+        while len(self.timestamps) > max_timestamps:
+            self.timestamps.popleft()
 
 
 @dataclass(frozen=True)
@@ -65,12 +81,16 @@ def _build_window_counts(timestamps: deque[float], now_ts: float, window_seconds
 
     current_count = 0
     previous_count = 0
-    for value in timestamps:
-        if previous_start < value <= now_ts:
-            if value <= current_start:
-                previous_count += 1
-            else:
-                current_count += 1
+    for value in reversed(timestamps):
+        if value > now_ts:
+            continue
+        if value > current_start:
+            current_count += 1
+            continue
+        if value > previous_start:
+            previous_count += 1
+            continue
+        break
     return current_count, previous_count
 
 
@@ -83,6 +103,7 @@ class ErrorGrouper:
     spike_min_count: int = 5
     trend_bucket_seconds: int = 300
     trend_buckets: int = 12
+    max_group_timestamps: int = 10_000
     _groups: dict[str, ErrorGroup] = field(default_factory=dict, init=False, repr=False)
     _sink_errors: list[str] = field(default_factory=list, init=False, repr=False)
 
@@ -97,6 +118,8 @@ class ErrorGrouper:
             raise ValueError("trend_bucket_seconds must be greater than zero")
         if self.trend_buckets <= 0:
             raise ValueError("trend_buckets must be greater than zero")
+        if self.max_group_timestamps <= 0:
+            raise ValueError("max_group_timestamps must be greater than zero")
 
     def _window_bounds(self, now_ts: float) -> float:
         return now_ts - self._retention_seconds()
@@ -117,9 +140,11 @@ class ErrorGrouper:
         bucket_start = now_ts - (self.trend_bucket_seconds * self.trend_buckets)
         buckets = [0 for _ in range(self.trend_buckets)]
 
-        for value in timestamps:
-            if value <= bucket_start or value > now_ts:
+        for value in reversed(timestamps):
+            if value > now_ts:
                 continue
+            if value <= bucket_start:
+                break
             bucket = int((value - bucket_start) // self.trend_bucket_seconds)
             if bucket >= self.trend_buckets:
                 bucket = self.trend_buckets - 1
@@ -129,11 +154,7 @@ class ErrorGrouper:
     def _evict_stale_groups(self, cutoff_ts: float) -> None:
         stale_keys = []
         for key, group in self._groups.items():
-            if not group.timestamps:
-                stale_keys.append(key)
-                continue
-            latest = max(group.timestamps)
-            if latest < cutoff_ts:
+            if group.last_seen_ts < cutoff_ts:
                 stale_keys.append(key)
         for key in stale_keys:
             self._groups.pop(key, None)
@@ -168,37 +189,37 @@ class ErrorGrouper:
             now_ts = event.seen_at
             latest_seen_ts = now_ts if latest_seen_ts is None else max(latest_seen_ts, now_ts)
             group.add(event)
-            latest_event_by_group[event.error_key] = event
-
-            cutoff = self._window_bounds(now_ts)
-            group.trim(cutoff)
+            existing = latest_event_by_group.get(event.error_key)
+            if existing is None or event.seen_at >= existing.seen_at:
+                latest_event_by_group[event.error_key] = event
 
             if is_new_group:
                 new_group_keys.add(event.error_key)
-                current_count, previous_count = _build_window_counts(
-                    group.timestamps, now_ts, self.spike_window_seconds
-                )
+
+        for error_key, latest_event in latest_event_by_group.items():
+            group = self._groups[error_key]
+            group.trim(self._window_bounds(latest_event.seen_at), self.max_group_timestamps)
+            current_count, previous_count = _build_window_counts(
+                group.timestamps, latest_event.seen_at, self.spike_window_seconds
+            )
+
+            if error_key in new_group_keys:
                 alert = ErrorAlert(
                     code="new_error_type",
-                    error_key=event.error_key,
-                    message=event.message,
+                    error_key=group.error_key,
+                    message=group.message,
                     count=group.count,
                     current_window_count=current_count,
                     previous_window_count=previous_count,
                     source_ids=list(group.source_ids),
-                    timestamp=event.seen_at_iso,
+                    timestamp=latest_event.seen_at_iso,
                 )
                 alerts.append(alert)
                 self._dispatch_alert(alert, sinks)
 
-        for error_key, latest_event in latest_event_by_group.items():
-            if error_key in new_group_keys and self._groups[error_key].count == 1:
+            if error_key in new_group_keys and group.count == 1:
                 continue
 
-            group = self._groups[error_key]
-            current_count, previous_count = _build_window_counts(
-                group.timestamps, latest_event.seen_at, self.spike_window_seconds
-            )
             is_spike = self._is_rate_spike(current_count, previous_count)
             if not group.is_spiking and is_spike:
                 alert = ErrorAlert(
@@ -227,6 +248,7 @@ class ErrorGrouper:
 
         errors = []
         for group in sorted(self._groups.values(), key=lambda item: item.count, reverse=True):
+            group.trim(self._window_bounds(now_ts), self.max_group_timestamps)
             current_count, previous_count = _build_window_counts(group.timestamps, now_ts, self.spike_window_seconds)
             errors.append(
                 {

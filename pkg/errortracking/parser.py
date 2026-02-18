@@ -72,8 +72,9 @@ def _tail_lines(path: str, max_lines: int) -> list[str]:
     if max_lines <= 0:
         return []
 
-    buffer = b""
     chunk_size = 4096
+    chunks: list[bytes] = []
+    newline_count = 0
     with open(path, "rb") as stream:
         stream.seek(0, os.SEEK_END)
         remaining = stream.tell()
@@ -81,10 +82,13 @@ def _tail_lines(path: str, max_lines: int) -> list[str]:
             read_size = min(chunk_size, remaining)
             remaining -= read_size
             stream.seek(remaining)
-            buffer = stream.read(read_size) + buffer
-            if buffer.count(b"\n") > max_lines:
+            chunk = stream.read(read_size)
+            chunks.append(chunk)
+            newline_count += chunk.count(b"\n")
+            if newline_count > max_lines:
                 break
 
+    buffer = b"".join(reversed(chunks))
     lines = buffer.splitlines()[-max_lines:]
     return [line.decode("utf-8", errors="replace") for line in lines]
 
@@ -103,7 +107,7 @@ def _read_lines(config: ErrorSourceConfig) -> list[str]:
     try:
         log_path = _validate_runtime_path(config)
         return _tail_lines(log_path, config.poll_lines)
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError):
         return []
 
 
