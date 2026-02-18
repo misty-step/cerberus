@@ -121,10 +121,6 @@ class HealthChecker:
                 started,
                 str(exc.reason) if hasattr(exc, "reason") else str(exc),
             )
-        except TimeoutError as exc:
-            return self._build_response(
-                config.id, UNHEALTHY, None, started, f"timeout: {exc}"
-            )
         except Exception as exc:
             return self._build_response(config.id, UNHEALTHY, None, started, str(exc))
 

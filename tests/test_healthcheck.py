@@ -47,6 +47,16 @@ def test_config_from_dict_invalid_status_raises():
         HealthCheckConfig.from_dict({"id": "bad", "url": "https://x", "expectedStatus": 99})
 
 
+def test_config_from_dict_blocks_localhost():
+    with pytest.raises(ValueError, match="blocked"):
+        HealthCheckConfig.from_dict({"id": "bad", "url": "http://localhost/health"})
+
+
+def test_config_from_dict_blocks_private_ip():
+    with pytest.raises(ValueError, match="blocked"):
+        HealthCheckConfig.from_dict({"id": "bad", "url": "http://192.168.1.10/health"})
+
+
 class _ContextResponse:
     def __init__(self, status: int, body: str = ""):
         self.status = status

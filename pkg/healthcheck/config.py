@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
+from urllib.parse import urlparse
 from typing import Any
 
 
 HTTP_METHODS = {"GET", "POST"}
 DEFAULT_INTERVAL_SECONDS = 300
 DEFAULT_TIMEOUT_SECONDS = 10
+URL_SCHEMES = {"http", "https"}
+BLOCKED_HOSTS = {
+    "localhost",
+    "metadata.google.internal",
+    "metadata",
+    "169.254.169.254",
+}
 
 
 def _coerce_optional_str(value: Any) -> str | None:
@@ -38,6 +47,38 @@ def _coerce_str(value: Any, field_name: str) -> str:
     return normalized
 
 
+def _is_blocked_ip(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validate_url(url: str) -> str:
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in URL_SCHEMES:
+        raise ValueError("url scheme must be http or https")
+
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        raise ValueError("url must include a hostname")
+    if host in BLOCKED_HOSTS:
+        raise ValueError(f"url host '{host}' is blocked")
+    if _is_blocked_ip(host):
+        raise ValueError(f"url host '{host}' is blocked")
+
+    return url
+
+
 def _coerce_strict_status(value: Any) -> int:
     if not isinstance(value, int):
         raise ValueError("expectedStatus must be an integer")
@@ -61,7 +102,7 @@ class HealthCheckConfig:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "HealthCheckConfig":
         check_id = _coerce_str(raw["id"], "id")
-        url = _coerce_str(raw["url"], "url")
+        url = _validate_url(_coerce_str(raw["url"], "url"))
 
         method = str(raw.get("method") or raw.get("httpMethod") or raw.get("http_method") or "GET").strip().upper()
         if method not in HTTP_METHODS:

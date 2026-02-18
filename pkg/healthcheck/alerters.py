@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol
@@ -16,13 +18,19 @@ class AlertSink(Protocol):
 PayloadWriter = Callable[[dict[str, object]], None]
 
 
-def _default_webhook_writer(payload: dict[str, object], webhook_url: str) -> None:
-    data = json.dumps(payload).encode()
+def _default_webhook_writer(
+    payload: dict[str, object], webhook_url: str, webhook_secret: str | None = None
+) -> None:
+    data = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    headers = {"Content-Type": "application/json"}
+    if webhook_secret:
+        digest = hmac.new(webhook_secret.encode(), data, hashlib.sha256).hexdigest()
+        headers["X-Cerberus-Signature"] = f"sha256={digest}"
     req = request.Request(
         webhook_url,
         data=data,
         method="POST",
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     with request.urlopen(req, timeout=10):
         pass
@@ -31,6 +39,7 @@ def _default_webhook_writer(payload: dict[str, object], webhook_url: str) -> Non
 @dataclass(frozen=True)
 class WebhookAlertSink:
     webhook_url: str
+    webhook_secret: str | None = None
     write_payload: Optional[PayloadWriter] = None
 
     def send(self, transition: HealthTransition) -> None:
@@ -43,7 +52,11 @@ class WebhookAlertSink:
             "timestamp": transition.result.timestamp,
             "error": transition.result.error,
         }
-        writer = self.write_payload or (lambda data: _default_webhook_writer(data, self.webhook_url))
+        writer = self.write_payload or (
+            lambda data: _default_webhook_writer(
+                data, self.webhook_url, self.webhook_secret
+            )
+        )
         try:
             writer(payload)
         except Exception:
