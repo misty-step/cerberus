@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from pkg.errortracking.config import ErrorSourceConfig
 from pkg.errortracking.grouper import ErrorGrouper
 from pkg.errortracking.parser import LogParser, ParsedError
@@ -50,6 +52,7 @@ def test_log_parser_detects_plain_patterns(tmp_path: Path) -> None:
             {
                 "id": "api",
                 "path": str(log),
+                "baseDir": str(tmp_path),
                 "format": "plain",
                 "errorPatterns": ["ERROR", "CRITICAL"],
             }
@@ -71,6 +74,7 @@ def test_log_parser_plain_uses_embedded_timestamp_when_present(tmp_path: Path) -
             {
                 "id": "api",
                 "path": str(log),
+                "baseDir": str(tmp_path),
                 "format": "plain",
                 "errorPatterns": ["ERROR"],
             }
@@ -99,6 +103,7 @@ def test_log_parser_detects_json_errors_and_extracts_stack(tmp_path: Path) -> No
             {
                 "id": "worker",
                 "path": str(log),
+                "baseDir": str(tmp_path),
                 "format": "json",
                 "messageField": "message",
                 "stackField": "stack",
@@ -111,6 +116,70 @@ def test_log_parser_detects_json_errors_and_extracts_stack(tmp_path: Path) -> No
     assert len(parsed) == 2
     assert parsed[0].stack_trace == "Traceback 1"
     assert parsed[0].signature == parsed[1].signature
+
+
+def test_error_source_config_rejects_path_outside_base_dir(tmp_path: Path) -> None:
+    outside = Path("/tmp/forbidden.log")
+    with pytest.raises(ValueError, match="within baseDir"):
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(outside),
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "errorPatterns": ["ERROR"],
+            }
+        )
+
+
+def test_error_source_config_rejects_non_string_format(tmp_path: Path) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("ERROR crash")
+
+    with pytest.raises(ValueError, match="format must be one of"):
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": 123,
+                "errorPatterns": ["ERROR"],
+            }
+        )
+
+
+def test_log_parser_returns_empty_for_missing_file(tmp_path: Path) -> None:
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": "missing.log",
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "errorPatterns": ["ERROR"],
+            }
+        )
+    )
+    assert parser.parse() == []
+
+
+def test_log_parser_skips_invalid_json_line(tmp_path: Path) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("not-json\n{\"message\":\"DatabaseError: boom\"}")
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "worker",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "json",
+                "errorPatterns": ["DatabaseError"],
+            }
+        )
+    )
+    parsed = parser.parse()
+    assert len(parsed) == 1
+    assert parsed[0].message == "DatabaseError: boom"
 
 
 def test_error_grouper_creates_new_error_alert_once() -> None:
@@ -131,6 +200,25 @@ def test_error_grouper_creates_new_error_alert_once() -> None:
     assert any(a.code == "error_rate_spike" for a in alerts)
     assert groups[0].count == 6
     assert len(groups[0].source_ids) == 1
+
+
+def test_error_grouper_handles_out_of_order_timestamps_and_eviction() -> None:
+    grouper = ErrorGrouper(spike_window_seconds=300, spike_multiplier=2.0, spike_min_count=4, trend_bucket_seconds=60, trend_buckets=4)
+    old = [
+        _make_error("api", "stale", 100.0),
+        _make_error("api", "stale", 200.0),
+    ]
+    grouper.ingest(old)
+    fresh = [
+        _make_error("api", "fresh", 1000.0),
+        _make_error("api", "fresh", 800.0),
+        _make_error("api", "fresh", 900.0),
+    ]
+    groups, _alerts = grouper.ingest(fresh)
+
+    group_keys = {g.error_key for g in groups}
+    assert "api:stale" not in group_keys
+    assert "api:fresh" in group_keys
 
 
 def test_grouper_build_dashboard_includes_trend_and_counts() -> None:

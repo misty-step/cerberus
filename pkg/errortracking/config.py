@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 SUPPORTED_LOG_FORMATS = {"plain", "json"}
@@ -58,12 +59,39 @@ def _coerce_patterns(value: Any) -> tuple[str, ...]:
     return tuple(dict.fromkeys(patterns))
 
 
+def _coerce_log_format(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"format must be one of {sorted(SUPPORTED_LOG_FORMATS)}")
+    normalized = value.strip().lower()
+    if normalized not in SUPPORTED_LOG_FORMATS:
+        raise ValueError(f"format must be one of {sorted(SUPPORTED_LOG_FORMATS)}")
+    return normalized
+
+
+def _resolve_log_path(raw_path: str, raw_base_dir: Any) -> tuple[str, str]:
+    base_dir = _coerce_str(raw_base_dir if raw_base_dir is not None else ".", "baseDir")
+    base = Path(base_dir).expanduser().resolve()
+
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    resolved = candidate.resolve()
+
+    try:
+        resolved.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("path must resolve within baseDir") from exc
+
+    return str(resolved), str(base)
+
+
 @dataclass(frozen=True)
 class ErrorSourceConfig:
     """Configuration for one structured or plain text log source."""
 
     source_id: str
     log_file: str
+    base_dir: str = "."
     log_format: str = "plain"
     error_patterns: tuple[str, ...] = ("ERROR", "CRITICAL", "EXCEPTION")
     poll_lines: int = 2000
@@ -74,10 +102,12 @@ class ErrorSourceConfig:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ErrorSourceConfig":
         source_id = _coerce_str(raw.get("id"), "id")
-        log_file = _coerce_str(raw.get("path", raw.get("logFile", raw.get("file")),), "path")
-        log_format = (raw.get("format") or raw.get("logFormat") or "plain").strip().lower()
-        if log_format not in SUPPORTED_LOG_FORMATS:
-            raise ValueError(f"format must be one of {sorted(SUPPORTED_LOG_FORMATS)}")
+        raw_log_file = _coerce_str(raw.get("path", raw.get("logFile", raw.get("file")),), "path")
+        log_file, base_dir = _resolve_log_path(
+            raw_log_file,
+            raw.get("baseDir", raw.get("base_dir")),
+        )
+        log_format = _coerce_log_format(raw.get("format") or raw.get("logFormat") or "plain")
         patterns = _coerce_patterns(raw.get("errorPatterns", raw.get("patterns", ("ERROR", "CRITICAL", "EXCEPTION"))))
         poll_lines = _coerce_positive_int(
             raw.get("pollLines", raw.get("poll_lines")),
@@ -94,6 +124,7 @@ class ErrorSourceConfig:
         return cls(
             source_id=source_id,
             log_file=log_file,
+            base_dir=base_dir,
             log_format=log_format,
             error_patterns=patterns,
             poll_lines=poll_lines,

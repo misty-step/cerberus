@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 import re
-from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -17,6 +18,7 @@ ISO_PREFIX_RE = re.compile(
 EPOCH_PREFIX_RE = re.compile(
     r"^\[?(?P<ts>\d{10}(?:\.\d+)?)\]?\s*[-:|]?\s*(?P<body>.*)$"
 )
+MAX_SIGNATURE_SOURCE_CHARS = 4096
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class ParsedError:
 
 
 def _normalize_signature(text: str) -> str:
+    text = (text or "")[:MAX_SIGNATURE_SOURCE_CHARS]
     normalized = " ".join((text or "").split()).lower()
     normalized = re.sub(r"\b0x[0-9a-f]+\b", "0x<id>", normalized)
     normalized = re.sub(r"\b[0-9a-f]{8,}\b", "<id>", normalized)
@@ -65,10 +68,41 @@ def _parse_datetime(value: Any, now_ts: float) -> tuple[float, str]:
     return dt.timestamp(), dt.isoformat()
 
 
+def _tail_lines(path: str, max_lines: int) -> list[str]:
+    if max_lines <= 0:
+        return []
+
+    buffer = b""
+    chunk_size = 4096
+    with open(path, "rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        remaining = stream.tell()
+        while remaining > 0:
+            read_size = min(chunk_size, remaining)
+            remaining -= read_size
+            stream.seek(remaining)
+            buffer = stream.read(read_size) + buffer
+            if buffer.count(b"\n") > max_lines:
+                break
+
+    lines = buffer.splitlines()[-max_lines:]
+    return [line.decode("utf-8", errors="replace") for line in lines]
+
+
+def _validate_runtime_path(config: ErrorSourceConfig) -> str:
+    base = Path(config.base_dir).expanduser().resolve()
+    target = Path(config.log_file).expanduser().resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("log_file must resolve within base_dir") from exc
+    return str(target)
+
+
 def _read_lines(config: ErrorSourceConfig) -> list[str]:
     try:
-        with open(config.log_file, "r", encoding="utf-8", errors="replace") as stream:
-            return list(deque(stream, maxlen=config.poll_lines))
+        log_path = _validate_runtime_path(config)
+        return _tail_lines(log_path, config.poll_lines)
     except FileNotFoundError:
         return []
 

@@ -40,8 +40,9 @@ class ErrorGroup:
         self.timestamps.append(event.seen_at)
 
     def trim(self, cutoff_ts: float) -> None:
-        while self.timestamps and self.timestamps[0] < cutoff_ts:
-            self.timestamps.popleft()
+        if not self.timestamps:
+            return
+        self.timestamps = deque(ts for ts in self.timestamps if ts >= cutoff_ts)
 
 
 @dataclass(frozen=True)
@@ -98,8 +99,10 @@ class ErrorGrouper:
             raise ValueError("trend_buckets must be greater than zero")
 
     def _window_bounds(self, now_ts: float) -> float:
-        retention = max(self.spike_window_seconds * 2, self.trend_bucket_seconds * self.trend_buckets)
-        return now_ts - retention
+        return now_ts - self._retention_seconds()
+
+    def _retention_seconds(self) -> int:
+        return max(self.spike_window_seconds * 2, self.trend_bucket_seconds * self.trend_buckets)
 
     def _is_rate_spike(self, current_count: int, previous_count: int) -> bool:
         if previous_count <= 0:
@@ -123,6 +126,18 @@ class ErrorGrouper:
             buckets[bucket] += 1
         return buckets
 
+    def _evict_stale_groups(self, cutoff_ts: float) -> None:
+        stale_keys = []
+        for key, group in self._groups.items():
+            if not group.timestamps:
+                stale_keys.append(key)
+                continue
+            latest = max(group.timestamps)
+            if latest < cutoff_ts:
+                stale_keys.append(key)
+        for key in stale_keys:
+            self._groups.pop(key, None)
+
     def _dispatch_alert(self, alert: ErrorAlert, sinks: list[ErrorAlertSink] | None) -> None:
         if not sinks:
             return
@@ -134,6 +149,7 @@ class ErrorGrouper:
 
     def ingest(self, errors: Iterable[ParsedError], sinks: list[ErrorAlertSink] | None = None) -> tuple[list[ErrorGroup], list[ErrorAlert]]:
         alerts: list[ErrorAlert] = []
+        latest_seen_ts: float | None = None
         self._sink_errors.clear()
         latest_event_by_group: dict[str, ParsedError] = {}
         new_group_keys: set[str] = set()
@@ -150,6 +166,7 @@ class ErrorGrouper:
 
             is_new_group = group.count == 0
             now_ts = event.seen_at
+            latest_seen_ts = now_ts if latest_seen_ts is None else max(latest_seen_ts, now_ts)
             group.add(event)
             latest_event_by_group[event.error_key] = event
 
@@ -198,11 +215,15 @@ class ErrorGrouper:
                 self._dispatch_alert(alert, sinks)
             group.is_spiking = is_spike
 
+        if latest_seen_ts is not None:
+            self._evict_stale_groups(latest_seen_ts - self._retention_seconds())
+
         return list(self._groups.values()), alerts
 
     def build_dashboard(self, as_of_ts: float | None = None) -> dict[str, object]:
         now_ts = datetime.now(tz=timezone.utc).timestamp() if as_of_ts is None else as_of_ts
         now_iso = datetime.fromtimestamp(now_ts, tz=timezone.utc).isoformat()
+        self._evict_stale_groups(now_ts - self._retention_seconds())
 
         errors = []
         for group in sorted(self._groups.values(), key=lambda item: item.count, reverse=True):
