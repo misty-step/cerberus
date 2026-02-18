@@ -19,6 +19,7 @@ EPOCH_PREFIX_RE = re.compile(
     r"^\[?(?P<ts>\d{10}(?:\.\d+)?)\]?\s*[-:|]?\s*(?P<body>.*)$"
 )
 MAX_SIGNATURE_SOURCE_CHARS = 4096
+MAX_TAIL_BYTES = 10 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -75,17 +76,22 @@ def _tail_lines(path: str, max_lines: int) -> list[str]:
     chunk_size = 4096
     chunks: list[bytes] = []
     newline_count = 0
+    bytes_loaded = 0
     with open(path, "rb") as stream:
         stream.seek(0, os.SEEK_END)
         remaining = stream.tell()
         while remaining > 0:
-            read_size = min(chunk_size, remaining)
+            budget = MAX_TAIL_BYTES - bytes_loaded
+            if budget <= 0:
+                break
+            read_size = min(chunk_size, remaining, budget)
             remaining -= read_size
             stream.seek(remaining)
             chunk = stream.read(read_size)
             chunks.append(chunk)
             newline_count += chunk.count(b"\n")
-            if newline_count > max_lines:
+            bytes_loaded += len(chunk)
+            if newline_count > max_lines or bytes_loaded >= MAX_TAIL_BYTES:
                 break
 
     buffer = b"".join(reversed(chunks))

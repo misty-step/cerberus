@@ -241,6 +241,27 @@ def test_log_parser_handles_permission_error_from_tail_reader(tmp_path: Path, mo
     assert parser.parse() == []
 
 
+def test_log_parser_limits_tail_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = tmp_path / "app.log"
+    log.write_text("ERROR " + ("x" * 2048))
+    monkeypatch.setattr("pkg.errortracking.parser.MAX_TAIL_BYTES", 64)
+
+    parser = LogParser(
+        ErrorSourceConfig.from_dict(
+            {
+                "id": "api",
+                "path": str(log),
+                "baseDir": str(tmp_path),
+                "format": "plain",
+                "pollLines": 100,
+                "errorPatterns": ["ERROR"],
+            }
+        )
+    )
+
+    assert parser.parse() == []
+
+
 def test_log_parser_parses_space_separated_json_timestamp(tmp_path: Path) -> None:
     log = tmp_path / "app.log"
     log.write_text('{"timestamp":"2026-02-18 10:11:12","message":"DatabaseError: boom"}\n')
@@ -344,6 +365,38 @@ def test_error_grouper_records_sink_failures() -> None:
     _groups, alerts = grouper.ingest([_make_error("api", "database connection failure", 1000.0)], sinks=[FailingSink()])
     assert any(alert.code == "new_error_type" for alert in alerts)
     assert any("RuntimeError: sink exploded" in value for value in grouper.sink_errors)
+
+
+def test_error_grouper_evicts_lru_groups_when_max_reached() -> None:
+    grouper = ErrorGrouper(
+        spike_window_seconds=300,
+        spike_multiplier=1.5,
+        spike_min_count=4,
+        trend_bucket_seconds=60,
+        trend_buckets=4,
+        max_groups=2,
+    )
+
+    grouper.ingest(
+        [
+            _make_error("api", "alpha", 100.0),
+            _make_error("api", "beta", 200.0),
+        ]
+    )
+    grouper.ingest([_make_error("api", "alpha", 300.0)])
+    groups, _alerts = grouper.ingest([_make_error("api", "gamma", 400.0)])
+
+    keys = {group.error_key for group in groups}
+    assert keys == {"api:alpha", "api:gamma"}
+
+
+def test_error_grouper_truncates_long_group_text() -> None:
+    long_value = "x" * 5000
+    grouper = ErrorGrouper(spike_window_seconds=300, spike_multiplier=1.5, spike_min_count=4, trend_bucket_seconds=60, trend_buckets=4)
+    groups, _alerts = grouper.ingest([_make_error("api", long_value, 100.0, message=long_value)])
+    assert len(groups) == 1
+    assert len(groups[0].signature) == 4096
+    assert len(groups[0].message) == 4096
 
 
 def test_grouper_build_dashboard_includes_trend_and_counts() -> None:

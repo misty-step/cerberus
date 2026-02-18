@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections import deque
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable, Protocol
 
 from .parser import ParsedError
+
+MAX_GROUP_TEXT_CHARS = 4096
 
 
 class ErrorAlertSink(Protocol):
@@ -26,7 +28,7 @@ class ErrorGroup:
     first_seen: str = ""
     last_seen: str = ""
     source_ids: list[str] = field(default_factory=list)
-    timestamps: deque[float] = field(default_factory=deque)
+    timestamps: list[float] = field(default_factory=list)
     first_seen_ts: float | None = field(default=None, repr=False)
     last_seen_ts: float = field(default=0.0, repr=False)
     _timestamps_sorted: bool = field(default=True, repr=False)
@@ -53,12 +55,14 @@ class ErrorGroup:
         if not self.timestamps:
             return
         if not self._timestamps_sorted:
-            self.timestamps = deque(sorted(self.timestamps))
+            self.timestamps.sort()
             self._timestamps_sorted = True
-        while self.timestamps and self.timestamps[0] < cutoff_ts:
-            self.timestamps.popleft()
-        while len(self.timestamps) > max_timestamps:
-            self.timestamps.popleft()
+        cutoff_idx = bisect_left(self.timestamps, cutoff_ts)
+        if cutoff_idx > 0:
+            self.timestamps = self.timestamps[cutoff_idx:]
+        overflow = len(self.timestamps) - max_timestamps
+        if overflow > 0:
+            self.timestamps = self.timestamps[overflow:]
 
 
 @dataclass(frozen=True)
@@ -75,22 +79,17 @@ class ErrorAlert:
     timestamp: str
 
 
-def _build_window_counts(timestamps: deque[float], now_ts: float, window_seconds: int) -> tuple[int, int]:
+def _build_window_counts(timestamps: list[float], now_ts: float, window_seconds: int) -> tuple[int, int]:
+    if not timestamps:
+        return 0, 0
+
     current_start = now_ts - window_seconds
     previous_start = now_ts - (window_seconds * 2)
-
-    current_count = 0
-    previous_count = 0
-    for value in reversed(timestamps):
-        if value > now_ts:
-            continue
-        if value > current_start:
-            current_count += 1
-            continue
-        if value > previous_start:
-            previous_count += 1
-            continue
-        break
+    end_idx = bisect_right(timestamps, now_ts)
+    current_start_idx = bisect_right(timestamps, current_start, 0, end_idx)
+    previous_start_idx = bisect_right(timestamps, previous_start, 0, current_start_idx)
+    current_count = end_idx - current_start_idx
+    previous_count = current_start_idx - previous_start_idx
     return current_count, previous_count
 
 
@@ -104,6 +103,7 @@ class ErrorGrouper:
     trend_bucket_seconds: int = 300
     trend_buckets: int = 12
     max_group_timestamps: int = 10_000
+    max_groups: int = 1_000
     _groups: dict[str, ErrorGroup] = field(default_factory=dict, init=False, repr=False)
     _sink_errors: list[str] = field(default_factory=list, init=False, repr=False)
 
@@ -120,6 +120,8 @@ class ErrorGrouper:
             raise ValueError("trend_buckets must be greater than zero")
         if self.max_group_timestamps <= 0:
             raise ValueError("max_group_timestamps must be greater than zero")
+        if self.max_groups <= 0:
+            raise ValueError("max_groups must be greater than zero")
 
     def _window_bounds(self, now_ts: float) -> float:
         return now_ts - self._retention_seconds()
@@ -136,15 +138,15 @@ class ErrorGrouper:
         )
         return current_count >= threshold
 
-    def _build_trend(self, timestamps: deque[float], now_ts: float) -> list[int]:
+    def _build_trend(self, timestamps: list[float], now_ts: float) -> list[int]:
         bucket_start = now_ts - (self.trend_bucket_seconds * self.trend_buckets)
         buckets = [0 for _ in range(self.trend_buckets)]
+        if not timestamps:
+            return buckets
 
-        for value in reversed(timestamps):
-            if value > now_ts:
-                continue
-            if value <= bucket_start:
-                break
+        start_idx = bisect_right(timestamps, bucket_start)
+        end_idx = bisect_right(timestamps, now_ts, start_idx)
+        for value in timestamps[start_idx:end_idx]:
             bucket = int((value - bucket_start) // self.trend_bucket_seconds)
             if bucket >= self.trend_buckets:
                 bucket = self.trend_buckets - 1
@@ -158,6 +160,12 @@ class ErrorGrouper:
                 stale_keys.append(key)
         for key in stale_keys:
             self._groups.pop(key, None)
+
+    def _evict_one_lru_group(self) -> None:
+        if len(self._groups) < self.max_groups:
+            return
+        lru_key = min(self._groups, key=lambda key: self._groups[key].last_seen_ts)
+        self._groups.pop(lru_key, None)
 
     def _dispatch_alert(self, alert: ErrorAlert, sinks: list[ErrorAlertSink] | None) -> None:
         if not sinks:
@@ -176,16 +184,16 @@ class ErrorGrouper:
         new_group_keys: set[str] = set()
 
         for event in errors:
-            group = self._groups.setdefault(
-                event.error_key,
-                ErrorGroup(
+            group = self._groups.get(event.error_key)
+            is_new_group = group is None
+            if group is None:
+                self._evict_one_lru_group()
+                group = ErrorGroup(
                     error_key=event.error_key,
-                    signature=event.signature,
-                    message=event.message,
-                ),
-            )
-
-            is_new_group = group.count == 0
+                    signature=event.signature[:MAX_GROUP_TEXT_CHARS],
+                    message=event.message[:MAX_GROUP_TEXT_CHARS],
+                )
+                self._groups[event.error_key] = group
             now_ts = event.seen_at
             latest_seen_ts = now_ts if latest_seen_ts is None else max(latest_seen_ts, now_ts)
             group.add(event)
