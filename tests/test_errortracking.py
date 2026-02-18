@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pkg.errortracking.config import ErrorSourceConfig
@@ -25,7 +26,7 @@ def _make_error(source: str, signature: str, ts: float, message: str = "Database
         message=message,
         source_id=source,
         seen_at=ts,
-        seen_at_iso=f"2026-02-17T{int(ts)}Z",
+        seen_at_iso=datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
         matched_pattern="Database",
         raw_record=None,
     )
