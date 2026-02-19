@@ -166,6 +166,7 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `opencode-version` | no | `1.1.49` | OpenCode CLI version |
 | `comment-policy` | no | `never` | When to post comment: `never`, `non-pass` (WARN/FAIL), or `always` |
 | `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
+| `fail-on-verdict` | no | `false` | Exit 1 if review verdict is FAIL |
 
 ### Verdict Action (`misty-step/cerberus/verdict@v2`)
 | Input | Required | Default | Description |
