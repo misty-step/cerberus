@@ -151,6 +151,17 @@ def test_fail_on_skip_is_wired_in_actions() -> None:
     assert "FAIL_ON_SKIP" in review_content
 
 
+def test_fail_on_verdict_is_wired_in_review_action() -> None:
+    review_content = ACTION_FILE.read_text()
+
+    assert "fail-on-verdict:" in review_content
+    assert "inputs.fail-on-verdict" in review_content
+    assert "FAIL_ON_VERDICT" in review_content
+    assert 'if [ "$FAIL_ON_VERDICT" = "true" ]; then' in review_content
+    assert 'echo "::error::${PERSPECTIVE} review verdict: FAIL"' in review_content
+    assert 'echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to council)"' in review_content
+
+
 def test_review_prompt_references_diff_file_placeholder() -> None:
     prompt_content = REVIEW_PROMPT_TEMPLATE.read_text()
     run_reviewer_content = RUN_REVIEWER_SCRIPT.read_text()

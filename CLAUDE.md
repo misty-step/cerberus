@@ -128,7 +128,7 @@ python3 -m py_compile scripts/parse-review.py
 python3 -m py_compile scripts/aggregate-verdict.py
 ```
 
-Coverage is enforced in CI at 30% (see `.coveragerc`). Configuration: `pytest.ini`, `.coveragerc`.
+Coverage is enforced in CI at 70% (see `.coveragerc`). Configuration: `pytest.ini`, `.coveragerc`.
 
 End-to-end testing requires pushing to a branch and having a target repo use `misty-step/cerberus@<branch>`. Current test target: `misty-step/moonbridge`.
 
