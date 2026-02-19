@@ -658,6 +658,88 @@ def test_main_allows_direct_arg_parsing(tmp_path: Path) -> None:
     assert "<!-- cerberus:council -->" in body
 
 
+_FAIL_COUNCIL = {
+    "verdict": "FAIL",
+    "summary": "1 reviewer. Failures: 1, warnings: 0, skipped: 0.",
+    "reviewers": [
+        {
+            "reviewer": "APOLLO",
+            "perspective": "correctness",
+            "verdict": "FAIL",
+            "confidence": 0.9,
+            "summary": "Bug found.",
+            "runtime_seconds": 30,
+            "findings": [
+                {
+                    "severity": "critical",
+                    "category": "bug",
+                    "file": "src/app.py",
+                    "line": 10,
+                    "title": "Critical bug",
+                    "description": "Bad thing.",
+                    "suggestion": "Fix it.",
+                }
+            ],
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }
+    ],
+    "stats": {"total": 1, "pass": 0, "warn": 0, "fail": 1, "skip": 0},
+    "override": {"used": False},
+}
+
+
+def test_advisory_banner_shown_when_fail_on_verdict_false(tmp_path: Path) -> None:
+    code, body, err = run_render(
+        tmp_path, _FAIL_COUNCIL, env_extra={"FAIL_ON_VERDICT": "false"}
+    )
+
+    assert code == 0, err
+    assert "Council Verdict: FAIL (advisory)" in body
+    assert "Advisory mode" in body
+    assert "fail-on-verdict" in body
+    # Standard FAIL header must NOT appear when advisory
+    assert "## ❌ Council Verdict: FAIL\n" not in body
+
+
+def test_no_advisory_banner_when_fail_on_verdict_true(tmp_path: Path) -> None:
+    code, body, err = run_render(
+        tmp_path, _FAIL_COUNCIL, env_extra={"FAIL_ON_VERDICT": "true"}
+    )
+
+    assert code == 0, err
+    assert "## ❌ Council Verdict: FAIL" in body
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
+def test_advisory_banner_not_shown_for_pass_verdict(tmp_path: Path) -> None:
+    pass_council = {
+        "verdict": "PASS",
+        "summary": "1 reviewer. Failures: 0.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.95,
+                "summary": "All good.",
+                "runtime_seconds": 20,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+    code, body, err = run_render(
+        tmp_path, pass_council, env_extra={"FAIL_ON_VERDICT": "false"}
+    )
+
+    assert code == 0, err
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
 def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
     council_path = tmp_path / "council.json"
     output_path = tmp_path / "comment.md"
