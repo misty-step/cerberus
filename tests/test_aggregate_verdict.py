@@ -499,6 +499,7 @@ def test_warns_on_missing_reviewers(tmp_path):
 
 
 def test_detects_fallback_verdicts(tmp_path):
+    """With default warn policy, parse failures are reclassified as SKIP (#216)."""
     (tmp_path / "apollo.json").write_text(
         json.dumps(
             {
@@ -521,6 +522,36 @@ def test_detects_fallback_verdicts(tmp_path):
     assert code == 0
     assert "fallback verdicts detected" in err
     assert "APOLLO" in err
+    # Default policy is warn: parse failures reclassified as SKIP, so council is PASS
+    assert "Council Verdict: PASS" in out
+    assert "parse-failure verdict(s) reclassified as SKIP" in err
+
+
+def test_fallback_verdicts_with_fail_policy(tmp_path):
+    """With fail policy, parse failures still count as FAIL (legacy behavior)."""
+    (tmp_path / "apollo.json").write_text(
+        json.dumps(
+            {
+                "reviewer": "APOLLO",
+                "perspective": "unknown",
+                "verdict": "FAIL",
+                "confidence": 0.0,
+                "summary": "Review output could not be parsed: no ```json block found",
+            }
+        )
+    )
+    (tmp_path / "athena.json").write_text(
+        json.dumps({"reviewer": "ATHENA", "perspective": "architecture", "verdict": "PASS", "confidence": 0.9, "summary": "ok"})
+    )
+
+    code, out, err = run_aggregate(
+        str(tmp_path),
+        env_extra={
+            "EXPECTED_REVIEWERS": "APOLLO,ATHENA",
+            "PARSE_FAILURE_POLICY": "fail",
+        },
+    )
+    assert code == 0
     assert "Council Verdict: FAIL" in out
 
 
@@ -1826,3 +1857,125 @@ class TestSelectOverrideIntegration:
         # pr_author policy doesn't need permissions, so override still works
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
+
+
+# --- Parse-failure policy tests (#216) ---
+
+
+class TestParseFailurePolicy:
+    """Tests for parse-failure-policy handling in council aggregation."""
+
+    @staticmethod
+    def _make_fallback(reviewer: str, perspective: str) -> dict:
+        return {
+            "reviewer": reviewer,
+            "perspective": perspective,
+            "verdict": "FAIL",
+            "confidence": 0.0,
+            "summary": "Review output could not be parsed: no ```json block found",
+        }
+
+    def test_all_parse_failures_produce_skip(self, tmp_path):
+        """When ALL reviewers are parse failures, council verdict is SKIP."""
+        for name in ("apollo", "sentinel", "vulcan"):
+            (tmp_path / f"{name}.json").write_text(
+                json.dumps(self._make_fallback(name.upper(), name))
+            )
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        assert "Council Verdict: SKIP" in out
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] == "SKIP"
+        assert data["stats"]["parse_failures_reclassified"] == 3
+
+    def test_parse_failure_with_real_fail_still_fails(self, tmp_path):
+        """A real FAIL alongside parse failures still causes council FAIL."""
+        (tmp_path / "apollo.json").write_text(
+            json.dumps(self._make_fallback("APOLLO", "correctness"))
+        )
+        (tmp_path / "sentinel.json").write_text(json.dumps({
+            "reviewer": "SENTINEL", "perspective": "security",
+            "verdict": "FAIL", "confidence": 0.85, "summary": "Real security issue",
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        assert "Council Verdict: FAIL" in out
+
+    def test_skip_policy_silent(self, tmp_path):
+        """skip policy reclassifies without warning."""
+        (tmp_path / "apollo.json").write_text(
+            json.dumps(self._make_fallback("APOLLO", "correctness"))
+        )
+        (tmp_path / "athena.json").write_text(json.dumps({
+            "reviewer": "ATHENA", "perspective": "architecture",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        code, out, err = run_aggregate(
+            str(tmp_path),
+            env_extra={"PARSE_FAILURE_POLICY": "skip"},
+        )
+        assert code == 0
+        assert "Council Verdict: PASS" in out
+        assert "reclassified" not in err
+
+    def test_warn_policy_emits_warning(self, tmp_path):
+        """warn policy emits reclassification warning."""
+        (tmp_path / "apollo.json").write_text(
+            json.dumps(self._make_fallback("APOLLO", "correctness"))
+        )
+        (tmp_path / "athena.json").write_text(json.dumps({
+            "reviewer": "ATHENA", "perspective": "architecture",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        assert "Council Verdict: PASS" in out
+        assert "reclassified as SKIP" in err
+        assert "APOLLO" in err
+
+    def test_stats_include_reclassified_count(self, tmp_path):
+        """Stats include parse_failures_reclassified field."""
+        (tmp_path / "apollo.json").write_text(
+            json.dumps(self._make_fallback("APOLLO", "correctness"))
+        )
+        (tmp_path / "athena.json").write_text(json.dumps({
+            "reviewer": "ATHENA", "perspective": "architecture",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["stats"]["parse_failures_reclassified"] == 1
+
+
+# --- Verdict JSON robustness tests (#213) ---
+
+
+class TestVerdictJsonRobustness:
+    def test_council_verdict_always_has_verdict_field(self, tmp_path):
+        """Council verdict JSON always has a non-null .verdict field."""
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        assert data["verdict"] in ("PASS", "WARN", "FAIL", "SKIP")
+
+    def test_council_verdict_json_atomic_write(self, tmp_path):
+        """Council verdict JSON is written atomically (no partial reads)."""
+        (tmp_path / "apollo.json").write_text(json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness",
+            "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+        }))
+        code, out, err = run_aggregate(str(tmp_path))
+        assert code == 0
+        # File should exist and be valid JSON
+        path = Path("/tmp/council-verdict.json")
+        assert path.exists()
+        data = json.loads(path.read_text())
+        assert "verdict" in data
+        # Temp file should not linger
+        assert not Path("/tmp/council-verdict.json.tmp").exists()
