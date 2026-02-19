@@ -101,7 +101,14 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
-        echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
+        VERDICT=$(jq -r .verdict /tmp/council-verdict.json 2>/dev/null)
+        if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
+          echo "::error::aggregate-verdict.py did not write a valid .verdict to /tmp/council-verdict.json"
+          echo "council-verdict.json contents:" >&2
+          cat /tmp/council-verdict.json 2>/dev/null || echo "(file missing)" >&2
+          exit 1
+        fi
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 
     - name: Post council verdict
       if: always() && steps.aggregate.outcome == 'success'
@@ -119,9 +126,9 @@ runs:
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
         CERBERUS_VERSION: ${{ github.action_ref || 'dev' }}
       run: |
-        VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
+        VERDICT="${{ steps.aggregate.outputs.verdict }}"
         if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
-          echo "::error::Council verdict JSON is malformed"
+          echo "::error::Council verdict output is empty; was the aggregate step skipped or failed?"
           exit 1
         fi
         python3 "$CERBERUS_ROOT/scripts/render-council-comment.py" \
@@ -166,7 +173,7 @@ runs:
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
         FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
       run: |
-        VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
+        VERDICT="${{ steps.aggregate.outputs.verdict }}"
         if [ "$VERDICT" = "FAIL" ] && [ "$FAIL_ON_VERDICT" = "true" ]; then
           echo "::error::Council Verdict: FAIL"
           exit 1
