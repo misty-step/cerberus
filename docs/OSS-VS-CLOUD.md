@@ -5,7 +5,7 @@ Cerberus is an open core project.
 ## Summary
 
 - **Cerberus OSS (this repo)**: GitHub Actions. You bring your own model API key. Cerberus runs entirely inside your workflow runner.
-- **Cerberus Cloud (planned)**: GitHub App. Managed keys + quotas + org controls. Posts the same council UX back to GitHub.
+- **Cerberus Cloud (bootstrap repo)**: `https://github.com/misty-step/cerberus-cloud` (private for now). GitHub App runtime with managed keys + quotas + org controls.
 
 Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 
@@ -24,4 +24,3 @@ Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 
 - OSS: code/diffs flow to your configured model provider (via your API key). Cerberus does not run a server.
 - Cloud: code/diffs flow to Cerberus Cloud runtime and then to its model providers. Cerberus becomes an additional processor.
-

@@ -107,8 +107,10 @@ Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint
 ## Docs
 
 - OSS vs Cloud: `docs/OSS-VS-CLOUD.md`
+- Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
 - Troubleshooting: `docs/TROUBLESHOOTING.md`
 - Architecture: `docs/ARCHITECTURE.md`
+- Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
