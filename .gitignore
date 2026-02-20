@@ -1,6 +1,11 @@
 __pycache__/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 coverage-html/
 *.pyc
+
+# Healthcheck scratch outputs used during local validation
+healthy
+unhealthy

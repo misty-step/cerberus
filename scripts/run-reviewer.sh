@@ -153,46 +153,14 @@ stage_opencode_project_config() {
 stage_opencode_project_config
 
 reviewer_meta="$(
-  awk -v p="$perspective" '
-    /^[[:space:]]*$/ {next}
-    /^[[:space:]]*#/ {next}
-
-    /^[[:space:]]*-[[:space:]]*name:/ {
-      if (matched && !printed) { print name "\t" model; printed=1 }
-      match($0, /name:[[:space:]]*/)
-      name=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]+#.*$/, "", name)
-      gsub(/^[\"\047]/, "", name)
-      gsub(/[\"\047]$/, "", name)
-      model=""; matched=0
-      next
-    }
-
-    /^[[:space:]]*perspective:/ {
-      match($0, /perspective:[[:space:]]*/)
-      persp=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]+#.*$/, "", persp)
-      gsub(/^[\"\047]/, "", persp)
-      gsub(/[\"\047]$/, "", persp)
-      if (persp == p) { matched=1 }
-      next
-    }
-
-    /^[[:space:]]*model:/ {
-      match($0, /model:[[:space:]]*/)
-      model=substr($0, RSTART+RLENGTH)
-      sub(/[[:space:]]+#.*$/, "", model)
-      gsub(/^[\"\047]/, "", model)
-      gsub(/[\"\047]$/, "", model)
-      next
-    }
-
-    END { if (matched && !printed) print name "\t" model }
-  ' "$config_file"
+  python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" reviewer-meta \
+    --config "$config_file" \
+    --perspective "$perspective"
 )"
 reviewer_name=""
 reviewer_model_raw=""
-IFS=$'\t' read -r reviewer_name reviewer_model_raw <<< "${reviewer_meta}"
+reviewer_desc=""
+IFS=$'\t' read -r reviewer_name reviewer_model_raw reviewer_desc <<< "${reviewer_meta}"
 if [[ -z "$reviewer_name" ]]; then
   echo "unknown perspective in config: $perspective" >&2
   exit 2
@@ -200,20 +168,8 @@ fi
 
 # Read config default model (optional). Used when input model unset and reviewer has no model.
 config_default_model_raw="$(
-  awk '
-    /^[[:space:]]*$/ {next}
-    /^[[:space:]]*#/ {next}
-    /^model:/ {in_model=1; next}
-    in_model && !/^[[:space:]]/ {in_model=0}
-    in_model && /^[[:space:]]+default:/ {
-      sub(/^[[:space:]]+default:[[:space:]]*/, "")
-      sub(/[[:space:]]+#.*$/, "")
-      gsub(/^[\"\047]/, "")
-      gsub(/[\"\047]$/, "")
-      print
-      exit
-    }
-  ' "$config_file"
+  python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-default \
+    --config "$config_file"
 )"
 
 # If reviewer model is "pool", randomly select from the model.pool config list.
@@ -222,23 +178,8 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
   while IFS= read -r _pool_line; do
     [[ -n "$_pool_line" ]] && model_pool+=("$_pool_line")
   done < <(
-    awk '
-      /^[[:space:]]*$/ {next}
-      /^[[:space:]]*#/ {next}
-      /^model:/ {in_model=1; next}
-      in_model && !/^[[:space:]]/ {in_model=0; in_pool=0}
-      in_model && /^[[:space:]]+[a-zA-Z_-]+:/ {
-        if (/^[[:space:]]+pool:/) {in_pool=1} else {in_pool=0}
-        next
-      }
-      in_pool && /^[[:space:]]*-/ {
-        sub(/^[[:space:]]*-[[:space:]]*/, "")
-        sub(/[[:space:]]+#.*$/, "")
-        gsub(/^[\"\047]/, "")
-        gsub(/[\"\047]$/, "")
-        print
-      }
-    ' "$config_file"
+    python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-pool \
+      --config "$config_file"
   )
 
   if [[ ${#model_pool[@]} -gt 0 ]]; then
@@ -257,6 +198,9 @@ fi
 
 # Persist reviewer name for downstream steps (parse, council).
 printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
+if [[ -n "${reviewer_desc:-}" ]]; then
+  printf '%s' "$reviewer_desc" > "/tmp/${perspective}-reviewer-desc"
+fi
 
 diff_file=""
 if [[ -n "${GH_DIFF_FILE:-}" && -f "${GH_DIFF_FILE:-}" ]]; then
@@ -307,19 +251,38 @@ input_model="$(sanitize_model "${OPENCODE_MODEL:-}")"
 reviewer_model="$(sanitize_model "${reviewer_model_raw:-}")"
 config_default_model="$(sanitize_model "${config_default_model_raw:-}")"
 
-primary_model="openrouter/moonshotai/kimi-k2.5"
+# Model resolution precedence:
+# - config model.default
+# - reviewer model (incl pool selection)
+# - action input model (OPENCODE_MODEL)
+base_default_model="openrouter/moonshotai/kimi-k2.5"
+configured_model="$base_default_model"
 if [[ -n "$config_default_model" ]]; then
-  primary_model="$config_default_model"
+  configured_model="$config_default_model"
 fi
 if [[ -n "$reviewer_model" ]]; then
-  primary_model="$reviewer_model"
+  configured_model="$reviewer_model"
 fi
+
+primary_model="$configured_model"
 if [[ -n "$input_model" ]]; then
   primary_model="$input_model"
 fi
 
+# Persist "what we'd use without input override" for downstream (council/debug).
+printf '%s' "$configured_model" > "/tmp/${perspective}-configured-model"
+
 # Persist primary model for downstream steps (parse, comment metadata).
 printf '%s' "$primary_model" > "/tmp/${perspective}-primary-model"
+
+# Make overrides visible. Avoid `::warning::` when redundant (matches configured).
+if [[ -n "$input_model" ]]; then
+  if [[ "$primary_model" != "$configured_model" ]]; then
+    echo "::warning::Model override active for ${reviewer_name} (${perspective}): using '${primary_model}' (configured: '${configured_model}'). Remove the 'model' input to use per-reviewer defaults."
+  else
+    echo "::notice::Model override set for ${reviewer_name} (${perspective}) but matches configured model ('${configured_model}'). Remove 'model' to stay auto-updated as Cerberus defaults evolve."
+  fi
+fi
 
 # Build ordered model list: primary + optional fallbacks.
 models=("$primary_model")

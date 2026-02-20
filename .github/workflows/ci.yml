@@ -19,6 +19,8 @@ jobs:
           python3 -m py_compile scripts/parse-review.py
           python3 -m py_compile scripts/aggregate-verdict.py
           python3 -m py_compile scripts/triage.py
+          python3 -m py_compile scripts/validate-consumer-workflow.py
+          python3 -m py_compile scripts/lib/consumer_workflow_validator.py
           python3 -m py_compile matrix/generate-matrix.py
 
       - name: YAML validity
@@ -26,7 +28,7 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml']:
+          for path in ['action.yml', 'draft-check/action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml']:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')
@@ -51,7 +53,26 @@ jobs:
         run: pip install pytest pytest-cov pyyaml
 
       - name: Run tests with coverage
-        run: python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html --cov-report=xml
+        env:
+          COVERAGE_PROCESS_START: ${{ github.workspace }}/.coveragerc
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage
+        run: |
+          python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing
+          if ls .coverage.* >/dev/null 2>&1; then
+            python3 -m coverage combine
+          fi
+          python3 -m coverage report --show-missing
+          python3 -m coverage xml
+          python3 -m coverage html
+          python3 -c "
+          import xml.etree.ElementTree as ET, sys
+          root = ET.parse('coverage.xml').getroot()
+          branch_rate = float(root.get('branch-rate', 0)) * 100
+          if branch_rate < 70:
+              print(f'::error::Branch coverage {branch_rate:.1f}% is below the 70% threshold')
+              sys.exit(1)
+          print(f'Branch coverage {branch_rate:.1f}% meets the 70% threshold')
+          "
 
       - name: Upload coverage artifacts
         if: always()
@@ -95,14 +116,17 @@ jobs:
           branch_rate = float(root.get('branch-rate', 0)) * 100
           lines_valid = int(root.get('lines-valid', 0))
           lines_covered = int(root.get('lines-covered', 0))
-          icon = ':white_check_mark:' if line_rate >= 30 else ':x:'
-          print(f'## {icon} Test Coverage: {line_rate:.1f}%')
+          ok = line_rate >= 70 and branch_rate >= 70
+          icon = ':white_check_mark:' if ok else ':x:'
+          line_icon = ':white_check_mark:' if line_rate >= 70 else ':x:'
+          branch_icon = ':white_check_mark:' if branch_rate >= 70 else ':x:'
+          print(f'## {icon} Test Coverage')
           print()
-          print(f'| Metric | Value |')
-          print(f'|--------|-------|')
-          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) |')
-          print(f'| Branch coverage | {branch_rate:.1f}% |')
-          print(f'| Threshold | 30% |')
+          print(f'| Metric | Value | Status |')
+          print(f'|--------|-------|--------|')
+          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) | {line_icon} |')
+          print(f'| Branch coverage | {branch_rate:.1f}% | {branch_icon} |')
+          print(f'| Threshold | 70% | |')
           print()
           print('<!-- cerberus:coverage -->')
           ")

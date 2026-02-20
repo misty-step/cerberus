@@ -137,6 +137,8 @@ CI enforces a minimum coverage threshold (see `.coveragerc`). Run locally:
 COVERAGE=1 ./tests/run-tests.sh
 ```
 
+This wrapper exports `COVERAGE_PROCESS_START`/`COVERAGE_FILE` so Python subprocess script runs count toward coverage.
+
 ### Security Regression Tests (#56)
 
 ```bash
@@ -148,7 +150,7 @@ python -m pytest tests/security/ -v
 Use the consumer workflow template and keep reviewer comments disabled:
 
 - Start from [`templates/consumer-workflow.yml`](templates/consumer-workflow.yml).
-- Keep `post-comment: 'false'` in the review job.
+- Keep `comment-policy: 'never'` in the review job.
 - Optionally set `fail-on-verdict: 'false'` in the verdict step while testing.
 - Open a same-repo PR (fork PRs are intentionally blocked by the action).
 

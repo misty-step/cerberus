@@ -1,0 +1,38 @@
+name: 'Cerberus Workflow Validate'
+description: 'Validate a Cerberus consumer workflow file for common misconfigurations'
+author: 'misty-step'
+
+inputs:
+  workflow:
+    description: 'Path to workflow file to validate'
+    default: '.github/workflows/cerberus.yml'
+  fail-on-warnings:
+    description: 'Exit with failure if warnings are found'
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install deps
+      shell: bash
+      run: pip install pyyaml --quiet
+
+    - name: Validate Cerberus workflow
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        WORKFLOW_PATH: ${{ inputs.workflow }}
+        FAIL_ON_WARNINGS: ${{ inputs.fail-on-warnings }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/validate-consumer-workflow.py" \
+          "$WORKFLOW_PATH" \
+          --fail-on-warnings "$FAIL_ON_WARNINGS"
+

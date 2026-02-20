@@ -27,26 +27,19 @@ fi
 marker="<!-- cerberus:${perspective} -->"
 
 reviewer_info="$(
-  awk -v p="$perspective" '
-    $1=="-" && $2=="name:" {if (found) exit; name=$3}
-    $1=="perspective:" && $2==p {found=1}
-    found && $1=="description:" {
-      desc=$0
-      sub(/^[[:space:]]*description:[[:space:]]*/, "", desc)
-      gsub(/^"|"$/, "", desc)
-      print name "\t" desc
-      exit
-    }
-  ' "$config_file"
+  python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" reviewer-meta \
+    --config "$config_file" \
+    --perspective "$perspective"
 )"
 
-reviewer_name="${reviewer_info%%$'\t'*}"
-reviewer_desc="${reviewer_info#*$'\t'}"
+reviewer_name=""
+reviewer_desc=""
+IFS=$'\t' read -r reviewer_name _ reviewer_desc <<< "${reviewer_info}"
 
 if [[ -z "$reviewer_name" ]]; then
   reviewer_name="${perspective^^}"
 fi
-if [[ "$reviewer_desc" == "$reviewer_info" ]]; then
+if [[ -z "$reviewer_desc" ]]; then
   reviewer_desc="$perspective"
 fi
 
@@ -124,8 +117,12 @@ fi
 sha_short="${head_sha:0:7}"
 
 comment_file="/tmp/${perspective}-comment.md"
+reviewer_code="$(
+  python3 -c 'import re,sys; s=sys.argv[1].strip(); print(s.title() if re.fullmatch(r"[A-Z0-9_]+", s) else s)' \
+    "$reviewer_name"
+)"
 {
-  printf '%s\n' "## ${verdict_emoji} ${reviewer_name} — ${reviewer_desc}"
+  printf '%s\n' "## ${verdict_emoji} ${reviewer_desc} (${reviewer_code})"
   printf '%s\n' "**Verdict: ${verdict_emoji} ${verdict}** | Confidence: ${confidence}${model_display}"
   printf '\n'
   if [[ -n "$skip_banner" ]]; then

@@ -1,8 +1,11 @@
 from pathlib import Path
+import pytest
 
 from lib.review_prompt import (
     MAX_PROJECT_CONTEXT_CHARS,
     PullRequestContext,
+    require_env,
+    render_review_prompt_from_env,
     render_review_prompt_text,
 )
 
@@ -60,3 +63,133 @@ def test_project_context_truncated() -> None:
     )
     assert "TAIL" not in rendered
     assert "(Note: context truncated to" in rendered
+
+
+def test_require_env_errors_for_missing_value() -> None:
+    with pytest.raises(ValueError):
+        require_env("MISSING", {})
+
+
+def test_render_review_prompt_from_env_raises_on_missing_template(tmp_path: Path) -> None:
+    # No templates/ dir in this root => template read should fail.
+    output_path = tmp_path / "prompt.md"
+    env = {
+        "CERBERUS_ROOT": str(tmp_path),
+        "DIFF_FILE": "/tmp/pr.diff",
+        "PERSPECTIVE": "security",
+        "PROMPT_OUTPUT": str(output_path),
+        "GH_PR_TITLE": "Security fix",
+        "GH_PR_AUTHOR": "reviewer",
+        "GH_HEAD_BRANCH": "feature",
+        "GH_BASE_BRANCH": "main",
+        "GH_PR_BODY": "Adds validation.",
+    }
+    with pytest.raises(OSError):
+        render_review_prompt_from_env(env=env)
+
+
+def test_render_review_prompt_from_env_raises_on_output_write_error(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    env = {
+        "CERBERUS_ROOT": str(root),
+        "DIFF_FILE": "/tmp/pr.diff",
+        "PERSPECTIVE": "security",
+        # Directory path => write_text should fail.
+        "PROMPT_OUTPUT": str(out_dir),
+        "GH_PR_TITLE": "Security fix",
+        "GH_PR_AUTHOR": "reviewer",
+        "GH_HEAD_BRANCH": "feature",
+        "GH_BASE_BRANCH": "main",
+        "GH_PR_BODY": "Adds validation.",
+    }
+    with pytest.raises(OSError):
+        render_review_prompt_from_env(env=env)
+
+
+def test_load_pr_context_errors_when_context_file_missing_and_no_fallback_fields(
+    tmp_path: Path,
+) -> None:
+    from lib.review_prompt import load_pr_context
+
+    missing = tmp_path / "missing.json"
+    with pytest.raises(ValueError):
+        load_pr_context({"GH_PR_CONTEXT": str(missing)})
+
+
+def test_load_pr_context_from_json_parses_expected_fields(tmp_path: Path) -> None:
+    import json
+
+    from lib.review_prompt import PullRequestContext, _load_pr_context_from_json
+
+    p = tmp_path / "ctx.json"
+    p.write_text(
+        json.dumps(
+            {
+                "title": "t",
+                "author": {"login": "alice"},
+                "headRefName": "feat",
+                "baseRefName": "master",
+                "body": "b",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _load_pr_context_from_json(p) == PullRequestContext(
+        title="t",
+        author="alice",
+        head_branch="feat",
+        base_branch="master",
+        body="b",
+    )
+
+
+def test_load_pr_context_from_json_errors_on_missing_file(tmp_path: Path) -> None:
+    from lib.review_prompt import _load_pr_context_from_json
+
+    missing = tmp_path / "missing.json"
+    with pytest.raises(OSError, match=r"unable to read PR context JSON"):
+        _load_pr_context_from_json(missing)
+
+
+def test_load_pr_context_from_json_errors_on_invalid_json(tmp_path: Path) -> None:
+    from lib.review_prompt import _load_pr_context_from_json
+
+    p = tmp_path / "ctx.json"
+    p.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"invalid JSON in PR context file"):
+        _load_pr_context_from_json(p)
+
+
+def test_load_pr_context_from_json_errors_on_non_object_json(tmp_path: Path) -> None:
+    from lib.review_prompt import _load_pr_context_from_json
+
+    p = tmp_path / "ctx.json"
+    p.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"expected object"):
+        _load_pr_context_from_json(p)
+
+
+def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    output_path = tmp_path / "prompt.md"
+    env = {
+        "CERBERUS_ROOT": str(root),
+        "DIFF_FILE": "/tmp/pr.diff",
+        "PERSPECTIVE": "security",
+        "PROMPT_OUTPUT": str(output_path),
+        "GH_PR_TITLE": "Security fix",
+        "GH_PR_AUTHOR": "reviewer",
+        "GH_HEAD_BRANCH": "feature",
+        "GH_BASE_BRANCH": "main",
+        "GH_PR_BODY": "Adds validation.",
+    }
+
+    render_review_prompt_from_env(env=env)
+
+    rendered = output_path.read_text(encoding="utf-8")
+    assert '<pr_title trust="UNTRUSTED">Security fix</pr_title>' in rendered
+    assert "<pr_description trust=\"UNTRUSTED\">" in rendered
+    assert "The PR diff is at: `/tmp/pr.diff`" in rendered

@@ -105,7 +105,14 @@ runs:
         PARSE_FAILURE_POLICY: ${{ inputs.parse-failure-policy }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
-        echo "verdict=$(jq -r .verdict /tmp/council-verdict.json)" >> "$GITHUB_OUTPUT"
+        VERDICT=$(jq -r .verdict /tmp/council-verdict.json 2>/dev/null)
+        if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
+          echo "::warning::aggregate-verdict.py did not write a valid .verdict; defaulting to SKIP"
+          echo "council-verdict.json contents:" >&2
+          cat /tmp/council-verdict.json 2>/dev/null || echo "(file missing)" >&2
+          VERDICT="SKIP"
+        fi
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 
     - name: Post council verdict
       if: always() && steps.aggregate.outcome == 'success'
@@ -123,9 +130,9 @@ runs:
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
         CERBERUS_VERSION: ${{ github.action_ref || 'dev' }}
       run: |
-        VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
+        VERDICT="${{ steps.aggregate.outputs.verdict }}"
         if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
-          echo "::error::Council verdict JSON is malformed"
+          echo "::error::Council verdict output is empty; was the aggregate step skipped or failed?"
           exit 1
         fi
         python3 "$CERBERUS_ROOT/scripts/render-council-comment.py" \
@@ -136,6 +143,23 @@ runs:
           --repo "$REPO" \
           --pr "$PR_NUMBER" \
           --marker "<!-- cerberus:council -->" \
+          --body-file /tmp/council-comment.md
+
+    - name: Post council inline review comments
+      if: always() && steps.aggregate.outcome == 'success'
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/post-council-review.py" \
+          --repo "$REPO" \
+          --pr "$PR_NUMBER" \
+          --head-sha "$GH_HEAD_SHA" \
+          --council-json /tmp/council-verdict.json \
           --body-file /tmp/council-comment.md
 
     - name: Upload quality report artifact
@@ -153,7 +177,7 @@ runs:
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
         FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
       run: |
-        VERDICT=$(jq -r .verdict /tmp/council-verdict.json)
+        VERDICT="${{ steps.aggregate.outputs.verdict }}"
         if [ "$VERDICT" = "FAIL" ] && [ "$FAIL_ON_VERDICT" = "true" ]; then
           echo "::error::Council Verdict: FAIL"
           exit 1

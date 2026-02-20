@@ -106,10 +106,49 @@ def _run_gh(
     raise RuntimeError("_run_gh retry loop exited unexpectedly")
 
 
-def fetch_comments(repo: str, pr_number: int) -> list[dict]:
-    """Fetch all comments on a PR."""
-    result = _run_gh(["api", f"repos/{repo}/issues/{pr_number}/comments?per_page=100"])
-    return json.loads(result.stdout)
+def fetch_comments(
+    repo: str,
+    pr_number: int,
+    *,
+    per_page: int = 100,
+    max_pages: int = 20,
+    stop_on_marker: str | None = None,
+) -> list[dict]:
+    """Fetch all issue comments for a PR (paginated).
+
+    Args:
+        repo: Repository in owner/repo format
+        pr_number: Pull request number
+        per_page: Number of comments per page (max 100)
+        max_pages: Maximum number of pages to fetch
+        stop_on_marker: If provided, stop pagination early when a comment
+            containing this marker is found. Useful for finding specific
+            comments without fetching all pages on noisy PRs.
+
+    Returns:
+        List of comment dictionaries fetched up to the stopping point
+    """
+    comments: list[dict] = []
+    for page in range(1, max_pages + 1):
+        endpoint = f"repos/{repo}/issues/{pr_number}/comments?per_page={per_page}&page={page}"
+        result = _run_gh(["api", endpoint])
+        try:
+            payload = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            break
+        if not isinstance(payload, list) or not payload:
+            break
+        comments.extend([c for c in payload if isinstance(c, dict)])
+
+        # Early exit: check if marker found in this page
+        if stop_on_marker is not None:
+            for comment in payload:
+                if isinstance(comment, dict) and stop_on_marker in str(comment.get("body", "")):
+                    return comments
+
+        if len(payload) < per_page:
+            break
+    return comments
 
 
 def find_comment_by_marker(comments: list[dict], marker: str) -> int | None:
@@ -120,6 +159,17 @@ def find_comment_by_marker(comments: list[dict], marker: str) -> int | None:
             comment_id = comment.get("id")
             if isinstance(comment_id, int):
                 return comment_id
+    return None
+
+
+def find_comment_url_by_marker(comments: list[dict], marker: str) -> str | None:
+    """Find the first comment containing the marker, return its html_url if present."""
+    for comment in comments:
+        body = str(comment.get("body", ""))
+        if marker not in body:
+            continue
+        url = comment.get("html_url")
+        return url if isinstance(url, str) and url.strip() else None
     return None
 
 
@@ -161,6 +211,7 @@ def upsert_pr_comment(
 
 
 def main() -> None:
+    """Main."""
     parser = argparse.ArgumentParser(description="Upsert PR comment by HTML marker.")
     parser.add_argument("--repo", required=True, help="owner/repo")
     parser.add_argument("--pr", type=int, required=True, help="PR number")

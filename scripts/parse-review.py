@@ -25,6 +25,7 @@ _FILE_LINES_CACHE: dict[Path, list[str]] = {}
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
+    """Resolve reviewer."""
     reviewer = cli_reviewer or os.environ.get("REVIEWER_NAME") or "UNKNOWN"
     reviewer = reviewer.strip()
     return reviewer or "UNKNOWN"
@@ -68,6 +69,7 @@ def get_parse_failure_metadata() -> dict[str, list[str] | int | None]:
 
 
 def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
+    """Parse args."""
     input_path = None
     reviewer = None
     idx = 0
@@ -182,6 +184,7 @@ def write_fallback(
     summary: str | None = None, raw_review: str | None = None,
     findings: list[dict] | None = None,
 ) -> NoReturn:
+    """Write fallback."""
     resolved_findings = findings if findings else []
     info_count = sum(1 for f in resolved_findings if f.get("severity") == "info")
     fallback = {
@@ -209,12 +212,14 @@ def write_fallback(
 
 
 def fail(msg: str) -> NoReturn:
+    """Fail."""
     print(f"parse-review: {msg}", file=sys.stderr)
     raw_text = RAW_INPUT.strip() if RAW_INPUT else None
     if is_scratchpad(RAW_INPUT):
-        md_verdict = extract_verdict_from_markdown(RAW_INPUT)
-        verdict = md_verdict or "WARN"
-        summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
+        # Treat unstructured (non-JSON) reviews as SKIP.
+        # A markdown "Verdict: FAIL" without machine-parseable findings is not actionable and is too flaky to gate merges.
+        verdict = "SKIP"
+        summary = "Partial review: reviewer output was unstructured (no JSON). Treating as SKIP; see workflow logs/artifacts for full output."
         write_fallback(REVIEWER_NAME, msg, verdict=verdict, confidence=0.3,
                        summary=summary, raw_review=raw_text or None,
                        findings=[{
@@ -226,10 +231,11 @@ def fail(msg: str) -> NoReturn:
                            "description": "Reviewer produced a scratchpad review without structured JSON output. Raw output is preserved in workflow logs/artifacts.",
                            "suggestion": "No action needed; see the workflow run for the preserved raw output.",
                        }])
-    write_fallback(REVIEWER_NAME, msg, raw_review=raw_text or None)
+    write_fallback(REVIEWER_NAME, msg, verdict="SKIP", raw_review=raw_text or None)
 
 
 def read_input(path: str | None) -> str:
+    """Read input."""
     if path:
         return Path(path).read_text()
     return sys.stdin.read()
@@ -319,6 +325,7 @@ def generate_timeout_skip_verdict(
     files_in_diff: str = "",
     fast_path_status: str = "",
 ) -> dict:
+    """Generate timeout skip verdict."""
     timeout_suffix = f" after {timeout_seconds}s" if timeout_seconds is not None else ""
 
     # Build an informative description with available diagnostics.
@@ -367,6 +374,7 @@ def generate_timeout_skip_verdict(
 
 
 def extract_json_block(text: str) -> str | None:
+    """Extract json block."""
     pattern = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
     matches = pattern.findall(text)
     if not matches:
@@ -405,6 +413,14 @@ def looks_like_api_error(text: str) -> tuple[bool, str, str]:
 
 
 def validate(obj: dict) -> None:
+    # Inject known metadata fields before validation — models often omit these
+    # even when the rest of the review is valid.
+    """Validate."""
+    if "reviewer" not in obj:
+        obj["reviewer"] = REVIEWER_NAME
+    if "perspective" not in obj:
+        obj["perspective"] = PERSPECTIVE
+
     required_root = [
         "reviewer",
         "perspective",
@@ -464,6 +480,64 @@ def validate(obj: dict) -> None:
             fail(f"stats missing field: {skey}")
         if not isinstance(stats[skey], int):
             fail(f"stats field not int: {skey}")
+
+
+def validate_and_correct_stats(obj: dict) -> None:
+    """Validate LLM-reported stats against actual findings; correct if mismatched.
+
+    Replaces hallucinated severity counts with programmatically counted values.
+    Adds _stats_discrepancy to the output when a mismatch is detected.
+    """
+    findings = obj.get("findings", [])
+    if not isinstance(findings, list):
+        return
+
+    stats = obj.get("stats")
+    if not isinstance(stats, dict):
+        return
+
+    actual_critical = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "critical")
+    actual_major = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "major")
+    actual_minor = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "minor")
+    actual_info = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "info")
+
+    unique_files = {
+        str(f.get("file", "")).strip()
+        for f in findings
+        if isinstance(f, dict) and str(f.get("file", "")).strip() not in {"", "N/A"}
+    }
+    actual_files_with_issues = len(unique_files)
+
+    reported = {
+        "critical": stats.get("critical", 0),
+        "major": stats.get("major", 0),
+        "minor": stats.get("minor", 0),
+        "info": stats.get("info", 0),
+        "files_with_issues": stats.get("files_with_issues", 0),
+    }
+    actual = {
+        "critical": actual_critical,
+        "major": actual_major,
+        "minor": actual_minor,
+        "info": actual_info,
+        "files_with_issues": actual_files_with_issues,
+    }
+
+    if reported != actual:
+        print(
+            f"parse-review: stats discrepancy detected — reported: {reported}, actual: {actual}",
+            file=sys.stderr,
+        )
+        stats["critical"] = actual_critical
+        stats["major"] = actual_major
+        stats["minor"] = actual_minor
+        stats["info"] = actual_info
+        stats["files_with_issues"] = actual_files_with_issues
+        obj["_stats_discrepancy"] = {
+            "reported": reported,
+            "actual": actual,
+            "discrepancy": True,
+        }
 
 
 def enforce_verdict_consistency(obj: dict) -> None:
@@ -582,6 +656,7 @@ def downgrade_speculative_suggestions(obj: dict) -> None:
 
 
 def downgrade_stale_knowledge_findings(obj: dict) -> None:
+    """Downgrade stale knowledge findings."""
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
         return
@@ -782,6 +857,7 @@ def _evidence_matches_file(path: Path, line: int, evidence: str) -> bool:
 
 
 def downgrade_unverified_findings(obj: dict) -> None:
+    """Downgrade unverified findings."""
     findings = obj.get("findings", [])
     if not isinstance(findings, list) or not findings:
         return
@@ -880,6 +956,7 @@ def downgrade_unverified_findings(obj: dict) -> None:
 
 
 def main() -> None:
+    """Main."""
     global REVIEWER_NAME, PERSPECTIVE, RAW_INPUT
 
     PERSPECTIVE = os.environ.get("PERSPECTIVE", "unknown")
@@ -945,9 +1022,8 @@ def main() -> None:
             # Check if it's a scratchpad (has investigation notes or verdict header)
             # and extract what we can before falling back.
             if is_scratchpad(raw):
-                md_verdict = extract_verdict_from_markdown(raw)
-                verdict = md_verdict or "WARN"
-                summary = "Partial review: reviewer output was unstructured (no JSON). See workflow logs/artifacts for full output."
+                verdict = "SKIP"
+                summary = "Partial review: reviewer output was unstructured (no JSON). Treating as SKIP; see workflow logs/artifacts for full output."
                 write_fallback(REVIEWER_NAME, "no ```json block found",
                                verdict=verdict, confidence=0.3,
                                summary=summary, raw_review=raw_text or None,
@@ -1021,6 +1097,7 @@ def main() -> None:
             fail("root must be object")
 
         validate(obj)
+        validate_and_correct_stats(obj)
         downgrade_unverified_findings(obj)
         downgrade_speculative_suggestions(obj)
         downgrade_stale_knowledge_findings(obj)

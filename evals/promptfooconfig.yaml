@@ -63,7 +63,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "output.findings && output.findings.some(f => f.category === 'security' || (f.title || '').toLowerCase().includes('sql') || (f.description || '').toLowerCase().includes('injection'))"
+        value: "output.findings && output.findings.some(f => f?.category === 'security' || String(f?.title || '').toLowerCase().includes('sql') || String(f?.description || '').toLowerCase().includes('injection'))"
 
   - description: "Security - Hardcoded Secret"
     vars:
@@ -74,7 +74,7 @@ tests:
       pr_body: "Add API client module"
       perspective: "security"
       diff: |
-        +const API_KEY = "sk-1234567890abcdef";
+        +const API_KEY = "test-key-1234567890abcdef";
         +function callApi() { }
     assert:
       - type: javascript
@@ -234,7 +234,12 @@ tests:
       perspective: "performance"
       diff: |
         +button.addEventListener('click', handler);
-        +// Never removed
+        +function mount() {
+        +  for (let i = 0; i < 10; i++) {
+        +    button.addEventListener('click', handler);
+        +  }
+        +}
+        +mount();
     assert:
       - type: javascript
         value: "output.verdict === 'FAIL'"
@@ -260,7 +265,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('loop') || (f.title + f.description).toLowerCase().includes('nested') || (f.title + f.description).toLowerCase().includes('complexity'))"
+        value: "(output.findings || []).some(f => (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('loop') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('nested') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('complexity'))"
 
   - description: "Performance - Sync File I/O"
     vars:
@@ -279,7 +284,7 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "(output.findings || []).some(f => (f.title + f.description).toLowerCase().includes('sync') || (f.title + f.description).toLowerCase().includes('blocking') || (f.title + f.description).toLowerCase().includes('file'))"
+        value: "(output.findings || []).some(f => (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('sync') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('blocking') || (String(f?.title || '') + String(f?.description || '')).toLowerCase().includes('file'))"
 
   - description: "Performance - No Caching"
     vars:
@@ -295,7 +300,7 @@ tests:
         +}
     assert:
       - type: javascript
-        value: "output.verdict === 'PASS'"
+        value: "output.verdict === 'FAIL'"
 
   - description: "Architecture - Tight Coupling"
     vars:
@@ -322,18 +327,24 @@ tests:
       pr_author: "developer"
       head_branch: "feature/payment"
       base_branch: "main"
-      pr_body: "Process payments with interface"
+      pr_body: "Process payments by coupling directly to Stripe"
       perspective: "architecture"
       diff: |
-        +interface PaymentProcessor {
-        +  charge(amount: number): void;
+        +class StripePayment {
+        +  charge(amount: number): void {
+        +    /* ... */
+        +  }
         +}
-        +class StripePayment implements PaymentProcessor {
-        +  charge(amount) { }
+        +
+        +class CheckoutService {
+        +  constructor() {
+        +    // Missing abstraction: business logic depends on concrete gateway
+        +    this.processor = new StripePayment();
+        +  }
         +}
     assert:
       - type: javascript
-        value: "output.verdict === 'PASS'"
+        value: "output.verdict === 'FAIL'"
 
   - description: "Architecture - God Object"
     vars:
@@ -413,7 +424,6 @@ tests:
       pr_body: "Set request timeout using named constant from config"
       perspective: "maintainability"
       diff: |
-        +// Timeout value from API specification
         +const REQUEST_TIMEOUT_MS = 5000;
         +fetch(url, { timeout: REQUEST_TIMEOUT_MS });
     assert:
@@ -426,15 +436,39 @@ tests:
       pr_author: "developer"
       head_branch: "feature/processor"
       base_branch: "main"
-      pr_body: "Simple data transformation"
+      pr_body: "Business logic in one big function"
       perspective: "maintainability"
       diff: |
-        +function double(x) {
-        +  return x * 2;
+        +function processOrders(orders) {
+        +  let total = 0;
+        +  for (const order of orders) {
+        +    if (!order) continue;
+        +    if (order.status === 'cancelled') continue;
+        +
+        +    if (order.status === 'refunded') {
+        +      total -= order.amount;
+        +    } else {
+        +      total += order.amount;
+        +    }
+        +
+        +    if (order.items) {
+        +      for (const item of order.items) {
+        +        if (item.type === 'digital') total += item.price * 0.9;
+        +        else if (item.type === 'physical') total += item.price;
+        +        else if (item.type === 'service') total += item.price * 1.1;
+        +      }
+        +    }
+        +
+        +    if (order.coupon) {
+        +      if (order.coupon.type === 'percent') total *= (1 - order.coupon.value);
+        +      else if (order.coupon.type === 'fixed') total -= order.coupon.value;
+        +    }
+        +  }
+        +  return Math.round(total * 100) / 100;
         +}
     assert:
       - type: javascript
-        value: "output.verdict === 'PASS'"
+        value: "output.verdict === 'FAIL'"
 
   - description: "Maintainability - Poor Naming"
     vars:
@@ -575,4 +609,49 @@ shareResults: false
 # Default test options
 defaultTest:
   options:
-    transform: "((output) => { try { const m = output.match(/\\{[\\s\\S]*\\}/); return m ? JSON.parse(m[0]) : {verdict: 'SKIP', summary: 'No JSON found'} } catch(e) { return {verdict: 'SKIP', summary: 'Parse error: ' + e.message, findings: []} } })"
+    transform: |
+      return (() => {
+        const normalize = (value) => {
+          if (!value || typeof value !== 'object') {
+            return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
+          }
+
+          if (typeof value.verdict === 'string') {
+            const normalized = value.verdict.trim().toUpperCase();
+            if (normalized === 'PASS' || normalized === 'FAIL' || normalized === 'SKIP') {
+              value.verdict = normalized;
+            }
+          }
+
+          if (!Array.isArray(value.findings)) {
+            value.findings = [];
+          }
+
+          return value;
+        };
+
+        const parseJson = (text) => {
+          try {
+            return normalize(JSON.parse(text));
+          } catch (e) {
+            return null;
+          }
+        };
+
+        const direct = parseJson(output);
+        if (direct) return direct;
+
+        const fences = [...output.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
+        for (let i = fences.length - 1; i >= 0; i--) {
+          const parsed = parseJson(fences[i][1]);
+          if (parsed) return parsed;
+        }
+
+        const n = output.match(/\{[\s\S]*\}/);
+        if (n) {
+          const parsed = parseJson(n[0]);
+          if (parsed) return parsed;
+        }
+
+        return { verdict: 'SKIP', summary: 'Could not parse model output', findings: [] };
+      })()

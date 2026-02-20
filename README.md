@@ -5,14 +5,14 @@ Multi-agent AI code review council for GitHub PRs.
 Six specialized reviewers analyze every pull request in parallel, then a council verdict gates merge.
 
 ## Reviewers
-| Name | Perspective | Focus |
-|------|------------|-------|
-| APOLLO | correctness | Logic bugs, edge cases, type mismatches |
-| ATHENA | architecture | Design patterns, module boundaries, coupling |
-| SENTINEL | security | Injection, auth flaws, data exposure |
-| VULCAN | performance | Runtime efficiency, N+1 queries, scalability |
-| ARTEMIS | maintainability | Readability, naming, future maintenance cost |
-| CASSANDRA | testing | Test coverage gaps, regression risk |
+| Role | Codename | Focus |
+|------|----------|-------|
+| Correctness & Logic | Apollo | Logic bugs, edge cases, type mismatches |
+| Architecture & Design | Athena | Design patterns, module boundaries, coupling |
+| Security & Threat Model | Sentinel | Injection, auth flaws, data exposure |
+| Performance & Scalability | Vulcan | Runtime efficiency, N+1 queries, scalability |
+| Maintainability & DX | Artemis | Readability, naming, future maintenance cost |
+| Testing & Coverage | Cassandra | Test coverage gaps, regression risk |
 
 ## Quick Start
 1. Add one secret to your repository (Settings -> Secrets -> Actions):
@@ -25,28 +25,56 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  draft-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.draft.outputs.is_draft }}
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  validate:
+    needs: draft-check
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: misty-step/cerberus/validate@v2
+
+  matrix:
+    needs: validate
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - uses: misty-step/cerberus/matrix@v2
+        id: generate
+
   review:
+    needs: [matrix, draft-check]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: read
-    name: "${{ matrix.reviewer }}"
+    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        include:
-          - { reviewer: APOLLO,    perspective: correctness }
-          - { reviewer: ATHENA,    perspective: architecture }
-          - { reviewer: SENTINEL,  perspective: security }
-          - { reviewer: VULCAN,    perspective: performance }
-          - { reviewer: ARTEMIS,   perspective: maintainability }
-          - { reviewer: CASSANDRA, perspective: testing }
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -55,13 +83,13 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          post-comment: 'false'
+          comment-policy: 'never'
           timeout: '600'
 
   verdict:
     name: "Council Verdict"
-    needs: review
-    if: always()
+    needs: [review, draft-check]
+    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: write
@@ -72,14 +100,24 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml` (optional) instead of hand-editing YAML.
+
 3. Open a pull request. That's it.
+
+## Docs
+
+- OSS vs Cloud: `docs/OSS-VS-CLOUD.md`
+- Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
+- Troubleshooting: `docs/TROUBLESHOOTING.md`
+- Architecture: `docs/ARCHITECTURE.md`
+- Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
 2. OpenCode CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
-4. Each reviewer posts a structured comment with findings
-5. The verdict job aggregates all reviews into a verdict-first council comment with collapsible reviewer sections, severity-tagged findings, file/line references, review scope, and per-reviewer timing
+4. Each reviewer uploads a structured verdict artifact (optionally posts a per-reviewer PR comment)
+5. The verdict job aggregates all reviews, posts a council comment, and posts a PR review with inline comments (up to 30) anchored to diff lines
 6. Council verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
 
 ## Auto-Triage (v1.1)
@@ -97,6 +135,21 @@ Use `templates/triage-workflow.yml` to enable:
 - manual triage via PR comment: `/cerberus triage` (optional `mode=fix`)
 - scheduled triage for stale unresolved council failures
 
+## Fork PRs
+
+Cerberus supports both same-repo and fork PRs with appropriate security handling:
+
+### Same-Repo PRs
+Full review council runs with full access to the `OPENROUTER_API_KEY` secret.
+
+### Fork PRs
+- Fork PRs trigger the workflow but skip the review jobs
+- This is intentional: GitHub Actions secrets are **not available** to fork PRs
+- Gate reviewer jobs to same-repo PRs (`head.repo.full_name == github.repository`) to avoid secret access attempts
+- Full review requires a PR from the same repository (not a fork)
+
+This prevents confusing failures when secret-dependent operations can't access their credentials.
+
 ## Inputs
 ### Review Action (`misty-step/cerberus@v2`)
 | Input | Required | Default | Description |
@@ -111,8 +164,9 @@ Use `templates/triage-workflow.yml` to enable:
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
 | `opencode-version` | no | `1.1.49` | OpenCode CLI version |
-| `post-comment` | no | `true` | Post review comment |
+| `comment-policy` | no | `never` | When to post comment: `never`, `non-pass` (WARN/FAIL), or `always` |
 | `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
+| `fail-on-verdict` | no | `false` | Exit 1 if review verdict is FAIL |
 
 ### Verdict Action (`misty-step/cerberus/verdict@v2`)
 | Input | Required | Default | Description |
@@ -120,6 +174,12 @@ Use `templates/triage-workflow.yml` to enable:
 | `github-token` | yes | - | GitHub token for PR comments |
 | `fail-on-verdict` | no | `true` | Exit 1 if council fails |
 | `fail-on-skip` | no | `false` | Exit 1 if council verdict is SKIP (all reviews skipped) |
+
+### Validate Action (`misty-step/cerberus/validate@v2`)
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `workflow` | no | `.github/workflows/cerberus.yml` | Workflow file to validate |
+| `fail-on-warnings` | no | `false` | Exit 1 if warnings are found |
 
 ## Verdict Rules
 Each reviewer emits:
@@ -175,6 +235,8 @@ By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
 Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow.yml` for a full example.
 
+If you set `model`, Cerberus annotates the run with the configured model it would have used vs the override. Prefer leaving `model` unset to stay in sync with evolving per-reviewer defaults.
+
 ```yaml
 matrix:
   include:
@@ -182,8 +244,8 @@ matrix:
     - { reviewer: ATHENA,    perspective: architecture,    model: 'openrouter/z-ai/glm-5' }
     - { reviewer: SENTINEL,  perspective: security,        model: 'openrouter/minimax/minimax-m2.5' }
     - { reviewer: VULCAN,    perspective: performance,     model: 'openrouter/google/gemini-3-flash-preview' }
-    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/qwen/qwen3-max-thinking' }
-    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/qwen/qwen3-max-thinking' }
+    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/moonshotai/kimi-k2.5' }
+    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/google/gemini-3-flash-preview' }
 ```
 
 If a reviewer's primary model fails with a transient error (429, 5xx, network), it retries with exponential backoff then falls through to the `fallback-models` chain before emitting SKIP.
@@ -202,4 +264,4 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
 - Permissions: `pull-requests: read` on review jobs, `pull-requests: write` on verdict job only
 
 ## License
-MIT
+Apache-2.0 (see [LICENSE](LICENSE))

@@ -6,9 +6,10 @@ omit =
     tests/*
     */test_*.py
 branch = true
+parallel = true
 
 [report]
-fail_under = 30
+fail_under = 70
 show_missing = true
 skip_covered = false
 exclude_lines =

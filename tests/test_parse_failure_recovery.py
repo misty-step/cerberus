@@ -47,7 +47,7 @@ def cleanup_tmp_outputs() -> None:
     suffixes = (
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
-        "fast-path-stderr.log", "model-used", "primary-model",
+        "fast-path-stderr.log", "model-used", "primary-model", "configured-model",
         "parse-failure-models.txt", "parse-failure-retries.txt",
     )
     perspectives = ("correctness", "architecture", "security", "performance", "maintainability")
@@ -275,8 +275,8 @@ class TestParseReviewMetadata:
 
             assert code == 0
             data = json.loads(out)
-            # Should parse as partial review, not SKIP
-            assert data["verdict"] == "PASS"
+            # Scratchpad without a JSON block is treated as SKIP (non-blocking) even if it has a verdict header.
+            assert data["verdict"] == "SKIP"
         finally:
             cleanup_parse_failure_metadata(perspective)
 

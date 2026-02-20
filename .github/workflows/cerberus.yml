@@ -4,7 +4,7 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -15,7 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
+  draft-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.draft.outputs.is_draft }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./draft-check
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   review:
+    needs: draft-check
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
@@ -25,8 +43,8 @@ jobs:
           - { reviewer: ATHENA,    perspective: architecture,     model: 'openrouter/z-ai/glm-5' }
           - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/minimax/minimax-m2.5' }
           - { reviewer: VULCAN,    perspective: performance,      model: 'openrouter/google/gemini-3-flash-preview' }
-          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/qwen/qwen3-max-thinking' }
-          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/qwen/qwen3-max-thinking' }
+          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/moonshotai/kimi-k2.5' }
+          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/google/gemini-3-flash-preview' }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +58,8 @@ jobs:
 
   verdict:
     name: "Council Verdict"
-    needs: review
-    if: always()
+    needs: [review, draft-check]
+    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

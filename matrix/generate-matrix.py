@@ -20,7 +20,22 @@ import sys
 import yaml
 
 
+def split_description(value: object) -> tuple[str, str]:
+    """Split description."""
+    text = str(value or "").strip()
+    if not text:
+        return ("", "")
+    if "—" in text:
+        left, right = text.split("—", 1)
+        return (left.strip(), right.strip())
+    if " - " in text:
+        left, right = text.split(" - ", 1)
+        return (left.strip(), right.strip())
+    return (text, "")
+
+
 def generate_matrix(config_path):
+    """Generate matrix."""
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
@@ -35,7 +50,23 @@ def generate_matrix(config_path):
         name = r.get("name")
         perspective = r.get("perspective")
         if name and perspective:
-            matrix.append({"reviewer": name, "perspective": perspective})
+            desc = r.get("description")
+            role, tagline = split_description(desc)
+            label = role or str(perspective).replace("_", " ").title()
+            codename = str(name).title() if str(name).isupper() else str(name)
+
+            entry = {
+                "reviewer": name,
+                "perspective": perspective,
+                "reviewer_label": label,
+                "reviewer_codename": codename,
+            }
+            if isinstance(desc, str) and desc.strip():
+                entry["reviewer_description"] = desc.strip()
+            if tagline:
+                entry["reviewer_tagline"] = tagline
+
+            matrix.append(entry)
             names.append(name)
 
     matrix_json = json.dumps({"include": matrix})

@@ -31,6 +31,14 @@ def test_verdict_action_uses_shared_upsert() -> None:
     assert "--marker" in content
 
 
+def test_verdict_action_posts_inline_review_comments() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    assert "scripts/post-council-review.py" in content
+    assert "--council-json /tmp/council-verdict.json" in content
+    assert "--body-file /tmp/council-comment.md" in content
+
+
 def test_post_comment_uses_shared_upsert() -> None:
     content = POST_COMMENT_SCRIPT.read_text()
 
@@ -58,7 +66,7 @@ def test_action_pins_opencode_install_version() -> None:
     assert "default: '1.1.49'" in match.group(0)
     assert "Invalid opencode-version format" in content
     assert 'npm i -g "opencode-ai@${OPENCODE_VERSION}"' in content
-    assert "pip install" not in content
+    assert "pip install pyyaml" in content
 
 
 def test_action_reads_primary_model_file_when_present() -> None:
@@ -67,6 +75,13 @@ def test_action_reads_primary_model_file_when_present() -> None:
     # Model metadata should prefer /tmp/<perspective>-primary-model written by run-reviewer.sh
     assert "PRIMARY_MODEL_FILE" in content
     assert "primary-model" in content
+
+
+def test_action_reads_configured_model_file_when_present() -> None:
+    content = ACTION_FILE.read_text()
+
+    assert "CONFIGURED_MODEL_FILE" in content
+    assert "configured-model" in content
 
 
 def test_consumer_template_passes_key_via_input() -> None:
@@ -134,6 +149,17 @@ def test_fail_on_skip_is_wired_in_actions() -> None:
     assert "fail-on-skip:" in review_content
     assert "inputs.fail-on-skip" in review_content
     assert "FAIL_ON_SKIP" in review_content
+
+
+def test_fail_on_verdict_is_wired_in_review_action() -> None:
+    review_content = ACTION_FILE.read_text()
+
+    assert "fail-on-verdict:" in review_content
+    assert "inputs.fail-on-verdict" in review_content
+    assert "FAIL_ON_VERDICT" in review_content
+    assert 'if [ "$FAIL_ON_VERDICT" = "true" ]; then' in review_content
+    assert 'echo "::error::${PERSPECTIVE} review verdict: FAIL"' in review_content
+    assert 'echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to council)"' in review_content
 
 
 def test_review_prompt_references_diff_file_placeholder() -> None:

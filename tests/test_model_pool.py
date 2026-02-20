@@ -62,11 +62,17 @@ def write_fake_cerberus_root(
 
     (root / "defaults" / "config.yml").write_text(config_yml)
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
+    (root / "scripts" / "read-defaults-config.py").write_text(
+        (REPO_ROOT / "scripts" / "read-defaults-config.py").read_text()
+    )
     (root / "scripts" / "render-review-prompt.py").write_text(
         (REPO_ROOT / "scripts" / "render-review-prompt.py").read_text()
     )
     (root / "scripts" / "lib" / "__init__.py").write_text(
         (REPO_ROOT / "scripts" / "lib" / "__init__.py").read_text()
+    )
+    (root / "scripts" / "lib" / "defaults_config.py").write_text(
+        (REPO_ROOT / "scripts" / "lib" / "defaults_config.py").read_text()
     )
     (root / "scripts" / "lib" / "review_prompt.py").write_text(
         (REPO_ROOT / "scripts" / "lib" / "review_prompt.py").read_text()
@@ -85,6 +91,7 @@ def cleanup_tmp_outputs() -> None:
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
         "fast-path-stderr.log", "model-used", "primary-model", "reviewer-name",
+        "configured-model",
     )
     Path("/tmp/opencode_calls.log").unlink(missing_ok=True)
     for perspective in ("security", "correctness"):
@@ -235,6 +242,55 @@ reviewers:
 
         primary_model = Path("/tmp/security-primary-model").read_text().strip()
         assert primary_model == "openrouter/override-model"
+
+        configured_model = Path("/tmp/security-configured-model").read_text().strip()
+        assert configured_model in {"openrouter/model-a", "openrouter/model-b"}
+
+        assert (
+            "::warning::Model override active for SENTINEL (security): using 'openrouter/override-model'"
+            in result.stdout
+        )
+
+    def test_redundant_input_model_override_emits_notice(self, tmp_path: Path) -> None:
+        """When OPENCODE_MODEL matches configured model, emit notice (not warning)."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        write_stub_opencode(bin_dir / "opencode")
+
+        cerberus_root = tmp_path / "cerberus-root"
+        config = '''
+model:
+  default: "openrouter/moonshotai/kimi-k2.5"
+
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: "openrouter/specific-model"
+'''
+        write_fake_cerberus_root(cerberus_root, config_yml=config)
+
+        diff_file = tmp_path / "test.diff"
+        write_simple_diff(diff_file)
+
+        env = make_env(bin_dir, diff_file, cerberus_root)
+        env["OPENCODE_MODEL"] = "openrouter/specific-model"
+
+        result = subprocess.run(
+            [str(RUN_REVIEWER), "security"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+
+        configured_model = Path("/tmp/security-configured-model").read_text().strip()
+        assert configured_model == "openrouter/specific-model"
+
+        assert (
+            "::notice::Model override set for SENTINEL (security) but matches configured model ('openrouter/specific-model')"
+            in result.stdout
+        )
 
     def test_fallback_when_no_pool_defined(self, tmp_path: Path) -> None:
         """When pool is not defined but reviewer uses pool, fall back to default."""

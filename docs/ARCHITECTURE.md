@@ -1,13 +1,22 @@
 # Cerberus Architecture — Unix-Composable Agentic DevOps
 
+Diagrams: `docs/DIAGRAMS.md`.
+
 ## Vision
 
 Cerberus is agentic DevOps composed from distinct, focused modules. Each module does ONE thing well. They plug into each other but are independently useful. Not a monolith. Not spaghetti. A Unix pipeline for software quality.
 
+## Distribution
+
+- **OSS Core (this repo)**: GitHub Actions (BYOK model key). PR comments + checks as the UX.
+- **Cerberus Cloud (planned)**: GitHub App + GitHub Marketplace billing. Same council/triage loop, but managed keys + quotas + org controls, and zero-YAML onboarding.
+
+Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
+
 ## Modules
 
 ### Module 1: Council Review (GitHub Action) — **v1.0**
-**What:** Multi-AI code review council. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified council comment.
+**What:** Multi-AI code review council. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified council comment and a PR review with inline comments.
 
 **Status:** Working. Deployed across all Misty Step repos. Needs hardening.
 

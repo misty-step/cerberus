@@ -4,7 +4,7 @@ This directory contains the Promptfoo-based evaluation system for measuring Cerb
 
 ## Structure
 
-```
+```text
 evals/
 ├── promptfooconfig.yaml    # Main eval configuration
 ├── datasets/               # Test case datasets (future)
@@ -26,7 +26,7 @@ evals/
 ### Prerequisites
 
 ```bash
-npm install -g promptfoo
+npm install -g promptfoo@0.120.24
 export OPENROUTER_API_KEY=your-key
 ```
 
@@ -44,12 +44,12 @@ promptfoo eval --config evals/promptfooconfig.yaml --no-cache --max-concurrency 
 
 ## Test Cases
 
-The eval includes 30 test cases across 6 perspectives:
+The eval includes 31 test cases across 6 perspectives:
 
 | Perspective | Count | Description |
 |------------|-------|-------------|
 | security   | 5     | SQL injection, XSS, secrets, etc. |
-| correctness| 5     | Bugs, null pointers, logic errors |
+| correctness| 6     | Bugs, null pointers, logic errors |
 | performance| 5     | N+1 queries, memory leaks, I/O |
 | architecture| 5    | Coupling, interfaces, layering |
 | maintainability| 5 | Duplication, naming, docs |
@@ -59,7 +59,7 @@ The eval includes 30 test cases across 6 perspectives:
 
 ### Smoke Eval
 - **Trigger:** PR changes to `evals/**`, `templates/**`, `.opencode/agents/**`
-- **Threshold:** 80% pass rate
+- **Threshold:** 75% pass rate
 - **Output:** PR comment with summary
 
 ### Full Eval

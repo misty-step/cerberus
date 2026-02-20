@@ -11,15 +11,41 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
+  draft-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      is_draft: ${{ steps.draft.outputs.is_draft }}
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        id: draft
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Preflight: validate workflow structure (permissions, required inputs, etc)
+  validate:
+    needs: draft-check
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: misty-step/cerberus/validate@v2
+
   # Generate the reviewer matrix from Cerberus defaults/config.yml
   matrix:
+    needs: validate
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
@@ -31,12 +57,12 @@ jobs:
 
   # Run reviews in parallel using the generated matrix
   review:
-    needs: matrix
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: [matrix, draft-check]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: read
-    name: "${{ matrix.reviewer }}"
+    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
@@ -48,13 +74,13 @@ jobs:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          post-comment: 'false'
+          comment-policy: 'never'
           timeout: '600'
           # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
           # context: |
           #   Moneta is a single-user personal finance and tax tool.
           #   Data volumes are bounded: ~100-500 transactions per user per year.
-          # Optional: force one model for all reviewers (overrides per-reviewer defaults)
+          # Optional (not recommended): force one model for all reviewers (pins models; Cerberus will warn)
           # model: 'openrouter/moonshotai/kimi-k2.5'
           # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
@@ -62,8 +88,8 @@ jobs:
   # Aggregate all review results into a single verdict comment
   verdict:
     name: "Council Verdict"
-    needs: review
-    if: always()
+    needs: [review, draft-check]
+    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:
       contents: read
       pull-requests: write

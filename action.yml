@@ -20,7 +20,7 @@ inputs:
     description: 'Deprecated alias for api-key (OpenRouter API key)'
     required: false
   model:
-    description: 'Model name (optional; defaults to per-reviewer config)'
+    description: 'Model name (optional). If set, overrides per-reviewer config for this review (Cerberus will annotate when overridden).'
     default: ''
   fallback-models:
     description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
@@ -34,9 +34,12 @@ inputs:
   opencode-version:
     description: 'OpenCode CLI version to install'
     default: '1.1.49'
+  comment-policy:
+    description: 'When to post reviewer comment to PR: never, non-pass (WARN/FAIL/SKIP), or always'
+    default: ''
   post-comment:
-    description: 'Post review comment to PR'
-    default: 'true'
+    description: 'Deprecated alias for comment-policy (back-compat): never, non-pass, always, true/false'
+    default: 'never'
   fail-on-skip:
     description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
     default: 'false'
@@ -97,6 +100,10 @@ runs:
       with:
         python-version: '3.12'
 
+    - name: Install Python deps
+      shell: bash
+      run: pip install pyyaml --quiet
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
@@ -121,12 +128,34 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "::error::gh CLI not found on runner (required for PR context fetch)"
+          exit 1
+        fi
         if [[ -z "$PR_NUMBER" ]]; then
           echo "::error::This action must be triggered by a pull_request event"
           exit 1
         fi
-        gh pr diff "$PR_NUMBER" > /tmp/pr.diff
-        gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
+        if ! gh pr diff "$PR_NUMBER" > /tmp/pr.diff; then
+          echo "::error::Failed to fetch PR diff via gh pr diff."
+          echo "Likely cause: missing workflow job permissions (pull-requests: read, contents: read) or incorrect github-token."
+          echo ""
+          echo "Fix (recommended):"
+          echo "permissions:"
+          echo "  contents: read"
+          echo "  pull-requests: read"
+          exit 1
+        fi
+        if ! gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json; then
+          echo "::error::Failed to fetch PR context via gh pr view."
+          echo "Likely cause: missing workflow job permissions (pull-requests: read) or incorrect github-token."
+          echo ""
+          echo "Fix (recommended):"
+          echo "permissions:"
+          echo "  contents: read"
+          echo "  pull-requests: read"
+          exit 1
+        fi
         echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
     - name: Run review
@@ -199,14 +228,28 @@ runs:
           else
             primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
           fi
+          CONFIGURED_MODEL_FILE="/tmp/${PERSPECTIVE}-configured-model"
+          configured_model=""
+          if [[ -s "$CONFIGURED_MODEL_FILE" ]]; then
+            configured_model="$(cat "$CONFIGURED_MODEL_FILE")"
+          fi
           fallback_used="false"
           if [[ "$model_used" != "$primary_model" ]]; then
             fallback_used="true"
           fi
           tmp_json="/tmp/${PERSPECTIVE}-verdict.model.json"
-          jq --arg mu "$model_used" --arg pm "$primary_model" --argjson fb "$fallback_used" \
-            '.model_used = $mu | .primary_model = $pm | .fallback_used = $fb' \
+          jq --arg mu "$model_used" --arg pm "$primary_model" --arg cm "$configured_model" --argjson fb "$fallback_used" \
+            '.model_used = $mu | .primary_model = $pm | .configured_model = $cm | .fallback_used = $fb' \
             "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+          mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
+        fi
+
+        # Inject reviewer description (human-friendly label) from run-reviewer.sh.
+        REVIEWER_DESC_FILE="/tmp/${PERSPECTIVE}-reviewer-desc"
+        if [[ -s "$REVIEWER_DESC_FILE" ]]; then
+          reviewer_desc="$(cat "$REVIEWER_DESC_FILE")"
+          tmp_json="/tmp/${PERSPECTIVE}-verdict.desc.json"
+          jq --arg rd "$reviewer_desc" '.reviewer_description = $rd' "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
           mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
         fi
         VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
@@ -218,7 +261,7 @@ runs:
         echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
-      if: steps.parse.outcome == 'success' && inputs.post-comment == 'true'
+      if: steps.parse.outcome == 'success'
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}
@@ -226,7 +269,36 @@ runs:
         PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
         PERSPECTIVE: ${{ inputs.perspective }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        COMMENT_POLICY: ${{ inputs.comment-policy || inputs.post-comment }}
+        VERDICT: ${{ steps.parse.outputs.verdict }}
       run: |
+        # Determine if comment should be posted based on comment policy.
+        # Supports: never, non-pass, always (and legacy true/false for back-compat).
+        comment_policy="$(printf '%s' "$COMMENT_POLICY" | tr '[:upper:]' '[:lower:]')"
+        should_post="false"
+        case "$comment_policy" in
+          never|false|0|no|n|off|'')
+            should_post="false"
+            ;;
+          always|true|1|yes|y|on)
+            should_post="true"
+            ;;
+          non-pass)
+            if [[ "$VERDICT" == "WARN" || "$VERDICT" == "FAIL" || "$VERDICT" == "SKIP" ]]; then
+              should_post="true"
+            fi
+            ;;
+          *)
+            echo "::warning::Unknown comment-policy value '$COMMENT_POLICY', defaulting to never"
+            should_post="false"
+            ;;
+        esac
+
+        if [[ "$should_post" != "true" ]]; then
+          echo "Skipping PR comment (comment-policy=$comment_policy, verdict=$VERDICT)"
+          exit 0
+        fi
+
         chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
         "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "/tmp/${PERSPECTIVE}-verdict.json"
 
@@ -257,7 +329,8 @@ runs:
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
       run: |
         # Individual reviewers output their verdict but don't fail the job
-        # unless fail-on-verdict is true (#220).
+        # unless fail-on-verdict is true (#220). The Council Verdict job
+        # aggregates all reviews and makes the final decision.
         if [ "$VERDICT" = "FAIL" ]; then
           if [ "$FAIL_ON_VERDICT" = "true" ]; then
             echo "::error::${PERSPECTIVE} review verdict: FAIL"

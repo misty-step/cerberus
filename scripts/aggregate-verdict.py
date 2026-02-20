@@ -25,15 +25,18 @@ PARSE_FAILURE_PREFIX = "Review output could not be parsed"
 MAX_ARTIFACT_SIZE = 1_048_576
 
 VALID_VERDICTS = {"PASS", "WARN", "FAIL", "SKIP"}
+VALID_PARSE_FAILURE_POLICIES = {"fail", "warn", "skip"}
 REQUIRED_ARTIFACT_FIELDS = ("verdict", "confidence", "summary")
 
 
 def fail(msg: str, code: int = 2) -> None:
+    """Print an error message to stderr and exit with the given code."""
     print(f"aggregate-verdict: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
 def read_json(path: Path) -> dict:
+    """Read and parse a JSON file, exiting with code 2 on error."""
     try:
         return json.loads(path.read_text())
     except json.JSONDecodeError as exc:
@@ -76,12 +79,14 @@ def validate_artifact(path: Path) -> tuple[dict | None, str | None]:
 
 
 def parse_expected_reviewers(raw: str | None) -> list[str]:
+    """Parse a comma-separated list of expected reviewer names from an env var string."""
     if not raw:
         return []
     return [name.strip() for name in raw.split(",") if name.strip()]
 
 
 def is_fallback_verdict(verdict: dict) -> bool:
+    """Return True if the verdict was produced by parse-review.py's fallback path (parse failure)."""
     summary = verdict.get("summary")
     if not isinstance(summary, str):
         return False
@@ -94,6 +99,7 @@ def is_fallback_verdict(verdict: dict) -> bool:
 
 
 def is_timeout_skip(verdict: dict) -> bool:
+    """Return True if the SKIP verdict was caused by a reviewer timeout."""
     if verdict.get("verdict") != "SKIP":
         return False
     summary = verdict.get("summary")
@@ -103,6 +109,7 @@ def is_timeout_skip(verdict: dict) -> bool:
 
 
 def has_critical_finding(verdict: dict) -> bool:
+    """Return True if the verdict contains at least one critical-severity finding."""
     stats = verdict.get("stats")
     if isinstance(stats, dict):
         critical = stats.get("critical")
@@ -121,6 +128,7 @@ def has_critical_finding(verdict: dict) -> bool:
 
 
 def is_explicit_noncritical_fail(verdict: dict) -> bool:
+    """Return True if the FAIL verdict has no critical findings and provides explicit evidence."""
     if verdict.get("verdict") != "FAIL":
         return False
     if has_critical_finding(verdict):
@@ -357,6 +365,7 @@ def generate_quality_report(
 
 
 def main() -> None:
+    """Aggregate reviewer verdict JSON files and write the council verdict to /tmp/council-verdict.json."""
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
         fail(f"verdict dir not found: {verdict_dir}")
@@ -397,10 +406,20 @@ def main() -> None:
             "summary": f"All {len(skipped_artifacts)} verdict artifact(s) were malformed and skipped.",
             "reviewers": [],
             "override": {"used": False},
-            "stats": {"total": 0, "fail": 0, "warn": 0, "pass": 0, "skip": 0},
+            "stats": {
+                "total": 0,
+                "fail": 0,
+                "warn": 0,
+                "pass": 0,
+                "skip": 0,
+                "parse_failures_reclassified": 0,
+            },
             "skipped_artifacts": skipped_artifacts,
         }
-        Path("/tmp/council-verdict.json").write_text(json.dumps(council, indent=2))
+        _council_json = json.dumps(council, indent=2)
+        _tmp = Path("/tmp/council-verdict.json.tmp")
+        _tmp.write_text(_council_json)
+        _tmp.rename("/tmp/council-verdict.json")
         print(f"Council Verdict: SKIP\n\nAll artifacts skipped: {len(skipped_artifacts)} malformed.")
         sys.exit(0)
 
@@ -477,7 +496,7 @@ def main() -> None:
 
     # Parse-failure policy: fail | warn | skip (default: warn)  (#216)
     parse_failure_policy = os.environ.get("PARSE_FAILURE_POLICY", "warn").lower()
-    if parse_failure_policy not in ("fail", "warn", "skip"):
+    if parse_failure_policy not in VALID_PARSE_FAILURE_POLICIES:
         print(
             f"aggregate-verdict: warning: invalid PARSE_FAILURE_POLICY "
             f"'{parse_failure_policy}', defaulting to 'warn'",

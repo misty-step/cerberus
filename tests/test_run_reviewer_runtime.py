@@ -63,7 +63,7 @@ def cleanup_tmp_outputs() -> None:
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
         "fast-path-stderr.log", "model-used",
-        "primary-model",
+        "primary-model", "configured-model",
     )
     for perspective in PERSPECTIVES:
         for suffix in suffixes:
@@ -118,11 +118,17 @@ def write_fake_cerberus_root(
     (root / "defaults" / "config.yml").write_text(config_yml)
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
     # Keep fake CERBERUS_ROOT runnable as action code evolves.
+    (root / "scripts" / "read-defaults-config.py").write_text(
+        (REPO_ROOT / "scripts" / "read-defaults-config.py").read_text()
+    )
     (root / "scripts" / "render-review-prompt.py").write_text(
         (REPO_ROOT / "scripts" / "render-review-prompt.py").read_text()
     )
     (root / "scripts" / "lib" / "__init__.py").write_text(
         (REPO_ROOT / "scripts" / "lib" / "__init__.py").read_text()
+    )
+    (root / "scripts" / "lib" / "defaults_config.py").write_text(
+        (REPO_ROOT / "scripts" / "lib" / "defaults_config.py").read_text()
     )
     (root / "scripts" / "lib" / "review_prompt.py").write_text(
         (REPO_ROOT / "scripts" / "lib" / "review_prompt.py").read_text()

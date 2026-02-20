@@ -4,6 +4,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lib.render_council_comment import (
+    collect_hotspots,
+    collect_issue_groups,
+    count_findings,
+    detect_skip_banner,
+    normalize_severity,
+    normalize_verdict,
+    main as render_council_comment_main,
+    render_comment,
+)
+
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "scripts" / "render-council-comment.py"
 
@@ -56,6 +67,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
             {
                 "reviewer": "VULCAN",
                 "perspective": "performance",
+                "reviewer_description": "Performance & Scalability — Think at runtime.",
                 "verdict": "FAIL",
                 "confidence": 0.82,
                 "summary": "N+1 query in hot path.",
@@ -76,6 +88,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
             {
                 "reviewer": "APOLLO",
                 "perspective": "correctness",
+                "reviewer_description": "Correctness & Logic — Find the bug.",
                 "verdict": "PASS",
                 "confidence": 0.93,
                 "summary": "No correctness regressions.",
@@ -93,14 +106,128 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert code == 0, err
     assert "<!-- cerberus:council -->" in body
     assert "## ❌ Council Verdict: FAIL" in body
-    assert "**Summary:** 1/2 reviewers passed. 1 failed (VULCAN)." in body
+    assert "**Summary:** 1/2 reviewers passed. 1 failed (Performance & Scalability)." in body
     assert "**Review Scope:** 7 files changed, +120 / -44 lines" in body
     assert "### Reviewer Overview" in body
-    assert "VULCAN" in body
+    assert "<summary>(click to expand)</summary>" in body
+    assert "Vulcan" in body
     assert "runtime `1m 5s`" in body
     assert "Reviewer details (click to expand)" in body
     assert "blob/abcdef1234567890/src/service.py#L42" in body
     assert "/council override sha=abcdef123456" in body
+
+
+def test_exits_nonzero_on_non_object_json(tmp_path: Path) -> None:
+    code, body, err = run_render(tmp_path, ["not an object"])
+
+    assert code == 2
+    assert body == ""
+    assert "expected object" in err
+
+
+def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
+    council = {
+        "verdict": "WARN",
+        "summary": "3 reviewers. Failures: 0, warnings: 1, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+                "runtime_seconds": 10,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "src/hot1.py",
+                        "line": 10,
+                        "title": "Shared issue",
+                        "description": "short",
+                        "suggestion": "short fix",
+                    },
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "src/hot2.py",
+                        "line": 3,
+                        "title": "Solo issue",
+                        "description": "only one reviewer",
+                        "suggestion": "fix it",
+                    },
+                ],
+                "stats": {"critical": 0, "major": 2, "minor": 0, "info": 0},
+            },
+            {
+                "reviewer": "ATHENA",
+                "perspective": "architecture",
+                "verdict": "WARN",
+                "confidence": 0.8,
+                "summary": "one issue",
+                "runtime_seconds": 20,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "src/hot1.py",
+                        "line": 10,
+                        "title": "Shared issue",
+                        "description": "a second reviewer",
+                        "suggestion": "this is a much longer suggested fix that should win",
+                    },
+                    {
+                        "severity": "minor",
+                        "category": "style",
+                        "file": "src/hot1.py",
+                        "line": 99,
+                        "title": "Minor nit",
+                        "description": "nit",
+                        "suggestion": "",
+                    },
+                ],
+                "stats": {"critical": 0, "major": 1, "minor": 1, "info": 0},
+            },
+            {
+                "reviewer": "CASSANDRA",
+                "perspective": "testing",
+                "verdict": "PASS",
+                "confidence": 0.85,
+                "summary": "ok",
+                "runtime_seconds": 15,
+                "findings": [
+                    {
+                        "severity": "minor",
+                        "category": "tests",
+                        "file": "src/hot1.py",
+                        "line": 55,
+                        "title": "Add coverage",
+                        "description": "add tests",
+                        "suggestion": "add tests",
+                    }
+                ],
+                "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+            },
+        ],
+        "stats": {"total": 3, "pass": 2, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, council)
+    assert code == 0, err
+    assert "### Fix Order" in body
+    assert "### Hotspots" in body
+
+    fix_section = body.split("### Fix Order", 1)[1].split("### Hotspots", 1)[0]
+    first = next(ln for ln in fix_section.splitlines() if ln.startswith("1. "))
+    second = next(ln for ln in fix_section.splitlines() if ln.startswith("2. "))
+    assert "Shared issue" in first
+    assert "Solo issue" in second
+    assert "much longer suggested fix" in fix_section
+
+    hot_section = body.split("### Hotspots", 1)[1].split("### Reviewer Overview", 1)[0]
+    first_hot = next(ln for ln in hot_section.splitlines() if ln.startswith("- "))
+    assert "blob/abcdef1234567890/src/hot1.py" in first_hot
 
 
 def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
@@ -111,6 +238,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
             {
                 "reviewer": "SENTINEL",
                 "perspective": "security",
+                "reviewer_description": "Security & Threat Model — Think like an attacker.",
                 "verdict": "SKIP",
                 "confidence": 0.0,
                 "summary": "Review skipped due to API credits depleted.",
@@ -131,6 +259,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
             {
                 "reviewer": "ATHENA",
                 "perspective": "architecture",
+                "reviewer_description": "Architecture & Design — Zoom out.",
                 "verdict": "WARN",
                 "confidence": 0.75,
                 "summary": "One major design issue.",
@@ -147,8 +276,110 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "API credits depleted for one or more reviewers" in body
-    assert "**Summary:** 0/2 reviewers passed. 1 warned (ATHENA). 1 skipped (SENTINEL)." in body
-    assert "[#12345](https://github.com/misty-step/cerberus/actions/runs/12345)" in body
+    assert "**Summary:** 0/2 reviewers passed. 1 warned (Architecture & Design). 1 skipped (Security & Threat Model)." in body
+
+
+def test_normalize_verdict_defaults_unknown() -> None:
+    assert normalize_verdict("PASS") == "PASS"
+    assert normalize_verdict("bad") == "WARN"
+
+
+def test_normalize_severity_defaults_unknown() -> None:
+    assert normalize_severity("critical") == "critical"
+    assert normalize_severity("MISSING") == "info"
+
+
+def test_count_findings_uses_stats_block_when_available() -> None:
+    council = {
+        "reviewers": [
+            {"stats": {"critical": 1, "major": 2, "minor": 3, "info": 4}, "findings": []},
+            {"stats": {"critical": 0, "major": 1}, "findings": [{"severity": "critical"}]},
+        ]
+    }
+    found = count_findings(council["reviewers"])
+    assert found == {"critical": 1, "major": 3, "minor": 3, "info": 4}
+
+
+def test_detect_skip_banner_for_key_api_error_paths() -> None:
+    reviewer = {
+        "verdict": "SKIP",
+        "summary": "provider returned bad key",
+        "findings": [{"category": "api_error", "title": "KEY_INVALID", "file": "", "line": 0}],
+    }
+    assert "API key error for one or more reviewers" in detect_skip_banner([reviewer])
+
+
+def test_collect_issue_groups_merges_matching_findings() -> None:
+    reviewer_a = {
+        "reviewer": "APOLLO",
+        "findings": [
+            {
+                "severity": "major",
+                "category": "tests",
+                "file": "src/a.py",
+                "line": 10,
+                "title": "Shared issue",
+                "suggestion": "short",
+            }
+        ],
+    }
+    reviewer_b = {
+        "reviewer": "VULCAN",
+        "findings": [
+            {
+                "severity": "critical",
+                "category": "tests",
+                "file": "src/a.py",
+                "line": 10,
+                "title": "Shared issue",
+                "suggestion": "longer suggestion",
+            },
+            {
+                "severity": "minor",
+                "category": "tests",
+                "file": "src/a.py",
+                "line": 11,
+                "title": "Unique issue",
+            },
+        ],
+    }
+
+    groups = collect_issue_groups([reviewer_a, reviewer_b])
+    merged = {(item["file"], item["line"], item["title"]): item for item in groups}
+
+    assert len(groups) == 2
+    assert merged[("src/a.py", 10, "Shared issue")]["severity"] == "critical"
+    assert merged[("src/a.py", 10, "Shared issue")]["suggestion"] == "longer suggestion"
+    assert merged[("src/a.py", 10, "Shared issue")]["reviewers"] == ["Apollo", "Vulcan"]
+
+
+def test_collect_hotspots_handles_multiple_reviewers() -> None:
+    reviewer_a = {
+        "reviewer": "APOLLO",
+        "findings": [{"file": "src/a.py", "severity": "major", "title": "One"}],
+    }
+    reviewer_b = {
+        "reviewer": "VULCAN",
+        "findings": [
+            {"file": "src/a.py", "severity": "critical", "title": "Two"},
+            {"file": "src/b.py", "severity": "info", "title": "Three"},
+        ],
+    }
+    hotspots = collect_hotspots([reviewer_a, reviewer_b])
+    assert [item["file"] for item in hotspots] == ["src/a.py", "src/b.py"]
+    assert hotspots[0]["reviewers"] == ["Apollo", "Vulcan"]
+
+
+def test_render_comment_renders_without_stats_or_findings() -> None:
+    comment = render_comment(
+        {"verdict": "PASS", "reviewers": []},
+        max_findings=3,
+        max_key_findings=2,
+        marker="<!-- test -->",
+    )
+    assert "<!-- test -->" in comment
+    assert "## ✅ Council Verdict: PASS" in comment
+    assert "No reviewer verdicts available." in comment
 
 
 def test_raw_review_is_omitted_and_note_is_present(tmp_path: Path) -> None:
@@ -395,5 +626,174 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     # Structural content should still be present
     assert "## ⚠️ Council Verdict: WARN" in body
     assert "### Reviewer Overview" in body
+    assert "<summary>(click to expand)</summary>" in body
     assert "### Key Findings" in body
-    assert body.count("**Finding ") == 5
+    assert "<summary>(show less)</summary>" in body
+    key_section = body.split("### Key Findings", 1)[1]
+    key_section = key_section.split("\n---\n", 1)[0]
+    assert key_section.count("**Finding ") == 5
+
+
+def test_main_allows_direct_arg_parsing(tmp_path: Path) -> None:
+    council = {"verdict": "PASS", "stats": {"total": 0, "pass": 0, "warn": 0, "fail": 0, "skip": 0}}
+    council_path = tmp_path / "council.json"
+    output_path = tmp_path / "comment.md"
+    council_path.write_text(json.dumps(council), encoding="utf-8")
+
+    code = render_council_comment_main(
+        [
+            "--council-json",
+            str(council_path),
+            "--output",
+            str(output_path),
+            "--max-findings",
+            "5",
+            "--max-key-findings",
+            "5",
+        ]
+    )
+    body = output_path.read_text(encoding="utf-8")
+
+    assert code == 0
+    assert "<!-- cerberus:council -->" in body
+
+
+_FAIL_COUNCIL = {
+    "verdict": "FAIL",
+    "summary": "1 reviewer. Failures: 1, warnings: 0, skipped: 0.",
+    "reviewers": [
+        {
+            "reviewer": "APOLLO",
+            "perspective": "correctness",
+            "verdict": "FAIL",
+            "confidence": 0.9,
+            "summary": "Bug found.",
+            "runtime_seconds": 30,
+            "findings": [
+                {
+                    "severity": "critical",
+                    "category": "bug",
+                    "file": "src/app.py",
+                    "line": 10,
+                    "title": "Critical bug",
+                    "description": "Bad thing.",
+                    "suggestion": "Fix it.",
+                }
+            ],
+            "stats": {"critical": 1, "major": 0, "minor": 0, "info": 0},
+        }
+    ],
+    "stats": {"total": 1, "pass": 0, "warn": 0, "fail": 1, "skip": 0},
+    "override": {"used": False},
+}
+
+
+def test_advisory_banner_shown_when_fail_on_verdict_false(tmp_path: Path) -> None:
+    code, body, err = run_render(
+        tmp_path, _FAIL_COUNCIL, env_extra={"FAIL_ON_VERDICT": "false"}
+    )
+
+    assert code == 0, err
+    assert "Council Verdict: FAIL (advisory)" in body
+    assert "Advisory mode" in body
+    assert "fail-on-verdict" in body
+    # Standard FAIL header must NOT appear when advisory
+    assert "## ❌ Council Verdict: FAIL\n" not in body
+
+
+def test_no_advisory_banner_when_fail_on_verdict_true(tmp_path: Path) -> None:
+    code, body, err = run_render(
+        tmp_path, _FAIL_COUNCIL, env_extra={"FAIL_ON_VERDICT": "true"}
+    )
+
+    assert code == 0, err
+    assert "## ❌ Council Verdict: FAIL" in body
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
+def test_advisory_banner_not_shown_for_pass_verdict(tmp_path: Path) -> None:
+    pass_council = {
+        "verdict": "PASS",
+        "summary": "1 reviewer. Failures: 0.",
+        "reviewers": [
+            {
+                "reviewer": "APOLLO",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.95,
+                "summary": "All good.",
+                "runtime_seconds": 20,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+    code, body, err = run_render(
+        tmp_path, pass_council, env_extra={"FAIL_ON_VERDICT": "false"}
+    )
+
+    assert code == 0, err
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
+def test_advisory_banner_not_shown_for_warn_verdict(tmp_path: Path) -> None:
+    warn_council = {
+        "verdict": "WARN",
+        "summary": "1 reviewer. Warnings: 1.",
+        "reviewers": [
+            {
+                "reviewer": "ATHENA",
+                "perspective": "architecture",
+                "verdict": "WARN",
+                "confidence": 0.8,
+                "summary": "Minor design issue.",
+                "runtime_seconds": 25,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "design",
+                        "file": "src/app.py",
+                        "line": 5,
+                        "title": "Coupling issue",
+                        "description": "Tight coupling.",
+                        "suggestion": "Extract interface.",
+                    }
+                ],
+                "stats": {"critical": 0, "major": 1, "minor": 0, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+    code, body, err = run_render(
+        tmp_path, warn_council, env_extra={"FAIL_ON_VERDICT": "false"}
+    )
+
+    assert code == 0, err
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
+def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
+    council_path = tmp_path / "council.json"
+    output_path = tmp_path / "comment.md"
+    council_path.write_text(json.dumps({"verdict": "PASS"}), encoding="utf-8")
+
+    code = render_council_comment_main(
+        [
+            "--council-json",
+            str(council_path),
+            "--output",
+            str(output_path),
+            "--max-findings",
+            "0",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "max-findings must be >= 1" in captured.err

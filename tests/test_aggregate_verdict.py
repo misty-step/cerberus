@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).parent.parent / "scripts" / "aggregate-verdict.py"
 FIXTURES = Path(__file__).parent / "fixtures" / "sample-verdicts"
 
@@ -678,7 +680,7 @@ def test_partial_model_metadata_propagates_present_values(tmp_path):
 # Phase 2: Unit tests via importlib (no subprocess)
 # ---------------------------------------------------------------------------
 
-from tests.conftest import aggregate_verdict
+from conftest import aggregate_verdict
 from lib.overrides import Override
 
 _parse_override = aggregate_verdict.parse_override
@@ -949,7 +951,7 @@ class TestPipelineIntegration:
     """End-to-end: parse raw reviewer output, then aggregate verdicts."""
 
     def test_parse_then_aggregate_pass(self, tmp_path):
-        from tests.conftest import parse_review
+        from conftest import parse_review
         # Simulate three PASS reviews
         for name in ["APOLLO", "ATHENA", "SENTINEL"]:
             raw = json.dumps({
@@ -1979,3 +1981,201 @@ class TestVerdictJsonRobustness:
         assert "verdict" in data
         # Temp file should not linger
         assert not Path("/tmp/council-verdict.json.tmp").exists()
+
+
+# ---------------------------------------------------------------------------
+# Branch-coverage additions (issue #198)
+# Target: close remaining uncovered branches in aggregate-verdict.py
+# ---------------------------------------------------------------------------
+
+_read_json = aggregate_verdict.read_json
+_is_explicit_noncritical_fail = aggregate_verdict.is_explicit_noncritical_fail
+_is_timeout_skip = aggregate_verdict.is_timeout_skip
+_has_critical_finding = aggregate_verdict.has_critical_finding
+_generate_quality_report = aggregate_verdict.generate_quality_report
+
+
+# --- read_json error paths (lines 37-42) ---
+
+class TestReadJsonUnit:
+    def test_valid_json_returns_dict(self, tmp_path):
+        path = tmp_path / "ok.json"
+        path.write_text('{"key": "value"}')
+        assert _read_json(path) == {"key": "value"}
+
+    def test_invalid_json_exits(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text("{not valid json}")
+        with pytest.raises(SystemExit) as exc:
+            _read_json(path)
+        assert exc.value.code == 2
+
+    def test_missing_file_exits(self, tmp_path):
+        path = tmp_path / "nonexistent.json"
+        with pytest.raises(SystemExit) as exc:
+            _read_json(path)
+        assert exc.value.code == 2
+
+
+# --- validate_artifact OSError/UnicodeDecodeError paths (lines 49-50, 57-58) ---
+
+class TestValidateArtifactErrorPaths:
+    def test_nonexistent_file_stat_error(self, tmp_path):
+        """File doesn't exist → OSError on stat (lines 49-50)."""
+        path = tmp_path / "nonexistent.json"
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "unable to stat" in (err or "")
+
+    def test_invalid_utf8_bytes_read_error(self, tmp_path):
+        """Invalid UTF-8 bytes → UnicodeDecodeError on read_text (lines 57-58)."""
+        path = tmp_path / "invalid_utf8.json"
+        path.write_bytes(b"\xff\xfe\x80\x81")
+        data, err = _validate_artifact(path)
+        assert data is None
+        assert "unable to read" in (err or "")
+
+
+# --- is_fallback_verdict TypeError/ValueError (lines 91-92) ---
+
+class TestIsFallbackVerdictConfidenceEdges:
+    def test_none_confidence_returns_false(self):
+        v = {"summary": "Review output could not be parsed: err", "confidence": None}
+        assert _is_fallback_verdict(v) is False
+
+    def test_nonnumeric_confidence_returns_false(self):
+        v = {"summary": "Review output could not be parsed: err", "confidence": "bad"}
+        assert _is_fallback_verdict(v) is False
+
+
+# --- is_timeout_skip non-string summary (line 101) ---
+
+class TestIsTimeoutSkipUnit:
+    def test_skip_non_string_summary_returns_false(self):
+        assert _is_timeout_skip({"verdict": "SKIP", "summary": None}) is False
+
+    def test_skip_with_timeout_returns_true(self):
+        v = {"verdict": "SKIP", "summary": "Review skipped due to timeout after 600s."}
+        assert _is_timeout_skip(v) is True
+
+    def test_non_skip_verdict_returns_false(self):
+        assert _is_timeout_skip({"verdict": "PASS", "summary": "timeout after 600s"}) is False
+
+
+# --- has_critical_finding (lines 112-113, 119) ---
+
+class TestHasCriticalFindingUnit:
+    def test_none_critical_in_stats_falls_through(self):
+        """TypeError in int() → pass; then checks findings (lines 112-113)."""
+        v = {"stats": {"critical": None}, "findings": []}
+        assert _has_critical_finding(v) is False
+
+    def test_string_critical_in_stats_falls_through_to_findings(self):
+        """ValueError → pass; critical finding in findings list (lines 112-113, 119)."""
+        v = {
+            "stats": {"critical": "n/a"},
+            "findings": [{"severity": "critical", "file": "a.py"}],
+        }
+        assert _has_critical_finding(v) is True
+
+    def test_no_stats_critical_finding_returns_true(self):
+        """No stats at all; finding with severity=critical (line 119)."""
+        v = {"findings": [{"severity": "critical", "category": "injection", "file": "a.py"}]}
+        assert _has_critical_finding(v) is True
+
+    def test_no_stats_no_critical_finding_returns_false(self):
+        v = {"findings": [{"severity": "major"}]}
+        assert _has_critical_finding(v) is False
+
+
+# --- is_explicit_noncritical_fail (lines 125, 133-134, 138) ---
+
+class TestIsExplicitNoncriticalFailUnit:
+    def test_non_fail_verdict_returns_false(self):
+        """line 125: short-circuit for non-FAIL verdicts."""
+        assert _is_explicit_noncritical_fail({"verdict": "PASS"}) is False
+        assert _is_explicit_noncritical_fail({"verdict": "WARN"}) is False
+        assert _is_explicit_noncritical_fail({"verdict": "SKIP"}) is False
+
+    def test_fail_with_none_critical_in_stats_returns_false(self):
+        """TypeError in int() conversion (lines 133-134)."""
+        v = {"verdict": "FAIL", "stats": {"critical": None, "major": 2}}
+        assert _is_explicit_noncritical_fail(v) is False
+
+    def test_fail_with_string_critical_in_stats_returns_false(self):
+        """ValueError in int() conversion (lines 133-134)."""
+        v = {"verdict": "FAIL", "stats": {"critical": "unknown", "major": 2}}
+        assert _is_explicit_noncritical_fail(v) is False
+
+    def test_fail_no_stats_with_findings_returns_true(self):
+        """No stats, findings list present (line 138)."""
+        v = {"verdict": "FAIL", "findings": [{"severity": "major", "file": "a.py"}]}
+        assert _is_explicit_noncritical_fail(v) is True
+
+    def test_fail_no_stats_no_findings_returns_false(self):
+        """No stats, no findings → treat as blocking (conservative)."""
+        v = {"verdict": "FAIL"}
+        assert _is_explicit_noncritical_fail(v) is False
+
+
+# --- generate_quality_report unknown verdict (lines 266->268, 295) ---
+
+class TestGenerateQualityReportEdgeCases:
+    def _council(self):
+        return {"verdict": "PASS"}
+
+    def test_unknown_verdict_type_appears_in_distribution(self):
+        """Unknown verdict type falls into else branch (line 295)."""
+        verdict = {
+            "reviewer": "A",
+            "perspective": "a",
+            "verdict": "XFAIL",
+            "confidence": 0.0,
+            "summary": "custom",
+        }
+        report = _generate_quality_report([verdict], self._council(), [])
+        dist = report["summary"]["verdict_distribution"]
+        assert "XFAIL" in dist
+        assert dist["XFAIL"] == 1
+
+    def test_unknown_verdict_not_incremented_in_model_stats_verdicts(self):
+        """Unknown verdict skips increment in nested verdicts dict (line 266->268)."""
+        verdict = {
+            "reviewer": "A",
+            "perspective": "a",
+            "verdict": "XFAIL",
+            "confidence": 0.0,
+            "summary": "custom",
+            "model_used": "test-model",
+        }
+        report = _generate_quality_report([verdict], self._council(), [])
+        model_stats = report["models"]["test-model"]
+        assert "XFAIL" not in model_stats["verdicts"]
+        assert model_stats["count"] == 1
+
+    def test_empty_verdicts_returns_early(self):
+        report = _generate_quality_report([], self._council(), [])
+        assert report["summary"]["total_reviewers"] == 0
+        assert "No valid verdicts" in report["errors"]
+
+
+# --- main() line 379: count mismatch + fallback reviewers warning ---
+
+def test_warns_count_mismatch_with_fallback_reviewers(tmp_path):
+    """Count mismatch AND fallback verdicts: warning includes both (line 379)."""
+    (tmp_path / "apollo.json").write_text(json.dumps({
+        "reviewer": "APOLLO", "perspective": "correctness",
+        "verdict": "PASS", "confidence": 0.9, "summary": "ok",
+    }))
+    (tmp_path / "sentinel.json").write_text(json.dumps({
+        "reviewer": "SENTINEL", "perspective": "security",
+        "verdict": "FAIL", "confidence": 0.0,
+        "summary": "Review output could not be parsed: no ```json block found",
+    }))
+    code, _out, err = run_aggregate(
+        str(tmp_path),
+        env_extra={"EXPECTED_REVIEWERS": "APOLLO,ATHENA,SENTINEL"},  # 3 expected, 2 got
+    )
+    assert code == 0
+    assert "expected 3 reviewers" in err
+    assert "fallback verdicts: SENTINEL" in err

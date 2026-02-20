@@ -19,8 +19,17 @@ MAX_PROJECT_CONTEXT_CHARS = 4000
 TOKEN_RE = re.compile(r"\{\{[A-Z0-9_]+\}\}")
 
 
+def require_env(name: str, env: Mapping[str, str]) -> str:
+    """Require env."""
+    value = env.get(name, "")
+    if not value:
+        raise ValueError(f"missing required env var: {name}")
+    return value
+
+
 @dataclass(frozen=True)
 class PullRequestContext:
+    """Data class for Pull Request Context."""
     title: str
     author: str
     head_branch: str
@@ -29,7 +38,16 @@ class PullRequestContext:
 
 
 def _load_pr_context_from_json(path: Path) -> PullRequestContext:
-    ctx = json.loads(path.read_text())
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"unable to read PR context JSON {path}: {exc}") from exc
+    try:
+        ctx = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in PR context file {path}: {exc}") from exc
+    if not isinstance(ctx, dict):
+        raise ValueError(f"invalid PR context JSON in {path}: expected object")
 
     title = ctx.get("title", "")
     author = ctx.get("author", "")
@@ -49,11 +67,25 @@ def _load_pr_context_from_json(path: Path) -> PullRequestContext:
 
 
 def load_pr_context(env: Mapping[str, str]) -> PullRequestContext:
+    """Load pr context."""
     pr_context_file = env.get("GH_PR_CONTEXT", "")
     if pr_context_file:
         p = Path(pr_context_file)
         if p.exists():
             return _load_pr_context_from_json(p)
+        # If a PR context file is explicitly configured, fail loudly unless the
+        # caller provided the inline fallback fields (GH_PR_*).
+        if not any(
+            env.get(key, "")
+            for key in (
+                "GH_PR_TITLE",
+                "GH_PR_AUTHOR",
+                "GH_HEAD_BRANCH",
+                "GH_BASE_BRANCH",
+                "GH_PR_BODY",
+            )
+        ):
+            raise ValueError(f"missing PR context file: {p}")
 
     return PullRequestContext(
         title=str(env.get("GH_PR_TITLE", "") or ""),
@@ -99,6 +131,7 @@ def render_review_prompt_text(
     current_date: str | None = None,
     project_context: str | None = None,
 ) -> str:
+    """Render review prompt text."""
     current_date = current_date or date.today().isoformat()
 
     # UNTRUSTED: PR fields are attacker-controlled input.
@@ -123,6 +156,7 @@ def render_review_prompt_text(
     }
 
     def replace_token(match: re.Match[str]) -> str:
+        """Replace token."""
         token = match.group(0)
         return replacements.get(token, token)
 
@@ -137,17 +171,39 @@ def render_review_prompt_file(
     perspective: str,
     output_path: Path,
 ) -> None:
+    """Render review prompt file."""
     template_path = cerberus_root / "templates" / "review-prompt.md"
-    template_text = template_path.read_text()
+    try:
+        template_text = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"unable to read template {template_path}: {exc}") from exc
     pr_context = load_pr_context(env)
     project_context = env.get("CERBERUS_CONTEXT", "") or ""
 
-    output_path.write_text(
-        render_review_prompt_text(
-            template_text=template_text,
-            pr_context=pr_context,
-            diff_file=diff_file,
-            perspective=perspective,
-            project_context=project_context,
-        )
+    rendered = render_review_prompt_text(
+        template_text=template_text,
+        pr_context=pr_context,
+        diff_file=diff_file,
+        perspective=perspective,
+        project_context=project_context,
+    )
+    try:
+        output_path.write_text(rendered, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"unable to write prompt output {output_path}: {exc}") from exc
+
+
+def render_review_prompt_from_env(*, env: Mapping[str, str]) -> None:
+    """Render review prompt from env."""
+    cerberus_root = Path(require_env("CERBERUS_ROOT", env))
+    diff_file = require_env("DIFF_FILE", env)
+    perspective = require_env("PERSPECTIVE", env)
+    output_path = Path(require_env("PROMPT_OUTPUT", env))
+
+    render_review_prompt_file(
+        cerberus_root=cerberus_root,
+        env=env,
+        diff_file=diff_file,
+        perspective=perspective,
+        output_path=output_path,
     )

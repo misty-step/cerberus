@@ -26,15 +26,23 @@ jobs:
       - name: Install Promptfoo
         run: npm install -g promptfoo@0.120.24
 
+      - name: Restore baseline
+        uses: actions/cache@v4
+        with:
+          path: evals/results/baseline.json
+          key: cerberus-eval-baseline-${{ github.ref }}
+          restore-keys: cerberus-eval-baseline-
+
       - name: Run full eval
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
+          set -o pipefail
           mkdir -p evals/results
           promptfoo eval --config evals/promptfooconfig.yaml \
             --no-cache \
             --max-concurrency 5 \
-            2>&1 | tee evals/results/full-output.txt
+            2>&1 | tee evals/results/full-output.txt || true
 
       - name: Check pass rate
         id: eval
@@ -45,8 +53,8 @@ jobs:
             exit 1
           fi
 
-          TOTAL=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' "$RESULTS")
-          PASS=$(jq '.results.stats.successes' "$RESULTS")
+          TOTAL=$(jq '(.results.stats.successes // 0) + (.results.stats.failures // 0) + (.results.stats.errors // 0)' "$RESULTS")
+          PASS=$(jq '.results.stats.successes // 0' "$RESULTS")
 
           if [ "$TOTAL" -eq 0 ]; then
             echo "No test results found"
@@ -66,10 +74,10 @@ jobs:
       - name: Compare with baseline
         if: hashFiles('evals/results/baseline.json') != ''
         run: |
-          CURRENT=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' evals/results/latest.json)
-          CURRENT_PASS=$(jq '.results.stats.successes' evals/results/latest.json)
-          BASELINE=$(jq '.results.stats.successes + .results.stats.failures + (.results.stats.errors // 0)' evals/results/baseline.json)
-          BASELINE_PASS=$(jq '.results.stats.successes' evals/results/baseline.json)
+          CURRENT=$(jq '(.results.stats.successes // 0) + (.results.stats.failures // 0) + (.results.stats.errors // 0)' evals/results/latest.json)
+          CURRENT_PASS=$(jq '.results.stats.successes // 0' evals/results/latest.json)
+          BASELINE=$(jq '(.results.stats.successes // 0) + (.results.stats.failures // 0) + (.results.stats.errors // 0)' evals/results/baseline.json)
+          BASELINE_PASS=$(jq '.results.stats.successes // 0' evals/results/baseline.json)
 
           CURRENT_RATE=$((CURRENT_PASS * 100 / CURRENT))
           BASELINE_RATE=$((BASELINE_PASS * 100 / BASELINE))
@@ -87,7 +95,15 @@ jobs:
         run: |
           cp evals/results/latest.json evals/results/baseline.json
 
+      - name: Persist baseline cache
+        if: github.event.inputs.baseline == 'true'
+        uses: actions/cache@v4
+        with:
+          path: evals/results/baseline.json
+          key: cerberus-eval-baseline-${{ github.ref }}
+
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: full-eval-results

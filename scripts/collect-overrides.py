@@ -11,6 +11,7 @@ from uuid import uuid4
 
 
 def run_gh(args: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
+    """Run gh."""
     result = subprocess.run(
         ["gh", *args],
         capture_output=True,
@@ -29,6 +30,7 @@ def run_gh(args: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess
 
 
 def gh_json(args: list[str], *, timeout: int = 20) -> object:
+    """Gh json."""
     result = run_gh(args, timeout=timeout)
     try:
         return json.loads(result.stdout)
@@ -37,6 +39,7 @@ def gh_json(args: list[str], *, timeout: int = 20) -> object:
 
 
 def fetch_pr_comments(repo: str, pr_number: int, *, per_page: int = 100) -> list[dict]:
+    """Fetch pr comments."""
     comments: list[dict] = []
     page = 1
     while True:
@@ -54,6 +57,7 @@ def fetch_pr_comments(repo: str, pr_number: int, *, per_page: int = 100) -> list
 
 
 def extract_override_comments(comments: list[dict]) -> list[dict[str, str]]:
+    """Extract override comments."""
     collected: list[dict[str, str]] = []
     for comment in comments:
         body = comment.get("body")
@@ -68,6 +72,7 @@ def extract_override_comments(comments: list[dict]) -> list[dict[str, str]]:
 
 
 def fetch_actor_permissions(repo: str, actors: list[str]) -> dict[str, str]:
+    """Fetch actor permissions."""
     permissions: dict[str, str] = {}
     for actor in sorted(set(actors)):
         if not actor:
@@ -88,6 +93,7 @@ def fetch_actor_permissions(repo: str, actors: list[str]) -> dict[str, str]:
 
 
 def collect_override_data(repo: str, pr_number: int) -> tuple[list[dict[str, str]], dict[str, str]]:
+    """Collect override data."""
     comments = fetch_pr_comments(repo, pr_number)
     overrides = extract_override_comments(comments)
     actors = [entry.get("actor", "") for entry in overrides]
@@ -96,6 +102,7 @@ def collect_override_data(repo: str, pr_number: int) -> tuple[list[dict[str, str
 
 
 def append_multiline_output(path: Path, key: str, value: str) -> None:
+    """Append multiline output."""
     delimiter = f"CERBERUS_{key.upper()}_{uuid4().hex}"
     while delimiter in value:
         delimiter = f"CERBERUS_{key.upper()}_{uuid4().hex}"
@@ -108,6 +115,7 @@ def append_multiline_output(path: Path, key: str, value: str) -> None:
 
 
 def write_github_outputs(output_path: Path, overrides: list[dict[str, str]], actor_permissions: dict[str, str]) -> None:
+    """Write github outputs."""
     append_multiline_output(output_path, "overrides", json.dumps(overrides, separators=(",", ":")))
     append_multiline_output(
         output_path,
@@ -117,6 +125,7 @@ def write_github_outputs(output_path: Path, overrides: list[dict[str, str]], act
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse args."""
     parser = argparse.ArgumentParser(
         description="Collect council override comments and actor permissions.",
     )
@@ -131,6 +140,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Main."""
     args = parse_args()
     overrides: list[dict[str, str]] = []
     actor_permissions: dict[str, str] = {}
