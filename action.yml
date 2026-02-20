@@ -282,31 +282,25 @@ runs:
           parse_error_kind="${{ steps.pr.outputs.pr-context-error-kind }}"
           parse_error_msg="${{ steps.pr.outputs.pr-context-error-message }}"
           if [[ "$parse_error_kind" == "auth" ]]; then
-            cat > "$PARSE_INPUT" <<EOF
-API Error: API_KEY_INVALID
-
-Unable to fetch PR context because the workflow token is invalid or expired.
-HTTP 401 Bad credentials was returned by GitHub CLI.
-
-$parse_error_msg
-EOF
+            printf '%s\n%s\n%s\n%s\n%s\n' \
+              "API Error: API_KEY_INVALID" \
+              "" \
+              "Unable to fetch PR context because the workflow token is invalid or expired." \
+              "HTTP 401 Bad credentials was returned by GitHub CLI." \
+              "$parse_error_msg" > "$PARSE_INPUT"
           elif [[ "$parse_error_kind" == "permissions" ]]; then
-            cat > "$PARSE_INPUT" <<EOF
-API Error: API_ERROR
-
-Unable to fetch PR context due to GitHub permissions constraints.
-Run check: workflow token has pull-requests: read access and valid repository scope.
-
-$parse_error_msg
-EOF
+            printf '%s\n%s\n%s\n%s\n%s\n' \
+              "API Error: API_ERROR" \
+              "" \
+              "Unable to fetch PR context due to GitHub permissions constraints." \
+              "Run check: workflow token has pull-requests: read access and valid repository scope." \
+              "$parse_error_msg" > "$PARSE_INPUT"
           else
-            cat > "$PARSE_INPUT" <<EOF
-API Error: API_ERROR
-
-Unable to fetch PR context:
-
-$parse_error_msg
-EOF
+            printf '%s\n%s\n%s\n%s\n' \
+              "API Error: API_ERROR" \
+              "" \
+              "Unable to fetch PR context:" \
+              "$parse_error_msg" > "$PARSE_INPUT"
           fi
         fi
         if [[ -f "/tmp/${PERSPECTIVE}-parse-input" ]]; then
