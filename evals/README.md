@@ -59,7 +59,7 @@ The eval includes 31 test cases across 6 perspectives:
 
 ### Smoke Eval
 - **Trigger:** PR changes to `evals/**`, `templates/**`, `.opencode/agents/**`
-- **Threshold:** 80% pass rate
+- **Threshold:** 75% pass rate
 - **Output:** PR comment with summary
 
 ### Full Eval

@@ -18,12 +18,14 @@ import yaml
 
 @dataclass(frozen=True)
 class Finding:
+    """Data class for Finding."""
     level: str  # "error" | "warning"
     message: str
 
 
 def _workflow_yaml_loader() -> type[yaml.SafeLoader]:
     class Loader(yaml.SafeLoader):
+        """Data class for Loader."""
         pass
 
     # Prevent YAML 1.1 implicit bool coercion of keys like "on:" / "off:".
@@ -161,6 +163,7 @@ def _perm_allows(perms: Any | None, perm: str, need: str) -> bool | None:
 
 
 def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Finding]:
+    """Validate workflow dict."""
     findings: list[Finding] = []
 
     jobs = workflow.get("jobs")
@@ -375,6 +378,7 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
 
 
 def validate_workflow_file(path: Path) -> tuple[list[Finding], str | None]:
+    """Validate workflow file."""
     try:
         raw = path.read_text()
     except OSError as exc:
@@ -404,6 +408,7 @@ def _emit(findings: list[Finding]) -> None:
 
 
 def main() -> None:
+    """Main."""
     parser = argparse.ArgumentParser(
         description="Validate a Cerberus consumer workflow for common misconfigurations."
     )

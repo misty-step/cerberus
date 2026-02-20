@@ -101,6 +101,7 @@ class ErrorSourceConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ErrorSourceConfig":
+        """From dict."""
         source_id = _coerce_str(raw.get("id"), "id")
         raw_log_file_value = raw.get("path")
         if raw_log_file_value is None:
@@ -151,6 +152,7 @@ class ErrorTrackingConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None = None) -> "ErrorTrackingConfig":
+        """From dict."""
         if raw is None:
             return cls()
         if not isinstance(raw, dict):

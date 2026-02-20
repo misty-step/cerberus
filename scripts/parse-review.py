@@ -25,6 +25,7 @@ _FILE_LINES_CACHE: dict[Path, list[str]] = {}
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
+    """Resolve reviewer."""
     reviewer = cli_reviewer or os.environ.get("REVIEWER_NAME") or "UNKNOWN"
     reviewer = reviewer.strip()
     return reviewer or "UNKNOWN"
@@ -68,6 +69,7 @@ def get_parse_failure_metadata() -> dict[str, list[str] | int | None]:
 
 
 def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
+    """Parse args."""
     input_path = None
     reviewer = None
     idx = 0
@@ -182,6 +184,7 @@ def write_fallback(
     summary: str | None = None, raw_review: str | None = None,
     findings: list[dict] | None = None,
 ) -> NoReturn:
+    """Write fallback."""
     resolved_findings = findings if findings else []
     info_count = sum(1 for f in resolved_findings if f.get("severity") == "info")
     fallback = {
@@ -209,6 +212,7 @@ def write_fallback(
 
 
 def fail(msg: str) -> NoReturn:
+    """Fail."""
     print(f"parse-review: {msg}", file=sys.stderr)
     raw_text = RAW_INPUT.strip() if RAW_INPUT else None
     if is_scratchpad(RAW_INPUT):
@@ -231,6 +235,7 @@ def fail(msg: str) -> NoReturn:
 
 
 def read_input(path: str | None) -> str:
+    """Read input."""
     if path:
         return Path(path).read_text()
     return sys.stdin.read()
@@ -320,6 +325,7 @@ def generate_timeout_skip_verdict(
     files_in_diff: str = "",
     fast_path_status: str = "",
 ) -> dict:
+    """Generate timeout skip verdict."""
     timeout_suffix = f" after {timeout_seconds}s" if timeout_seconds is not None else ""
 
     # Build an informative description with available diagnostics.
@@ -368,6 +374,7 @@ def generate_timeout_skip_verdict(
 
 
 def extract_json_block(text: str) -> str | None:
+    """Extract json block."""
     pattern = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
     matches = pattern.findall(text)
     if not matches:
@@ -408,6 +415,7 @@ def looks_like_api_error(text: str) -> tuple[bool, str, str]:
 def validate(obj: dict) -> None:
     # Inject known metadata fields before validation — models often omit these
     # even when the rest of the review is valid.
+    """Validate."""
     if "reviewer" not in obj:
         obj["reviewer"] = REVIEWER_NAME
     if "perspective" not in obj:
@@ -648,6 +656,7 @@ def downgrade_speculative_suggestions(obj: dict) -> None:
 
 
 def downgrade_stale_knowledge_findings(obj: dict) -> None:
+    """Downgrade stale knowledge findings."""
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
         return
@@ -848,6 +857,7 @@ def _evidence_matches_file(path: Path, line: int, evidence: str) -> bool:
 
 
 def downgrade_unverified_findings(obj: dict) -> None:
+    """Downgrade unverified findings."""
     findings = obj.get("findings", [])
     if not isinstance(findings, list) or not findings:
         return
@@ -946,6 +956,7 @@ def downgrade_unverified_findings(obj: dict) -> None:
 
 
 def main() -> None:
+    """Main."""
     global REVIEWER_NAME, PERSPECTIVE, RAW_INPUT
 
     PERSPECTIVE = os.environ.get("PERSPECTIVE", "unknown")

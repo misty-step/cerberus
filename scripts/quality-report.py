@@ -256,6 +256,7 @@ def print_summary(summary: dict) -> None:
 
 
 def main() -> int:
+    """Main."""
     parser = argparse.ArgumentParser(
         description="Aggregate Cerberus quality reports from CI runs"
     )

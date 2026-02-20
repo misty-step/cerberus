@@ -40,11 +40,13 @@ VERDICT_ORDER = {
 
 
 def fail(message: str, code: int = 2) -> int:
+    """Fail."""
     print(f"render-council-comment: {message}", file=sys.stderr)
     return code
 
 
 def read_json(path: Path) -> dict:
+    """Read json."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -57,6 +59,7 @@ def read_json(path: Path) -> dict:
 
 
 def as_int(value: object) -> int | None:
+    """As int."""
     if value is None:
         return None
     try:
@@ -66,6 +69,7 @@ def as_int(value: object) -> int | None:
 
 
 def normalize_verdict(value: object) -> str:
+    """Normalize verdict."""
     text = str(value or "").upper().strip()
     if text in VERDICT_ICON:
         return text
@@ -73,6 +77,7 @@ def normalize_verdict(value: object) -> str:
 
 
 def normalize_severity(value: object) -> str:
+    """Normalize severity."""
     text = str(value or "").strip().lower()
     if text in SEVERITY_ORDER:
         return text
@@ -80,11 +85,13 @@ def normalize_severity(value: object) -> str:
 
 
 def reviewer_name(reviewer: dict) -> str:
+    """Reviewer name."""
     name = reviewer.get("reviewer") or reviewer.get("perspective")
     return str(name or "unknown")
 
 
 def perspective_name(reviewer: dict) -> str:
+    """Perspective name."""
     perspective = reviewer.get("perspective")
     return str(perspective or "unknown")
 
@@ -93,6 +100,7 @@ _CODENAME_RE = re.compile(r"^[A-Z0-9_]+$")
 
 
 def friendly_codename(value: object) -> str:
+    """Friendly codename."""
     raw = str(value or "").strip() or "unknown"
     # Config uses ALLCAPS codenames; render as Title Case for readability.
     if raw.isupper() and _CODENAME_RE.match(raw):
@@ -115,6 +123,7 @@ def split_reviewer_description(value: object) -> tuple[str, str]:
 
 
 def reviewer_label(reviewer: dict) -> str:
+    """Reviewer label."""
     role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
     if role:
         return role
@@ -125,6 +134,7 @@ def reviewer_label(reviewer: dict) -> str:
 
 
 def reviewer_overview_title(reviewer: dict) -> str:
+    """Reviewer overview title."""
     label = reviewer_label(reviewer)
     code = friendly_codename(reviewer_name(reviewer))
     if not code or code == "unknown":
@@ -135,6 +145,7 @@ def reviewer_overview_title(reviewer: dict) -> str:
 
 
 def findings_for(reviewer: dict) -> list[dict]:
+    """Findings for."""
     findings = reviewer.get("findings")
     if isinstance(findings, list):
         return [finding for finding in findings if isinstance(finding, dict)]
@@ -142,6 +153,7 @@ def findings_for(reviewer: dict) -> list[dict]:
 
 
 def format_runtime(runtime_seconds: object) -> str:
+    """Format runtime."""
     seconds = as_int(runtime_seconds)
     if seconds is None or seconds < 0:
         return "n/a"
@@ -159,6 +171,7 @@ def short_model_name(model: str) -> str:
 
 
 def format_model(reviewer: dict) -> str | None:
+    """Format model."""
     model_used = reviewer.get("model_used")
     if not model_used or not isinstance(model_used, str):
         return None
@@ -172,6 +185,7 @@ def format_model(reviewer: dict) -> str | None:
 
 
 def format_confidence(confidence: object) -> str:
+    """Format confidence."""
     if confidence is None:
         return "n/a"
     try:
@@ -184,6 +198,7 @@ def format_confidence(confidence: object) -> str:
 
 
 def summarize_reviewers(reviewers: list[dict]) -> str:
+    """Summarize reviewers."""
     total = len(reviewers)
     if total == 0:
         return "No reviewer verdicts available."
@@ -208,6 +223,7 @@ def summarize_reviewers(reviewers: list[dict]) -> str:
 
 
 def finding_location(finding: dict) -> str:
+    """Finding location."""
     path = str(finding.get("file") or "").strip()
     line = as_int(finding.get("line"))
     if path and line is not None and line > 0:
@@ -218,6 +234,7 @@ def finding_location(finding: dict) -> str:
 
 
 def finding_location_link(finding: dict) -> str:
+    """Finding location link."""
     path = str(finding.get("file") or "").strip()
     line = as_int(finding.get("line"))
     if line is not None and line <= 0:
@@ -234,6 +251,7 @@ def finding_location_link(finding: dict) -> str:
 
 
 def truncate(text: object, *, max_len: int) -> str:
+    """Truncate."""
     raw = str(text or "").strip()
     if len(raw) <= max_len:
         return raw
@@ -241,6 +259,7 @@ def truncate(text: object, *, max_len: int) -> str:
 
 
 def top_findings(reviewer: dict, *, max_findings: int) -> list[dict]:
+    """Top findings."""
     findings = findings_for(reviewer)
     return sorted(
         findings,
@@ -253,6 +272,7 @@ def top_findings(reviewer: dict, *, max_findings: int) -> list[dict]:
 
 
 def count_findings(reviewers: list[dict]) -> dict[str, int]:
+    """Count findings."""
     totals = {"critical": 0, "major": 0, "minor": 0, "info": 0}
     for reviewer in reviewers:
         stats = reviewer.get("stats")
@@ -271,6 +291,7 @@ def count_findings(reviewers: list[dict]) -> dict[str, int]:
 
 
 def detect_skip_banner(reviewers: list[dict]) -> str:
+    """Detect skip banner."""
     for reviewer in reviewers:
         if normalize_verdict(reviewer.get("verdict")) != "SKIP":
             continue
@@ -301,6 +322,7 @@ def detect_skip_banner(reviewers: list[dict]) -> str:
 
 
 def scope_summary() -> str:
+    """Scope summary."""
     changed_files = as_int(os.environ.get("PR_CHANGED_FILES"))
     additions = as_int(os.environ.get("PR_ADDITIONS"))
     deletions = as_int(os.environ.get("PR_DELETIONS"))
@@ -310,6 +332,7 @@ def scope_summary() -> str:
 
 
 def run_link() -> tuple[str, str]:
+    """Run link."""
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
     repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
     run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
@@ -319,6 +342,7 @@ def run_link() -> tuple[str, str]:
 
 
 def short_sha() -> str:
+    """Short sha."""
     head_sha = str(os.environ.get("GH_HEAD_SHA") or "").strip()
     if not head_sha:
         return "<head-sha>"
@@ -326,6 +350,7 @@ def short_sha() -> str:
 
 
 def footer_line() -> str:
+    """Footer line."""
     version = str(os.environ.get("CERBERUS_VERSION") or "dev").strip() or "dev"
     override_policy = str(os.environ.get("GH_OVERRIDE_POLICY") or "pr_author").strip() or "pr_author"
     fail_on_verdict = str(os.environ.get("FAIL_ON_VERDICT") or "true").strip() or "true"
@@ -342,6 +367,7 @@ def footer_line() -> str:
 
 
 def format_reviewer_overview_lines(reviewers: list[dict]) -> list[str]:
+    """Format reviewer overview lines."""
     if not reviewers:
         return ["- No reviewer verdicts available."]
 
@@ -370,6 +396,7 @@ def format_reviewer_overview_lines(reviewers: list[dict]) -> list[str]:
 
 
 def has_raw_output(reviewers: list[dict]) -> bool:
+    """Has raw output."""
     for reviewer in reviewers:
         raw_review = reviewer.get("raw_review")
         if isinstance(raw_review, str) and raw_review.strip():
@@ -378,6 +405,7 @@ def has_raw_output(reviewers: list[dict]) -> bool:
 
 
 def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple[str, dict]]:
+    """Collect key findings."""
     items: list[tuple[str, dict]] = []
     for reviewer in reviewers:
         rname = reviewer_label(reviewer)
@@ -453,6 +481,7 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
 
 
 def format_fix_order_lines(reviewers: list[dict], *, max_items: int) -> list[str]:
+    """Format fix order lines."""
     items = collect_issue_groups(reviewers)
     if not items:
         return ["_No findings reported._"]
@@ -480,6 +509,7 @@ def format_fix_order_lines(reviewers: list[dict], *, max_items: int) -> list[str
 
 
 def collect_hotspots(reviewers: list[dict]) -> list[dict]:
+    """Collect hotspots."""
     by_file: dict[str, dict] = {}
     for reviewer in reviewers:
         rname = reviewer_label(reviewer)
@@ -524,6 +554,7 @@ def collect_hotspots(reviewers: list[dict]) -> list[dict]:
 
 
 def format_hotspots_lines(reviewers: list[dict], *, max_files: int) -> list[str]:
+    """Format hotspots lines."""
     hotspots = collect_hotspots(reviewers)[:max_files]
     if not hotspots:
         return ["_No hotspots detected._"]
@@ -543,6 +574,7 @@ def format_hotspots_lines(reviewers: list[dict], *, max_files: int) -> list[str]
 
 
 def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[str]:
+    """Format key findings lines."""
     items = collect_key_findings(reviewers, max_total=max_total)
     if not items:
         return ["_No findings reported._"]
@@ -570,6 +602,7 @@ def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[
 
 
 def format_reviewer_details_block(reviewers: list[dict], *, max_findings: int) -> list[str]:
+    """Format reviewer details block."""
     lines = [
         "<details>",
         "<summary>Reviewer details (click to expand)</summary>",
@@ -743,6 +776,7 @@ def render_comment(
     max_key_findings: int,
     marker: str,
 ) -> str:
+    """Render comment."""
     reviewers = council.get("reviewers")
     if not isinstance(reviewers, list):
         reviewers = []
@@ -849,6 +883,7 @@ def render_comment(
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse args."""
     parser = argparse.ArgumentParser(description="Render Cerberus council comment markdown.")
     parser.add_argument(
         "--council-json",
@@ -881,6 +916,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Main."""
     args = parse_args(argv)
     if args.max_findings < 1:
         return fail("--max-findings must be >= 1")

@@ -606,7 +606,7 @@ tests:
 outputPath: evals/results/latest.json
 shareResults: false
 
-  # Default test options
+# Default test options
 defaultTest:
   options:
     transform: |

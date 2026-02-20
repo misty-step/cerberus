@@ -15,18 +15,21 @@ from lib import github as gh
 
 @dataclass(frozen=True)
 class ReviewComment:
+    """Data class for Review Comment."""
     path: str
     position: int
     body: str
 
 
 def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
+    """List pr reviews."""
     result = gh._run_gh(["api", f"repos/{repo}/pulls/{pr_number}/reviews?per_page=100"])
     data = json.loads(result.stdout)
     return data if isinstance(data, list) else []
 
 
 def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
+    """Find review id by marker."""
     for review in reviews:
         if not isinstance(review, dict):
             continue
@@ -40,6 +43,7 @@ def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
 
 def list_pr_files(repo: str, pr_number: int) -> list[dict]:
     # --paginate without --slurp does not produce valid JSON.
+    """List pr files."""
     result = gh._run_gh(
         [
             "api",
@@ -68,6 +72,7 @@ def create_pr_review(
     body: str,
     comments: list[ReviewComment],
 ) -> dict:
+    """Create pr review."""
     payload: dict[str, object] = {
         "event": "COMMENT",
         "commit_id": commit_id,

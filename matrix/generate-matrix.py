@@ -21,6 +21,7 @@ import yaml
 
 
 def split_description(value: object) -> tuple[str, str]:
+    """Split description."""
     text = str(value or "").strip()
     if not text:
         return ("", "")
@@ -34,6 +35,7 @@ def split_description(value: object) -> tuple[str, str]:
 
 
 def generate_matrix(config_path):
+    """Generate matrix."""
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 

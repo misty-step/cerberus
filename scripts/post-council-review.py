@@ -35,6 +35,7 @@ _SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
 
 
 def split_reviewer_description(value: object) -> tuple[str, str]:
+    """Split reviewer description."""
     text = str(value or "").strip()
     if not text:
         return ("", "")
@@ -48,6 +49,7 @@ def split_reviewer_description(value: object) -> tuple[str, str]:
 
 
 def reviewer_label(reviewer: dict) -> str:
+    """Reviewer label."""
     role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
     if role:
         return role
@@ -56,19 +58,23 @@ def reviewer_label(reviewer: dict) -> str:
 
 
 def fail(message: str, code: int = 2) -> None:
+    """Fail."""
     print(f"post-council-review: {message}", file=sys.stderr)
     sys.exit(code)
 
 
 def warn(message: str) -> None:
+    """Warn."""
     print(f"::warning::{message}", file=sys.stderr)
 
 
 def notice(message: str) -> None:
+    """Notice."""
     print(f"::notice::{message}", file=sys.stderr)
 
 
 def as_int(value: object) -> int | None:
+    """As int."""
     try:
         i = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -77,11 +83,13 @@ def as_int(value: object) -> int | None:
 
 
 def normalize_severity(value: object) -> str:
+    """Normalize severity."""
     text = str(value or "").strip().lower()
     return text if text in _SEVERITY_ORDER else "info"
 
 
 def normalize_path(path: object) -> str:
+    """Normalize path."""
     text = str(path or "").strip()
     if text.startswith(("a/", "b/")):
         text = text[2:]
@@ -91,6 +99,7 @@ def normalize_path(path: object) -> str:
 
 
 def read_json(path: Path) -> dict:
+    """Read json."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -101,11 +110,13 @@ def read_json(path: Path) -> dict:
 
 
 def review_marker(head_sha: str) -> str:
+    """Review marker."""
     short = head_sha[:12] if head_sha else "<head-sha>"
     return f"<!-- cerberus:council-review sha={short} -->"
 
 
 def collect_inline_findings(council: dict) -> list[dict]:
+    """Collect inline findings."""
     reviewers = council.get("reviewers")
     if not isinstance(reviewers, list):
         return []
@@ -163,12 +174,14 @@ def collect_inline_findings(council: dict) -> list[dict]:
 
 
 def truncate(text: str, *, max_len: int) -> str:
+    """Truncate."""
     if len(text) <= max_len:
         return text
     return text[: max_len - 1].rstrip() + "…"
 
 
 def render_inline_comment(finding: dict) -> str:
+    """Render inline comment."""
     sev = normalize_severity(finding.get("severity"))
     icon = severity_icon(sev)
     title = truncate(str(finding.get("title") or "Untitled finding"), max_len=200)
@@ -219,6 +232,7 @@ def build_patch_index(repo: str, pr_number: int) -> dict[str, tuple[str, dict[in
 
 
 def main() -> None:
+    """Main."""
     p = argparse.ArgumentParser(description="Post Cerberus council as a PR review with inline comments.")
     p.add_argument("--repo", required=True, help="owner/repo")
     p.add_argument("--pr", type=int, required=True, help="PR number")

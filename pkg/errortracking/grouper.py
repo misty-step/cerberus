@@ -13,6 +13,7 @@ MAX_GROUP_TEXT_CHARS = 4096
 
 
 class ErrorAlertSink(Protocol):
+    """Data class for Error Alert Sink."""
     def send(self, alert: "ErrorAlert") -> None:
         ...
 
@@ -35,6 +36,7 @@ class ErrorGroup:
     is_spiking: bool = False
 
     def add(self, event: ParsedError) -> None:
+        """Add."""
         self.count += 1
         if self.first_seen_ts is None or event.seen_at < self.first_seen_ts:
             self.first_seen_ts = event.seen_at
@@ -52,6 +54,7 @@ class ErrorGroup:
             self.last_seen_ts = event.seen_at
 
     def trim(self, cutoff_ts: float, max_timestamps: int) -> None:
+        """Trim."""
         if not self.timestamps:
             return
         if not self._timestamps_sorted:
@@ -177,6 +180,7 @@ class ErrorGrouper:
                 self._sink_errors.append(f"{type(exc).__name__}: {exc}")
 
     def ingest(self, errors: Iterable[ParsedError], sinks: list[ErrorAlertSink] | None = None) -> tuple[list[ErrorGroup], list[ErrorAlert]]:
+        """Ingest."""
         alerts: list[ErrorAlert] = []
         latest_seen_ts: float | None = None
         self._sink_errors.clear()
@@ -250,6 +254,7 @@ class ErrorGrouper:
         return list(self._groups.values()), alerts
 
     def build_dashboard(self, as_of_ts: float | None = None) -> dict[str, object]:
+        """Build dashboard."""
         now_ts = datetime.now(tz=timezone.utc).timestamp() if as_of_ts is None else as_of_ts
         now_iso = datetime.fromtimestamp(now_ts, tz=timezone.utc).isoformat()
         self._evict_stale_groups(now_ts - self._retention_seconds())
@@ -284,8 +289,10 @@ class ErrorGrouper:
 
     @property
     def groups(self) -> dict[str, ErrorGroup]:
+        """Groups."""
         return dict(self._groups)
 
     @property
     def sink_errors(self) -> list[str]:
+        """Sink errors."""
         return list(self._sink_errors)

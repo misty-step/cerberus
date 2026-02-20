@@ -20,6 +20,7 @@ import sys
 
 
 def main() -> int:
+    """Main."""
     from lib.review_prompt import render_review_prompt_from_env  # noqa: PLC0415
 
     try:

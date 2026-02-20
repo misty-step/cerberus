@@ -17,6 +17,7 @@ _SEVERITY_ICON = {
 
 
 def severity_icon(severity: str | None) -> str:
+    """Severity icon."""
     text = str(severity or "").strip().lower()
     return _SEVERITY_ICON.get(text, _SEVERITY_ICON["info"])
 
@@ -44,6 +45,7 @@ def blob_url(
     sha: str,
     line: int | None = None,
 ) -> str | None:
+    """Blob url."""
     server = (server or "").rstrip("/")
     repo = (repo or "").strip()
     sha = (sha or "").strip()
@@ -75,6 +77,7 @@ def location_link(
     sha: str,
     missing_label: str = "unknown",
 ) -> str:
+    """Location link."""
     path = (path or "").strip()
     if not path:
         return f"`{missing_label}`"
@@ -96,6 +99,7 @@ def details_block(
     summary: str = "Details",
     indent: str = "  ",
 ) -> list[str]:
+    """Details block."""
     if not body_lines:
         return []
     lines = [

@@ -211,6 +211,7 @@ def upsert_pr_comment(
 
 
 def main() -> None:
+    """Main."""
     parser = argparse.ArgumentParser(description="Upsert PR comment by HTML marker.")
     parser.add_argument("--repo", required=True, help="owner/repo")
     parser.add_argument("--pr", type=int, required=True, help="PR number")

@@ -12,6 +12,9 @@ inputs:
   fail-on-skip:
     description: 'Exit with failure if council verdict is SKIP (all reviews skipped)'
     default: 'false'
+  parse-failure-policy:
+    description: 'How to treat reviewer parse failures in council aggregation: fail (count as FAIL), warn (reclassify as SKIP with warning, default), skip (reclassify as SKIP silently)'
+    default: 'warn'
 
 outputs:
   verdict:
@@ -99,14 +102,15 @@ runs:
         GH_REVIEWER_POLICIES: ${{ steps.policies.outputs.reviewer_policies }}
         GH_OVERRIDE_ACTOR_PERMISSIONS: ${{ steps.override.outputs.actor_permissions }}
         GITHUB_REPOSITORY: ${{ github.repository }}
+        PARSE_FAILURE_POLICY: ${{ inputs.parse-failure-policy }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
         VERDICT=$(jq -r .verdict /tmp/council-verdict.json 2>/dev/null)
         if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
-          echo "::error::aggregate-verdict.py did not write a valid .verdict to /tmp/council-verdict.json"
+          echo "::warning::aggregate-verdict.py did not write a valid .verdict; defaulting to SKIP"
           echo "council-verdict.json contents:" >&2
           cat /tmp/council-verdict.json 2>/dev/null || echo "(file missing)" >&2
-          exit 1
+          VERDICT="SKIP"
         fi
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 

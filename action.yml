@@ -44,7 +44,7 @@ inputs:
     description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
     default: 'false'
   fail-on-verdict:
-    description: 'Exit with failure if review verdict is FAIL'
+    description: 'Exit with failure (exit code 1) if the reviewer verdict is FAIL. Enables branch protection on individual reviewer checks.'
     default: 'false'
   context:
     description: 'Optional project context (maintainer-provided). Included in reviewer prompt. Do not include secrets.'
@@ -328,8 +328,9 @@ runs:
         FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
       run: |
-        # Individual reviewers output their verdict but don't fail the job.
-        # The Council Verdict job aggregates all reviews and makes the final decision.
+        # Individual reviewers output their verdict but don't fail the job
+        # unless fail-on-verdict is true (#220). The Council Verdict job
+        # aggregates all reviews and makes the final decision.
         if [ "$VERDICT" = "FAIL" ]; then
           if [ "$FAIL_ON_VERDICT" = "true" ]; then
             echo "::error::${PERSPECTIVE} review verdict: FAIL"

@@ -8,6 +8,7 @@ from lib.markdown import details_block, location_link, repo_context, severity_ic
 
 
 def render_findings(findings: list[dict], *, server: str, repo: str, sha: str) -> list[str]:
+    """Render findings."""
     lines: list[str] = []
     for f in findings:
         if not isinstance(f, dict):
@@ -61,6 +62,7 @@ def render_findings(findings: list[dict], *, server: str, repo: str, sha: str) -
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse args."""
     p = argparse.ArgumentParser(description="Render findings markdown from a verdict JSON file.")
     p.add_argument("--verdict-json", required=True, help="Path to verdict JSON file")
     p.add_argument("--output", required=True, help="Path to write findings markdown")
@@ -71,6 +73,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Main."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
     verdict_path = Path(args.verdict_json)

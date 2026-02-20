@@ -13,11 +13,13 @@ import yaml
 
 
 class ConfigError(RuntimeError):
+    """Data class for Config Error."""
     pass
 
 
 @dataclass(frozen=True)
 class Reviewer:
+    """Data class for Reviewer."""
     name: str
     perspective: str
     model: str | None = None
@@ -26,16 +28,19 @@ class Reviewer:
 
 @dataclass(frozen=True)
 class ModelConfig:
+    """Data class for Model Config."""
     default: str | None = None
     pool: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class DefaultsConfig:
+    """Data class for Defaults Config."""
     reviewers: list[Reviewer]
     model: ModelConfig
 
     def reviewer_for_perspective(self, perspective: str) -> Reviewer | None:
+        """Reviewer for perspective."""
         for reviewer in self.reviewers:
             if reviewer.perspective == perspective:
                 return reviewer
@@ -82,6 +87,7 @@ def _load_yaml(path: Path) -> Any:
 
 
 def load_defaults_config(path: Path) -> DefaultsConfig:
+    """Load defaults config."""
     raw = _load_yaml(path)
 
     # Legacy/loose format: top-level list means "reviewers".

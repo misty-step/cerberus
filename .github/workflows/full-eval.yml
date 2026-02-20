@@ -26,6 +26,13 @@ jobs:
       - name: Install Promptfoo
         run: npm install -g promptfoo@0.120.24
 
+      - name: Restore baseline
+        uses: actions/cache@v4
+        with:
+          path: evals/results/baseline.json
+          key: cerberus-eval-baseline-${{ github.ref }}
+          restore-keys: cerberus-eval-baseline-
+
       - name: Run full eval
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -87,6 +94,13 @@ jobs:
         if: github.event.inputs.baseline == 'true'
         run: |
           cp evals/results/latest.json evals/results/baseline.json
+
+      - name: Persist baseline cache
+        if: github.event.inputs.baseline == 'true'
+        uses: actions/cache@v4
+        with:
+          path: evals/results/baseline.json
+          key: cerberus-eval-baseline-${{ github.ref }}
 
       - name: Upload artifacts
         if: always()

@@ -26,6 +26,7 @@ def _single_line(value: str | None) -> str:
 
 
 def main(argv: list[str]) -> int:
+    """Main."""
     parser = argparse.ArgumentParser(prog="read-defaults-config.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
 

@@ -11,6 +11,7 @@ from .checker import HealthTransition
 
 
 class AlertSink(Protocol):
+    """Data class for Alert Sink."""
     def send(self, transition: HealthTransition) -> None:
         ...
 
@@ -38,11 +39,13 @@ def _default_webhook_writer(
 
 @dataclass(frozen=True)
 class WebhookAlertSink:
+    """Data class for Webhook Alert Sink."""
     webhook_url: str
     webhook_secret: str | None = None
     write_payload: Optional[PayloadWriter] = None
 
     def send(self, transition: HealthTransition) -> None:
+        """Send."""
         payload = {
             "check_id": transition.id,
             "previous_status": transition.previous_status,
@@ -66,9 +69,11 @@ class WebhookAlertSink:
 
 @dataclass(frozen=True)
 class PRCommentAlertSink:
+    """Data class for PRComment Alert Sink."""
     post_comment: Optional[PayloadWriter] = None
 
     def send(self, transition: HealthTransition) -> None:
+        """Send."""
         payload = {
             "check_id": transition.id,
             "state": f"{transition.previous_status} -> {transition.current_status}",
@@ -82,9 +87,11 @@ class PRCommentAlertSink:
 
 @dataclass(frozen=True)
 class GitHubIssueAlertSink:
+    """Data class for Git Hub Issue Alert Sink."""
     create_issue: Optional[PayloadWriter] = None
 
     def send(self, transition: HealthTransition) -> None:
+        """Send."""
         if self.create_issue is None:
             return
         payload = {

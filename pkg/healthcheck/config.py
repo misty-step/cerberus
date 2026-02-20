@@ -105,6 +105,7 @@ class HealthCheckConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "HealthCheckConfig":
+        """From dict."""
         check_id = _coerce_str(raw["id"], "id")
         url = _validate_url(_coerce_str(raw["url"], "url"))
 

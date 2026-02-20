@@ -218,6 +218,7 @@ class LogParser:
         )
 
     def parse(self) -> list[ParsedError]:
+        """Parse."""
         parser = self._parse_plain_line if self._source.log_format == "plain" else self._parse_json_line
         now_ts = datetime.now(tz=timezone.utc).timestamp()
         parsed: list[ParsedError] = []

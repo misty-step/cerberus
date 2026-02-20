@@ -26,10 +26,12 @@ TRIAGE_COMMAND = "/cerberus triage"
 
 
 def trusted_login() -> str:
+    """Trusted login."""
     return os.environ.get("CERBERUS_BOT_LOGIN", "github-actions[bot]").strip().lower()
 
 
 def comment_login(comment: dict) -> str:
+    """Comment login."""
     user = comment.get("user")
     if isinstance(user, dict):
         login = user.get("login")
@@ -39,10 +41,12 @@ def comment_login(comment: dict) -> str:
 
 
 def is_trusted_comment(comment: dict, trusted: str) -> bool:
+    """Is trusted comment."""
     return comment_login(comment) == trusted
 
 
 def fail(message: str, code: int = 2) -> None:
+    """Fail."""
     print(f"triage: {message}", file=sys.stderr)
     sys.exit(code)
 
@@ -54,6 +58,7 @@ def run(
     capture: bool = True,
     text: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    """Run."""
     result = subprocess.run(argv, check=False, capture_output=capture, text=text)
     if check and result.returncode != 0:
         stderr = result.stderr.strip() if result.stderr else "(no stderr)"
@@ -62,6 +67,7 @@ def run(
 
 
 def gh_json(args: list[str]) -> object:
+    """Gh json."""
     result = run(["gh", "api", *args])
     try:
         return json.loads(result.stdout)
@@ -70,6 +76,7 @@ def gh_json(args: list[str]) -> object:
 
 
 def ensure_mode(value: str) -> str:
+    """Ensure mode."""
     mode = value.strip().lower()
     if mode not in VALID_MODES:
         fail(f"invalid mode '{value}'. expected one of: {', '.join(sorted(VALID_MODES))}")
@@ -77,11 +84,13 @@ def ensure_mode(value: str) -> str:
 
 
 def extract_council_verdict(body: str) -> str | None:
+    """Extract council verdict."""
     match = re.search(r"Council Verdict:\s*(PASS|WARN|FAIL|SKIP)\b", body, flags=re.IGNORECASE)
     return match.group(1).upper() if match else None
 
 
 def parse_triage_command_mode(command_body: str, default_mode: str) -> str:
+    """Parse triage command mode."""
     lower = command_body.lower()
     if TRIAGE_COMMAND not in lower:
         return default_mode
@@ -90,10 +99,12 @@ def parse_triage_command_mode(command_body: str, default_mode: str) -> str:
 
 
 def has_triage_commit_tag(message: str) -> bool:
+    """Has triage commit tag."""
     return "[triage]" in message.lower()
 
 
 def count_attempts_for_sha(comments: list[dict], head_sha: str, trusted: str) -> int:
+    """Count attempts for sha."""
     count = 0
     for comment in comments:
         if not is_trusted_comment(comment, trusted):
@@ -109,6 +120,7 @@ def count_attempts_for_sha(comments: list[dict], head_sha: str, trusted: str) ->
 
 
 def parse_iso8601(value: str) -> datetime:
+    """Parse iso8601."""
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
@@ -121,6 +133,7 @@ def should_schedule_pr(
     stale_hours: int,
     now: datetime,
 ) -> bool:
+    """Should schedule pr."""
     if verdict != "FAIL":
         return False
     if council_updated_at is None:
@@ -132,6 +145,7 @@ def should_schedule_pr(
 
 
 def find_latest_council_comment(comments: list[dict], trusted: str) -> dict | None:
+    """Find latest council comment."""
     council_comments = [
         c for c in comments if is_trusted_comment(c, trusted) and COUNCIL_MARKER in str(c.get("body", ""))
     ]
@@ -141,6 +155,7 @@ def find_latest_council_comment(comments: list[dict], trusted: str) -> dict | No
 
 
 def write_output(status: str, attempted: bool, reason: str, processed: int) -> None:
+    """Write output."""
     output_file = os.environ.get("GITHUB_OUTPUT")
     if not output_file:
         return
@@ -152,6 +167,7 @@ def write_output(status: str, attempted: bool, reason: str, processed: int) -> N
 
 
 def get_event() -> tuple[str, dict]:
+    """Get event."""
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     event_path = os.environ.get("GITHUB_EVENT_PATH", "")
     if not event_name:
@@ -202,6 +218,7 @@ def select_targets(event_name: str, event: dict, default_mode: str) -> list[tupl
 
 
 def tail(text: str, max_lines: int = 12) -> str:
+    """Tail."""
     lines = text.splitlines()
     return "\n".join(lines[-max_lines:]) if lines else ""
 
@@ -220,6 +237,7 @@ def post_triage_comment(
     diagnosis: str,
     details: str,
 ) -> None:
+    """Post triage comment."""
     short_sha = head_sha[:12]
     marker = f"<!-- {TRIAGE_MARKER} sha={short_sha} run={run_id} -->"
     emoji = {
@@ -254,6 +272,7 @@ def post_triage_comment(
 
 
 def gather_diagnosis(council_body: str | None) -> str:
+    """Gather diagnosis."""
     if not council_body:
         return "- Council comment not found; cannot extract detailed findings."
     lines = [line.strip() for line in council_body.splitlines() if line.strip()]
@@ -272,6 +291,7 @@ def gather_diagnosis(council_body: str | None) -> str:
 
 
 def fix_mode_block_reason(*, mode: str, trigger: str, repo: str, head_repo_name: str, git_exists: bool) -> str | None:
+    """Fix mode block reason."""
     if mode != "fix":
         return None
     if trigger != "automatic":
@@ -284,6 +304,7 @@ def fix_mode_block_reason(*, mode: str, trigger: str, repo: str, head_repo_name:
 
 
 def run_fix_command(command: str) -> tuple[str, str]:
+    """Run fix command."""
     if not command.strip():
         return "no_changes", "No fix command configured (`fix-command` input is empty)."
 
@@ -316,6 +337,7 @@ def run_fix_command(command: str) -> tuple[str, str]:
 
 
 class RunResult:
+    """Data class for Run Result."""
     def __init__(self, status: str, attempted: bool, reason: str) -> None:
         self.status = status
         self.attempted = attempted
@@ -333,6 +355,7 @@ def triage_pr(
     run_id: str,
     now: datetime,
 ) -> RunResult:
+    """Triage pr."""
     pull = gh_json([f"repos/{repo}/pulls/{pr_number}"])
     if not isinstance(pull, dict):
         return RunResult("skipped", False, f"pr_{pr_number}_not_found")
@@ -425,6 +448,7 @@ def triage_pr(
 
 
 def main() -> None:
+    """Main."""
     mode = ensure_mode(os.environ.get("TRIAGE_MODE", "off"))
     if os.environ.get("CERBERUS_TRIAGE", "").strip().lower() == "off":
         mode = "off"

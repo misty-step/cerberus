@@ -19,6 +19,7 @@ UNHEALTHY = "unhealthy"
 
 @dataclass(frozen=True)
 class HealthCheckResult:
+    """Data class for Health Check Result."""
     id: str
     status: HealthStatus
     status_code: int | None
@@ -29,6 +30,7 @@ class HealthCheckResult:
 
 @dataclass(frozen=True)
 class HealthTransition:
+    """Data class for Health Transition."""
     id: str
     previous_status: HealthStatus
     current_status: HealthStatus
@@ -37,6 +39,7 @@ class HealthTransition:
 
 @dataclass
 class HealthChecker:
+    """Data class for Health Checker."""
     opener: HealthHttpOpen | None = None
 
     def __post_init__(self) -> None:
@@ -95,6 +98,7 @@ class HealthChecker:
         return self._build_response(config.id, HEALTHY, status_code, started)
 
     def perform_check(self, config: HealthCheckConfig) -> HealthCheckResult:
+        """Perform check."""
         started = time.perf_counter()
         req = request.Request(config.url, method=config.http_method)
         opener = self.opener
@@ -126,6 +130,7 @@ class HealthChecker:
 
 
 class HealthMonitor:
+    """Data class for Health Monitor."""
     def __init__(self, checker: HealthChecker | None = None, sinks: Sequence["object"] | None = None) -> None:
         self._checker = checker or HealthChecker()
         self._sinks = tuple(sinks or ())
@@ -137,6 +142,7 @@ class HealthMonitor:
         return previous_status != current_status
 
     def run_checks(self, checks: Iterable[HealthCheckConfig]) -> tuple[list[HealthCheckResult], list[HealthTransition]]:
+        """Run checks."""
         results = []
         alerts = []
         for cfg in checks:
