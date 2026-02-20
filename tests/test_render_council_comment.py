@@ -740,6 +740,44 @@ def test_advisory_banner_not_shown_for_pass_verdict(tmp_path: Path) -> None:
     assert "Advisory mode" not in body
 
 
+def test_advisory_banner_not_shown_for_warn_verdict(tmp_path: Path) -> None:
+    warn_council = {
+        "verdict": "WARN",
+        "summary": "1 reviewer. Warnings: 1.",
+        "reviewers": [
+            {
+                "reviewer": "ATHENA",
+                "perspective": "architecture",
+                "verdict": "WARN",
+                "confidence": 0.8,
+                "summary": "Minor design issue.",
+                "runtime_seconds": 25,
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "design",
+                        "file": "src/app.py",
+                        "line": 5,
+                        "title": "Coupling issue",
+                        "description": "Tight coupling.",
+                        "suggestion": "Extract interface.",
+                    }
+                ],
+                "stats": {"critical": 0, "major": 1, "minor": 0, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+    code, body, err = run_render(
+        tmp_path, warn_council, env_extra={"FAIL_ON_VERDICT": "false"}
+    )
+
+    assert code == 0, err
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
 def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
     council_path = tmp_path / "council.json"
     output_path = tmp_path / "comment.md"
