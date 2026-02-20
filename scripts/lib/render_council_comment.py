@@ -656,13 +656,17 @@ def _build_comment(
     max_key_findings: int,
     raw_output_note: str = "",
     size_note: str = "",
+    advisory_banner: str = "",
 ) -> str:
+    verdict_label = f"{verdict} (advisory)" if advisory_banner else verdict
     lines = [
         marker,
-        f"## {icon} Council Verdict: {verdict}",
+        f"## {icon} Council Verdict: {verdict_label}",
         "",
         f"**Summary:** {summary_line}",
     ]
+    if advisory_banner:
+        lines.extend(["", advisory_banner])
     if skip_banner:
         lines.extend(["", skip_banner])
 
@@ -778,6 +782,16 @@ def render_comment(
             "Raw output is preserved in workflow artifacts/logs, but omitted from PR comments."
         )
 
+    advisory_banner = ""
+    if (
+        os.environ.get("FAIL_ON_VERDICT", "true").strip().lower() == "false"
+        and verdict == "FAIL"
+    ):
+        advisory_banner = (
+            "> ⚠️ **Advisory mode:** `fail-on-verdict` is disabled — this is a FAIL verdict "
+            "but the check run is green. Set `fail-on-verdict: \"true\"` in your workflow to gate merges on failures."
+        )
+
     total_findings = sum(len(findings_for(r)) for r in reviewers)
     include_key_findings = total_findings > 0
     include_fix_order = verdict in ("FAIL", "WARN") and total_findings > 0
@@ -814,6 +828,7 @@ def render_comment(
         max_findings=max_findings,
         max_key_findings=max_key_findings,
         raw_output_note=raw_note,
+        advisory_banner=advisory_banner,
     )
 
     result = _build_comment(**common)

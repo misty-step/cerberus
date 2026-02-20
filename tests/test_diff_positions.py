@@ -60,6 +60,28 @@ def test_deletions_do_not_advance_new_line() -> None:
     assert mapping[6] == 5
 
 
+def test_empty_lines_in_patch_skipped() -> None:
+    patch = "@@ -1,2 +1,2 @@\n line1\n\n line2\n"
+    mapping = build_newline_to_position(patch)
+    assert mapping[1] == 2   # " line1"
+    assert mapping[2] == 4   # " line2" (empty line at position 3 skipped)
+
+
+def test_no_newline_marker_skipped() -> None:
+    patch = "@@ -1,2 +1,2 @@\n line1\n\\ No newline at end of file\n line2\n"
+    mapping = build_newline_to_position(patch)
+    assert mapping[1] == 2   # " line1"
+    assert mapping[2] == 4   # " line2" (backslash marker at position 3 skipped)
+
+
+def test_empty_patch_returns_empty() -> None:
+    assert build_newline_to_position("") == {}
+
+
+def test_none_patch_returns_empty() -> None:
+    assert build_newline_to_position(None) == {}
+
+
 def test_ignores_lines_before_first_hunk() -> None:
     patch = "\n".join(
         [
