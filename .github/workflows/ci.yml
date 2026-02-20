@@ -64,6 +64,15 @@ jobs:
           python3 -m coverage report --show-missing
           python3 -m coverage xml
           python3 -m coverage html
+          python3 -c "
+          import xml.etree.ElementTree as ET, sys
+          root = ET.parse('coverage.xml').getroot()
+          branch_rate = float(root.get('branch-rate', 0)) * 100
+          if branch_rate < 70:
+              print(f'::error::Branch coverage {branch_rate:.1f}% is below the 70% threshold')
+              sys.exit(1)
+          print(f'Branch coverage {branch_rate:.1f}% meets the 70% threshold')
+          "
 
       - name: Upload coverage artifacts
         if: always()
@@ -107,14 +116,17 @@ jobs:
           branch_rate = float(root.get('branch-rate', 0)) * 100
           lines_valid = int(root.get('lines-valid', 0))
           lines_covered = int(root.get('lines-covered', 0))
-          icon = ':white_check_mark:' if line_rate >= 70 else ':x:'
-          print(f'## {icon} Test Coverage: {line_rate:.1f}%')
+          ok = line_rate >= 70 and branch_rate >= 70
+          icon = ':white_check_mark:' if ok else ':x:'
+          line_icon = ':white_check_mark:' if line_rate >= 70 else ':x:'
+          branch_icon = ':white_check_mark:' if branch_rate >= 70 else ':x:'
+          print(f'## {icon} Test Coverage')
           print()
-          print(f'| Metric | Value |')
-          print(f'|--------|-------|')
-          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) |')
-          print(f'| Branch coverage | {branch_rate:.1f}% |')
-          print(f'| Threshold | 70% |')
+          print(f'| Metric | Value | Status |')
+          print(f'|--------|-------|--------|')
+          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) | {line_icon} |')
+          print(f'| Branch coverage | {branch_rate:.1f}% | {branch_icon} |')
+          print(f'| Threshold | 70% | |')
           print()
           print('<!-- cerberus:coverage -->')
           ")
