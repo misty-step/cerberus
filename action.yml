@@ -209,11 +209,11 @@ runs:
           fi
           pr_view_error_kind="$(classify_pr_view_error "$pr_view_error_text")"
           break
-        fi
+        done
         if [[ "$pr_context_exit" -ne 0 ]]; then
           echo "pr-context-error-kind=${pr_view_error_kind}" >> "$GITHUB_OUTPUT"
           # Keep a larger log breadcrumb, then compress output value.
-          pr_view_error_text="$(echo "$pr_view_error_text" | sed 's/[[:space:]]\\+/ /g')"
+          pr_view_error_text="$(echo "$pr_view_error_text" | sed -E 's/[[:space:]]+/ /g')"
           echo "gh pr view failure detail: $(printf '%s' "$pr_view_error_text" | cut -c1-4000)"
           pr_view_error_text="$(printf '%s' "$pr_view_error_text" | cut -c1-1000)"
           echo "pr-context-error-message=${pr_view_error_text}" >> "$GITHUB_OUTPUT"
