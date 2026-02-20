@@ -2,7 +2,7 @@
 
 import os
 
-from lib.markdown import blob_url, details_block, location_link, repo_context, severity_icon
+from lib.markdown import _location_label, blob_url, details_block, location_link, repo_context, severity_icon
 
 
 class TestSeverityIcon:
@@ -153,6 +153,23 @@ class TestLocationLink:
             sha="abc",
         )
         assert "[`src/app.py`]" in result
+
+
+class TestLocationLabel:
+    def test_empty_path_returns_empty(self):
+        assert _location_label("", None) == ""
+
+    def test_whitespace_path_returns_empty(self):
+        assert _location_label("  ", None) == ""
+
+    def test_none_path_returns_empty(self):
+        assert _location_label(None, None) == ""
+
+    def test_path_with_line(self):
+        assert _location_label("f.py", 10) == "f.py:10"
+
+    def test_path_without_line(self):
+        assert _location_label("f.py", None) == "f.py"
 
 
 class TestDetailsBlock:

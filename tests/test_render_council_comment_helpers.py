@@ -26,6 +26,7 @@ from lib.render_council_comment import (
     format_runtime,
     friendly_codename,
     has_raw_output,
+    main,
     normalize_severity,
     normalize_verdict,
     read_json,
@@ -324,6 +325,12 @@ class TestCountFindings:
         assert totals["critical"] == 1
         assert totals["major"] == 0  # stats branch was used, not findings
 
+    def test_stats_dict_with_no_matching_keys_falls_back(self):
+        """When stats is a dict but has no recognized severity keys, fall through to findings."""
+        reviewers = [{"stats": {"other": 99}, "findings": [{"severity": "minor"}]}]
+        totals = count_findings(reviewers)
+        assert totals["minor"] == 1  # fell back to counting findings
+
 
 class TestDetectSkipBanner:
     def test_credit_depleted(self):
@@ -454,6 +461,32 @@ class TestFormatFixOrderLines:
     def test_no_findings(self):
         assert format_fix_order_lines([], max_items=3) == ["_No findings reported._"]
 
+    def test_finding_with_zero_line(self, monkeypatch):
+        """line <= 0 should be normalized to None (no line anchor)."""
+        monkeypatch.setenv("GITHUB_SERVER_URL", "https://gh.com")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+        monkeypatch.setenv("GH_HEAD_SHA", "abc")
+        reviewers = [{"reviewer": "A", "findings": [
+            {"severity": "minor", "category": "style", "file": "a.py",
+             "line": 0, "title": "Nit"},
+        ]}]
+        lines = format_fix_order_lines(reviewers, max_items=5)
+        text = "\n".join(lines)
+        assert "a.py`]" in text
+        assert "#L0" not in text  # line=0 should not produce an anchor
+
+    def test_finding_without_suggestion(self, monkeypatch):
+        """No suggestion → no 'Fix:' line emitted."""
+        monkeypatch.setenv("GITHUB_SERVER_URL", "https://gh.com")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+        monkeypatch.setenv("GH_HEAD_SHA", "abc")
+        reviewers = [{"reviewer": "A", "findings": [
+            {"severity": "minor", "category": "c", "file": "b.py",
+             "line": 1, "title": "Test"},
+        ]}]
+        lines = format_fix_order_lines(reviewers, max_items=5)
+        assert not any("Fix:" in ln for ln in lines)
+
 
 class TestFormatHotspotsLines:
     def test_no_hotspots(self, monkeypatch):
@@ -469,6 +502,24 @@ class TestFormatKeyFindingsLines:
 
 
 class TestFormatReviewerDetailsBlock:
+    def test_reviewer_code_matches_label(self, monkeypatch):
+        """When codename == label, header should not duplicate (no 'X (X)')."""
+        monkeypatch.setenv("GITHUB_SERVER_URL", "https://gh.com")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+        monkeypatch.setenv("GH_HEAD_SHA", "abc")
+        r = [{
+            "reviewer": "Custom",
+            "perspective": "custom",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "runtime_seconds": 5,
+            "summary": "ok",
+            "findings": [],
+        }]
+        lines = format_reviewer_details_block(r, max_findings=5)
+        text = "\n".join(lines)
+        assert "Custom (Custom)" not in text  # should not duplicate
+
     def test_reviewer_with_findings(self, monkeypatch):
         monkeypatch.setenv("GITHUB_SERVER_URL", "https://gh.com")
         monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
@@ -692,3 +743,28 @@ class TestReadJson:
         p.write_text("[1, 2, 3]")
         with pytest.raises(ValueError, match="expected object"):
             read_json(p)
+
+
+class TestMainErrorPaths:
+    def test_max_key_findings_zero(self, tmp_path, capsys):
+        council_path = tmp_path / "council.json"
+        council_path.write_text('{"verdict":"PASS","reviewers":[]}')
+        code = main([
+            "--council-json", str(council_path),
+            "--output", str(tmp_path / "out.md"),
+            "--max-key-findings", "0",
+        ])
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "max-key-findings" in captured.err
+
+    def test_write_failure(self, tmp_path, capsys):
+        council_path = tmp_path / "council.json"
+        council_path.write_text('{"verdict":"PASS","reviewers":[]}')
+        code = main([
+            "--council-json", str(council_path),
+            "--output", str(tmp_path / "no" / "such" / "dir" / "out.md"),
+        ])
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "unable to write" in captured.err
