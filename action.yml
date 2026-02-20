@@ -172,19 +172,25 @@ runs:
         fi
         : > /tmp/pr-context.json
         max_pr_view_retries=3
+        pr_view_timeout_seconds=20
         pr_view_attempt=1
         pr_context_exit=1
         pr_view_error_text=""
         while [[ "$pr_view_attempt" -le "$max_pr_view_retries" ]]; do
           pr_view_stdout="$(mktemp /tmp/cerberus-pr-view-stdout.XXXXXX)"
           pr_view_stderr="$(mktemp /tmp/cerberus-pr-view-stderr.XXXXXX)"
-          if gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body \
+          if timeout "$pr_view_timeout_seconds" gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body \
             > "$pr_view_stdout" 2> "$pr_view_stderr"; then
             mv "$pr_view_stdout" /tmp/pr-context.json
             cleanup_pr_fetch_temp_files "$pr_view_stdout" "$pr_view_stderr"
             echo "pr-context-error-kind=" >> "$GITHUB_OUTPUT"
             echo "pr-context-error-message=" >> "$GITHUB_OUTPUT"
             pr_context_exit=0
+            break
+          elif [[ "$?" -eq 124 ]]; then
+            pr_view_error_text="gh pr view timed out after ${pr_view_timeout_seconds}s"
+            cleanup_pr_fetch_temp_files "$pr_view_stdout" "$pr_view_stderr"
+            pr_view_error_kind="other"
             break
           fi
 
@@ -206,8 +212,10 @@ runs:
         fi
         if [[ "$pr_context_exit" -ne 0 ]]; then
           echo "pr-context-error-kind=${pr_view_error_kind}" >> "$GITHUB_OUTPUT"
-          # Compress multiline errors for output formatting.
-          pr_view_error_text="$(echo "$pr_view_error_text" | sed 's/[[:space:]]\\+/ /g' | cut -c1-1000)"
+          # Keep a larger log breadcrumb, then compress output value.
+          pr_view_error_text="$(echo "$pr_view_error_text" | sed 's/[[:space:]]\\+/ /g')"
+          echo "gh pr view failure detail: $(printf '%s' "$pr_view_error_text" | cut -c1-4000)"
+          pr_view_error_text="$(printf '%s' "$pr_view_error_text" | cut -c1-1000)"
           echo "pr-context-error-message=${pr_view_error_text}" >> "$GITHUB_OUTPUT"
           echo "::error::Failed to fetch PR context via gh pr view."
           case "$pr_view_error_kind" in
