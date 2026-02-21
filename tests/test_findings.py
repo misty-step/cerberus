@@ -245,6 +245,11 @@ class TestAsInt:
         from lib.findings import as_int
         assert as_int(3.7) == 3
 
+    def test_boolean_coerces_to_int(self):
+        from lib.findings import as_int
+        assert as_int(True) == 1
+        assert as_int(False) == 0
+
 
 class TestNormalizeSeverity:
     def test_known(self):
@@ -260,6 +265,17 @@ class TestNormalizeSeverity:
     def test_whitespace_collapsed(self):
         from lib.findings import normalize_severity
         assert normalize_severity("  critical  ") == "critical"
+
+    def test_numeric_input_defaults_info(self):
+        from lib.findings import normalize_severity
+        assert normalize_severity(0) == "info"
+        assert normalize_severity(42) == "info"
+
+    def test_custom_order(self):
+        from lib.findings import normalize_severity
+        custom = {"blocker": 0, "trivial": 1}
+        assert normalize_severity("blocker", custom) == "blocker"
+        assert normalize_severity("critical", custom) == "info"
 
 
 class TestSeverityOrder:
@@ -286,6 +302,14 @@ class TestSplitReviewerDescription:
         assert split_reviewer_description("") == ("", "")
         assert split_reviewer_description(None) == ("", "")
 
+    def test_multiple_em_dashes_splits_on_first(self):
+        from lib.findings import split_reviewer_description
+        assert split_reviewer_description("A — B — C") == ("A", "B — C")
+
+    def test_multiple_hyphens_splits_on_first(self):
+        from lib.findings import split_reviewer_description
+        assert split_reviewer_description("A - B - C") == ("A", "B - C")
+
 
 class TestReviewerLabel:
     def test_uses_role_from_description(self):
@@ -311,3 +335,13 @@ class TestReviewerLabel:
     def test_empty_returns_unknown(self):
         from lib.findings import reviewer_label
         assert reviewer_label({}) == "unknown"
+
+    def test_mixed_case_name_returned_as_is(self):
+        from lib.findings import reviewer_label
+        r = {"reviewer": "CustomBot"}
+        assert reviewer_label(r) == "CustomBot"
+
+    def test_underscore_perspective_title_cased(self):
+        from lib.findings import reviewer_label
+        r = {"perspective": "code_quality", "reviewer": "ARTEMIS"}
+        assert reviewer_label(r) == "Code Quality"
