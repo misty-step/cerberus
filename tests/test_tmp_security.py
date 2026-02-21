@@ -1,6 +1,6 @@
 """Tests for Issue #26: mktemp-based temp file handling.
 
-Verifies that Python scripts respect CERBERUS_TMP and have no hardcoded /tmp/ paths.
+Verifies that scripts respect CERBERUS_TMP and have no hardcoded /tmp/ paths.
 """
 
 import json
@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 FIXTURES = Path(__file__).parent / "fixtures" / "sample-verdicts"
@@ -20,6 +22,21 @@ SCRIPT_PARSE = SCRIPTS_DIR / "parse-review.py"
 REPO_ROOT = Path(__file__).parent.parent
 ACTION_FILE = REPO_ROOT / "action.yml"
 VERDICT_ACTION_FILE = REPO_ROOT / "verdict" / "action.yml"
+
+# Shell scripts that previously had hardcoded /tmp/ paths.
+SHELL_SCRIPTS = [
+    SCRIPTS_DIR / "run-reviewer.sh",
+    SCRIPTS_DIR / "post-comment.sh",
+]
+
+# Python scripts that write to CERBERUS_TMP.
+PYTHON_SCRIPTS = [
+    SCRIPTS_DIR / "aggregate-verdict.py",
+    SCRIPTS_DIR / "parse-review.py",
+    SCRIPTS_DIR / "triage.py",
+    SCRIPTS_DIR / "post-council-review.py",
+    SCRIPTS_DIR / "lib" / "render_council_comment.py",
+]
 
 
 def _run(script: Path, args: list[str], env: dict[str, str]) -> tuple[int, str, str]:
@@ -33,58 +50,71 @@ def _run(script: Path, args: list[str], env: dict[str, str]) -> tuple[int, str, 
     return result.returncode, result.stdout, result.stderr
 
 
-class TestAggregateUsesCerberusTmp:
-    def test_council_verdict_written_to_cerberus_tmp(self, tmp_path: Path) -> None:
-        """aggregate-verdict.py writes council-verdict.json to CERBERUS_TMP."""
-        env = {**os.environ, "CERBERUS_TMP": str(tmp_path)}
-        env.pop("GH_OVERRIDE_COMMENT", None)
-        env.pop("GH_HEAD_SHA", None)
+@pytest.fixture()
+def aggregate_env(tmp_path: Path) -> dict[str, str]:
+    """Clean env for aggregate-verdict.py with CERBERUS_TMP pointed at tmp_path."""
+    env = {**os.environ, "CERBERUS_TMP": str(tmp_path)}
+    env.pop("GH_OVERRIDE_COMMENT", None)
+    env.pop("GH_HEAD_SHA", None)
+    return env
 
-        code, _, _ = _run(SCRIPT_AGGREGATE, [str(FIXTURES)], env)
+
+class TestAggregateUsesCerberusTmp:
+    def test_council_verdict_written_to_cerberus_tmp(
+        self, tmp_path: Path, aggregate_env: dict[str, str]
+    ) -> None:
+        """aggregate-verdict.py writes council-verdict.json to CERBERUS_TMP."""
+        code, _, _ = _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
         assert code == 0
         assert (tmp_path / "council-verdict.json").exists()
 
-    def test_quality_report_written_to_cerberus_tmp(self, tmp_path: Path) -> None:
+    def test_quality_report_written_to_cerberus_tmp(
+        self, tmp_path: Path, aggregate_env: dict[str, str]
+    ) -> None:
         """aggregate-verdict.py writes quality-report.json to CERBERUS_TMP."""
-        env = {**os.environ, "CERBERUS_TMP": str(tmp_path)}
-        env.pop("GH_OVERRIDE_COMMENT", None)
-        env.pop("GH_HEAD_SHA", None)
-
-        _run(SCRIPT_AGGREGATE, [str(FIXTURES)], env)
+        _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
         assert (tmp_path / "quality-report.json").exists()
 
-    def test_council_verdict_not_in_fixed_tmp(self, tmp_path: Path) -> None:
+    def test_council_verdict_not_in_fixed_tmp(
+        self, tmp_path: Path, aggregate_env: dict[str, str]
+    ) -> None:
         """When CERBERUS_TMP is set to a unique dir, the file goes there, not /tmp/."""
-        env = {**os.environ, "CERBERUS_TMP": str(tmp_path)}
-        env.pop("GH_OVERRIDE_COMMENT", None)
-        env.pop("GH_HEAD_SHA", None)
-
-        _run(SCRIPT_AGGREGATE, [str(FIXTURES)], env)
+        _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
         output = tmp_path / "council-verdict.json"
         assert output.exists()
         assert str(output) != "/tmp/council-verdict.json"
 
-    def test_council_verdict_json_is_valid(self, tmp_path: Path) -> None:
+    def test_council_verdict_json_is_valid(
+        self, tmp_path: Path, aggregate_env: dict[str, str]
+    ) -> None:
         """Output JSON is parseable and has expected fields."""
-        env = {**os.environ, "CERBERUS_TMP": str(tmp_path)}
-        env.pop("GH_OVERRIDE_COMMENT", None)
-        env.pop("GH_HEAD_SHA", None)
-
-        _run(SCRIPT_AGGREGATE, [str(FIXTURES)], env)
+        _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
         data = json.loads((tmp_path / "council-verdict.json").read_text())
         assert "verdict" in data
 
 
 class TestParseReviewUsesCerberusTmp:
-    """parse-review.py uses CERBERUS_TMP for parse-failure tracking files."""
+    """parse-review.py reads parse-failure metadata from CERBERUS_TMP."""
 
-    def test_parse_failure_tracking_in_cerberus_tmp(self, tmp_path: Path) -> None:
-        """On parse failure, tracking files land in CERBERUS_TMP."""
-        env = {**os.environ, "CERBERUS_TMP": str(tmp_path), "REVIEWER_NAME": "APOLLO"}
+    def test_reads_tracking_files_from_cerberus_tmp(self, tmp_path: Path) -> None:
+        """When parse-failure tracking files exist in CERBERUS_TMP, they are read."""
+        perspective = "TMPTEST"
+        # Pre-create the tracking files that run-reviewer.sh would write.
+        (tmp_path / f"{perspective}-parse-failure-models.txt").write_text(
+            "model-a\nmodel-b\n"
+        )
+        (tmp_path / f"{perspective}-parse-failure-retries.txt").write_text("2")
+
+        env = {
+            **os.environ,
+            "CERBERUS_TMP": str(tmp_path),
+            "PERSPECTIVE": perspective,
+            "REVIEWER_NAME": "TMPTEST",
+        }
         result = subprocess.run(
             [sys.executable, str(SCRIPT_PARSE)],
             input="This is not valid JSON output at all",
@@ -95,35 +125,75 @@ class TestParseReviewUsesCerberusTmp:
         )
 
         assert result.returncode == 0
+        data = json.loads(result.stdout)
+        # Verify the metadata was found and surfaced in the verdict summary.
+        assert "model-a" in data["summary"] or "2" in data["summary"]
+
+    def test_no_output_written_to_fixed_tmp(self, tmp_path: Path) -> None:
+        """parse-review.py does not write files outside CERBERUS_TMP."""
+        env = {
+            **os.environ,
+            "CERBERUS_TMP": str(tmp_path),
+            "REVIEWER_NAME": "APOLLO",
+        }
+        subprocess.run(
+            [sys.executable, str(SCRIPT_PARSE)],
+            input="This is not valid JSON output at all",
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
         for path in tmp_path.iterdir():
             assert not str(path).startswith("/tmp/")
 
 
-class TestNoPythonHardcodedTmpPaths:
-    """Grep check: no Python script has literal /tmp/ paths."""
+class TestNoHardcodedTmpPaths:
+    """Grep check: no script or action YAML has literal /tmp/ paths."""
 
-    PYTHON_FILES = [
-        SCRIPTS_DIR / "aggregate-verdict.py",
-        SCRIPTS_DIR / "parse-review.py",
-        SCRIPTS_DIR / "triage.py",
-        SCRIPTS_DIR / "post-council-review.py",
-        SCRIPTS_DIR / "lib" / "render_council_comment.py",
-    ]
-
-    def test_no_hardcoded_tmp_slash_in_python(self) -> None:
-        """No production Python file contains literal string /tmp/."""
+    @staticmethod
+    def _scan_for_tmp(file_path: Path, skip_comments: str = "#") -> list[str]:
+        """Return lines containing hardcoded /tmp/ paths, skipping comments."""
         violations = []
-        for py_file in self.PYTHON_FILES:
-            if not py_file.exists():
+        if not file_path.exists():
+            return violations
+        for line_number, line in enumerate(file_path.read_text().splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith(skip_comments):
                 continue
-            for line_number, line in enumerate(py_file.read_text().splitlines(), 1):
-                stripped = line.strip()
+            if '"/tmp/' in line or "'/tmp/" in line or " /tmp/" in line:
+                # Allow YAML comments (lines starting with #).
                 if stripped.startswith("#"):
                     continue
-                if '"/tmp/' in line or "'/tmp/" in line:
-                    violations.append(f"{py_file.name}:{line_number}: {stripped}")
+                violations.append(f"{file_path.name}:{line_number}: {stripped}")
+        return violations
+
+    def test_no_hardcoded_tmp_in_python_scripts(self) -> None:
+        """No production Python file contains literal string /tmp/."""
+        violations = []
+        for py_file in PYTHON_SCRIPTS:
+            violations.extend(self._scan_for_tmp(py_file))
         assert not violations, (
             "Hardcoded /tmp/ paths found in Python scripts:\n" + "\n".join(violations)
+        )
+
+    def test_no_hardcoded_tmp_in_shell_scripts(self) -> None:
+        """No shell script contains literal string /tmp/."""
+        violations = []
+        for sh_file in SHELL_SCRIPTS:
+            violations.extend(self._scan_for_tmp(sh_file))
+        assert not violations, (
+            "Hardcoded /tmp/ paths found in shell scripts:\n" + "\n".join(violations)
+        )
+
+    def test_no_hardcoded_tmp_in_action_yaml(self) -> None:
+        """No action YAML contains literal string /tmp/."""
+        violations = []
+        for action_file in [ACTION_FILE, VERDICT_ACTION_FILE]:
+            violations.extend(self._scan_for_tmp(action_file))
+        assert not violations, (
+            "Hardcoded /tmp/ paths found in action YAML:\n" + "\n".join(violations)
         )
 
 
@@ -168,10 +238,8 @@ class TestActionTempLifecycle:
     def test_verdict_json_output_uses_runner_temp_not_cerberus_tmp(self) -> None:
         """verdict-json output must point to RUNNER_TEMP so it survives CERBERUS_TMP cleanup."""
         content = ACTION_FILE.read_text()
-        # The output should copy to RUNNER_TEMP before emitting the path.
         assert 'RUNNER_TEMP' in content
         assert 'cerberus-${PERSPECTIVE}-verdict.json' in content
-        # The GITHUB_OUTPUT line must emit the stable RUNNER_TEMP path, not CERBERUS_TMP.
         stable_output_line = 'echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"'
         assert stable_output_line in content
         cerberus_tmp_output_line = 'echo "verdict-json=${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"'
