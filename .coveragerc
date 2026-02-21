@@ -9,7 +9,9 @@ branch = true
 parallel = true
 
 [report]
-fail_under = 70
+# fail_under is intentionally absent here.
+# The coverage floor is enforced by CI reading coverage-policy.yml.
+# To advance the ratchet, edit global_floor in coverage-policy.yml.
 show_missing = true
 skip_covered = false
 exclude_lines =

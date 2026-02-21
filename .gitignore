@@ -10,5 +10,4 @@ coverage-html/
 healthy
 unhealthy
 
-# Local agent workspace artifacts
 .flywheel/

@@ -21,6 +21,7 @@ jobs:
           python3 -m py_compile scripts/triage.py
           python3 -m py_compile scripts/validate-consumer-workflow.py
           python3 -m py_compile scripts/lib/consumer_workflow_validator.py
+          python3 -m py_compile scripts/lib/coverage_policy.py
           python3 -m py_compile matrix/generate-matrix.py
 
       - name: YAML validity
@@ -28,7 +29,7 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'draft-check/action.yml', 'preflight/action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml']:
+          for path in ['action.yml', 'draft-check/action.yml', 'preflight/action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml', 'coverage-policy.yml']:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')
@@ -44,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -66,13 +69,43 @@ jobs:
           python3 -m coverage html
           python3 -c "
           import xml.etree.ElementTree as ET, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd() / 'scripts'))
+          from lib.coverage_policy import load_policy
+          policy = load_policy()
+          floor = int(policy.global_floor)
           root = ET.parse('coverage.xml').getroot()
           branch_rate = float(root.get('branch-rate', 0)) * 100
-          if branch_rate < 70:
-              print(f'::error::Branch coverage {branch_rate:.1f}% is below the 70% threshold')
+          line_rate = float(root.get('line-rate', 0)) * 100
+          failed = False
+          if branch_rate < floor:
+              print(f'::error::Branch coverage {branch_rate:.1f}% is below the {floor}% floor')
+              failed = True
+          else:
+              print(f'Branch coverage {branch_rate:.1f}% meets the {floor}% floor')
+          if line_rate < floor:
+              print(f'::error::Line coverage {line_rate:.1f}% is below the {floor}% floor')
+              failed = True
+          else:
+              print(f'Line coverage {line_rate:.1f}% meets the {floor}% floor')
+          if failed:
               sys.exit(1)
-          print(f'Branch coverage {branch_rate:.1f}% meets the 70% threshold')
           "
+
+      - name: Patch coverage check
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --prune origin "${{ github.base_ref }}"
+          BASE_REF="origin/${{ github.base_ref }}"
+          if ! git rev-parse --verify --quiet "$BASE_REF" >/dev/null; then
+            BASE_REF="FETCH_HEAD"
+          fi
+          FLOOR=$(python3 -c "import sys; from pathlib import Path; sys.path.insert(0, str(Path.cwd() / 'scripts')); from lib.coverage_policy import load_policy; print(load_policy().patch_threshold)")
+          pip install diff-cover --quiet
+          diff-cover coverage.xml \
+            --compare-branch="${BASE_REF}" \
+            --fail-under=${FLOOR} \
+            --markdown-report=patch-coverage.md
 
       - name: Upload coverage artifacts
         if: always()
@@ -83,6 +116,7 @@ jobs:
             htmlcov/
             coverage.xml
             .coverage
+            patch-coverage.md
           retention-days: 30
 
   coverage-comment:
@@ -102,6 +136,9 @@ jobs:
           name: coverage-report
         continue-on-error: true
 
+      - name: Install comment deps
+        run: pip install pyyaml
+
       - name: Post coverage comment
         if: steps.download.outcome == 'success'
         env:
@@ -109,25 +146,51 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           BODY=$(python3 -c "
+          import os
+          import sys
           import xml.etree.ElementTree as ET
-          tree = ET.parse('coverage.xml')
-          root = tree.getroot()
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd() / 'scripts'))
+          from lib.coverage_policy import load_policy
+          policy = load_policy()
+          floor = int(policy.global_floor)
+          patch_threshold = int(policy.patch_threshold)
+          ratchet_steps = policy.ratchet_steps
+          try:
+              idx = ratchet_steps.index(floor)
+              next_target = ratchet_steps[idx + 1] if idx + 1 < len(ratchet_steps) else None
+          except (ValueError, IndexError):
+              next_target = None
+          root = ET.parse('coverage.xml').getroot()
           line_rate = float(root.get('line-rate', 0)) * 100
           branch_rate = float(root.get('branch-rate', 0)) * 100
           lines_valid = int(root.get('lines-valid', 0))
           lines_covered = int(root.get('lines-covered', 0))
-          ok = line_rate >= 70 and branch_rate >= 70
+          ok = line_rate >= floor and branch_rate >= floor
           icon = ':white_check_mark:' if ok else ':x:'
-          line_icon = ':white_check_mark:' if line_rate >= 70 else ':x:'
-          branch_icon = ':white_check_mark:' if branch_rate >= 70 else ':x:'
+          line_icon = ':white_check_mark:' if line_rate >= floor else ':x:'
+          branch_icon = ':white_check_mark:' if branch_rate >= floor else ':x:'
           print(f'## {icon} Test Coverage')
           print()
-          print(f'| Metric | Value | Status |')
-          print(f'|--------|-------|--------|')
-          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) | {line_icon} |')
-          print(f'| Branch coverage | {branch_rate:.1f}% | {branch_icon} |')
-          print(f'| Threshold | 70% | |')
+          print(f'| Metric | Value | Threshold | Status |')
+          print(f'|--------|-------|-----------|--------|')
+          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) | {floor}% | {line_icon} |')
+          print(f'| Branch coverage | {branch_rate:.1f}% | {floor}% | {branch_icon} |')
           print()
+          ratchet_display = ' → '.join(
+              f'**{s}%**' if s == floor else (f'~~{s}%~~' if s < floor else f'{s}%')
+              for s in ratchet_steps
+          )
+          print(f'**Ratchet:** {ratchet_display}')
+          if next_target:
+              print(f'_Next target: **{next_target}%** — advance \`global_floor\` in \`coverage-policy.yml\`_')
+          print()
+          if os.path.exists('patch-coverage.md'):
+              with open('patch-coverage.md') as f:
+                  patch_content = f.read(2000)
+              print(f'### Patch Coverage (≥{patch_threshold}% required for changed lines)')
+              print(patch_content)
+              print()
           print('<!-- cerberus:coverage -->')
           ")
           # Upsert comment using marker
