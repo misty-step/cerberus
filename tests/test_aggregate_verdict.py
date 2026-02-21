@@ -21,6 +21,8 @@ def run_aggregate(verdict_dir: str, env_extra: dict | None = None) -> tuple[int,
     env.pop("GH_PR_AUTHOR", None)
     env.pop("GH_OVERRIDE_POLICY", None)
     env.pop("EXPECTED_REVIEWERS", None)
+    # Ensure consistent output path on all platforms (tests read from /tmp/).
+    env.setdefault("CERBERUS_TMP", "/tmp")
     if env_extra:
         env.update(env_extra)
     result = subprocess.run(

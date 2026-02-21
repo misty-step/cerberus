@@ -20,6 +20,7 @@ def make_env(bin_dir: Path, diff_file: Path, cerberus_root: Path) -> dict[str, s
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
     env["CERBERUS_ROOT"] = str(cerberus_root)
+    env["CERBERUS_TMP"] = "/tmp"
     env["GH_DIFF_FILE"] = str(diff_file)
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"

@@ -241,27 +241,24 @@ class TestParseErrors:
 
 
 class TestParseFailureMetadata:
-    def test_parse_failure_metadata_is_preserved_in_summary(self):
+    def test_parse_failure_metadata_is_preserved_in_summary(self, tmp_path):
         """Recovery metadata is surfaced when parse retries were attempted."""
         # Unique perspective avoids collisions if the suite is ever parallelized.
         perspective = f"PARSE_META_{uuid.uuid4().hex}"
-        models_file = Path("/tmp") / f"{perspective}-parse-failure-models.txt"
-        retries_file = Path("/tmp") / f"{perspective}-parse-failure-retries.txt"
+        models_file = tmp_path / f"{perspective}-parse-failure-models.txt"
+        retries_file = tmp_path / f"{perspective}-parse-failure-retries.txt"
 
         models_file.write_text("gpt-4o-mini\ngpt-4.1\n")
         retries_file.write_text("2")
 
-        try:
-            code, out, _ = run_parse(
-                "Reviewer output was not structured.",
-                env_extra={
-                    "PERSPECTIVE": perspective,
-                    "REVIEWER_NAME": "VULCAN",
-                },
-            )
-        finally:
-            models_file.unlink(missing_ok=True)
-            retries_file.unlink(missing_ok=True)
+        code, out, _ = run_parse(
+            "Reviewer output was not structured.",
+            env_extra={
+                "PERSPECTIVE": perspective,
+                "REVIEWER_NAME": "VULCAN",
+                "CERBERUS_TMP": str(tmp_path),
+            },
+        )
 
         assert code == 0
         data = json.loads(out)
