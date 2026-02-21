@@ -43,44 +43,29 @@ runs:
         POST_COMMENT: ${{ inputs.post-comment }}
       run: |
         marker="<!-- cerberus:preflight -->"
+        preflight_tmp="$(mktemp -d)"
+        trap 'rm -rf "$preflight_tmp"' EXIT
 
-        write_draft_comment() {
-          comment_file="/tmp/cerberus-preflight-draft-comment.md"
+        # write_skip_comment <title> <body> <steps_heading> <step1> <step2> [<step3>] <skip_reason>
+        # Builds an idempotent PR comment via scripts/lib/github.py.
+        write_skip_comment() {
+          local title="$1" body="$2" steps_heading="$3" skip_reason
+          shift 3
+          local steps=()
+          while [ "$#" -gt 1 ]; do steps+=("$1"); shift; done
+          skip_reason="$1"
+
+          comment_file="$preflight_tmp/skip-comment.md"
           {
-            printf '%s\n' "## 🏛️ Cerberus Council: Draft PR Detected"
+            printf '%s\n' "## 🏛️ Cerberus Council: $title"
             printf '\n'
-            printf '%s\n' "Cerberus review is skipped while this PR is in **draft** status."
+            printf '%s\n' "$body"
             printf '\n'
-            printf '%s\n' "### Next Steps"
-            printf '%s\n' "1. Mark the PR **Ready for review** in GitHub"
-            printf '%s\n' "2. Cerberus will run automatically on that event"
+            printf '%s\n' "### $steps_heading"
+            for step in "${steps[@]}"; do printf '%s\n' "$step"; done
             printf '\n'
             printf '%s\n' "---"
-            printf '%s\n' "*Cerberus Preflight | Skip reason: draft*"
-            printf '%s\n' "$marker"
-          } > "$comment_file"
-
-          python3 "$CERBERUS_ROOT/scripts/lib/github.py" \
-            --repo "$REPO" \
-            --pr "$PR_NUMBER" \
-            --marker "$marker" \
-            --body-file "$comment_file" || echo "::warning::Failed to post preflight comment"
-        }
-
-        write_missing_key_comment() {
-          comment_file="/tmp/cerberus-preflight-api-key-comment.md"
-          {
-            printf '%s\n' "## 🏛️ Cerberus Council: Missing OPENROUTER_API_KEY"
-            printf '\n'
-            printf '%s\n' "Cerberus review is skipped because \`OPENROUTER_API_KEY\` is not configured for this repository."
-            printf '\n'
-            printf '%s\n' "### Setup"
-            printf '%s\n' "1. Open **Settings → Secrets and variables → Actions**"
-            printf '%s\n' "2. Add a repository secret named \`OPENROUTER_API_KEY\`"
-            printf '%s\n' "3. Re-run this workflow (or push a new commit)"
-            printf '\n'
-            printf '%s\n' "---"
-            printf '%s\n' "*Cerberus Preflight | Skip reason: missing_api_key*"
+            printf '%s\n' "*Cerberus Preflight | Skip reason: ${skip_reason}*"
             printf '%s\n' "$marker"
           } > "$comment_file"
 
@@ -105,7 +90,13 @@ runs:
 
           if [ "$ACTION" = "opened" ] || [ "$ACTION" = "converted_to_draft" ]; then
             if [ "$POST_COMMENT" = "true" ] && [ -n "$GH_TOKEN" ] && [ -n "$PR_NUMBER" ]; then
-              write_draft_comment
+              write_skip_comment \
+                "Draft PR Detected" \
+                "Cerberus review is skipped while this PR is in **draft** status." \
+                "Next Steps" \
+                "1. Mark the PR **Ready for review** in GitHub" \
+                "2. Cerberus will run automatically on that event" \
+                "draft"
             fi
           fi
           exit 0
@@ -117,7 +108,14 @@ runs:
           echo "::notice::OPENROUTER_API_KEY is missing. Cerberus review is skipped."
 
           if [ "$POST_COMMENT" = "true" ] && [ -n "$GH_TOKEN" ] && [ -n "$PR_NUMBER" ]; then
-            write_missing_key_comment
+            write_skip_comment \
+              "Missing OPENROUTER_API_KEY" \
+              "Cerberus review is skipped because \`OPENROUTER_API_KEY\` is not configured for this repository." \
+              "Setup" \
+              "1. Open **Settings → Secrets and variables → Actions**" \
+              "2. Add a repository secret named \`OPENROUTER_API_KEY\`" \
+              "3. Re-run this workflow (or push a new commit)" \
+              "missing_api_key"
           fi
           exit 0
         fi
