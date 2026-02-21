@@ -468,5 +468,10 @@ runs:
       shell: bash
       run: |
         if [[ -n "${CERBERUS_TMP:-}" && -d "${CERBERUS_TMP}" ]]; then
-          rm -rf "${CERBERUS_TMP}"
+          # Best-effort cleanup only: temp deletion failures should not fail review jobs.
+          chmod -R u+rwX "${CERBERUS_TMP}" 2>/dev/null || true
+          rm -rf "${CERBERUS_TMP}" 2>/dev/null || true
+          if [[ -d "${CERBERUS_TMP}" ]]; then
+            echo "::warning::Failed to fully clean temporary directory: ${CERBERUS_TMP}"
+          fi
         fi

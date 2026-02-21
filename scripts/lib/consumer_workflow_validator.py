@@ -133,6 +133,13 @@ _COE_REMEDIATION = (
     "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error."
 )
 
+_V1_UPGRADE_GUIDANCE = (
+    "Upgrade to v2: see templates/consumer-workflow-minimal.yml for the recommended setup. "
+    "v2 includes reliability hardening (empty-output retries, model fallback chain, parse-failure recovery, "
+    "timeout fast-path fallback, staged OpenCode config, isolated HOME) "
+    "and supports fail-on-skip to turn SKIPs into CI failures."
+)
+
 
 def _coe_finding(source: str, job_name: str, *, scope: str, uses: str | None = None, coe_val: Any = None) -> Finding:
     """Build a continue-on-error warning Finding.
@@ -231,6 +238,17 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
             if kind is None:
                 continue
             uses_cerberus = True
+
+            # v1 usage check: warn on any cerberus @v1 step.
+            # Catches bare @v1, semver tags like @v1.2.3, and subpath refs like @v1/path.
+            ref = uses.rsplit("@", 1)[-1]
+            if ref == "v1" or ref.startswith(("v1.", "v1/", "v1-")):
+                findings.append(
+                    Finding(
+                        "warning",
+                        f"{source}: job `{job_name}` uses `{uses}` which is v1. {_V1_UPGRADE_GUIDANCE}",
+                    )
+                )
 
             # continue-on-error check: review/verdict/triage only.
             # draft-check and matrix are excluded — they don't emit verdicts,

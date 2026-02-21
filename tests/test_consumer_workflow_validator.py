@@ -543,3 +543,185 @@ jobs:
     assert len(coe) == 2, f"Expected 2 COE warnings (step + job), got: {coe}"
     scopes = {("job level" in w.message) for w in coe}
     assert scopes == {True, False}, "Should have one step-level and one job-level warning"
+
+
+# ---------------------------------------------------------------------------
+# v1 usage warnings
+# ---------------------------------------------------------------------------
+
+def _v1_warnings(findings):
+    return [f for f in findings if f.level == "warning" and "which is v1" in f.message]
+
+
+@pytest.mark.parametrize("uses", [
+    "misty-step/cerberus@v1",
+    "misty-step/cerberus/verdict@v1",
+    "misty-step/cerberus/triage@v1",
+    "misty-step/cerberus/draft-check@v1",
+    "misty-step/cerberus/validate@v1",
+    "misty-step/cerberus/preflight@v1",
+    # semver-pinned v1 tags must also trigger the warning
+    "misty-step/cerberus@v1.0.0",
+    "misty-step/cerberus@v1.2.3",
+    "misty-step/cerberus/verdict@v1.2.3",
+    "misty-step/cerberus@v1.0.0-rc1",
+])
+def test_v1_usage_emits_warning(tmp_path: Path, uses: str):
+    """Any cerberus @v1 step should emit an upgrade warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {uses}
+        with:
+          github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert v1, f"Expected a v1 upgrade warning for `{uses}`, got none. All findings: {findings}"
+
+
+def test_v1_warning_mentions_v2_template(tmp_path: Path):
+    """The v1 warning should reference the minimal v2 template."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert v1, "Expected a v1 upgrade warning"
+    assert any("consumer-workflow-minimal.yml" in w.message for w in v1), (
+        "Warning should mention consumer-workflow-minimal.yml"
+    )
+
+
+def test_v1_warning_mentions_fail_on_skip(tmp_path: Path):
+    """The v1 warning should mention fail-on-skip."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert any("fail-on-skip" in w.message for w in v1), (
+        "Warning should mention fail-on-skip"
+    )
+
+
+def test_v1_warning_mentions_v2_reliability_items(tmp_path: Path):
+    """The v1 warning should mention the full set of v2 reliability items."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert v1, "Expected a v1 upgrade warning"
+    msg = v1[0].message
+    assert "timeout fast-path fallback" in msg
+    assert "staged OpenCode config" in msg
+    assert "isolated HOME" in msg
+
+
+@pytest.mark.parametrize("uses", [
+    "misty-step/cerberus@v2",
+    "misty-step/cerberus@v2.0.0",
+    "misty-step/cerberus@v10",
+    "misty-step/cerberus@v10.0.0",
+    # SHA pin, branch refs, and near-miss must not false-positive
+    "misty-step/cerberus@abc123def456",
+    "misty-step/cerberus@main",
+    "misty-step/cerberus@v1beta",
+])
+def test_non_v1_usage_no_v1_warning(tmp_path: Path, uses: str):
+    """v2+/v10+ refs must not trigger the v1 upgrade warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {uses}
+        with:
+          github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
+          api-key: ${{{{ secrets.OPENROUTER_API_KEY }}}}
+          comment-policy: never
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _v1_warnings(findings) == [], f"Unexpected v1 warnings for `{uses}`: {_v1_warnings(findings)}"
+
+
+def test_v1_warning_per_step_not_deduplicated(tmp_path: Path):
+    """Each v1 step emits its own warning (one per occurrence)."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: misty-step/cerberus/verdict@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert len(v1) == 2, f"Expected 2 v1 warnings (one per v1 step), got: {v1}"

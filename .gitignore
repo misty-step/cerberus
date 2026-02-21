@@ -9,4 +9,5 @@ coverage-html/
 # Healthcheck scratch outputs used during local validation
 healthy
 unhealthy
+
 .flywheel/
