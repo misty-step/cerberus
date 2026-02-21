@@ -27,6 +27,7 @@ def make_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
+    env["CERBERUS_TMP"] = "/tmp"
     env["GH_DIFF_FILE"] = str(diff_file)
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"
@@ -222,6 +223,7 @@ def test_unknown_perspective_fails_fast(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
+    env["CERBERUS_TMP"] = "/tmp"
     env["GH_DIFF_FILE"] = str(diff_file)
 
     result = subprocess.run(

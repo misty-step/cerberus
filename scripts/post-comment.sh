@@ -13,6 +13,23 @@ if [[ ! -f "$verdict_file" ]]; then
   exit 2
 fi
 
+cerberus_tmp_owned=0
+if [[ -z "${CERBERUS_TMP:-}" ]]; then
+  CERBERUS_TMP="$(mktemp -d -t cerberus.XXXXXX)"
+  cerberus_tmp_owned=1
+fi
+if [[ ! -d "$CERBERUS_TMP" ]]; then
+  mkdir -p "$CERBERUS_TMP"
+fi
+chmod 0700 "$CERBERUS_TMP" 2>/dev/null || true
+
+cleanup() {
+  if [[ "$cerberus_tmp_owned" -eq 1 ]]; then
+    rm -rf "$CERBERUS_TMP" || true
+  fi
+}
+trap cleanup EXIT
+
 if [[ -z "${CERBERUS_ROOT:-}" ]]; then
   echo "CERBERUS_ROOT not set" >&2
   exit 2
@@ -83,7 +100,7 @@ if [[ "$verdict" == "SKIP" ]]; then
   fi
 fi
 
-findings_file="/tmp/${perspective}-findings.md"
+findings_file="${CERBERUS_TMP}/${perspective}-findings.md"
 server_url="${GITHUB_SERVER_URL:-https://github.com}"
 head_sha="${GH_HEAD_SHA:-$(git rev-parse HEAD)}"
 findings_count="$(
@@ -116,7 +133,7 @@ fi
 
 sha_short="${head_sha:0:7}"
 
-comment_file="/tmp/${perspective}-comment.md"
+comment_file="${CERBERUS_TMP}/${perspective}-comment.md"
 reviewer_code="$(
   python3 -c 'import re,sys; s=sys.argv[1].strip(); print(s.title() if re.fullmatch(r"[A-Z0-9_]+", s) else s)' \
     "$reviewer_name"

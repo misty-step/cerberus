@@ -16,46 +16,60 @@ cerberus_staging_had_opencode_dir=0
 cerberus_staging_had_agents_dir=0
 cerberus_staging_had_agent_file=0
 cerberus_staging_agent_dest=""
+cerberus_tmp_owned=0
+
+# Use CERBERUS_TMP for all temp files (prevents predictable paths and collisions).
+if [[ -z "${CERBERUS_TMP:-}" ]]; then
+  CERBERUS_TMP="$(mktemp -d -t cerberus.XXXXXX)"
+  cerberus_tmp_owned=1
+fi
+if [[ ! -d "$CERBERUS_TMP" ]]; then
+  mkdir -p "$CERBERUS_TMP"
+fi
+chmod 0700 "$CERBERUS_TMP" 2>/dev/null || true
+export CERBERUS_TMP
 
 # shellcheck disable=SC2317,SC2329
 # Invoked via `trap`.
 cerberus_cleanup() {
-  rm -f "/tmp/${perspective}-review-prompt.md" || true
-  rm -f "/tmp/${perspective}-fast-path-prompt.md" || true
+  rm -f "${CERBERUS_TMP}/${perspective}-review-prompt.md" || true
+  rm -f "${CERBERUS_TMP}/${perspective}-fast-path-prompt.md" || true
   # Note: fast-path-output.txt is NOT cleaned here — it may be the parse input
   # for downstream steps (same as primary output.txt and review.md).
-  rm -f "/tmp/${perspective}-fast-path-stderr.log" || true
+  rm -f "${CERBERUS_TMP}/${perspective}-fast-path-stderr.log" || true
   # Note: model-used is NOT cleaned here — downstream steps read it.
   # Note: parse-failure-models.txt and parse-failure-retries.txt are NOT
   # cleaned here — parse-review.py reads them to enrich SKIP verdicts.
   rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
-  if [[ -z "$cerberus_staging_backup_dir" ]]; then
-    return
-  fi
-
-  if [[ "$cerberus_staging_had_opencode_json" -eq 1 ]]; then
-    cp "$cerberus_staging_backup_dir/opencode.json" "opencode.json"
-  else
-    rm -f "opencode.json"
-  fi
-
-  if [[ -n "$cerberus_staging_agent_dest" ]]; then
-    if [[ "$cerberus_staging_had_agent_file" -eq 1 ]]; then
-      cp "$cerberus_staging_backup_dir/agent.md" "$cerberus_staging_agent_dest"
+  if [[ -n "$cerberus_staging_backup_dir" ]]; then
+    if [[ "$cerberus_staging_had_opencode_json" -eq 1 ]]; then
+      cp "$cerberus_staging_backup_dir/opencode.json" "opencode.json"
     else
-      rm -f "$cerberus_staging_agent_dest"
+      rm -f "opencode.json"
     fi
+
+    if [[ -n "$cerberus_staging_agent_dest" ]]; then
+      if [[ "$cerberus_staging_had_agent_file" -eq 1 ]]; then
+        cp "$cerberus_staging_backup_dir/agent.md" "$cerberus_staging_agent_dest"
+      else
+        rm -f "$cerberus_staging_agent_dest"
+      fi
+    fi
+
+    if [[ "$cerberus_staging_had_agents_dir" -eq 0 ]]; then
+      rmdir ".opencode/agents" 2>/dev/null || true
+    fi
+    if [[ "$cerberus_staging_had_opencode_dir" -eq 0 ]]; then
+      rmdir ".opencode" 2>/dev/null || true
+    fi
+
+    rm -rf "$cerberus_staging_backup_dir" || true
   fi
 
-  if [[ "$cerberus_staging_had_agents_dir" -eq 0 ]]; then
-    rmdir ".opencode/agents" 2>/dev/null || true
+  if [[ "$cerberus_tmp_owned" -eq 1 ]]; then
+    rm -rf "$CERBERUS_TMP" || true
   fi
-  if [[ "$cerberus_staging_had_opencode_dir" -eq 0 ]]; then
-    rmdir ".opencode" 2>/dev/null || true
-  fi
-
-  rm -rf "$cerberus_staging_backup_dir" || true
 }
 
 trap cerberus_cleanup EXIT
@@ -134,7 +148,7 @@ stage_opencode_project_config() {
     cerberus_staging_had_agent_file=1
   fi
 
-  cerberus_staging_backup_dir="$(mktemp -d "/tmp/cerberus-opencode-backup.XXXXXX")"
+  cerberus_staging_backup_dir="$(mktemp -d "${CERBERUS_TMP}/cerberus-opencode-backup.XXXXXX")"
 
   if [[ "$cerberus_staging_had_opencode_json" -eq 1 ]]; then
     cp "opencode.json" "$cerberus_staging_backup_dir/opencode.json"
@@ -197,16 +211,16 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
 fi
 
 # Persist reviewer name for downstream steps (parse, council).
-printf '%s' "$reviewer_name" > "/tmp/${perspective}-reviewer-name"
+printf '%s' "$reviewer_name" > "${CERBERUS_TMP}/${perspective}-reviewer-name"
 if [[ -n "${reviewer_desc:-}" ]]; then
-  printf '%s' "$reviewer_desc" > "/tmp/${perspective}-reviewer-desc"
+  printf '%s' "$reviewer_desc" > "${CERBERUS_TMP}/${perspective}-reviewer-desc"
 fi
 
 diff_file=""
 if [[ -n "${GH_DIFF_FILE:-}" && -f "${GH_DIFF_FILE:-}" ]]; then
   diff_file="$GH_DIFF_FILE"
 elif [[ -n "${GH_DIFF:-}" ]]; then
-  diff_file="/tmp/pr.diff"
+  diff_file="${CERBERUS_TMP}/pr.diff"
   printf "%s" "$GH_DIFF" > "$diff_file"
 else
   echo "missing diff input (GH_DIFF or GH_DIFF_FILE)" >&2
@@ -217,14 +231,14 @@ fi
 export PERSPECTIVE="$perspective"
 
 DIFF_FILE="$diff_file" \
-  PROMPT_OUTPUT="/tmp/${perspective}-review-prompt.md" \
+  PROMPT_OUTPUT="${CERBERUS_TMP}/${perspective}-review-prompt.md" \
   PERSPECTIVE="$perspective" \
   python3 "$CERBERUS_ROOT/scripts/render-review-prompt.py"
 
 # Create an isolated HOME for the opencode process.  This confines any
 # file writes (caches, config) to a disposable directory and keeps them
 # away from the real runner HOME and workspace.
-CERBERUS_ISOLATED_HOME="$(mktemp -d "/tmp/cerberus-home-${perspective}.XXXXXX")"
+CERBERUS_ISOLATED_HOME="$(mktemp -d "${CERBERUS_TMP}/cerberus-home-${perspective}.XXXXXX")"
 mkdir -p "${CERBERUS_ISOLATED_HOME}/.config" "${CERBERUS_ISOLATED_HOME}/.local/share" "${CERBERUS_ISOLATED_HOME}/tmp"
 export CERBERUS_ISOLATED_HOME
 
@@ -270,10 +284,10 @@ if [[ -n "$input_model" ]]; then
 fi
 
 # Persist "what we'd use without input override" for downstream (council/debug).
-printf '%s' "$configured_model" > "/tmp/${perspective}-configured-model"
+printf '%s' "$configured_model" > "${CERBERUS_TMP}/${perspective}-configured-model"
 
 # Persist primary model for downstream steps (parse, comment metadata).
-printf '%s' "$primary_model" > "/tmp/${perspective}-primary-model"
+printf '%s' "$primary_model" > "${CERBERUS_TMP}/${perspective}-primary-model"
 
 # Make overrides visible. Avoid `::warning::` when redundant (matches configured).
 if [[ -n "$input_model" ]]; then
@@ -366,8 +380,8 @@ run_opencode() {
   timeout "${_timeout}" opencode run \
     -m "${_model}" \
     --agent "${perspective}" \
-    < "/tmp/${perspective}-review-prompt.md" \
-    > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
+    < "${CERBERUS_TMP}/${perspective}-review-prompt.md" \
+    > "${CERBERUS_TMP}/${perspective}-output.txt" 2> "${CERBERUS_TMP}/${perspective}-stderr.log"
   OPENCODE_EXIT_CODE=$?
 }
 
@@ -504,8 +518,8 @@ for model in "${models[@]}"; do
     set -e
 
     # Always dump diagnostics for CI visibility
-    scratchpad="/tmp/${perspective}-review.md"
-    stdout_file="/tmp/${perspective}-output.txt"
+    scratchpad="${CERBERUS_TMP}/${perspective}-review.md"
+    stdout_file="${CERBERUS_TMP}/${perspective}-output.txt"
     output_size=$(wc -c < "$stdout_file" 2>/dev/null || echo "0")
     scratchpad_size="0"
     if [[ -f "$scratchpad" ]]; then
@@ -537,7 +551,7 @@ for model in "${models[@]}"; do
       break 2  # Timeout — handled downstream (fast-path fallback)
     fi
 
-    detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log"
+    detect_api_error "${CERBERUS_TMP}/${perspective}-output.txt" "${CERBERUS_TMP}/${perspective}-stderr.log"
 
     if [[ "$DETECTED_ERROR_TYPE" == "transient" ]] && [[ $retry_count -lt $max_retries ]]; then
       retry_count=$((retry_count + 1))
@@ -589,8 +603,8 @@ done
 # then fallback model. Track models attempted for SKIP verdict metadata.
 parse_failure_retries=0
 parse_failure_models_attempted=()
-stdout_file="/tmp/${perspective}-output.txt"
-scratchpad="/tmp/${perspective}-review.md"
+stdout_file="${CERBERUS_TMP}/${perspective}-output.txt"
+scratchpad="${CERBERUS_TMP}/${perspective}-review.md"
 
 # Check if we need parse-failure recovery (exit 0 but no valid JSON)
 if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
@@ -640,8 +654,8 @@ if [[ "$exit_code" -eq 0 ]] && ! has_valid_json_block "$stdout_file" && ! has_va
   if ! has_valid_json_block "$stdout_file" && ! has_valid_json_block "$scratchpad"; then
     echo "Parse recovery failed: no valid JSON after ${parse_failure_retries} retries across ${#parse_failure_models_attempted[@]} models."
     # Write parse-failure metadata for parse-review.py
-    printf '%s\n' "${parse_failure_models_attempted[@]}" > "/tmp/${perspective}-parse-failure-models.txt"
-    echo "$parse_failure_retries" > "/tmp/${perspective}-parse-failure-retries.txt"
+    printf '%s\n' "${parse_failure_models_attempted[@]}" > "${CERBERUS_TMP}/${perspective}-parse-failure-models.txt"
+    echo "$parse_failure_retries" > "${CERBERUS_TMP}/${perspective}-parse-failure-retries.txt"
   fi
 fi
 
@@ -652,22 +666,22 @@ if [[ "$fallback_triggered" == "true" ]]; then
 fi
 
 # Write model metadata for downstream steps.
-echo "$model_used" > "/tmp/${perspective}-model-used"
+echo "$model_used" > "${CERBERUS_TMP}/${perspective}-model-used"
 
 # Handle permanent errors that fell through (auth/quota or final model exhausted).
 if [[ "$exit_code" -ne 0 ]]; then
-  detect_api_error "/tmp/${perspective}-output.txt" "/tmp/${perspective}-stderr.log"
+  detect_api_error "${CERBERUS_TMP}/${perspective}-output.txt" "${CERBERUS_TMP}/${perspective}-stderr.log"
 
   if [[ "$DETECTED_ERROR_TYPE" == "permanent" ]] || [[ "$DETECTED_ERROR_TYPE" == "transient" ]]; then
     echo "Permanent API error detected. Writing error verdict."
 
     # Preserve stderr for debugging before we override the output
     echo "--- stderr (permanent error) ---" >&2
-    cat "/tmp/${perspective}-stderr.log" >&2 2>/dev/null || true
+    cat "${CERBERUS_TMP}/${perspective}-stderr.log" >&2 2>/dev/null || true
     echo "--- end stderr ---" >&2
 
     # Extract specific error message
-    error_msg="$(cat "/tmp/${perspective}-output.txt" 2>/dev/null)$(cat "/tmp/${perspective}-stderr.log" 2>/dev/null)"
+    error_msg="$(cat "${CERBERUS_TMP}/${perspective}-output.txt" 2>/dev/null)$(cat "${CERBERUS_TMP}/${perspective}-stderr.log" 2>/dev/null)"
 
     # Determine specific error type for message
     error_type_str="API_ERROR"
@@ -679,7 +693,7 @@ if [[ "$exit_code" -ne 0 ]]; then
 
     models_tried="${models[*]}"
     # Write structured error marker for parse-review.py
-    cat > "/tmp/${perspective}-output.txt" <<EOF
+    cat > "${CERBERUS_TMP}/${perspective}-output.txt" <<EOF
 API Error: $error_type_str
 
 The OpenRouter API returned an error that prevents the review from completing:
@@ -695,7 +709,7 @@ fi
 
 if [[ "$exit_code" -ne 0 ]] && [[ "$exit_code" -ne 124 ]]; then
   echo "--- stderr ---" >&2
-  cat "/tmp/${perspective}-stderr.log" >&2
+  cat "${CERBERUS_TMP}/${perspective}-stderr.log" >&2
   # If we have any output to parse, let parse-review.py handle it.
   if [[ -f "$scratchpad" && -s "$scratchpad" ]] || [[ -s "$stdout_file" ]]; then
     echo "Unknown error but output exists — delegating to parser."
@@ -707,7 +721,7 @@ fi
 # - Primary: any file containing a ```json block (scratchpad first, then stdout)
 # - Fallback: partial scratchpad/stdout (lets parse-review.py emit a partial verdict)
 # - Timeout marker only when timed out AND no output exists to salvage
-timeout_marker="/tmp/${perspective}-timeout-marker.txt"
+timeout_marker="${CERBERUS_TMP}/${perspective}-timeout-marker.txt"
 if [[ "$exit_code" -eq 124 ]]; then
   echo "::warning::${reviewer_name} (${perspective}) timed out after ${review_timeout}s"
   # Try to salvage output before falling back to SKIP
@@ -745,7 +759,7 @@ if [[ "$exit_code" -eq 124 ]]; then
         FP_PERSPECTIVE="$perspective" \
         FP_REVIEWER_NAME="$reviewer_name" \
         FP_DIFF_CONTENT="$diff_content" \
-        FP_OUTPUT="/tmp/${perspective}-fast-path-prompt.md" \
+        FP_OUTPUT="${CERBERUS_TMP}/${perspective}-fast-path-prompt.md" \
         python3 -c "
 import os; from pathlib import Path
 tpl = (Path(os.environ['CERBERUS_ROOT_PY']) / 'templates' / 'fast-path-prompt.md').read_text()
@@ -769,16 +783,16 @@ Path(os.environ['FP_OUTPUT']).write_text(tpl)
       timeout "${fast_path_budget}" opencode run \
         -m "${model}" \
         --agent "${perspective}" \
-        < "/tmp/${perspective}-fast-path-prompt.md" \
-        > "/tmp/${perspective}-fast-path-output.txt" 2> "/tmp/${perspective}-fast-path-stderr.log"
+        < "${CERBERUS_TMP}/${perspective}-fast-path-prompt.md" \
+        > "${CERBERUS_TMP}/${perspective}-fast-path-output.txt" 2> "${CERBERUS_TMP}/${perspective}-fast-path-stderr.log"
       fast_path_exit=$?
       set -e
 
-      fp_size=$(wc -c < "/tmp/${perspective}-fast-path-output.txt" 2>/dev/null || echo "0")
+      fp_size=$(wc -c < "${CERBERUS_TMP}/${perspective}-fast-path-output.txt" 2>/dev/null || echo "0")
       echo "fast-path exit=$fast_path_exit stdout=${fp_size} bytes"
 
-      if [[ "$fast_path_exit" -eq 0 ]] && grep -q '```json' "/tmp/${perspective}-fast-path-output.txt" 2>/dev/null; then
-        parse_input="/tmp/${perspective}-fast-path-output.txt"
+      if [[ "$fast_path_exit" -eq 0 ]] && grep -q '```json' "${CERBERUS_TMP}/${perspective}-fast-path-output.txt" 2>/dev/null; then
+        parse_input="${CERBERUS_TMP}/${perspective}-fast-path-output.txt"
         echo "parse-input: fast-path output (has JSON block)"
       fi
     fi
@@ -815,11 +829,11 @@ else
 fi
 
 # Write selected parse input path for downstream steps
-echo "$parse_input" > "/tmp/${perspective}-parse-input"
+echo "$parse_input" > "${CERBERUS_TMP}/${perspective}-parse-input"
 
 echo "--- output (last 40 lines) ---"
 tail -40 "$parse_input"
 echo "--- end output ---"
 
-echo "$exit_code" > "/tmp/${perspective}-exitcode"
+echo "$exit_code" > "${CERBERUS_TMP}/${perspective}-exitcode"
 exit "$exit_code"

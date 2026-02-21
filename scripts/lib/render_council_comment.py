@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 from lib.findings import format_reviewer_list, group_findings
@@ -37,6 +38,8 @@ VERDICT_ORDER = {
     "SKIP": 2,
     "PASS": 3,
 }
+
+CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 
 def fail(message: str, code: int = 2) -> int:
@@ -857,12 +860,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render Cerberus council comment markdown.")
     parser.add_argument(
         "--council-json",
-        default="/tmp/council-verdict.json",
+        default=str(CERBERUS_TMP / "council-verdict.json"),
         help="Path to council verdict JSON.",
     )
     parser.add_argument(
         "--output",
-        default="/tmp/council-comment.md",
+        default=str(CERBERUS_TMP / "council-comment.md"),
         help="Output markdown file path.",
     )
     parser.add_argument(

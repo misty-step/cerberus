@@ -27,7 +27,7 @@ def test_verdict_action_uses_shared_upsert() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
     assert "scripts/lib/github.py" in content
-    assert "--body-file /tmp/council-comment.md" in content
+    assert '--body-file "${CERBERUS_TMP}/council-comment.md"' in content
     assert "--marker" in content
 
 
@@ -35,8 +35,8 @@ def test_verdict_action_posts_inline_review_comments() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
     assert "scripts/post-council-review.py" in content
-    assert "--council-json /tmp/council-verdict.json" in content
-    assert "--body-file /tmp/council-comment.md" in content
+    assert '--council-json "${CERBERUS_TMP}/council-verdict.json"' in content
+    assert '--body-file "${CERBERUS_TMP}/council-comment.md"' in content
 
 
 def test_post_comment_uses_shared_upsert() -> None:
@@ -72,7 +72,7 @@ def test_action_pins_opencode_install_version() -> None:
 def test_action_reads_primary_model_file_when_present() -> None:
     content = ACTION_FILE.read_text()
 
-    # Model metadata should prefer /tmp/<perspective>-primary-model written by run-reviewer.sh
+    # Model metadata should prefer CERBERUS_TMP/<perspective>-primary-model written by run-reviewer.sh
     assert "PRIMARY_MODEL_FILE" in content
     assert "primary-model" in content
 
@@ -129,7 +129,7 @@ def test_verdict_action_uses_python_renderer_for_council_comment() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
     assert "scripts/render-council-comment.py" in content
-    assert "--output /tmp/council-comment.md" in content
+    assert '--output "${CERBERUS_TMP}/council-comment.md"' in content
 
 
 def test_verdict_action_does_not_use_sparse_checkout_dot() -> None:

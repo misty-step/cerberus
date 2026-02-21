@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import sys
+import tempfile
 from pathlib import Path
 from typing import NoReturn
 
@@ -17,6 +18,7 @@ WARN_SAME_CATEGORY_MINOR_THRESHOLD = 3
 
 EVIDENCE_MAX_CHARS = 2000
 EVIDENCE_WINDOW_RADIUS = 12
+CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 _CHANGED_FILES_CACHE: dict[str, set[str]] = {}
 _RESOLVED_PATH_CACHE: dict[tuple[str, str], Path | None] = {}
@@ -39,8 +41,8 @@ def get_parse_failure_metadata() -> dict[str, list[str] | int | None]:
     - retry_count: number of retry attempts made
     """
     perspective = os.environ.get("PERSPECTIVE", "unknown")
-    models_file = Path(f"/tmp/{perspective}-parse-failure-models.txt")
-    retries_file = Path(f"/tmp/{perspective}-parse-failure-retries.txt")
+    models_file = CERBERUS_TMP / f"{perspective}-parse-failure-models.txt"
+    retries_file = CERBERUS_TMP / f"{perspective}-parse-failure-retries.txt"
 
     result: dict[str, list[str] | int | None] = {"models": None, "retry_count": None}
 

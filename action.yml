@@ -61,6 +61,13 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Create isolated temp directory
+      shell: bash
+      run: |
+        cerberus_tmp="$(mktemp -d -t cerberus.XXXXXX)"
+        chmod 0700 "$cerberus_tmp"
+        echo "CERBERUS_TMP=${cerberus_tmp}" >> "$GITHUB_ENV"
+
     - name: Check fork safety
       shell: bash
       env:
@@ -158,7 +165,7 @@ runs:
           echo "pr-context-error-message=Missing pull request number for gh context fetch." >> "$GITHUB_OUTPUT"
           exit 1
         fi
-        if ! gh pr diff "$PR_NUMBER" > /tmp/pr.diff; then
+        if ! gh pr diff "$PR_NUMBER" > "$CERBERUS_TMP/pr.diff"; then
           echo "::error::Failed to fetch PR diff via gh pr diff."
           echo "pr-context-error-kind=other" >> "$GITHUB_OUTPUT"
           echo "pr-context-error-message=Unable to fetch PR diff via GitHub CLI (gh pr diff)." >> "$GITHUB_OUTPUT"
@@ -170,20 +177,20 @@ runs:
           echo "  pull-requests: read"
           exit 1
         fi
-        : > /tmp/pr-context.json
+        : > "$CERBERUS_TMP/pr-context.json"
         max_pr_view_retries=3
         pr_view_timeout_seconds=20
         pr_view_attempt=1
         pr_context_exit=1
         pr_view_error_text=""
         while [[ "$pr_view_attempt" -le "$max_pr_view_retries" ]]; do
-          pr_view_stdout="$(mktemp /tmp/cerberus-pr-view-stdout.XXXXXX)"
-          pr_view_stderr="$(mktemp /tmp/cerberus-pr-view-stderr.XXXXXX)"
+          pr_view_stdout="$(mktemp "${CERBERUS_TMP}/cerberus-pr-view-stdout.XXXXXX")"
+          pr_view_stderr="$(mktemp "${CERBERUS_TMP}/cerberus-pr-view-stderr.XXXXXX")"
           timeout "$pr_view_timeout_seconds" gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body \
             > "$pr_view_stdout" 2> "$pr_view_stderr"
           pr_view_rc=$?
           if [[ "$pr_view_rc" -eq 0 ]]; then
-            mv "$pr_view_stdout" /tmp/pr-context.json
+            mv "$pr_view_stdout" "$CERBERUS_TMP/pr-context.json"
             cleanup_pr_fetch_temp_files "$pr_view_stdout" "$pr_view_stderr"
             echo "pr-context-error-kind=" >> "$GITHUB_OUTPUT"
             echo "pr-context-error-message=" >> "$GITHUB_OUTPUT"
@@ -253,8 +260,8 @@ runs:
         CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}
-        GH_DIFF_FILE: /tmp/pr.diff
-        GH_PR_CONTEXT: /tmp/pr-context.json
+        GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
+        GH_PR_CONTEXT: ${{ env.CERBERUS_TMP }}/pr-context.json
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
         review_started_at=$(date +%s)
@@ -263,7 +270,7 @@ runs:
         review_exit=$?
         review_finished_at=$(date +%s)
         runtime_seconds=$((review_finished_at - review_started_at))
-        printf '%s\n' "$runtime_seconds" > "/tmp/${PERSPECTIVE}-runtime-seconds"
+        printf '%s\n' "$runtime_seconds" > "${CERBERUS_TMP}/${PERSPECTIVE}-runtime-seconds"
         exit "$review_exit"
 
     - name: Parse review output
@@ -274,11 +281,11 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
         PRIMARY_MODEL: ${{ inputs.model }}
-        GH_DIFF_FILE: /tmp/pr.diff
+        GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
       run: |
         # Resolve reviewer name written by run-reviewer.sh (e.g. APOLLO).
         # Falls back to uppercased perspective if the file is missing.
-        REVIEWER_NAME_FILE="/tmp/${PERSPECTIVE}-reviewer-name"
+        REVIEWER_NAME_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-reviewer-name"
         if [[ -s "$REVIEWER_NAME_FILE" ]]; then
           REVIEWER_NAME="$(cat "$REVIEWER_NAME_FILE")"
         else
@@ -287,7 +294,7 @@ runs:
         export REVIEWER_NAME
 
         # Use scratchpad if available, else stdout
-        PARSE_INPUT="/tmp/${PERSPECTIVE}-output.txt"
+        PARSE_INPUT="${CERBERUS_TMP}/${PERSPECTIVE}-output.txt"
         if [[ "${{ steps.pr.outcome }}" != "success" && -n "${{ steps.pr.outputs.pr-context-error-kind }}" ]]; then
           parse_error_kind="${{ steps.pr.outputs.pr-context-error-kind }}"
           parse_error_msg="${{ steps.pr.outputs.pr-context-error-message }}"
@@ -313,30 +320,30 @@ runs:
               "$parse_error_msg" > "$PARSE_INPUT"
           fi
         fi
-        if [[ -f "/tmp/${PERSPECTIVE}-parse-input" ]]; then
-          PARSE_INPUT="$(cat "/tmp/${PERSPECTIVE}-parse-input")"
+        if [[ -f "${CERBERUS_TMP}/${PERSPECTIVE}-parse-input" ]]; then
+          PARSE_INPUT="$(cat "${CERBERUS_TMP}/${PERSPECTIVE}-parse-input")"
         fi
-        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "/tmp/${PERSPECTIVE}-verdict.json"
-        RUNTIME_FILE="/tmp/${PERSPECTIVE}-runtime-seconds"
+        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
+        RUNTIME_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-runtime-seconds"
         if [[ -f "$RUNTIME_FILE" ]]; then
           runtime_seconds="$(cat "$RUNTIME_FILE")"
           if [[ "$runtime_seconds" =~ ^[0-9]+$ ]]; then
-            tmp_json="/tmp/${PERSPECTIVE}-verdict.runtime.json"
-            jq --argjson runtime_seconds "$runtime_seconds" '.runtime_seconds = $runtime_seconds' "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
-            mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
+            tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.runtime.json"
+            jq --argjson runtime_seconds "$runtime_seconds" '.runtime_seconds = $runtime_seconds' "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+            mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
           fi
         fi
         # Inject model metadata from run-reviewer.sh
-        MODEL_USED_FILE="/tmp/${PERSPECTIVE}-model-used"
+        MODEL_USED_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-model-used"
         if [[ -s "$MODEL_USED_FILE" ]]; then
           model_used="$(cat "$MODEL_USED_FILE")"
-          PRIMARY_MODEL_FILE="/tmp/${PERSPECTIVE}-primary-model"
+          PRIMARY_MODEL_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-primary-model"
           if [[ -s "$PRIMARY_MODEL_FILE" ]]; then
             primary_model="$(cat "$PRIMARY_MODEL_FILE")"
           else
             primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
           fi
-          CONFIGURED_MODEL_FILE="/tmp/${PERSPECTIVE}-configured-model"
+          CONFIGURED_MODEL_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-configured-model"
           configured_model=""
           if [[ -s "$CONFIGURED_MODEL_FILE" ]]; then
             configured_model="$(cat "$CONFIGURED_MODEL_FILE")"
@@ -345,28 +352,31 @@ runs:
           if [[ "$model_used" != "$primary_model" ]]; then
             fallback_used="true"
           fi
-          tmp_json="/tmp/${PERSPECTIVE}-verdict.model.json"
+          tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.model.json"
           jq --arg mu "$model_used" --arg pm "$primary_model" --arg cm "$configured_model" --argjson fb "$fallback_used" \
             '.model_used = $mu | .primary_model = $pm | .configured_model = $cm | .fallback_used = $fb' \
-            "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
-          mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
+            "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+          mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
         fi
 
         # Inject reviewer description (human-friendly label) from run-reviewer.sh.
-        REVIEWER_DESC_FILE="/tmp/${PERSPECTIVE}-reviewer-desc"
+        REVIEWER_DESC_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-reviewer-desc"
         if [[ -s "$REVIEWER_DESC_FILE" ]]; then
           reviewer_desc="$(cat "$REVIEWER_DESC_FILE")"
-          tmp_json="/tmp/${PERSPECTIVE}-verdict.desc.json"
-          jq --arg rd "$reviewer_desc" '.reviewer_description = $rd' "/tmp/${PERSPECTIVE}-verdict.json" > "$tmp_json"
-          mv "$tmp_json" "/tmp/${PERSPECTIVE}-verdict.json"
+          tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.desc.json"
+          jq --arg rd "$reviewer_desc" '.reviewer_description = $rd' "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
+          mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
         fi
-        VERDICT=$(jq -r .verdict "/tmp/${PERSPECTIVE}-verdict.json")
+        VERDICT=$(jq -r .verdict "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json")
         if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then
           echo "::error::Invalid verdict value from parser: $VERDICT"
           exit 1
         fi
+        # Copy verdict JSON to RUNNER_TEMP so the output path survives CERBERUS_TMP cleanup.
+        stable_json="${RUNNER_TEMP}/cerberus-${PERSPECTIVE}-verdict.json"
+        cp "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" "$stable_json"
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
-        echo "verdict-json=/tmp/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
+        echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
       if: steps.parse.outcome == 'success'
@@ -408,14 +418,14 @@ runs:
         fi
 
         chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
-        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "/tmp/${PERSPECTIVE}-verdict.json"
+        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
 
     - name: Upload verdict artifact
       if: steps.parse.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-verdict-${{ inputs.perspective }}
-        path: /tmp/${{ inputs.perspective }}-verdict.json
+        path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-verdict.json
         retention-days: 1
 
     - name: Upload review document
@@ -423,7 +433,7 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-review-${{ inputs.perspective }}
-        path: /tmp/${{ inputs.perspective }}-review.md
+        path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-review.md
         if-no-files-found: ignore
         retention-days: 3
 
@@ -451,4 +461,12 @@ runs:
             exit 1
           fi
           echo "::warning::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"
+        fi
+
+    - name: Clean up temp directory
+      if: always()
+      shell: bash
+      run: |
+        if [[ -n "${CERBERUS_TMP:-}" && -d "${CERBERUS_TMP}" ]]; then
+          rm -rf "${CERBERUS_TMP}"
         fi
