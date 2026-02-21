@@ -212,3 +212,334 @@ def test_workflows_have_skip_gate_job(path: Path):
     wf = _load_workflow(path)
     # TODO: tighten to preflight-only after minimal/triage templates are migrated (#208 follow-up)
     assert "draft-check" in wf["jobs"] or "preflight" in wf["jobs"]
+
+
+# ---------------------------------------------------------------------------
+# continue-on-error footgun (#219)
+# ---------------------------------------------------------------------------
+
+def _coe_warnings(findings):
+    """Filter findings to only continue-on-error warnings."""
+    return [f for f in findings if f.level == "warning" and "continue-on-error" in f.message]
+
+
+@pytest.mark.parametrize("uses", [
+    "misty-step/cerberus@v2",
+    "misty-step/cerberus/verdict@v2",
+    "misty-step/cerberus/triage@v2",
+])
+def test_continue_on_error_true_emits_warning(tmp_path: Path, uses: str):
+    """continue-on-error: true on a Cerberus step must surface a warning."""
+    # Determine minimum required with keys so no unrelated errors fire
+    with_block = "github-token: ${{ secrets.GITHUB_TOKEN }}"
+    if uses.startswith("misty-step/cerberus@"):
+        with_block += "\n          api-key: ${{ secrets.OPENROUTER_API_KEY }}"
+
+    perms = """
+    permissions:
+      contents: write
+      pull-requests: write"""
+
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+{perms}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {uses}
+        continue-on-error: true
+        with:
+          {with_block}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    coe = _coe_warnings(findings)
+    assert len(coe) == 1, f"Expected exactly 1 COE warning for {uses!r}, got: {coe}"
+    assert f"on `{uses}`" in coe[0].message, "Warning should reference the step's uses string"
+
+
+def test_continue_on_error_false_no_warning(tmp_path: Path):
+    """continue-on-error: false is safe and must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: false
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _coe_warnings(findings) == []
+
+
+def test_continue_on_error_absent_no_warning(tmp_path: Path):
+    """No continue-on-error key at all must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _coe_warnings(findings) == []
+
+
+def test_continue_on_error_warning_includes_remediation(tmp_path: Path):
+    """Warning message must include actionable remediation guidance."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    warning = next(f for f in findings if "continue-on-error" in f.message)
+    # Must mention a concrete alternative
+    assert any(kw in warning.message for kw in ("fail-on-skip", "triage", "fallback"))
+
+
+# ---------------------------------------------------------------------------
+# continue-on-error: expression-based (#219 gap 1)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("expression", [
+    "${{ inputs.allow_failure }}",
+    "${{ vars.CONTINUE_ON_ERROR }}",
+])
+def test_continue_on_error_expression_step_emits_warning(tmp_path: Path, expression: str):
+    """Expression-based continue-on-error on a step must warn (may resolve to true)."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: '{expression}'
+        with:
+          github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    coe = _coe_warnings(findings)
+    assert len(coe) == 1, f"Expected exactly 1 COE warning for {expression!r}, got: {coe}"
+    assert "expression" in coe[0].message.lower(), "Warning should mention 'expression'"
+
+
+# ---------------------------------------------------------------------------
+# Job-level continue-on-error (#219 gap 2)
+# ---------------------------------------------------------------------------
+
+def test_job_continue_on_error_true_emits_warning(tmp_path: Path):
+    """continue-on-error: true at the job level must surface a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: true
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    coe = _coe_warnings(findings)
+    assert len(coe) == 1, f"Expected exactly 1 job-level COE warning, got: {coe}"
+    assert "job level" in coe[0].message, "Warning should specify 'job level'"
+
+
+def test_job_continue_on_error_false_no_warning(tmp_path: Path):
+    """continue-on-error: false at the job level must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: false
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _coe_warnings(findings) == []
+
+
+def test_job_continue_on_error_expression_emits_warning(tmp_path: Path):
+    """Expression-based continue-on-error at the job level must warn."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: '${{ inputs.allow_failure }}'
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    coe = _coe_warnings(findings)
+    assert len(coe) == 1, f"Expected exactly 1 job-level expression COE warning, got: {coe}"
+    assert "job level" in coe[0].message
+    assert "expression" in coe[0].message.lower()
+
+
+# ---------------------------------------------------------------------------
+# Edge cases (#219 polish)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("value", ["yes", "1", "on"])
+def test_continue_on_error_string_truthy_emits_warning(tmp_path: Path, value: str):
+    """String truthy values like 'yes'/'1'/'on' must also trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: '{value}'
+        with:
+          github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    coe = _coe_warnings(findings)
+    assert len(coe) == 1, f"Expected warning for continue-on-error: '{value}', got: {coe}"
+
+
+def test_non_cerberus_step_continue_on_error_ignored(tmp_path: Path):
+    """continue-on-error on a non-Cerberus step must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        continue-on-error: true
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _coe_warnings(findings) == []
+
+
+def test_draft_check_continue_on_error_not_flagged(tmp_path: Path):
+    """draft-check is excluded from COE checks — it doesn't emit verdicts."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  gate:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _coe_warnings(findings) == []
+
+
+def test_step_and_job_continue_on_error_both_fire(tmp_path: Path):
+    """When both step and job have continue-on-error, both warnings fire."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: true
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    coe = _coe_warnings(findings)
+    assert len(coe) == 2, f"Expected 2 COE warnings (step + job), got: {coe}"
+    scopes = {("job level" in w.message) for w in coe}
+    assert scopes == {True, False}, "Should have one step-level and one job-level warning"

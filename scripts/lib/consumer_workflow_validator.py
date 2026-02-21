@@ -124,6 +124,38 @@ def _boolish(value: Any | None, *, default: bool) -> bool:
     return default
 
 
+def _is_gha_expression(value: Any) -> bool:
+    """Return True when value looks like a GitHub Actions expression (${{ … }})."""
+    return isinstance(value, str) and "${{" in value
+
+
+_COE_REMEDIATION = (
+    "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error."
+)
+
+
+def _coe_finding(source: str, job_name: str, *, scope: str, uses: str | None = None, coe_val: Any = None) -> Finding:
+    """Build a continue-on-error warning Finding.
+
+    scope: "step" (per-step) or "job" (job-level).
+    uses:  the `uses:` string (required for step scope).
+    coe_val: the raw expression value (set for expression-based warnings).
+    """
+    location = f"on `{uses}`" if scope == "step" else "at the job level"
+    if coe_val is not None:
+        detail = (
+            f"sets `continue-on-error: {coe_val!r}` {location}. "
+            "This expression may resolve to true at runtime, masking Cerberus failures and producing false-green checks."
+        )
+    else:
+        qualifier = "all " if scope == "job" else ""
+        detail = (
+            f"sets `continue-on-error: true` {location}. "
+            f"This masks {qualifier}Cerberus failures{'  in the job' if scope == 'job' else ''} and can produce false-green checks."
+        )
+    return Finding("warning", f"{source}: job `{job_name}` {detail} {_COE_REMEDIATION}")
+
+
 def _effective_permissions(workflow: dict[str, Any], job: dict[str, Any]) -> Any | None:
     # Job-level permissions override workflow-level permissions.
     if "permissions" in job:
@@ -187,6 +219,7 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
             continue
 
         perms = _effective_permissions(workflow, job)
+        job_has_cerberus_action = False
 
         for step in steps:
             if not isinstance(step, dict):
@@ -198,6 +231,17 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
             if kind is None:
                 continue
             uses_cerberus = True
+
+            # continue-on-error check: review/verdict/triage only.
+            # draft-check and matrix are excluded — they don't emit verdicts,
+            # so masking their exit code doesn't hide review results.
+            if kind in {"review", "verdict", "triage"}:
+                job_has_cerberus_action = True
+                coe_val = step.get("continue-on-error")
+                if _boolish(coe_val, default=False):
+                    findings.append(_coe_finding(source, job_name, scope="step", uses=uses))
+                elif _is_gha_expression(coe_val):
+                    findings.append(_coe_finding(source, job_name, scope="step", uses=uses, coe_val=coe_val))
 
             if kind in {"review", "draft-check", "verdict", "triage"}:
                 if not _with(step, "github-token"):
@@ -357,6 +401,13 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                             f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `contents` (set `contents: write`)",
                         )
                     )
+
+        if job_has_cerberus_action:
+            job_coe = job.get("continue-on-error")
+            if _boolish(job_coe, default=False):
+                findings.append(_coe_finding(source, job_name, scope="job"))
+            elif _is_gha_expression(job_coe):
+                findings.append(_coe_finding(source, job_name, scope="job", coe_val=job_coe))
 
     if uses_cerberus:
         if "pull_request_target" in events:
