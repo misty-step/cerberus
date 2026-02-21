@@ -15,25 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Check if PR is a draft - post comment if so, and signal downstream jobs to skip review
-  draft-check:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  preflight:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     outputs:
-      is_draft: ${{ steps.draft.outputs.is_draft }}
+      should_run: ${{ steps.preflight.outputs.should_run }}
+      skip_reason: ${{ steps.preflight.outputs.skip_reason }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./draft-check
-        id: draft
+      - uses: ./preflight
+        id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
 
   review:
-    needs: draft-check
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
+    needs: preflight
+    if: needs.preflight.outputs.should_run == 'true'
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
@@ -58,8 +58,8 @@ jobs:
 
   verdict:
     name: "Council Verdict"
-    needs: [review, draft-check]
-    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
+    needs: [review, preflight]
+    if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
