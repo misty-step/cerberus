@@ -1,6 +1,6 @@
-"""Tests for lib.findings — norm_key, best_text, format_reviewer_list."""
+"""Tests for lib.findings — norm_key, best_text, format_reviewer_list, group_findings."""
 
-from lib.findings import best_text, format_reviewer_list, norm_key
+from lib.findings import best_text, format_reviewer_list, group_findings, norm_key
 
 
 class TestNormKey:
@@ -73,3 +73,123 @@ class TestFormatReviewerList:
 
     def test_all_blank_returns_unknown(self):
         assert format_reviewer_list(["", "  ", ""]) == "unknown"
+
+
+class TestGroupFindings:
+    def _pairs(self, *reviewer_findings: tuple[str, list[dict]]):
+        return list(reviewer_findings)
+
+    def test_empty_input_returns_empty(self):
+        assert group_findings([]) == []
+
+    def test_single_finding_single_reviewer(self):
+        pairs = [("APOLLO", [{"severity": "major", "category": "bug", "file": "a.py", "line": 10, "title": "T"}])]
+        out = group_findings(pairs)
+        assert len(out) == 1
+        assert out[0]["file"] == "a.py"
+        assert out[0]["line"] == 10
+        assert out[0]["severity"] == "major"
+        assert out[0]["category"] == "bug"
+        assert out[0]["title"] == "T"
+        assert out[0]["reviewers"] == ["APOLLO"]
+        assert out[0]["suggestion"] == ""  # default text field
+
+    def test_deduplication_same_key_merges_reviewers(self):
+        pairs = [
+            ("APOLLO", [{"severity": "major", "category": "Bug", "file": "x.py", "line": 5, "title": "Same Issue"}]),
+            ("SENTINEL", [{"severity": "minor", "category": "bug", "file": "x.py", "line": 5, "title": "same issue"}]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 1
+        assert out[0]["reviewers"] == ["APOLLO", "SENTINEL"]
+
+    def test_worst_severity_wins(self):
+        pairs = [
+            ("A", [{"severity": "minor", "category": "c", "file": "f.py", "line": 1, "title": "t"}]),
+            ("B", [{"severity": "critical", "category": "c", "file": "f.py", "line": 1, "title": "t"}]),
+        ]
+        out = group_findings(pairs)
+        assert out[0]["severity"] == "critical"
+
+    def test_best_text_merges_suggestion(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t", "suggestion": "short"}]),
+            ("B", [{"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t", "suggestion": "much longer suggestion text"}]),
+        ]
+        out = group_findings(pairs)
+        assert out[0]["suggestion"] == "much longer suggestion text"
+
+    def test_multiple_text_fields(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t",
+                    "description": "short", "evidence": "", "suggestion": "s"}]),
+            ("B", [{"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t",
+                    "description": "longer description here", "evidence": "code snippet", "suggestion": "s"}]),
+        ]
+        out = group_findings(pairs, text_fields=("description", "suggestion", "evidence"))
+        assert out[0]["description"] == "longer description here"
+        assert out[0]["evidence"] == "code snippet"
+
+    def test_negative_line_normalized_to_zero(self):
+        pairs = [("A", [{"severity": "minor", "category": "c", "file": "f.py", "line": -3, "title": "t"}])]
+        out = group_findings(pairs)
+        assert out[0]["line"] == 0
+
+    def test_predicate_filters_findings(self):
+        pairs = [
+            ("A", [
+                {"severity": "critical", "category": "c", "file": "keep.py", "line": 1, "title": "t"},
+                {"severity": "minor", "category": "c", "file": "skip.py", "line": 1, "title": "t"},
+            ])
+        ]
+        out = group_findings(pairs, predicate=lambda f, _: f.get("file") != "skip.py")
+        assert len(out) == 1
+        assert out[0]["file"] == "keep.py"
+
+    def test_predicate_receives_reviewer_name(self):
+        seen_names: list[str] = []
+        def _pred(finding: dict, rname: str) -> bool:
+            seen_names.append(rname)
+            return True
+
+        pairs = [("Correctness & Logic", [{"severity": "minor", "category": "c", "file": "f.py", "line": 1, "title": "t"}])]
+        group_findings(pairs, predicate=_pred)
+        assert seen_names == ["Correctness & Logic"]
+
+    def test_reviewers_sorted_alphabetically(self):
+        pairs = [
+            ("Zebra", [{"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t"}]),
+            ("Alpha", [{"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t"}]),
+        ]
+        out = group_findings(pairs)
+        assert out[0]["reviewers"] == ["Alpha", "Zebra"]
+
+    def test_unknown_severity_defaults_to_info(self):
+        pairs = [("A", [{"severity": "bogus", "category": "c", "file": "f.py", "line": 1, "title": "t"}])]
+        out = group_findings(pairs)
+        assert out[0]["severity"] == "info"
+
+    def test_non_dict_findings_skipped(self):
+        pairs = [("A", [None, "bad", {"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t"}])]
+        out = group_findings(pairs)
+        assert len(out) == 1
+
+    def test_distinct_findings_not_merged(self):
+        pairs = [
+            ("A", [
+                {"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t1"},
+                {"severity": "major", "category": "c", "file": "f.py", "line": 2, "title": "t1"},
+            ])
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 2
+
+    def test_custom_severity_order(self):
+        # Only two severities in custom order; "major" not in it → treated as least severe
+        custom_order = {"critical": 0, "blocker": 1}
+        pairs = [
+            ("A", [{"severity": "blocker", "category": "c", "file": "f.py", "line": 1, "title": "t"}]),
+            ("B", [{"severity": "critical", "category": "c", "file": "f.py", "line": 1, "title": "t"}]),
+        ]
+        out = group_findings(pairs, severity_order=custom_order)
+        assert out[0]["severity"] == "critical"  # 0 beats 1
