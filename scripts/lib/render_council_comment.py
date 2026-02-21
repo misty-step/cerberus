@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from lib.findings import best_text, format_reviewer_list, norm_key
+from lib.findings import best_text, format_reviewer_list, group_findings, norm_key
 from lib.markdown import details_block, location_link, repo_context, severity_icon
 
 # GitHub PR comments are silently rejected above 65,536 bytes.
@@ -426,46 +426,16 @@ def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple
 
 def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
     """Aggregate duplicate findings across reviewers into 'issues' keyed by (file,line,category,title)."""
-    grouped: dict[tuple[str, int, str, str], dict] = {}
-    for reviewer in reviewers:
-        rname = reviewer_label(reviewer)
-        for finding in findings_for(reviewer):
-            file = str(finding.get("file") or "").strip()
-            if not file or file.upper() == "N/A":
-                continue
+    def _predicate(finding: dict, _rname: str) -> bool:
+        file = str(finding.get("file") or "").strip()
+        return bool(file) and file.upper() != "N/A"
 
-            line = as_int(finding.get("line")) or 0
-            if line < 0:
-                line = 0
-
-            severity = normalize_severity(finding.get("severity"))
-            category = str(finding.get("category") or "").strip() or "uncategorized"
-            title = str(finding.get("title") or "").strip() or "Untitled finding"
-
-            key = (file, line, norm_key(category), norm_key(title))
-            existing = grouped.get(key)
-            if existing is None:
-                grouped[key] = {
-                    "severity": severity,
-                    "category": category,
-                    "file": file,
-                    "line": line,
-                    "title": title,
-                    "suggestion": str(finding.get("suggestion") or "").strip(),
-                    "reviewers": {rname},
-                }
-                continue
-
-            existing["reviewers"].add(rname)
-            if SEVERITY_ORDER.get(severity, 99) < SEVERITY_ORDER.get(existing.get("severity"), 99):
-                existing["severity"] = severity
-            existing["suggestion"] = best_text(existing.get("suggestion"), finding.get("suggestion"))
-
-    out: list[dict] = []
-    for item in grouped.values():
-        reviewers = sorted(str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip())
-        item["reviewers"] = reviewers
-        out.append(item)
+    out = group_findings(
+        ((reviewer_label(rv), findings_for(rv)) for rv in reviewers),
+        text_fields=("suggestion",),
+        predicate=_predicate,
+        severity_order=SEVERITY_ORDER,
+    )
 
     def _sort_key(item: dict) -> tuple[int, int, str, int, str]:
         return (

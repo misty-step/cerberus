@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from lib.diff_positions import build_newline_to_position
-from lib.findings import best_text, format_reviewer_list, norm_key
+from lib.findings import best_text, format_reviewer_list, group_findings, norm_key
 from lib.github import (
     CommentPermissionError,
     TransientGitHubError,
@@ -121,56 +121,34 @@ def collect_inline_findings(council: dict) -> list[dict]:
     if not isinstance(reviewers, list):
         return []
 
-    grouped: dict[tuple[str, int, str, str], dict] = {}
-    for reviewer in reviewers:
-        if not isinstance(reviewer, dict):
-            continue
-        rname = reviewer_label(reviewer)
-        findings = reviewer.get("findings")
-        if not isinstance(findings, list):
-            continue
-        for finding in findings:
-            if not isinstance(finding, dict):
-                continue
-            file = normalize_path(finding.get("file"))
-            line = as_int(finding.get("line"))
-            if not file or line is None or line <= 0:
-                continue
-            severity = normalize_severity(finding.get("severity"))
-            if severity not in INLINE_SEVERITIES:
-                continue
-            category = str(finding.get("category") or "").strip() or "uncategorized"
-            title = str(finding.get("title") or "").strip() or "Untitled finding"
+    def _predicate(finding: dict, _rname: str) -> bool:
+        # finding.get("file") is already normalize_path'd by _normalize_file below
+        if not str(finding.get("file") or "").strip():
+            return False
+        line = as_int(finding.get("line"))
+        if line is None or line <= 0:
+            return False
+        return normalize_severity(finding.get("severity")) in INLINE_SEVERITIES
 
-            key = (file, line, norm_key(category), norm_key(title))
-            existing = grouped.get(key)
-            if existing is None:
-                grouped[key] = {
-                    "reviewers": {rname},
-                    "severity": severity,
-                    "category": category,
-                    "file": file,
-                    "line": line,
-                    "title": title,
-                    "description": str(finding.get("description") or "").strip(),
-                    "suggestion": str(finding.get("suggestion") or "").strip(),
-                    "evidence": str(finding.get("evidence") or "").strip(),
-                }
+    def _normalize_file(finding: dict) -> dict:
+        """Return finding with file path normalized so group_findings keys on the canonical path."""
+        return {**finding, "file": normalize_path(finding.get("file"))}
+
+    def _pairs():
+        for rv in reviewers:
+            if not isinstance(rv, dict):
                 continue
+            findings = rv.get("findings")
+            if not isinstance(findings, list):
+                continue
+            yield reviewer_label(rv), (_normalize_file(f) for f in findings if isinstance(f, dict))
 
-            existing["reviewers"].add(rname)
-            if _SEVERITY_ORDER[severity] < _SEVERITY_ORDER[existing.get("severity")]:
-                existing["severity"] = severity
-            existing["description"] = best_text(existing.get("description", ""), finding.get("description"))
-            existing["suggestion"] = best_text(existing.get("suggestion", ""), finding.get("suggestion"))
-            existing["evidence"] = best_text(existing.get("evidence", ""), finding.get("evidence"))
-
-    out: list[dict] = []
-    for item in grouped.values():
-        reviewers = sorted(str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip())
-        item["reviewers"] = reviewers
-        out.append(item)
-    return out
+    return group_findings(
+        _pairs(),
+        text_fields=("description", "suggestion", "evidence"),
+        predicate=_predicate,
+        severity_order=_SEVERITY_ORDER,
+    )
 
 
 def truncate(text: str, *, max_len: int) -> str:
