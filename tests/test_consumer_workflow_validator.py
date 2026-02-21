@@ -559,6 +559,7 @@ def _v1_warnings(findings):
     "misty-step/cerberus/triage@v1",
     "misty-step/cerberus/draft-check@v1",
     "misty-step/cerberus/validate@v1",
+    "misty-step/cerberus/preflight@v1",
     # semver-pinned v1 tags must also trigger the warning
     "misty-step/cerberus@v1.0.0",
     "misty-step/cerberus@v1.2.3",
@@ -644,6 +645,10 @@ jobs:
     "misty-step/cerberus@v2.0.0",
     "misty-step/cerberus@v10",
     "misty-step/cerberus@v10.0.0",
+    # SHA pin, branch refs, and near-miss must not false-positive
+    "misty-step/cerberus@abc123def456",
+    "misty-step/cerberus@main",
+    "misty-step/cerberus@v1beta",
 ])
 def test_non_v1_usage_no_v1_warning(tmp_path: Path, uses: str):
     """v2+/v10+ refs must not trigger the v1 upgrade warning."""
