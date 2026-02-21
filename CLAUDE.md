@@ -16,7 +16,14 @@ PR opened/synced
     ▼
 consumer workflow (.github/workflows/cerberus.yml)
     │
-    ├── matrix job × N reviewers (parallel, fail-fast: false)
+    ├── preflight job (always runs first)
+    │   └── uses: misty-step/cerberus/preflight@v2  (preflight/action.yml)
+    │       ├── check: fork PR? → skip (no secrets available)
+    │       ├── check: draft PR? → skip + optional PR comment
+    │       ├── check: missing API key? → skip + optional PR comment
+    │       └── outputs: should_run (bool), skip_reason (enum)
+    │
+    ├── matrix job × N reviewers (if: should_run, parallel, fail-fast: false)
     │   └── uses: misty-step/cerberus@v2  (action.yml)
     │       ├── fetch PR diff/context
     │       ├── run-reviewer.sh   (prompt + opencode invocation)
@@ -24,14 +31,14 @@ consumer workflow (.github/workflows/cerberus.yml)
     │       ├── post-comment.sh   (optional per-reviewer PR comment)
     │       └── upload verdict artifact
     │
-    └── verdict job (needs: review, if: always())
-        └── uses: misty-step/cerberus/verdict@v2  (verdict/action.yml)
-            ├── download verdict artifacts
-            ├── aggregate-verdict.py  (override handling + council decision)
-            ├── post council comment
-            ├── post PR review w/ inline comments
-            └── optional fail on FAIL
-
+    ├── verdict job (needs: review, if: always() && should_run)
+    │   └── uses: misty-step/cerberus/verdict@v2  (verdict/action.yml)
+    │       ├── download verdict artifacts
+    │       ├── aggregate-verdict.py  (override handling + council decision)
+    │       ├── post council comment
+    │       ├── post PR review w/ inline comments
+    │       └── optional fail on FAIL
+    │
     └── triage job (optional, separate workflow/job)
         └── uses: misty-step/cerberus/triage@v2  (triage/action.yml)
             ├── read council verdict/comment state
@@ -60,6 +67,7 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 ### Key Files
 
 - `action.yml` - review composite action entrypoint
+- `preflight/action.yml` - skip-condition gate (fork/draft/missing key) with PR comment support
 - `verdict/action.yml` - council verdict composite action entrypoint
 - `triage/action.yml` - triage composite action entrypoint
 - `validate/action.yml` - consumer workflow validator (misconfig guardrail)
