@@ -5,9 +5,11 @@ Intentionally tiny: normalization + merging + reviewer list formatting.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 
 _SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
+SEVERITY_ORDER = _SEVERITY_ORDER
 
 
 def norm_key(value: object) -> str:
@@ -53,9 +55,49 @@ def _as_int(value: object) -> int | None:
         return None
 
 
+as_int = _as_int
+
+
 def _normalize_sev(value: object, order: dict[str, int]) -> str:
     text = " ".join(str(value or "").strip().lower().split())
     return text if text in order else "info"
+
+
+def normalize_severity(value: object) -> str:
+    """Normalize severity string; unknown values collapse to 'info'."""
+    text = " ".join(str(value or "").strip().lower().split())
+    return text if text in SEVERITY_ORDER else "info"
+
+
+def split_reviewer_description(value: object) -> tuple[str, str]:
+    """Split 'Role — Tagline' or 'Role - Tagline' into (role, tagline)."""
+    text = str(value or "").strip()
+    if not text:
+        return ("", "")
+    if "—" in text:
+        left, right = text.split("—", 1)
+        return (left.strip(), right.strip())
+    if " - " in text:
+        left, right = text.split(" - ", 1)
+        return (left.strip(), right.strip())
+    return (text, "")
+
+
+_ALLCAPS_RE = re.compile(r"^[A-Z0-9_]+$")
+
+
+def reviewer_label(reviewer: dict) -> str:
+    """Return a human-readable label for a reviewer entry."""
+    role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
+    if role:
+        return role
+    perspective = str(reviewer.get("perspective") or "").strip()
+    if perspective and perspective.lower() != "unknown":
+        return perspective.replace("_", " ").title()
+    name = str(reviewer.get("reviewer") or "").strip()
+    if name and _ALLCAPS_RE.match(name):
+        return name.title()
+    return name or "unknown"
 
 
 def group_findings(
