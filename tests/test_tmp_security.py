@@ -164,3 +164,15 @@ class TestActionTempLifecycle:
 
     def test_verdict_action_has_temp_setup_and_always_cleanup(self) -> None:
         self._assert_temp_lifecycle(VERDICT_ACTION_FILE)
+
+    def test_verdict_json_output_uses_runner_temp_not_cerberus_tmp(self) -> None:
+        """verdict-json output must point to RUNNER_TEMP so it survives CERBERUS_TMP cleanup."""
+        content = ACTION_FILE.read_text()
+        # The output should copy to RUNNER_TEMP before emitting the path.
+        assert 'RUNNER_TEMP' in content
+        assert 'cerberus-${PERSPECTIVE}-verdict.json' in content
+        # The GITHUB_OUTPUT line must emit the stable RUNNER_TEMP path, not CERBERUS_TMP.
+        stable_output_line = 'echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"'
+        assert stable_output_line in content
+        cerberus_tmp_output_line = 'echo "verdict-json=${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"'
+        assert cerberus_tmp_output_line not in content

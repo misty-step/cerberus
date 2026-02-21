@@ -372,8 +372,11 @@ runs:
           echo "::error::Invalid verdict value from parser: $VERDICT"
           exit 1
         fi
+        # Copy verdict JSON to RUNNER_TEMP so the output path survives CERBERUS_TMP cleanup.
+        stable_json="${RUNNER_TEMP}/cerberus-${PERSPECTIVE}-verdict.json"
+        cp "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" "$stable_json"
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
-        echo "verdict-json=${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"
+        echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
       if: steps.parse.outcome == 'success'
