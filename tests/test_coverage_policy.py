@@ -55,6 +55,12 @@ def test_validate_policy_missing_ratchet_steps():
         validate_policy(data)
 
 
+@pytest.mark.parametrize("data", [None, [], "oops"])
+def test_validate_policy_requires_mapping(data):
+    with pytest.raises(ValueError, match="must contain a mapping"):
+        validate_policy(data)
+
+
 @pytest.mark.parametrize("floor", [-1, 101])
 def test_validate_policy_floor_out_of_range(floor):
     data = {"global_floor": floor, "patch_threshold": 90, "ratchet_steps": [floor]}

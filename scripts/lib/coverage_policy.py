@@ -24,6 +24,9 @@ class CoveragePolicy:
 
 def validate_policy(data: dict) -> None:
     """Validate a coverage policy dict. Raises ValueError with a descriptive message."""
+    if not isinstance(data, dict):
+        raise ValueError("coverage-policy.yml must contain a mapping of policy keys")
+
     for key in ("global_floor", "patch_threshold", "ratchet_steps"):
         if key not in data:
             raise ValueError(f"coverage-policy.yml missing required key: {key!r}")

@@ -30,7 +30,7 @@ No other CI files need to change.
 ## Enforcement
 
 - **Global floor**: CI reads `global_floor` from `coverage-policy.yml` and checks both branch and line coverage from `coverage.xml`. Fails the build if either metric is below the floor.
-- **Patch coverage**: On pull requests, `diff-cover` checks that new/changed lines are covered at `patch_threshold` (90%). Reports as a warning and posts details in the PR coverage comment.
+- **Patch coverage**: On pull requests, `diff-cover` checks that new/changed lines are covered at `patch_threshold` (90%) using `--fail-under`. CI fails the job if patch coverage is below threshold and posts details in the PR coverage comment.
 - **PR comment**: Every PR gets a coverage comment showing current metrics, ratchet progress, and patch coverage results.
 
 ## Adding a New Ratchet Step

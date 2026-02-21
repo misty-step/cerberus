@@ -68,10 +68,12 @@ jobs:
           python3 -m coverage xml
           python3 -m coverage html
           python3 -c "
-          import xml.etree.ElementTree as ET, sys, yaml
-          with open('coverage-policy.yml') as f:
-              policy = yaml.safe_load(f)
-          floor = int(policy['global_floor'])
+          import xml.etree.ElementTree as ET, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd() / 'scripts'))
+          from lib.coverage_policy import load_policy
+          policy = load_policy()
+          floor = int(policy.global_floor)
           root = ET.parse('coverage.xml').getroot()
           branch_rate = float(root.get('branch-rate', 0)) * 100
           line_rate = float(root.get('line-rate', 0)) * 100
@@ -95,7 +97,7 @@ jobs:
         run: |
           git fetch --no-tags --prune --depth=1 origin \
             "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-          FLOOR=$(python3 -c "import yaml; d=yaml.safe_load(open('coverage-policy.yml')); print(d['patch_threshold'])")
+          FLOOR=$(python3 -c "import sys; from pathlib import Path; sys.path.insert(0, str(Path.cwd() / 'scripts')); from lib.coverage_policy import load_policy; print(load_policy().patch_threshold)")
           pip install diff-cover --quiet
           diff-cover coverage.xml \
             --compare-branch=origin/${{ github.base_ref }} \
@@ -141,12 +143,16 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           BODY=$(python3 -c "
-          import xml.etree.ElementTree as ET, yaml, os
-          with open('coverage-policy.yml') as f:
-              policy = yaml.safe_load(f)
-          floor = int(policy['global_floor'])
-          patch_threshold = int(policy['patch_threshold'])
-          ratchet_steps = policy['ratchet_steps']
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd() / 'scripts'))
+          from lib.coverage_policy import load_policy
+          policy = load_policy()
+          floor = int(policy.global_floor)
+          patch_threshold = int(policy.patch_threshold)
+          ratchet_steps = policy.ratchet_steps
           try:
               idx = ratchet_steps.index(floor)
               next_target = ratchet_steps[idx + 1] if idx + 1 < len(ratchet_steps) else None
