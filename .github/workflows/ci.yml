@@ -28,7 +28,7 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'draft-check/action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml']:
+          for path in ['action.yml', 'draft-check/action.yml', 'preflight/action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml']:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')

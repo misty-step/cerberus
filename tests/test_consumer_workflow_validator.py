@@ -208,6 +208,7 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
         ROOT / "templates/triage-workflow.yml",
     ],
 )
-def test_workflows_have_draft_check_job(path: Path):
+def test_workflows_have_skip_gate_job(path: Path):
     wf = _load_workflow(path)
-    assert "draft-check" in wf["jobs"]
+    # TODO: tighten to preflight-only after minimal/triage templates are migrated (#208 follow-up)
+    assert "draft-check" in wf["jobs"] or "preflight" in wf["jobs"]
