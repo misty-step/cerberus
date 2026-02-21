@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from lib.findings import best_text, format_reviewer_list, group_findings, norm_key
+from lib.findings import format_reviewer_list, group_findings
 from lib.markdown import details_block, location_link, repo_context, severity_icon
 
 # GitHub PR comments are silently rejected above 65,536 bytes.

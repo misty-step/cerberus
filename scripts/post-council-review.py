@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from lib.diff_positions import build_newline_to_position
-from lib.findings import best_text, format_reviewer_list, group_findings, norm_key
+from lib.findings import format_reviewer_list, group_findings
 from lib.github import (
     CommentPermissionError,
     TransientGitHubError,
