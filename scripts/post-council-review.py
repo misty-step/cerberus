@@ -17,7 +17,15 @@ import tempfile
 from pathlib import Path
 
 from lib.diff_positions import build_newline_to_position
-from lib.findings import format_reviewer_list, group_findings
+from lib.findings import (
+    SEVERITY_ORDER,
+    as_int,
+    format_reviewer_list,
+    group_findings,
+    normalize_severity,
+    reviewer_label,
+    split_reviewer_description,
+)
 from lib.github import (
     CommentPermissionError,
     TransientGitHubError,
@@ -32,31 +40,7 @@ MAX_INLINE_PER_FILE = 3
 
 INLINE_SEVERITIES = {"critical", "major"}
 
-_SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
 CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
-
-
-def split_reviewer_description(value: object) -> tuple[str, str]:
-    """Split reviewer description."""
-    text = str(value or "").strip()
-    if not text:
-        return ("", "")
-    if "—" in text:
-        left, right = text.split("—", 1)
-        return (left.strip(), right.strip())
-    if " - " in text:
-        left, right = text.split(" - ", 1)
-        return (left.strip(), right.strip())
-    return (text, "")
-
-
-def reviewer_label(reviewer: dict) -> str:
-    """Reviewer label."""
-    role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
-    if role:
-        return role
-    perspective = str(reviewer.get("perspective") or "").strip()
-    return perspective.replace("_", " ").title() if perspective else "unknown"
 
 
 def fail(message: str, code: int = 2) -> None:
@@ -73,21 +57,6 @@ def warn(message: str) -> None:
 def notice(message: str) -> None:
     """Notice."""
     print(f"::notice::{message}", file=sys.stderr)
-
-
-def as_int(value: object) -> int | None:
-    """As int."""
-    try:
-        i = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    return i
-
-
-def normalize_severity(value: object) -> str:
-    """Normalize severity."""
-    text = str(value or "").strip().lower()
-    return text if text in _SEVERITY_ORDER else "info"
 
 
 def normalize_path(path: object) -> str:
@@ -149,7 +118,7 @@ def collect_inline_findings(council: dict) -> list[dict]:
         _pairs(),
         text_fields=("description", "suggestion", "evidence"),
         predicate=_predicate,
-        severity_order=_SEVERITY_ORDER,
+        severity_order=SEVERITY_ORDER,
     )
 
 
@@ -271,7 +240,7 @@ def main() -> None:
                 body=render_inline_comment(finding),
             )
             sort_key = (
-                _SEVERITY_ORDER[normalize_severity(finding.get("severity"))],
+                SEVERITY_ORDER[normalize_severity(finding.get("severity"))],
                 canonical_path,
                 line,
                 str(finding.get("title") or ""),

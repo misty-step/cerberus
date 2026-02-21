@@ -1,6 +1,16 @@
-"""Tests for lib.findings — norm_key, best_text, format_reviewer_list, group_findings."""
+"""Tests for lib.findings public API."""
 
-from lib.findings import best_text, format_reviewer_list, group_findings, norm_key
+from lib.findings import (
+    SEVERITY_ORDER,
+    as_int,
+    best_text,
+    format_reviewer_list,
+    group_findings,
+    norm_key,
+    normalize_severity,
+    reviewer_label,
+    split_reviewer_description,
+)
 
 
 class TestNormKey:
@@ -222,3 +232,101 @@ class TestGroupFindings:
         pairs = [("A", [{"severity": "minor", "category": "c", "line": 1, "title": "t"}])]
         out = group_findings(pairs)
         assert out[0]["file"] == ""
+
+
+class TestAsInt:
+    def test_none(self):
+        assert as_int(None) is None
+
+    def test_valid_int(self):
+        assert as_int(42) == 42
+
+    def test_string_int(self):
+        assert as_int("7") == 7
+
+    def test_invalid(self):
+        assert as_int("abc") is None
+
+    def test_float(self):
+        assert as_int(3.7) == 3
+
+    def test_boolean_coerces_to_int(self):
+        assert as_int(True) == 1
+        assert as_int(False) == 0
+
+
+class TestNormalizeSeverity:
+    def test_known(self):
+        assert normalize_severity("critical") == "critical"
+        assert normalize_severity("MAJOR") == "major"
+
+    def test_unknown_defaults_info(self):
+        assert normalize_severity("bad") == "info"
+        assert normalize_severity(None) == "info"
+
+    def test_whitespace_collapsed(self):
+        assert normalize_severity("  critical  ") == "critical"
+
+    def test_numeric_input_defaults_info(self):
+        assert normalize_severity(0) == "info"
+        assert normalize_severity(42) == "info"
+
+    def test_custom_order(self):
+        custom = {"blocker": 0, "trivial": 1}
+        assert normalize_severity("blocker", custom) == "blocker"
+        assert normalize_severity("critical", custom) == "info"
+
+
+class TestSeverityOrder:
+    def test_public_severity_order_exists(self):
+        assert SEVERITY_ORDER == {"critical": 0, "major": 1, "minor": 2, "info": 3}
+
+
+class TestSplitReviewerDescription:
+    def test_em_dash(self):
+        assert split_reviewer_description("Role — Tagline") == ("Role", "Tagline")
+
+    def test_hyphen(self):
+        assert split_reviewer_description("Role - Tagline") == ("Role", "Tagline")
+
+    def test_no_separator(self):
+        assert split_reviewer_description("JustRole") == ("JustRole", "")
+
+    def test_empty(self):
+        assert split_reviewer_description("") == ("", "")
+        assert split_reviewer_description(None) == ("", "")
+
+    def test_multiple_em_dashes_splits_on_first(self):
+        assert split_reviewer_description("A — B — C") == ("A", "B — C")
+
+    def test_multiple_hyphens_splits_on_first(self):
+        assert split_reviewer_description("A - B - C") == ("A", "B - C")
+
+
+class TestReviewerLabel:
+    def test_uses_role_from_description(self):
+        r = {"reviewer_description": "Security — Think like attacker", "perspective": "security", "reviewer": "SENTINEL"}
+        assert reviewer_label(r) == "Security"
+
+    def test_falls_back_to_perspective(self):
+        r = {"perspective": "security", "reviewer": "SENTINEL"}
+        assert reviewer_label(r) == "Security"
+
+    def test_falls_back_to_codename(self):
+        r = {"reviewer": "SENTINEL"}
+        assert reviewer_label(r) == "Sentinel"
+
+    def test_unknown_perspective_skipped(self):
+        r = {"perspective": "unknown", "reviewer": "SENTINEL"}
+        assert reviewer_label(r) == "Sentinel"
+
+    def test_empty_returns_unknown(self):
+        assert reviewer_label({}) == "unknown"
+
+    def test_mixed_case_name_returned_as_is(self):
+        r = {"reviewer": "CustomBot"}
+        assert reviewer_label(r) == "CustomBot"
+
+    def test_underscore_perspective_title_cased(self):
+        r = {"perspective": "code_quality", "reviewer": "ARTEMIS"}
+        assert reviewer_label(r) == "Code Quality"

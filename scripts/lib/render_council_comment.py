@@ -11,7 +11,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-from lib.findings import format_reviewer_list, group_findings
+from lib.findings import (
+    SEVERITY_ORDER,
+    as_int,
+    format_reviewer_list,
+    group_findings,
+    normalize_severity,
+    reviewer_label,
+    split_reviewer_description,
+)
 from lib.markdown import details_block, location_link, repo_context, severity_icon
 
 # GitHub PR comments are silently rejected above 65,536 bytes.
@@ -23,13 +31,6 @@ VERDICT_ICON = {
     "WARN": "⚠️",
     "FAIL": "❌",
     "SKIP": "⏭️",
-}
-
-SEVERITY_ORDER = {
-    "critical": 0,
-    "major": 1,
-    "minor": 2,
-    "info": 3,
 }
 
 VERDICT_ORDER = {
@@ -61,30 +62,12 @@ def read_json(path: Path) -> dict:
     return data
 
 
-def as_int(value: object) -> int | None:
-    """As int."""
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def normalize_verdict(value: object) -> str:
     """Normalize verdict."""
     text = str(value or "").upper().strip()
     if text in VERDICT_ICON:
         return text
     return "WARN"
-
-
-def normalize_severity(value: object) -> str:
-    """Normalize severity."""
-    text = str(value or "").strip().lower()
-    if text in SEVERITY_ORDER:
-        return text
-    return "info"
 
 
 def reviewer_name(reviewer: dict) -> str:
@@ -109,31 +92,6 @@ def friendly_codename(value: object) -> str:
     if raw.isupper() and _CODENAME_RE.match(raw):
         return raw.title()
     return raw
-
-
-def split_reviewer_description(value: object) -> tuple[str, str]:
-    """Split 'Role — Tagline' into (role, tagline)."""
-    text = str(value or "").strip()
-    if not text:
-        return ("", "")
-    if "—" in text:
-        left, right = text.split("—", 1)
-        return (left.strip(), right.strip())
-    if " - " in text:
-        left, right = text.split(" - ", 1)
-        return (left.strip(), right.strip())
-    return (text, "")
-
-
-def reviewer_label(reviewer: dict) -> str:
-    """Reviewer label."""
-    role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
-    if role:
-        return role
-    perspective = perspective_name(reviewer)
-    if perspective and perspective != "unknown":
-        return perspective.replace("_", " ").title()
-    return friendly_codename(reviewer_name(reviewer))
 
 
 def reviewer_overview_title(reviewer: dict) -> str:

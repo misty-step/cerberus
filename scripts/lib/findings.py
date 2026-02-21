@@ -5,9 +5,10 @@ Intentionally tiny: normalization + merging + reviewer list formatting.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 
-_SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
+SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
 
 
 def norm_key(value: object) -> str:
@@ -46,16 +47,48 @@ def format_reviewer_list(value: object) -> str:
     return f"{names[0]}, {names[1]}, +{len(names) - 2}"
 
 
-def _as_int(value: object) -> int | None:
+def as_int(value: object) -> int | None:
     try:
         return int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
 
 
-def _normalize_sev(value: object, order: dict[str, int]) -> str:
-    text = " ".join(str(value or "").strip().lower().split())
-    return text if text in order else "info"
+def normalize_severity(value: object, order: dict[str, int] | None = None) -> str:
+    """Normalize severity string; unknown values collapse to 'info'."""
+    text = str(value or "").strip().lower()
+    return text if text in (order if order is not None else SEVERITY_ORDER) else "info"
+
+
+def split_reviewer_description(value: object) -> tuple[str, str]:
+    """Split 'Role — Tagline' or 'Role - Tagline' into (role, tagline)."""
+    text = str(value or "").strip()
+    if not text:
+        return ("", "")
+    if "—" in text:
+        left, right = text.split("—", 1)
+        return (left.strip(), right.strip())
+    if " - " in text:
+        left, right = text.split(" - ", 1)
+        return (left.strip(), right.strip())
+    return (text, "")
+
+
+_ALLCAPS_RE = re.compile(r"^[A-Z0-9_]+$")
+
+
+def reviewer_label(reviewer: dict) -> str:
+    """Return a human-readable label for a reviewer entry."""
+    role, _ = split_reviewer_description(reviewer.get("reviewer_description"))
+    if role:
+        return role
+    perspective = str(reviewer.get("perspective") or "").strip()
+    if perspective and perspective.lower() != "unknown":
+        return perspective.replace("_", " ").title()
+    name = str(reviewer.get("reviewer") or "").strip()
+    if name and _ALLCAPS_RE.match(name):
+        return name.title()
+    return name or "unknown"
 
 
 def group_findings(
@@ -79,7 +112,7 @@ def group_findings(
         severity_order: Severity ranking dict (lower int = more severe).
                         Defaults to the standard critical/major/minor/info order.
     """
-    order = severity_order if severity_order is not None else _SEVERITY_ORDER
+    order = severity_order if severity_order is not None else SEVERITY_ORDER
     grouped: dict[tuple[str, int, str, str], dict] = {}
 
     for rname, findings in findings_by_reviewer:
@@ -90,11 +123,11 @@ def group_findings(
                 continue
 
             file = str(finding.get("file") or "").strip()
-            line = _as_int(finding.get("line")) or 0
+            line = as_int(finding.get("line")) or 0
             if line < 0:
                 line = 0
 
-            severity = _normalize_sev(finding.get("severity"), order)
+            severity = normalize_severity(finding.get("severity"), order)
             category = str(finding.get("category") or "").strip() or "uncategorized"
             title = str(finding.get("title") or "").strip() or "Untitled finding"
 
