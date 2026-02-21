@@ -1,5 +1,9 @@
 import importlib.util
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "scripts" / "post-council-review.py"
@@ -107,3 +111,407 @@ def test_render_inline_comment_includes_collapsed_evidence() -> None:
     assert "<summary>Evidence</summary>" in body
     assert "```text" in body
     assert "if sig == expected: ok()" in body
+
+
+def _argv(*extra: str) -> list[str]:
+    return ["post-council-review.py", "--repo", "owner/repo", "--pr", "7", *extra]
+
+
+def test_split_reviewer_description_hyphen_and_fallback() -> None:
+    assert post_council_review.split_reviewer_description("") == ("", "")
+    assert post_council_review.split_reviewer_description("Security - Threat Model") == (
+        "Security",
+        "Threat Model",
+    )
+    assert post_council_review.split_reviewer_description("Security") == ("Security", "")
+
+
+def test_reviewer_label_falls_back_to_perspective_or_unknown() -> None:
+    assert (
+        post_council_review.reviewer_label(
+            {"reviewer_description": "", "perspective": "threat_model"}
+        )
+        == "Threat Model"
+    )
+    assert post_council_review.reviewer_label({}) == "unknown"
+
+
+def test_fail_exits_with_code_and_message(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        post_council_review.fail("boom", code=9)
+    assert exc.value.code == 9
+    assert "post-council-review: boom" in capsys.readouterr().err
+
+
+def test_warn_emits_github_warning(capsys) -> None:
+    post_council_review.warn("warn-msg")
+    assert "::warning::warn-msg" in capsys.readouterr().err
+
+
+def test_notice_emits_github_notice(capsys) -> None:
+    post_council_review.notice("notice-msg")
+    assert "::notice::notice-msg" in capsys.readouterr().err
+
+
+def test_as_int_returns_none_for_non_numeric() -> None:
+    assert post_council_review.as_int(None) is None
+    assert post_council_review.as_int("x") is None
+
+
+def test_normalize_path_strips_diff_prefixes() -> None:
+    assert post_council_review.normalize_path("a/src/app.py") == "src/app.py"
+    assert post_council_review.normalize_path("b/src/app.py") == "src/app.py"
+    assert post_council_review.normalize_path("./src/app.py") == "src/app.py"
+
+
+def test_review_marker_uses_short_sha_or_placeholder() -> None:
+    assert post_council_review.review_marker("") == "<!-- cerberus:council-review sha=<head-sha> -->"
+    assert "sha=abcdef123456" in post_council_review.review_marker("abcdef1234567890deadbeef")
+
+
+def test_truncate_appends_ellipsis_when_over_limit() -> None:
+    assert post_council_review.truncate("abc", max_len=5) == "abc"
+    out = post_council_review.truncate("abcdef", max_len=5)
+    assert out.endswith("…")
+    assert len(out) == 5
+
+
+def test_read_json_missing_or_invalid_exits(tmp_path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        post_council_review.read_json(tmp_path / "missing.json")
+    assert exc.value.code == 2
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("{bad json}", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        post_council_review.read_json(bad)
+    assert exc.value.code == 2
+
+
+def test_read_json_returns_empty_dict_for_non_dict_json(tmp_path) -> None:
+    """Valid JSON that isn't an object (e.g. a list) should return {}."""
+    list_json = tmp_path / "list.json"
+    list_json.write_text("[1, 2, 3]", encoding="utf-8")
+    assert post_council_review.read_json(list_json) == {}
+
+
+def test_collect_inline_findings_handles_invalid_shapes_and_line_zero() -> None:
+    assert post_council_review.collect_inline_findings({}) == []
+    assert post_council_review.collect_inline_findings({"reviewers": "bad"}) == []
+
+    council = {
+        "reviewers": [
+            "not-a-dict",
+            {"reviewer_description": "Role — Desc", "findings": "not-a-list"},
+            {
+                "reviewer_description": "Role — Desc",
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "bug",
+                        "file": "x.py",
+                        "line": 0,
+                        "title": "ignored",
+                    }
+                ],
+            },
+        ]
+    }
+    assert post_council_review.collect_inline_findings(council) == []
+
+
+def test_render_inline_comment_omits_empty_sections() -> None:
+    body = post_council_review.render_inline_comment(
+        {
+            "severity": "major",
+            "category": "bug",
+            "title": "Minimal finding",
+            "reviewers": ["APOLLO"],
+            "description": "",
+            "suggestion": "",
+            "evidence": "",
+        }
+    )
+    assert "Minimal finding" in body
+    assert "Suggestion:" not in body
+    assert "<details>" not in body
+
+
+def test_build_patch_index_maps_current_and_previous_filenames() -> None:
+    files = [
+        {
+            "filename": "src/new.py",
+            "previous_filename": "src/old.py",
+            "patch": "@@ -1,0 +1,2 @@\n+first\n+second",
+        },
+        {"filename": "", "patch": "@@ -1 +1 @@\n-a\n+b"},
+        {"filename": "docs/readme.md", "patch": None},
+    ]
+    with patch.object(post_council_review, "list_pr_files", return_value=files):
+        index = post_council_review.build_patch_index("owner/repo", 7)
+
+    assert "src/new.py" in index
+    assert "src/old.py" in index
+    canonical, mapping = index["src/new.py"]
+    assert canonical == "src/new.py"
+    assert mapping.get(1) == 2
+    assert index["src/old.py"][0] == "src/new.py"
+
+
+def test_main_missing_head_sha_calls_fail() -> None:
+    with (
+        patch.object(post_council_review.sys, "argv", _argv()),
+        patch.dict(post_council_review.os.environ, {}, clear=True),
+        patch.object(post_council_review, "fail", side_effect=SystemExit(2)) as fail_mock,
+    ):
+        with pytest.raises(SystemExit) as exc:
+            post_council_review.main()
+    assert exc.value.code == 2
+    fail_mock.assert_called_once()
+    assert "missing head sha" in fail_mock.call_args.args[0]
+
+
+def test_main_returns_early_when_review_already_posted() -> None:
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "1234567890abcdef")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[{"id": 1}]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=123),
+        patch.object(post_council_review, "read_json") as read_json_mock,
+        patch.object(post_council_review, "notice") as notice_mock,
+    ):
+        post_council_review.main()
+    read_json_mock.assert_not_called()
+    assert "already posted" in notice_mock.call_args.args[0]
+
+
+def test_main_returns_early_when_no_eligible_findings() -> None:
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "PASS"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[]),
+        patch.object(post_council_review, "build_patch_index") as build_patch_index_mock,
+        patch.object(post_council_review, "notice") as notice_mock,
+    ):
+        post_council_review.main()
+    build_patch_index_mock.assert_not_called()
+    assert "No critical/major findings eligible" in notice_mock.call_args.args[0]
+
+
+def test_main_returns_early_when_no_inline_comments_can_anchor() -> None:
+    finding = {
+        "severity": "major",
+        "category": "bug",
+        "file": "src/app.py",
+        "line": 12,
+        "title": "Anchor me",
+    }
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(post_council_review, "build_patch_index", return_value={}),
+        patch.object(post_council_review, "notice") as notice_mock,
+    ):
+        post_council_review.main()
+    msg = notice_mock.call_args.args[0]
+    assert "No inline comments could be anchored" in msg
+    assert "unanchored" in msg
+
+
+def test_main_posts_review_with_inline_comments() -> None:
+    sha = "abcdef1234567890"
+    finding = {
+        "severity": "critical",
+        "category": "security",
+        "file": "src/app.py",
+        "line": 12,
+        "title": "Critical issue",
+        "description": "desc",
+        "suggestion": "",
+        "evidence": "",
+        "reviewers": ["SENTINEL"],
+    }
+    council = {"verdict": "FAIL", "summary": "must fix"}
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", sha)),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value=council),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_council_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {12: 7})},
+        ),
+        patch.object(
+            post_council_review,
+            "fetch_comments",
+            return_value=[{"body": "<!-- cerberus:council -->"}],
+        ),
+        patch.object(
+            post_council_review,
+            "find_comment_url_by_marker",
+            return_value="https://example.com/council",
+        ),
+        patch.object(post_council_review, "create_pr_review") as create_mock,
+        patch.object(post_council_review, "notice") as notice_mock,
+    ):
+        post_council_review.main()
+
+    kwargs = create_mock.call_args.kwargs
+    assert kwargs["repo"] == "owner/repo"
+    assert kwargs["pr_number"] == 7
+    assert kwargs["commit_id"] == sha
+    assert len(kwargs["comments"]) == 1
+    assert kwargs["comments"][0].path == "src/app.py"
+    assert kwargs["comments"][0].position == 7
+    assert "<!-- cerberus:council-review sha=abcdef123456 -->" in kwargs["body"]
+    assert "Council verdict: `FAIL` (must fix)" in kwargs["body"]
+    assert "Posted council PR review" in notice_mock.call_args.args[0]
+
+
+def test_main_respects_per_file_cap_and_notes_omitted() -> None:
+    findings = [
+        {"severity": "major", "category": "bug", "file": "src/app.py", "line": i, "title": f"t{i}"}
+        for i in range(1, 5)
+    ]
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=findings),
+        patch.object(
+            post_council_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {1: 11, 2: 12, 3: 13, 4: 14})},
+        ),
+        patch.object(post_council_review, "fetch_comments", return_value=[]),
+        patch.object(post_council_review, "find_comment_url_by_marker", return_value=""),
+        patch.object(post_council_review, "create_pr_review") as create_mock,
+    ):
+        post_council_review.main()
+
+    kwargs = create_mock.call_args.kwargs
+    assert len(kwargs["comments"]) == 3
+    assert "top 3/4 anchored" in kwargs["body"]
+    assert "council report (timeline)" in kwargs["body"]
+
+
+def test_main_skips_findings_outside_diff_hunk() -> None:
+    """Findings whose line is in the file but not in the diff hunk are silently skipped."""
+    finding = {
+        "severity": "major",
+        "category": "bug",
+        "file": "src/app.py",
+        "line": 99,
+        "title": "Out of hunk",
+    }
+    # Patch index knows the file but line 99 has no diff position
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_council_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {10: 2, 20: 5})},
+        ),
+        patch.object(post_council_review, "notice") as notice_mock,
+    ):
+        post_council_review.main()
+    msg = notice_mock.call_args.args[0]
+    assert "No inline comments could be anchored" in msg
+
+
+def test_main_warns_on_comment_lookup_failure_but_still_posts() -> None:
+    finding = {"severity": "major", "category": "bug", "file": "src/app.py", "line": 10, "title": "t"}
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_council_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {10: 2})},
+        ),
+        patch.object(
+            post_council_review,
+            "fetch_comments",
+            side_effect=post_council_review.TransientGitHubError("temporary"),
+        ),
+        patch.object(post_council_review, "create_pr_review") as create_mock,
+        patch.object(post_council_review, "warn") as warn_mock,
+    ):
+        post_council_review.main()
+    create_mock.assert_called_once()
+    assert "Unable to fetch council comment URL" in warn_mock.call_args.args[0]
+
+
+def test_main_handles_comment_permission_error() -> None:
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(
+            post_council_review,
+            "list_pr_reviews",
+            side_effect=post_council_review.CommentPermissionError("no permission"),
+        ),
+        patch.object(post_council_review, "warn") as warn_mock,
+    ):
+        post_council_review.main()
+    warn_mock.assert_called_once_with("no permission")
+
+
+def test_main_handles_transient_github_error() -> None:
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(
+            post_council_review,
+            "list_pr_reviews",
+            side_effect=post_council_review.TransientGitHubError("503"),
+        ),
+        patch.object(post_council_review, "warn") as warn_mock,
+    ):
+        post_council_review.main()
+    warn_mock.assert_called_once_with("503")
+
+
+def test_main_warns_when_create_pr_review_raises_calledprocesserror() -> None:
+    finding = {"severity": "major", "category": "bug", "file": "src/app.py", "line": 9, "title": "t"}
+    error = subprocess.CalledProcessError(1, ["gh", "api"], stderr="boom")
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_council_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {9: 2})},
+        ),
+        patch.object(post_council_review, "fetch_comments", return_value=[]),
+        patch.object(post_council_review, "find_comment_url_by_marker", return_value=""),
+        patch.object(post_council_review, "create_pr_review", side_effect=error),
+        patch.object(post_council_review, "warn") as warn_mock,
+    ):
+        post_council_review.main()
+    assert "Review with inline comments failed; skipping PR review." in warn_mock.call_args.args[0]
+
+
+def test_main_warns_on_unexpected_exception() -> None:
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", side_effect=RuntimeError("boom")),
+        patch.object(post_council_review, "warn") as warn_mock,
+    ):
+        post_council_review.main()
+    assert "Unable to post council PR review: boom" in warn_mock.call_args.args[0]
