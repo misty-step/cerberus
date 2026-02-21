@@ -188,6 +188,13 @@ def test_read_json_missing_or_invalid_exits(tmp_path) -> None:
     assert exc.value.code == 2
 
 
+def test_read_json_returns_empty_dict_for_non_dict_json(tmp_path) -> None:
+    """Valid JSON that isn't an object (e.g. a list) should return {}."""
+    list_json = tmp_path / "list.json"
+    list_json.write_text("[1, 2, 3]", encoding="utf-8")
+    assert post_council_review.read_json(list_json) == {}
+
+
 def test_collect_inline_findings_handles_invalid_shapes_and_line_zero() -> None:
     assert post_council_review.collect_inline_findings({}) == []
     assert post_council_review.collect_inline_findings({"reviewers": "bad"}) == []
@@ -393,6 +400,34 @@ def test_main_respects_per_file_cap_and_notes_omitted() -> None:
     assert len(kwargs["comments"]) == 3
     assert "top 3/4 anchored" in kwargs["body"]
     assert "council report (timeline)" in kwargs["body"]
+
+
+def test_main_skips_findings_outside_diff_hunk() -> None:
+    """Findings whose line is in the file but not in the diff hunk are silently skipped."""
+    finding = {
+        "severity": "major",
+        "category": "bug",
+        "file": "src/app.py",
+        "line": 99,
+        "title": "Out of hunk",
+    }
+    # Patch index knows the file but line 99 has no diff position
+    with (
+        patch.object(post_council_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_council_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_council_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_council_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_council_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_council_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {10: 2, 20: 5})},
+        ),
+        patch.object(post_council_review, "notice") as notice_mock,
+    ):
+        post_council_review.main()
+    msg = notice_mock.call_args.args[0]
+    assert "No inline comments could be anchored" in msg
 
 
 def test_main_warns_on_comment_lookup_failure_but_still_posts() -> None:

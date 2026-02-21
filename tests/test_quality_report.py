@@ -467,6 +467,18 @@ class TestMain:
         assert "Warning: could not parse artifact" in io.err
         assert "Warning: failed to download artifact" in io.err
 
+    def test_main_with_artifact_dir_prints_summary_without_json_flag(self, tmp_path, capsys):
+        report_path = tmp_path / "quality-report.json"
+        report_path.write_text(json.dumps(_sample_quality_report()))
+
+        with patch.object(sys, "argv", ["quality-report.py", "--artifact-dir", str(tmp_path)]):
+            exit_code = _qr_mod.main()
+
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert "CERBERUS QUALITY REPORT SUMMARY" in out
+        assert "kimi" in out
+
     def test_main_requires_repo_or_artifact_dir(self):
         with patch.object(sys, "argv", ["quality-report.py"]):
             with pytest.raises(SystemExit) as exc:
