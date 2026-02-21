@@ -640,6 +640,33 @@ jobs:
     )
 
 
+def test_v1_warning_mentions_v2_reliability_items(tmp_path: Path):
+    """The v1 warning should mention the full set of v2 reliability items."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert v1, "Expected a v1 upgrade warning"
+    msg = v1[0].message
+    assert "timeout fast-path fallback" in msg
+    assert "staged OpenCode config" in msg
+    assert "isolated HOME" in msg
+
+
 @pytest.mark.parametrize("uses", [
     "misty-step/cerberus@v2",
     "misty-step/cerberus@v2.0.0",
