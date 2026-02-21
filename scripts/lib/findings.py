@@ -59,13 +59,13 @@ as_int = _as_int
 
 
 def _normalize_sev(value: object, order: dict[str, int]) -> str:
-    text = " ".join(str(value or "").strip().lower().split())
+    text = str(value or "").strip().lower()
     return text if text in order else "info"
 
 
 def normalize_severity(value: object) -> str:
     """Normalize severity string; unknown values collapse to 'info'."""
-    text = " ".join(str(value or "").strip().lower().split())
+    text = str(value or "").strip().lower()
     return text if text in SEVERITY_ORDER else "info"
 
 
