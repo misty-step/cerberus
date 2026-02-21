@@ -136,26 +136,41 @@ def test_reviewer_label_falls_back_to_perspective_or_unknown() -> None:
     assert post_council_review.reviewer_label({}) == "unknown"
 
 
-def test_fail_warn_notice_emit_stderr(capsys) -> None:
+def test_fail_exits_with_code_and_message(capsys) -> None:
     with pytest.raises(SystemExit) as exc:
         post_council_review.fail("boom", code=9)
     assert exc.value.code == 9
     assert "post-council-review: boom" in capsys.readouterr().err
 
+
+def test_warn_emits_github_warning(capsys) -> None:
     post_council_review.warn("warn-msg")
+    assert "::warning::warn-msg" in capsys.readouterr().err
+
+
+def test_notice_emits_github_notice(capsys) -> None:
     post_council_review.notice("notice-msg")
-    err = capsys.readouterr().err
-    assert "::warning::warn-msg" in err
-    assert "::notice::notice-msg" in err
+    assert "::notice::notice-msg" in capsys.readouterr().err
 
 
-def test_as_int_normalize_path_review_marker_and_truncate() -> None:
+def test_as_int_returns_none_for_non_numeric() -> None:
     assert post_council_review.as_int(None) is None
     assert post_council_review.as_int("x") is None
+
+
+def test_normalize_path_strips_diff_prefixes() -> None:
     assert post_council_review.normalize_path("a/src/app.py") == "src/app.py"
     assert post_council_review.normalize_path("b/src/app.py") == "src/app.py"
     assert post_council_review.normalize_path("./src/app.py") == "src/app.py"
+
+
+def test_review_marker_uses_short_sha_or_placeholder() -> None:
     assert post_council_review.review_marker("") == "<!-- cerberus:council-review sha=<head-sha> -->"
+    assert "sha=abcdef123456" in post_council_review.review_marker("abcdef1234567890deadbeef")
+
+
+def test_truncate_appends_ellipsis_when_over_limit() -> None:
+    assert post_council_review.truncate("abc", max_len=5) == "abc"
     out = post_council_review.truncate("abcdef", max_len=5)
     assert out.endswith("…")
     assert len(out) == 5

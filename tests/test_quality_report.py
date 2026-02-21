@@ -33,9 +33,21 @@ aggregate_reports = _qr_mod.aggregate_reports
 
 def _sample_verdicts():
     return [
-        {"reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS", "confidence": 0.85, "runtime_seconds": 45, "model_used": "kimi", "primary_model": "kimi", "fallback_used": False, "summary": "Looks good"},
-        {"reviewer": "SENTINEL", "perspective": "security", "verdict": "SKIP", "confidence": 0, "runtime_seconds": 600, "model_used": "minimax", "primary_model": "minimax", "fallback_used": False, "summary": "timeout after 600s"},
-        {"reviewer": "ATHENA", "perspective": "architecture", "verdict": "WARN", "confidence": 0.75, "runtime_seconds": 60, "model_used": "glm", "primary_model": "glm", "fallback_used": True, "summary": "Some issues"},
+        {
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "PASS",
+            "confidence": 0.85, "runtime_seconds": 45, "model_used": "kimi",
+            "primary_model": "kimi", "fallback_used": False, "summary": "Looks good",
+        },
+        {
+            "reviewer": "SENTINEL", "perspective": "security", "verdict": "SKIP",
+            "confidence": 0, "runtime_seconds": 600, "model_used": "minimax",
+            "primary_model": "minimax", "fallback_used": False, "summary": "timeout after 600s",
+        },
+        {
+            "reviewer": "ATHENA", "perspective": "architecture", "verdict": "WARN",
+            "confidence": 0.75, "runtime_seconds": 60, "model_used": "glm",
+            "primary_model": "glm", "fallback_used": True, "summary": "Some issues",
+        },
     ]
 
 
@@ -408,9 +420,11 @@ class TestMain:
         assert "No quality reports found" in capsys.readouterr().err
 
     def test_main_with_repo_without_gh(self, capsys):
-        with patch.object(sys, "argv", ["quality-report.py", "--repo", "misty-step/cerberus"]):
-            with patch.object(_qr_mod.shutil, "which", return_value=None):
-                exit_code = _qr_mod.main()
+        with (
+            patch.object(sys, "argv", ["quality-report.py", "--repo", "misty-step/cerberus"]),
+            patch.object(_qr_mod.shutil, "which", return_value=None),
+        ):
+            exit_code = _qr_mod.main()
 
         assert exit_code == 1
         assert "gh CLI not found" in capsys.readouterr().err
@@ -435,11 +449,14 @@ class TestMain:
                 return run_id, report_path
             raise RuntimeError("download failed")
 
-        with patch.object(sys, "argv", ["quality-report.py", "--repo", "misty-step/cerberus", "--last", "3", "--json"]):
-            with patch.object(_qr_mod.shutil, "which", return_value="/usr/bin/gh"):
-                with patch.object(_qr_mod, "fetch_artifacts", return_value=artifacts):
-                    with patch.object(_qr_mod, "download_artifact", side_effect=fake_download_artifact):
-                        exit_code = _qr_mod.main()
+        argv = ["quality-report.py", "--repo", "misty-step/cerberus", "--last", "3", "--json"]
+        with (
+            patch.object(sys, "argv", argv),
+            patch.object(_qr_mod.shutil, "which", return_value="/usr/bin/gh"),
+            patch.object(_qr_mod, "fetch_artifacts", return_value=artifacts),
+            patch.object(_qr_mod, "download_artifact", side_effect=fake_download_artifact),
+        ):
+            exit_code = _qr_mod.main()
 
         assert exit_code == 0
         io = capsys.readouterr()
