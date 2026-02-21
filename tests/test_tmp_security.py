@@ -22,6 +22,7 @@ SCRIPT_PARSE = SCRIPTS_DIR / "parse-review.py"
 REPO_ROOT = Path(__file__).parent.parent
 ACTION_FILE = REPO_ROOT / "action.yml"
 VERDICT_ACTION_FILE = REPO_ROOT / "verdict" / "action.yml"
+TRIAGE_ACTION_FILE = REPO_ROOT / "triage" / "action.yml"
 
 # Shell scripts that previously had hardcoded /tmp/ paths.
 SHELL_SCRIPTS = [
@@ -190,7 +191,7 @@ class TestNoHardcodedTmpPaths:
     def test_no_hardcoded_tmp_in_action_yaml(self) -> None:
         """No action YAML contains literal string /tmp/."""
         violations = []
-        for action_file in [ACTION_FILE, VERDICT_ACTION_FILE]:
+        for action_file in [ACTION_FILE, VERDICT_ACTION_FILE, TRIAGE_ACTION_FILE]:
             violations.extend(self._scan_for_tmp(action_file))
         assert not violations, (
             "Hardcoded /tmp/ paths found in action YAML:\n" + "\n".join(violations)
@@ -227,13 +228,19 @@ class TestActionTempLifecycle:
         assert cleanup is not None
         cleanup_block = cleanup.group(0)
         assert "if: always()" in cleanup_block
-        assert 'rm -rf "${CERBERUS_TMP}"' in cleanup_block
+        assert 'chmod -R u+rwX "${CERBERUS_TMP}" 2>/dev/null || true' in cleanup_block
+        assert 'rm -rf "${CERBERUS_TMP}" 2>/dev/null || true' in cleanup_block
+        assert 'if [[ -d "${CERBERUS_TMP}" ]]; then' in cleanup_block
+        assert "::warning::Failed to fully clean temporary directory" in cleanup_block
 
     def test_review_action_has_temp_setup_and_always_cleanup(self) -> None:
         self._assert_temp_lifecycle(ACTION_FILE)
 
     def test_verdict_action_has_temp_setup_and_always_cleanup(self) -> None:
         self._assert_temp_lifecycle(VERDICT_ACTION_FILE)
+
+    def test_triage_action_has_temp_setup_and_always_cleanup(self) -> None:
+        self._assert_temp_lifecycle(TRIAGE_ACTION_FILE)
 
     def test_verdict_json_output_uses_runner_temp_not_cerberus_tmp(self) -> None:
         """verdict-json output must point to RUNNER_TEMP so it survives CERBERUS_TMP cleanup."""
