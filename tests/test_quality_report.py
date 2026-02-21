@@ -1,7 +1,11 @@
 """Tests for quality report generation and aggregation."""
 import importlib.util
+import json
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Import aggregate-verdict.py via importlib (hyphen in filename prevents normal import)
 _spec = importlib.util.spec_from_file_location(
@@ -221,3 +225,233 @@ class TestAggregateReports:
         result = aggregate_reports(reports)
         assert result["meta"]["date_range"]["from"] is not None
         assert result["meta"]["date_range"]["to"] is not None
+
+    def test_skips_models_with_zero_count(self):
+        report = {
+            "meta": {"generated_at": 1700000000.0},
+            "summary": {"total_reviewers": 2, "skip_count": 0, "parse_failure_count": 0, "council_verdict": "PASS"},
+            "models": {
+                "zero-model": {
+                    "count": 0,
+                    "verdicts": {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0},
+                    "total_runtime_seconds": 0,
+                    "runtime_count": 0,
+                    "fallback_count": 0,
+                    "parse_failures": 0,
+                },
+                "active-model": {
+                    "count": 1,
+                    "verdicts": {"PASS": 1, "WARN": 0, "FAIL": 0, "SKIP": 0},
+                    "total_runtime_seconds": 10,
+                    "runtime_count": 1,
+                    "fallback_count": 0,
+                    "parse_failures": 0,
+                },
+            },
+        }
+        result = aggregate_reports([report])
+        models = [m["model"] for m in result["model_rankings"]]
+        assert "active-model" in models
+        assert "zero-model" not in models
+
+
+class TestRunGh:
+    def test_run_gh_success(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="output", stderr="")
+            result = _qr_mod.run_gh(["auth", "status"])
+
+        assert result == "output"
+        mock_run.assert_called_once_with(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=_qr_mod.GH_TIMEOUT_SECONDS,
+        )
+
+    def test_run_gh_not_found(self):
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            with pytest.raises(_qr_mod.GHError, match="gh CLI not found"):
+                _qr_mod.run_gh(["auth", "status"])
+
+    def test_run_gh_nonzero(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="auth error")
+            with pytest.raises(_qr_mod.GHError, match="auth error"):
+                _qr_mod.run_gh(["auth", "status"])
+
+
+class TestFetchArtifacts:
+    def test_fetch_artifacts_filters_sorts_and_tolerates_failures(self, capsys):
+        runs = [
+            {"databaseId": 101, "headSha": "sha-101", "number": 11, "createdAt": "2024-01-01T00:00:00Z"},
+            {"databaseId": 102, "headSha": "sha-102", "number": 12, "createdAt": "2024-01-03T00:00:00Z"},
+            {"databaseId": 103, "headSha": "sha-103", "number": 13, "createdAt": "2024-01-02T00:00:00Z"},
+            {"headSha": "broken", "number": 14, "createdAt": "2024-01-04T00:00:00Z"},
+        ]
+
+        def fake_run_gh(args):
+            if args[:2] == ["run", "list"]:
+                return json.dumps(runs)
+            if args[:2] == ["run", "view"]:
+                run_id = int(args[4])
+                if run_id == 101:
+                    return json.dumps({"artifacts": [{"name": _qr_mod.ARTIFACT_NAME, "databaseId": 501}]})
+                if run_id == 102:
+                    raise _qr_mod.GHError("run view failed")
+                if run_id == 103:
+                    return json.dumps({
+                        "artifacts": [
+                            {"name": "other-artifact", "databaseId": 999},
+                            {"name": _qr_mod.ARTIFACT_NAME, "databaseId": 503},
+                        ]
+                    })
+            raise AssertionError(f"Unexpected gh invocation: {args}")
+
+        with patch.object(_qr_mod, "run_gh", side_effect=fake_run_gh):
+            artifacts = _qr_mod.fetch_artifacts("misty-step/cerberus", limit=4)
+
+        assert [a["run_id"] for a in artifacts] == [103, 101]
+        assert [a["artifact_id"] for a in artifacts] == [503, 501]
+        assert artifacts[0]["head_sha"] == "sha-103"
+        assert "failed to fetch artifacts for run" in capsys.readouterr().err
+
+
+class TestDownloadArtifact:
+    def test_download_artifact_success(self, tmp_path):
+        output_dir = tmp_path / "run-123"
+
+        def fake_run_gh(_):
+            (output_dir / "quality-report.json").write_text('{"summary": "ok"}')
+            return ""
+
+        with patch.object(_qr_mod, "run_gh", side_effect=fake_run_gh):
+            run_id, report_path = _qr_mod.download_artifact("misty-step/cerberus", 123, output_dir)
+
+        assert output_dir.exists()
+        assert run_id == 123
+        assert report_path == output_dir / "quality-report.json"
+        assert report_path.exists()
+
+    def test_download_artifact_gh_error_returns_none(self, tmp_path):
+        with patch.object(_qr_mod, "run_gh", side_effect=_qr_mod.GHError("boom")):
+            run_id, report_path = _qr_mod.download_artifact("misty-step/cerberus", 99, tmp_path / "run-99")
+
+        assert run_id == 99
+        assert report_path is None
+
+
+class TestLoadQualityReports:
+    def test_load_quality_reports_valid(self, tmp_path):
+        report_path = tmp_path / "quality-report.json"
+        report_path.write_text(json.dumps({"summary": "ok"}))
+
+        result = _qr_mod.load_quality_reports(tmp_path)
+        assert len(result) == 1
+        assert result[0]["summary"] == "ok"
+
+    def test_load_quality_reports_invalid_json(self, tmp_path, capsys):
+        report_path = tmp_path / "quality-report.json"
+        report_path.write_text("not json")
+
+        result = _qr_mod.load_quality_reports(tmp_path)
+        assert result == []
+        assert "could not load" in capsys.readouterr().err
+
+
+class TestPrintSummary:
+    def test_print_summary_formatting(self, capsys):
+        summary = {
+            "meta": {"total_runs_analyzed": 2},
+            "summary": {
+                "total_reviewers": 6,
+                "overall_skip_rate": 0.1667,
+                "overall_parse_failure_rate": 0.0,
+                "council_verdict_distribution": {"PASS": 1, "WARN": 1},
+            },
+            "model_rankings": [{
+                "model": "kimi-k2.5",
+                "success_rate": 0.9,
+                "skip_rate": 0.1,
+                "parse_failure_rate": 0.0,
+                "avg_runtime_seconds": 12.3,
+            }],
+        }
+
+        _qr_mod.print_summary(summary)
+        out = capsys.readouterr().out
+        assert "CERBERUS QUALITY REPORT SUMMARY" in out
+        assert "Runs Analyzed: 2" in out
+        assert "Overall SKIP Rate: 16.67%" in out
+        assert "Council Verdict Distribution:" in out
+        assert "Model Rankings (by success rate):" in out
+        assert "kimi-k2.5" in out
+
+
+class TestMain:
+    def test_main_with_artifact_dir_and_json(self, tmp_path, capsys):
+        report_path = tmp_path / "quality-report.json"
+        report_path.write_text(json.dumps(_sample_quality_report()))
+
+        with patch.object(sys, "argv", ["quality-report.py", "--artifact-dir", str(tmp_path), "--json"]):
+            exit_code = _qr_mod.main()
+
+        assert exit_code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["meta"]["total_runs_analyzed"] == 1
+
+    def test_main_with_artifact_dir_no_reports(self, tmp_path, capsys):
+        with patch.object(sys, "argv", ["quality-report.py", "--artifact-dir", str(tmp_path)]):
+            exit_code = _qr_mod.main()
+
+        assert exit_code == 1
+        assert "No quality reports found" in capsys.readouterr().err
+
+    def test_main_with_repo_without_gh(self, capsys):
+        with patch.object(sys, "argv", ["quality-report.py", "--repo", "misty-step/cerberus"]):
+            with patch.object(_qr_mod.shutil, "which", return_value=None):
+                exit_code = _qr_mod.main()
+
+        assert exit_code == 1
+        assert "gh CLI not found" in capsys.readouterr().err
+
+    def test_main_with_repo_happy_path_and_download_warnings(self, capsys):
+        artifacts = [
+            {"run_id": 1, "head_sha": "sha-1", "pr_number": 101},
+            {"run_id": 2, "head_sha": "sha-2", "pr_number": 102},
+            {"run_id": 3, "head_sha": "sha-3", "pr_number": 103},
+        ]
+
+        def fake_download_artifact(_, run_id, output_dir):
+            if run_id == 1:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                report_path = output_dir / "quality-report.json"
+                report_path.write_text(json.dumps(_sample_quality_report(model="kimi")))
+                return run_id, report_path
+            if run_id == 2:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                report_path = output_dir / "quality-report.json"
+                report_path.write_text("not-json")
+                return run_id, report_path
+            raise RuntimeError("download failed")
+
+        with patch.object(sys, "argv", ["quality-report.py", "--repo", "misty-step/cerberus", "--last", "3", "--json"]):
+            with patch.object(_qr_mod.shutil, "which", return_value="/usr/bin/gh"):
+                with patch.object(_qr_mod, "fetch_artifacts", return_value=artifacts):
+                    with patch.object(_qr_mod, "download_artifact", side_effect=fake_download_artifact):
+                        exit_code = _qr_mod.main()
+
+        assert exit_code == 0
+        io = capsys.readouterr()
+        payload = json.loads(io.out)
+        assert payload["meta"]["total_runs_analyzed"] == 1
+        assert "Found 3 quality report artifacts" in io.err
+        assert "Successfully downloaded 1/3 quality reports" in io.err
+        assert "Warning: could not parse artifact" in io.err
+        assert "Warning: failed to download artifact" in io.err
+
+    def test_main_requires_repo_or_artifact_dir(self):
+        with patch.object(sys, "argv", ["quality-report.py"]):
+            with pytest.raises(SystemExit) as exc:
+                _qr_mod.main()
+        assert exc.value.code == 2
