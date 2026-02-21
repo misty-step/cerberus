@@ -1,0 +1,126 @@
+name: "Cerberus Preflight"
+description: "Detect skip conditions (draft, fork, missing API key) and optionally post an explanatory PR comment"
+author: "misty-step"
+
+inputs:
+  github-token:
+    description: "GitHub token for PR comments (optional; skips comment if not provided)"
+    required: false
+    default: ""
+  api-key:
+    description: "OpenRouter API key (checked for presence only, value is not used or logged)"
+    required: false
+    default: ""
+  post-comment:
+    description: "Whether to post a skip-reason PR comment (true/false)"
+    required: false
+    default: "true"
+
+outputs:
+  should_run:
+    description: "Whether the review should proceed (true/false)"
+    value: ${{ steps.check.outputs.should_run }}
+  skip_reason:
+    description: "Reason for skip: draft | fork | missing_api_key | none"
+    value: ${{ steps.check.outputs.skip_reason }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Preflight check
+      id: check
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        ACTION: ${{ github.event.action }}
+        IS_DRAFT: ${{ github.event.pull_request.draft }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        BASE_REPO: ${{ github.repository }}
+        API_KEY: ${{ inputs.api-key }}
+        POST_COMMENT: ${{ inputs.post-comment }}
+      run: |
+        marker="<!-- cerberus:preflight -->"
+
+        write_draft_comment() {
+          comment_file="/tmp/cerberus-preflight-draft-comment.md"
+          {
+            printf '%s\n' "## 🏛️ Cerberus Council: Draft PR Detected"
+            printf '\n'
+            printf '%s\n' "Cerberus review is skipped while this PR is in **draft** status."
+            printf '\n'
+            printf '%s\n' "### Next Steps"
+            printf '%s\n' "1. Mark the PR **Ready for review** in GitHub"
+            printf '%s\n' "2. Cerberus will run automatically on that event"
+            printf '\n'
+            printf '%s\n' "---"
+            printf '%s\n' "*Cerberus Preflight | Skip reason: draft*"
+            printf '%s\n' "$marker"
+          } > "$comment_file"
+
+          python3 "$CERBERUS_ROOT/scripts/lib/github.py" \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --marker "$marker" \
+            --body-file "$comment_file" || echo "::warning::Failed to post preflight comment"
+        }
+
+        write_missing_key_comment() {
+          comment_file="/tmp/cerberus-preflight-api-key-comment.md"
+          {
+            printf '%s\n' "## 🏛️ Cerberus Council: Missing OPENROUTER_API_KEY"
+            printf '\n'
+            printf '%s\n' "Cerberus review is skipped because \`OPENROUTER_API_KEY\` is not configured for this repository."
+            printf '\n'
+            printf '%s\n' "### Setup"
+            printf '%s\n' "1. Open **Settings → Secrets and variables → Actions**"
+            printf '%s\n' "2. Add a repository secret named \`OPENROUTER_API_KEY\`"
+            printf '%s\n' "3. Re-run this workflow (or push a new commit)"
+            printf '\n'
+            printf '%s\n' "---"
+            printf '%s\n' "*Cerberus Preflight | Skip reason: missing_api_key*"
+            printf '%s\n' "$marker"
+          } > "$comment_file"
+
+          python3 "$CERBERUS_ROOT/scripts/lib/github.py" \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --marker "$marker" \
+            --body-file "$comment_file" || echo "::warning::Failed to post preflight comment"
+        }
+
+        if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+          echo "should_run=false" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=fork" >> "$GITHUB_OUTPUT"
+          echo "::notice::Fork PR detected ($HEAD_REPO). Cerberus review is skipped because repository secrets are unavailable."
+          exit 0
+        fi
+
+        if [ "$IS_DRAFT" = "true" ]; then
+          echo "should_run=false" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=draft" >> "$GITHUB_OUTPUT"
+          echo "::notice::Draft PR detected. Cerberus will run when the PR is marked ready for review."
+
+          if [ "$ACTION" = "opened" ] || [ "$ACTION" = "converted_to_draft" ]; then
+            if [ "$POST_COMMENT" = "true" ] && [ -n "$GH_TOKEN" ] && [ -n "$PR_NUMBER" ]; then
+              write_draft_comment
+            fi
+          fi
+          exit 0
+        fi
+
+        if [ -z "$API_KEY" ]; then
+          echo "should_run=false" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=missing_api_key" >> "$GITHUB_OUTPUT"
+          echo "::notice::OPENROUTER_API_KEY is missing. Cerberus review is skipped."
+
+          if [ "$POST_COMMENT" = "true" ] && [ -n "$GH_TOKEN" ] && [ -n "$PR_NUMBER" ]; then
+            write_missing_key_comment
+          fi
+          exit 0
+        fi
+
+        echo "should_run=true" >> "$GITHUB_OUTPUT"
+        echo "skip_reason=none" >> "$GITHUB_OUTPUT"
