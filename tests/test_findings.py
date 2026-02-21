@@ -193,3 +193,32 @@ class TestGroupFindings:
         ]
         out = group_findings(pairs, severity_order=custom_order)
         assert out[0]["severity"] == "critical"  # 0 beats 1
+
+    def test_non_numeric_line_treated_as_zero(self):
+        pairs = [("A", [{"severity": "minor", "category": "c", "file": "f.py", "line": "abc", "title": "t"}])]
+        out = group_findings(pairs)
+        assert out[0]["line"] == 0
+
+    def test_missing_category_defaults_to_uncategorized(self):
+        pairs = [("A", [{"severity": "minor", "file": "f.py", "line": 1, "title": "t"}])]
+        out = group_findings(pairs)
+        assert out[0]["category"] == "uncategorized"
+
+    def test_missing_title_defaults_to_untitled(self):
+        pairs = [("A", [{"severity": "minor", "category": "c", "file": "f.py", "line": 1}])]
+        out = group_findings(pairs)
+        assert out[0]["title"] == "Untitled finding"
+
+    def test_same_reviewer_duplicate_findings_not_double_counted(self):
+        pairs = [("A", [
+            {"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t"},
+            {"severity": "major", "category": "c", "file": "f.py", "line": 1, "title": "t"},
+        ])]
+        out = group_findings(pairs)
+        assert len(out) == 1
+        assert out[0]["reviewers"] == ["A"]
+
+    def test_missing_file_field_produces_empty_string(self):
+        pairs = [("A", [{"severity": "minor", "category": "c", "line": 1, "title": "t"}])]
+        out = group_findings(pairs)
+        assert out[0]["file"] == ""
