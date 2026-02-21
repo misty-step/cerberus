@@ -559,6 +559,11 @@ def _v1_warnings(findings):
     "misty-step/cerberus/triage@v1",
     "misty-step/cerberus/draft-check@v1",
     "misty-step/cerberus/validate@v1",
+    # semver-pinned v1 tags must also trigger the warning
+    "misty-step/cerberus@v1.0.0",
+    "misty-step/cerberus@v1.2.3",
+    "misty-step/cerberus/verdict@v1.2.3",
+    "misty-step/cerberus@v1.0.0-rc1",
 ])
 def test_v1_usage_emits_warning(tmp_path: Path, uses: str):
     """Any cerberus @v1 step should emit an upgrade warning."""
@@ -632,6 +637,36 @@ jobs:
     assert any("fail-on-skip" in w.message for w in v1), (
         "Warning should mention fail-on-skip"
     )
+
+
+@pytest.mark.parametrize("uses", [
+    "misty-step/cerberus@v2",
+    "misty-step/cerberus@v2.0.0",
+    "misty-step/cerberus@v10",
+    "misty-step/cerberus@v10.0.0",
+])
+def test_non_v1_usage_no_v1_warning(tmp_path: Path, uses: str):
+    """v2+/v10+ refs must not trigger the v1 upgrade warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {uses}
+        with:
+          github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
+          api-key: ${{{{ secrets.OPENROUTER_API_KEY }}}}
+          comment-policy: never
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert _v1_warnings(findings) == [], f"Unexpected v1 warnings for `{uses}`: {_v1_warnings(findings)}"
 
 
 def test_v2_usage_no_v1_warning(tmp_path: Path):

@@ -239,7 +239,9 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
             uses_cerberus = True
 
             # v1 usage check: warn on any cerberus @v1 step.
-            if uses.endswith("@v1") or "@v1/" in uses:
+            # Catches bare @v1, semver tags like @v1.2.3, and subpath refs like @v1/path.
+            _ref = uses.rsplit("@", 1)[-1]
+            if _ref == "v1" or _ref.startswith(("v1.", "v1/", "v1-")):
                 findings.append(
                     Finding(
                         "warning",
