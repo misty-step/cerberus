@@ -24,6 +24,13 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Create isolated temp directory
+      shell: bash
+      run: |
+        cerberus_tmp="$(mktemp -d -t cerberus.XXXXXX)"
+        chmod 0700 "$cerberus_tmp"
+        echo "CERBERUS_TMP=${cerberus_tmp}" >> "$GITHUB_ENV"
+
     - name: Checkout repository
       uses: actions/checkout@v4
 
@@ -105,11 +112,11 @@ runs:
         PARSE_FAILURE_POLICY: ${{ inputs.parse-failure-policy }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
-        VERDICT=$(jq -r .verdict /tmp/council-verdict.json 2>/dev/null)
+        VERDICT=$(jq -r .verdict "${CERBERUS_TMP}/council-verdict.json" 2>/dev/null)
         if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
           echo "::warning::aggregate-verdict.py did not write a valid .verdict; defaulting to SKIP"
           echo "council-verdict.json contents:" >&2
-          cat /tmp/council-verdict.json 2>/dev/null || echo "(file missing)" >&2
+          cat "${CERBERUS_TMP}/council-verdict.json" 2>/dev/null || echo "(file missing)" >&2
           VERDICT="SKIP"
         fi
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
@@ -136,14 +143,14 @@ runs:
           exit 1
         fi
         python3 "$CERBERUS_ROOT/scripts/render-council-comment.py" \
-          --council-json /tmp/council-verdict.json \
-          --output /tmp/council-comment.md
+          --council-json "${CERBERUS_TMP}/council-verdict.json" \
+          --output "${CERBERUS_TMP}/council-comment.md"
 
         python3 "$CERBERUS_ROOT/scripts/lib/github.py" \
           --repo "$REPO" \
           --pr "$PR_NUMBER" \
           --marker "<!-- cerberus:council -->" \
-          --body-file /tmp/council-comment.md
+          --body-file "${CERBERUS_TMP}/council-comment.md"
 
     - name: Post council inline review comments
       if: always() && steps.aggregate.outcome == 'success'
@@ -159,15 +166,15 @@ runs:
           --repo "$REPO" \
           --pr "$PR_NUMBER" \
           --head-sha "$GH_HEAD_SHA" \
-          --council-json /tmp/council-verdict.json \
-          --body-file /tmp/council-comment.md
+          --council-json "${CERBERUS_TMP}/council-verdict.json" \
+          --body-file "${CERBERUS_TMP}/council-comment.md"
 
     - name: Upload quality report artifact
       if: always() && steps.aggregate.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-quality-report
-        path: /tmp/quality-report.json
+        path: ${{ env.CERBERUS_TMP }}/quality-report.json
         retention-days: 30
 
     - name: Check verdict
@@ -188,4 +195,12 @@ runs:
             exit 1
           fi
           echo "::notice::Council Verdict: SKIP (all reviews skipped due to timeout/API errors)"
+        fi
+
+    - name: Clean up temp directory
+      if: always()
+      shell: bash
+      run: |
+        if [[ -n "${CERBERUS_TMP:-}" && -d "${CERBERUS_TMP}" ]]; then
+          rm -rf "${CERBERUS_TMP}"
         fi

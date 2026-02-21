@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from lib.diff_positions import build_newline_to_position
@@ -32,6 +33,7 @@ MAX_INLINE_PER_FILE = 3
 INLINE_SEVERITIES = {"critical", "major"}
 
 _SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
+CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 
 def split_reviewer_description(value: object) -> tuple[str, str]:
@@ -217,12 +219,12 @@ def main() -> None:
     p.add_argument("--head-sha", default="", help="Head SHA (default: env GH_HEAD_SHA)")
     p.add_argument(
         "--council-json",
-        default="/tmp/council-verdict.json",
+        default=str(CERBERUS_TMP / "council-verdict.json"),
         help="Path to council verdict JSON.",
     )
     p.add_argument(
         "--body-file",
-        default="/tmp/council-comment.md",
+        default=str(CERBERUS_TMP / "council-comment.md"),
         help="Council markdown body file (unused; council issue comment is canonical).",
     )
     args = p.parse_args()

@@ -5,6 +5,7 @@ import json
 import os
 import statistics
 import sys
+import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -27,6 +28,7 @@ MAX_ARTIFACT_SIZE = 1_048_576
 VALID_VERDICTS = {"PASS", "WARN", "FAIL", "SKIP"}
 VALID_PARSE_FAILURE_POLICIES = {"fail", "warn", "skip"}
 REQUIRED_ARTIFACT_FIELDS = ("verdict", "confidence", "summary")
+CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 
 def fail(msg: str, code: int = 2) -> None:
@@ -365,7 +367,7 @@ def generate_quality_report(
 
 
 def main() -> None:
-    """Aggregate reviewer verdict JSON files and write the council verdict to /tmp/council-verdict.json."""
+    """Aggregate reviewer verdict JSON files and write the council verdict to CERBERUS_TMP/council-verdict.json."""
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
         fail(f"verdict dir not found: {verdict_dir}")
@@ -417,9 +419,9 @@ def main() -> None:
             "skipped_artifacts": skipped_artifacts,
         }
         _council_json = json.dumps(council, indent=2)
-        _tmp = Path("/tmp/council-verdict.json.tmp")
+        _tmp = CERBERUS_TMP / "council-verdict.json.tmp"
         _tmp.write_text(_council_json)
-        _tmp.rename("/tmp/council-verdict.json")
+        _tmp.rename(CERBERUS_TMP / "council-verdict.json")
         print(f"Council Verdict: SKIP\n\nAll artifacts skipped: {len(skipped_artifacts)} malformed.")
         sys.exit(0)
 
@@ -522,9 +524,9 @@ def main() -> None:
         )
 
     council_json = json.dumps(council, indent=2)
-    tmp_path = Path("/tmp/council-verdict.json.tmp")
+    tmp_path = CERBERUS_TMP / "council-verdict.json.tmp"
     tmp_path.write_text(council_json)
-    tmp_path.rename("/tmp/council-verdict.json")
+    tmp_path.rename(CERBERUS_TMP / "council-verdict.json")
 
     # Generate quality report
     repo = os.environ.get("GITHUB_REPOSITORY")
@@ -532,8 +534,9 @@ def main() -> None:
     quality_report = generate_quality_report(
         verdicts, council, skipped_artifacts, repo, pr_number, head_sha
     )
-    Path("/tmp/quality-report.json").write_text(json.dumps(quality_report, indent=2))
-    print("aggregate-verdict: quality report written to /tmp/quality-report.json", file=sys.stderr)
+    quality_report_path = CERBERUS_TMP / "quality-report.json"
+    quality_report_path.write_text(json.dumps(quality_report, indent=2))
+    print(f"aggregate-verdict: quality report written to {quality_report_path}", file=sys.stderr)
 
     council_verdict = council["verdict"]
     lines = [f"Council Verdict: {council_verdict}", ""]

@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -23,6 +24,7 @@ VALID_MODES = {"off", "diagnose", "fix"}
 COUNCIL_MARKER = "cerberus:council"
 TRIAGE_MARKER = "cerberus:triage"
 TRIAGE_COMMAND = "/cerberus triage"
+CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 
 def trusted_login() -> str:
@@ -259,7 +261,7 @@ def post_triage_comment(
         f"{marker}\n"
     )
 
-    comment_file = Path("/tmp/cerberus-triage-comment.md")
+    comment_file = CERBERUS_TMP / "cerberus-triage-comment.md"
     comment_file.write_text(body, encoding="utf-8")
 
     upsert_pr_comment(
