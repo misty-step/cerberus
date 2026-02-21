@@ -669,30 +669,6 @@ jobs:
     assert _v1_warnings(findings) == [], f"Unexpected v1 warnings for `{uses}`: {_v1_warnings(findings)}"
 
 
-def test_v2_usage_no_v1_warning(tmp_path: Path):
-    """v2 workflows must not trigger the v1 upgrade warning."""
-    wf = tmp_path / "cerberus.yml"
-    wf.write_text("""
-name: Cerberus
-on: pull_request
-jobs:
-  check:
-    permissions:
-      contents: read
-      pull-requests: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: misty-step/cerberus@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          comment-policy: never
-""".lstrip())
-
-    findings, _ = validate_workflow_file(wf)
-    assert _v1_warnings(findings) == [], f"Unexpected v1 warnings: {_v1_warnings(findings)}"
-
-
 def test_v1_warning_per_step_not_deduplicated(tmp_path: Path):
     """Each v1 step emits its own warning (one per occurrence)."""
     wf = tmp_path / "cerberus.yml"
