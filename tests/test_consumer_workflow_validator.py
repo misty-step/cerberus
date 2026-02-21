@@ -212,3 +212,116 @@ def test_workflows_have_skip_gate_job(path: Path):
     wf = _load_workflow(path)
     # TODO: tighten to preflight-only after minimal/triage templates are migrated (#208 follow-up)
     assert "draft-check" in wf["jobs"] or "preflight" in wf["jobs"]
+
+
+# ---------------------------------------------------------------------------
+# continue-on-error footgun (#219)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("uses", [
+    "misty-step/cerberus@v2",
+    "misty-step/cerberus/verdict@v2",
+    "misty-step/cerberus/triage@v2",
+])
+def test_continue_on_error_true_emits_warning(tmp_path: Path, uses: str):
+    """continue-on-error: true on a Cerberus step must surface a warning."""
+    # Determine minimum required with keys so no unrelated errors fire
+    with_block = "github-token: ${{ secrets.GITHUB_TOKEN }}"
+    if uses.startswith("misty-step/cerberus@"):
+        with_block += "\n          api-key: ${{ secrets.OPENROUTER_API_KEY }}"
+
+    perms = """
+    permissions:
+      contents: write
+      pull-requests: write"""
+
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+{perms}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {uses}
+        continue-on-error: true
+        with:
+          {with_block}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    warnings = [f for f in findings if f.level == "warning"]
+    assert any("continue-on-error" in f.message for f in warnings), (
+        f"Expected a warning about continue-on-error for {uses!r}, got: {findings}"
+    )
+
+
+def test_continue_on_error_false_no_warning(tmp_path: Path):
+    """continue-on-error: false is safe and must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: false
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert not any("continue-on-error" in f.message for f in findings)
+
+
+def test_continue_on_error_absent_no_warning(tmp_path: Path):
+    """No continue-on-error key at all must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert not any("continue-on-error" in f.message for f in findings)
+
+
+def test_continue_on_error_warning_includes_remediation(tmp_path: Path):
+    """Warning message must include actionable remediation guidance."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    warning = next(f for f in findings if "continue-on-error" in f.message)
+    # Must mention a concrete alternative
+    assert any(kw in warning.message for kw in ("fail-on-skip", "triage", "fallback"))

@@ -199,6 +199,17 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                 continue
             uses_cerberus = True
 
+            if kind in {"review", "verdict", "triage"}:
+                if _boolish(step.get("continue-on-error"), default=False):
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` sets `continue-on-error: true` on `{uses}`. "
+                            "This masks Cerberus failures and can produce false-green checks. "
+                            "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error.",
+                        )
+                    )
+
             if kind in {"review", "draft-check", "verdict", "triage"}:
                 if not _with(step, "github-token"):
                     findings.append(
