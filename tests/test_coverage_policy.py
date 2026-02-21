@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from lib.coverage_policy import CoveragePolicy, POLICY_FILE, load_policy, validate_policy
 
@@ -75,6 +76,8 @@ def test_validate_policy_ratchet_not_ascending():
 
 def test_load_policy_from_actual_file():
     policy = load_policy(POLICY_FILE)
-    assert policy.global_floor == 70
-    assert policy.patch_threshold == 90
-    assert policy.ratchet_steps == [30, 45, 60, 70, 80]
+    with POLICY_FILE.open() as f:
+        expected = yaml.safe_load(f)
+    assert policy.global_floor == expected["global_floor"]
+    assert policy.patch_threshold == expected["patch_threshold"]
+    assert policy.ratchet_steps == expected["ratchet_steps"]

@@ -91,13 +91,14 @@ jobs:
       - name: Patch coverage check
         if: github.event_name == 'pull_request'
         run: |
+          git fetch --no-tags --prune --depth=1 origin \
+            "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           FLOOR=$(python3 -c "import yaml; d=yaml.safe_load(open('coverage-policy.yml')); print(d['patch_threshold'])")
           pip install diff-cover --quiet
           diff-cover coverage.xml \
             --compare-branch=origin/${{ github.base_ref }} \
             --fail-under=${FLOOR} \
-            --markdown-report=patch-coverage.md \
-            || echo "::warning::Patch coverage below ${FLOOR}% threshold — see coverage comment for details"
+            --markdown-report=patch-coverage.md
 
       - name: Upload coverage artifacts
         if: always()
