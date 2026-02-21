@@ -76,8 +76,8 @@ def main(argv: list[str]) -> int:
             print(_single_line(item))
         return 0
 
-    print("unknown command", file=sys.stderr)
-    return 2
+    print("unknown command", file=sys.stderr)  # pragma: no cover
+    return 2  # pragma: no cover
 
 
 if __name__ == "__main__":
