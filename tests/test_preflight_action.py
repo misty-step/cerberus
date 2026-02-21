@@ -32,6 +32,12 @@ def test_preflight_action_checks_fork_then_draft_then_api_key() -> None:
     assert 'echo "should_run=true" >> "$GITHUB_OUTPUT"' in content
     assert 'echo "skip_reason=none" >> "$GITHUB_OUTPUT"' in content
 
+    # Verify check order: fork → draft → API key (matches function name)
+    fork_idx = content.index('if [ "$HEAD_REPO" != "$BASE_REPO" ]')
+    draft_idx = content.index('if [ "$IS_DRAFT" = "true" ]')
+    api_key_idx = content.index('if [ -z "$API_KEY" ]')
+    assert fork_idx < draft_idx < api_key_idx, "Checks must be in order: fork → draft → API key"
+
 
 def test_preflight_action_limits_draft_comment_events_and_handles_failures() -> None:
     content = PREFLIGHT_ACTION_FILE.read_text()
