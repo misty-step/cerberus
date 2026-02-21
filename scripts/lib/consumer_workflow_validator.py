@@ -124,6 +124,11 @@ def _boolish(value: Any | None, *, default: bool) -> bool:
     return default
 
 
+def _is_gha_expression(value: Any) -> bool:
+    """Return True when value looks like a GitHub Actions expression (${{ … }})."""
+    return isinstance(value, str) and "${{" in value
+
+
 def _effective_permissions(workflow: dict[str, Any], job: dict[str, Any]) -> Any | None:
     # Job-level permissions override workflow-level permissions.
     if "permissions" in job:
@@ -187,6 +192,7 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
             continue
 
         perms = _effective_permissions(workflow, job)
+        job_has_cerberus_action = False
 
         for step in steps:
             if not isinstance(step, dict):
@@ -200,12 +206,23 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
             uses_cerberus = True
 
             if kind in {"review", "verdict", "triage"}:
-                if _boolish(step.get("continue-on-error"), default=False):
+                job_has_cerberus_action = True
+                coe_val = step.get("continue-on-error")
+                if _boolish(coe_val, default=False):
                     findings.append(
                         Finding(
                             "warning",
                             f"{source}: job `{job_name}` sets `continue-on-error: true` on `{uses}`. "
                             "This masks Cerberus failures and can produce false-green checks. "
+                            "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error.",
+                        )
+                    )
+                elif _is_gha_expression(coe_val):
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` sets `continue-on-error: {coe_val!r}` on `{uses}`. "
+                            "This expression may resolve to true at runtime, masking Cerberus failures and producing false-green checks. "
                             "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error.",
                         )
                     )
@@ -368,6 +385,27 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                             f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `contents` (set `contents: write`)",
                         )
                     )
+
+        if job_has_cerberus_action:
+            job_coe = job.get("continue-on-error")
+            if _boolish(job_coe, default=False):
+                findings.append(
+                    Finding(
+                        "warning",
+                        f"{source}: job `{job_name}` sets `continue-on-error: true` at the job level. "
+                        "This masks all Cerberus failures in the job and can produce false-green checks. "
+                        "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error.",
+                    )
+                )
+            elif _is_gha_expression(job_coe):
+                findings.append(
+                    Finding(
+                        "warning",
+                        f"{source}: job `{job_name}` sets `continue-on-error: {job_coe!r}` at the job level. "
+                        "This expression may resolve to true at runtime, masking Cerberus failures and producing false-green checks. "
+                        "Prefer v2 fallback models, fail-on-skip, or triage rather than continue-on-error.",
+                    )
+                )
 
     if uses_cerberus:
         if "pull_request_target" in events:

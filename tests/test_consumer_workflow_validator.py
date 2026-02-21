@@ -325,3 +325,116 @@ jobs:
     warning = next(f for f in findings if "continue-on-error" in f.message)
     # Must mention a concrete alternative
     assert any(kw in warning.message for kw in ("fail-on-skip", "triage", "fallback"))
+
+
+# ---------------------------------------------------------------------------
+# continue-on-error: expression-based (#219 gap 1)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("expression", [
+    "${{ inputs.allow_failure }}",
+    "${{ vars.CONTINUE_ON_ERROR }}",
+])
+def test_continue_on_error_expression_step_emits_warning(tmp_path: Path, expression: str):
+    """Expression-based continue-on-error on a step must warn (may resolve to true)."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(f"""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        continue-on-error: '{expression}'
+        with:
+          github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    warnings = [f for f in findings if f.level == "warning"]
+    assert any("continue-on-error" in f.message for f in warnings), (
+        f"Expected a warning for expression {expression!r}, got: {findings}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Job-level continue-on-error (#219 gap 2)
+# ---------------------------------------------------------------------------
+
+def test_job_continue_on_error_true_emits_warning(tmp_path: Path):
+    """continue-on-error: true at the job level must surface a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: true
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    warnings = [f for f in findings if f.level == "warning"]
+    assert any("continue-on-error" in f.message for f in warnings), (
+        f"Expected a warning about job-level continue-on-error, got: {findings}"
+    )
+
+
+def test_job_continue_on_error_false_no_warning(tmp_path: Path):
+    """continue-on-error: false at the job level must not trigger a warning."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: false
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    assert not any("continue-on-error" in f.message for f in findings)
+
+
+def test_job_continue_on_error_expression_emits_warning(tmp_path: Path):
+    """Expression-based continue-on-error at the job level must warn."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  cerberus:
+    continue-on-error: '${{ inputs.allow_failure }}'
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    warnings = [f for f in findings if f.level == "warning"]
+    assert any("continue-on-error" in f.message for f in warnings), (
+        f"Expected a warning for expression-based job-level continue-on-error, got: {findings}"
+    )
