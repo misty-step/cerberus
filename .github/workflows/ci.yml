@@ -95,12 +95,15 @@ jobs:
       - name: Patch coverage check
         if: github.event_name == 'pull_request'
         run: |
-          git fetch --no-tags --prune --depth=1 origin \
-            "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          git fetch --no-tags --prune origin "${{ github.base_ref }}"
+          BASE_REF="origin/${{ github.base_ref }}"
+          if ! git rev-parse --verify --quiet "$BASE_REF" >/dev/null; then
+            BASE_REF="FETCH_HEAD"
+          fi
           FLOOR=$(python3 -c "import sys; from pathlib import Path; sys.path.insert(0, str(Path.cwd() / 'scripts')); from lib.coverage_policy import load_policy; print(load_policy().patch_threshold)")
           pip install diff-cover --quiet
           diff-cover coverage.xml \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch="${BASE_REF}" \
             --fail-under=${FLOOR} \
             --markdown-report=patch-coverage.md
 
