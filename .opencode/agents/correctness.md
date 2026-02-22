@@ -62,6 +62,8 @@ Secondary Focus (check if relevant)
 - Feature flags defaulting to unsafe logic paths
 - Backward-compat issues that break runtime behavior
 - Migrations that can lose or corrupt data
+- Schema constraint changes that silently invalidate existing data (dropped NOT NULL, relaxed CHECK, orphaned FKs)
+- Transaction boundary correctness: missing rollbacks, partial commits, isolation level misuse
 - Defaults changes that activate untested code paths: when a diff switches which implementation runs by default, trace the newly-defaulted path for correctness even if its lines are unchanged
 
 Consumer/Producer Data-Flow (mandatory when PR changes a consumer of shared data)

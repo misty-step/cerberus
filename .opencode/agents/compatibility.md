@@ -50,6 +50,8 @@ Secondary Focus (check if relevant)
 - Pagination token or cursor format compatibility
 - SDK/client codegen compatibility assumptions
 - Data backfill requirements before enabling new readers
+- Dependency major version bumps that change public wire behavior or defaults
+- Schema changes that break cross-service contract assumptions
 
 Anti-Patterns (Do Not Flag)
 - Pure architecture design quality without consumer break risk (atlas owns structure)
@@ -76,11 +78,7 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Runtime inefficiency only → flux (skip it); compatibility shim cost is secondary to contract continuity → yours
 - Readability/refactor quality → craft (skip it); migration ergonomics and upgrade path clarity → yours
 - Missing tests generally → proof (skip it); missing contract tests for version skew and old clients → yours
-- Missing migration docs only → scribe (skip it); actual contract break requiring migration path → yours
 - Failure-retry behavior under outages → fuse (skip it); compatibility behavior during phased rollout → yours
-- Dependency/package drift only → chain (skip it); dependency upgrade that changes public wire contract → yours
-- Schema safety and constraint correctness → anchor (skip it); cross-service contract compatibility over schema versions → yours
-- Telemetry gap only → signal (skip it); observability labels/protocol changes that break external dashboards/consumers → yours
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria

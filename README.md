@@ -2,17 +2,19 @@
 
 Multi-agent AI code review for GitHub PRs.
 
-Six specialized reviewers analyze every pull request in parallel, then Cerberus aggregates their verdicts into a single merge-gating check.
+Eight specialized reviewers analyze every pull request in parallel, then Cerberus aggregates their verdicts into a single merge-gating check.
 
 ## Reviewers
-| Role | Codename | Focus |
-|------|----------|-------|
-| Correctness & Logic | Apollo | Logic bugs, edge cases, type mismatches |
-| Architecture & Design | Athena | Design patterns, module boundaries, coupling |
-| Security & Threat Model | Sentinel | Injection, auth flaws, data exposure |
-| Performance & Scalability | Vulcan | Runtime efficiency, N+1 queries, scalability |
-| Maintainability & DX | Artemis | Readability, naming, future maintenance cost |
-| Testing & Coverage | Cassandra | Test coverage gaps, regression risk |
+| Codename | Perspective | Focus |
+|----------|-------------|-------|
+| trace | Correctness | Logic bugs, edge cases, type mismatches |
+| atlas | Architecture | Design patterns, module boundaries, coupling |
+| guard | Security | Injection, auth flaws, data exposure |
+| flux | Performance | Runtime efficiency, N+1 queries, scalability |
+| craft | Maintainability | Readability, naming, future maintenance cost |
+| proof | Testing | Test coverage gaps, regression risk |
+| fuse | Resilience | Failure handling, retries, graceful degradation |
+| pact | Compatibility | Contract safety, version skew, rollback |
 
 ## Quick Start
 1. Add one secret to your repository (Settings -> Secrets -> Actions):

@@ -55,10 +55,9 @@ verdict:
 cerberus_verdict:
   fail_on: "any_critical_fail_or_2_fails"  # single non-critical FAIL is downgraded to WARN
 
-# The twelve reviewers of Cerberus.
+# The eight reviewers of Cerberus.
 # Names are codenames — perspective determines behavior.
 reviewers:
-  # --- Existing (renamed) ---
   - name: trace
     perspective: correctness
     model: "openrouter/moonshotai/kimi-k2.5"
@@ -107,15 +106,6 @@ reviewers:
     tools:
       shell: false
 
-  # --- New ---
-  - name: scribe
-    perspective: documentation
-    model: pool
-    description: "Documentation — Keep the map accurate"
-    override: pr_author
-    tools:
-      shell: false
-
   - name: fuse
     perspective: resilience
     model: pool
@@ -128,30 +118,6 @@ reviewers:
     perspective: compatibility
     model: pool
     description: "Compatibility — Trace the client impact"
-    override: pr_author
-    tools:
-      shell: false
-
-  - name: chain
-    perspective: dependencies
-    model: pool
-    description: "Dependencies — Guard the supply chain"
-    override: pr_author
-    tools:
-      shell: false
-
-  - name: anchor
-    perspective: data-integrity
-    model: pool
-    description: "Data Integrity — Protect the schema"
-    override: pr_author
-    tools:
-      shell: false
-
-  - name: signal
-    perspective: observability
-    model: pool
-    description: "Observability — Make bugs scream loudly"
     override: pr_author
     tools:
       shell: false

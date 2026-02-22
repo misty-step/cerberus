@@ -69,10 +69,6 @@ SAMPLE_CONFIG_YML = textwrap.dedent("""\
         perspective: testing
         model: "openrouter/google/gemini-3-flash-preview"
         description: "Testing — See what will break"
-      - name: scribe
-        perspective: documentation
-        model: pool
-        description: "Documentation — Keep the map accurate"
       - name: fuse
         perspective: resilience
         model: pool
@@ -81,18 +77,6 @@ SAMPLE_CONFIG_YML = textwrap.dedent("""\
         perspective: compatibility
         model: pool
         description: "Compatibility — Trace the client impact"
-      - name: chain
-        perspective: dependencies
-        model: pool
-        description: "Dependencies — Guard the supply chain"
-      - name: anchor
-        perspective: data-integrity
-        model: pool
-        description: "Data Integrity — Protect the schema"
-      - name: signal
-        perspective: observability
-        model: pool
-        description: "Observability — Make bugs scream loudly"
 """)
 
 SAMPLE_DIFF = textwrap.dedent("""\
@@ -227,18 +211,18 @@ class TestFileClassification:
 # ---------------------------------------------------------------------------
 
 class TestLoadConfig:
-    def test_loads_12_reviewers(self, cfg: dict[str, Any]) -> None:
-        assert len(cfg["bench"]) == 12
-        assert len(cfg["perspectives"]) == 12
+    def test_loads_8_reviewers(self, cfg: dict[str, Any]) -> None:
+        assert len(cfg["bench"]) == 8
+        assert len(cfg["perspectives"]) == 8
 
     def test_perspectives_ordered(self, cfg: dict[str, Any]) -> None:
         assert cfg["perspectives"][0] == "correctness"
-        assert cfg["perspectives"][-1] == "observability"
+        assert cfg["perspectives"][-1] == "compatibility"
 
     def test_name_to_perspective(self, cfg: dict[str, Any]) -> None:
         assert cfg["name_to_perspective"]["trace"] == "correctness"
         assert cfg["name_to_perspective"]["guard"] == "security"
-        assert cfg["name_to_perspective"]["signal"] == "observability"
+        assert cfg["name_to_perspective"]["pact"] == "compatibility"
 
     def test_always_include(self, cfg: dict[str, Any]) -> None:
         assert cfg["always_names"] == ["trace"]
@@ -373,7 +357,7 @@ class TestBuildPrompt:
         prompt = route.build_prompt(cfg, summary, 5)
         assert "trace" in prompt
         assert "guard" in prompt
-        assert "scribe" in prompt
+        assert "fuse" in prompt
         assert "Select EXACTLY 5" in prompt
 
     def test_prompt_lists_required(self, cfg: dict[str, Any]) -> None:
@@ -451,7 +435,7 @@ class TestValidatePanel:
         assert route.validate_panel(panel, cfg, 5, code_changed=True) == []
 
     def test_guard_not_required_for_doc_only(self, cfg: dict[str, Any]) -> None:
-        panel = ["correctness", "architecture", "documentation", "testing", "maintainability"]
+        panel = ["correctness", "architecture", "resilience", "testing", "maintainability"]
         result = route.validate_panel(panel, cfg, 5, code_changed=False)
         assert result == panel
 
@@ -510,8 +494,8 @@ class TestMainIntegration:
             "ROUTING": "disabled",
             "OPENROUTER_API_KEY": "fake-key",
         })
-        # Should return all 12 perspectives
-        assert len(result["panel"]) == 12
+        # Should return all 8 perspectives
+        assert len(result["panel"]) == 8
         assert result["routing_used"] is False
         assert result["model"] == "disabled"
 
@@ -530,7 +514,7 @@ class TestMainIntegration:
     def test_successful_routing(self, mock_call: mock.Mock,
                                  cerberus_root: Path, diff_file: Path) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","documentation","resilience"]',
+            '["correctness","security","architecture","resilience","compatibility"]',
             "google/gemini-3-flash-preview",
         )
         result = self._run_main({
@@ -541,7 +525,7 @@ class TestMainIntegration:
             "OPENROUTER_API_KEY": "fake-key",
         })
         assert result["panel"] == [
-            "correctness", "security", "architecture", "documentation", "resilience"
+            "correctness", "security", "architecture", "resilience", "compatibility"
         ]
         assert result["routing_used"] is True
 
@@ -583,7 +567,7 @@ class TestMainIntegration:
                                                     cerberus_root: Path, diff_file: Path) -> None:
         # Missing correctness (always required via trace)
         mock_call.return_value = (
-            '["security","architecture","testing","documentation","resilience"]',
+            '["security","architecture","testing","compatibility","resilience"]',
             "some-model",
         )
         result = self._run_main({
@@ -631,7 +615,7 @@ class TestMainIntegration:
             "OPENROUTER_API_KEY": "fake-key",
         })
         # Disabled routing returns full bench, not panel_size-limited
-        assert len(result["panel"]) == 12
+        assert len(result["panel"]) == 8
 
     def test_config_load_failure_uses_hardcoded_fallback(self, tmp_path: Path, diff_file: Path) -> None:
         result = self._run_main({

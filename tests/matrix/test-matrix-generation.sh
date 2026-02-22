@@ -51,12 +51,12 @@ echo "PASS: Synthetic config produces correct matrix"
 result=$(python3 "$SCRIPT" "defaults/config.yml")
 count=$(echo "$result" | sed -n '2p')
 
-if [[ "$count" != "12" ]]; then
-    echo "FAIL: Expected 12 reviewers from defaults/config.yml, got $count"
+if [[ "$count" != "8" ]]; then
+    echo "FAIL: Expected 8 reviewers from defaults/config.yml, got $count"
     exit 1
 fi
 
-echo "PASS: Actual config.yml produces 12 reviewers"
+echo "PASS: Actual config.yml produces 8 reviewers"
 
 # Verify key reviewers present
 if ! echo "$result" | grep -q "trace"; then

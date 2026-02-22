@@ -77,11 +77,7 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Throughput/latency inefficiency only → flux (skip it); retry storms/backpressure collapse → yours
 - Readability/test ergonomics concerns → craft (skip it); maintainability of failure policy docs/code → yours
 - Missing tests generally → proof (skip it); specifically missing failure-mode tests for new error branches → yours
-- Missing or stale docs/runbook only → scribe (skip it); behavior lacks graceful recovery despite docs → yours
 - Compatibility break across versions/services → pact (skip it); rollback/fallback under version skew failure → yours
-- Dependency trust/CVE decisions → chain (skip it); dependency outage fallback handling → yours
-- Migration/schema safety defects → anchor (skip it); retry/idempotency around data writes under failure → yours
-- Missing telemetry/alerts only → signal (skip it); resilience mechanism exists but never triggers due to logic → yours
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria

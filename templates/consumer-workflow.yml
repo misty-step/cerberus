@@ -69,12 +69,8 @@ jobs:
           - { reviewer: flux,    perspective: performance,     reviewer_label: "Performance" }
           - { reviewer: craft,   perspective: maintainability, reviewer_label: "Maintainability" }
           - { reviewer: proof,   perspective: testing,         reviewer_label: "Testing" }
-          - { reviewer: scribe,  perspective: documentation,   reviewer_label: "Documentation" }
           - { reviewer: fuse,    perspective: resilience,      reviewer_label: "Resilience" }
           - { reviewer: pact,    perspective: compatibility,   reviewer_label: "Compatibility" }
-          - { reviewer: chain,   perspective: dependencies,    reviewer_label: "Dependencies" }
-          - { reviewer: anchor,  perspective: data-integrity,  reviewer_label: "Data Integrity" }
-          - { reviewer: signal,  perspective: observability,   reviewer_label: "Observability" }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
