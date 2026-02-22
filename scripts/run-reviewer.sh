@@ -40,6 +40,9 @@ cerberus_cleanup() {
   # Note: model-used is NOT cleaned here — downstream steps read it.
   # Note: parse-failure-models.txt and parse-failure-retries.txt are NOT
   # cleaned here — parse-review.py reads them to enrich SKIP verdicts.
+  # Go module cache (go/pkg/mod) may have restrictive permissions; chmod first
+  # to ensure we can delete, then remove. Both operations are best-effort.
+  chmod -R 755 "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
   rm -rf "${CERBERUS_ISOLATED_HOME:-}" 2>/dev/null || true
 
   if [[ -n "$cerberus_staging_backup_dir" ]]; then
