@@ -82,7 +82,7 @@ jobs:
           timeout: '600'
 
   verdict:
-    name: "Cerberus / Verdict"
+    name: "Verdict"
     needs: [review, preflight]
     if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest

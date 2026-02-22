@@ -368,3 +368,35 @@ def test_triage_pr_fix_push_failure_reports_fix_failed(monkeypatch: pytest.Monke
     assert result.attempted is True
     assert posted["outcome"] == "fix_failed"
     assert "push failed" in posted["details"].lower()
+
+
+# ---------------------------------------------------------------------------
+# gather_diagnosis
+# ---------------------------------------------------------------------------
+
+
+class TestGatherDiagnosis:
+    """Tests for gather_diagnosis covering branding-changed lines."""
+
+    def test_none_body(self) -> None:
+        triage = load_triage_module()
+        result = triage.gather_diagnosis(None)
+        assert "not found" in result
+
+    def test_empty_body(self) -> None:
+        triage = load_triage_module()
+        result = triage.gather_diagnosis("")
+        assert "not found" in result
+
+    def test_only_headers_and_footer(self) -> None:
+        triage = load_triage_module()
+        body = "## Verdict\n---\n*Cerberus (v2) | 3 findings*\n"
+        result = triage.gather_diagnosis(body)
+        assert "empty" in result
+
+    def test_extracts_findings(self) -> None:
+        triage = load_triage_module()
+        body = "## Verdict\nSome finding here\nAnother finding\n"
+        result = triage.gather_diagnosis(body)
+        assert "Some finding here" in result
+        assert "Another finding" in result

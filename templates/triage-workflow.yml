@@ -58,7 +58,7 @@ jobs:
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
   verdict:
-    name: "Cerberus / Verdict"
+    name: "Verdict"
     needs: [review, draft-check]
     if: github.event_name == 'pull_request' && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest

@@ -115,7 +115,7 @@ jobs:
 
   # Aggregate all review results into a single verdict comment
   verdict:
-    name: "Cerberus / Verdict"
+    name: "Verdict"
     needs: [review, draft-check]
     if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:

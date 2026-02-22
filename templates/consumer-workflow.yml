@@ -63,12 +63,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - { reviewer: trace,  perspective: correctness,      reviewer_label: "Cerberus / Correctness" }
-          - { reviewer: atlas,  perspective: architecture,     reviewer_label: "Cerberus / Architecture" }
-          - { reviewer: guard,  perspective: security,         reviewer_label: "Cerberus / Security" }
-          - { reviewer: flux,   perspective: performance,      reviewer_label: "Cerberus / Performance" }
-          - { reviewer: craft,  perspective: maintainability,  reviewer_label: "Cerberus / Maintainability" }
-          - { reviewer: proof,  perspective: testing,          reviewer_label: "Cerberus / Testing" }
+          - { reviewer: trace,  perspective: correctness,      reviewer_label: "Correctness" }
+          - { reviewer: atlas,  perspective: architecture,     reviewer_label: "Architecture" }
+          - { reviewer: guard,  perspective: security,         reviewer_label: "Security" }
+          - { reviewer: flux,   perspective: performance,      reviewer_label: "Performance" }
+          - { reviewer: craft,  perspective: maintainability,  reviewer_label: "Maintainability" }
+          - { reviewer: proof,  perspective: testing,          reviewer_label: "Testing" }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +90,7 @@ jobs:
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPS (timeout/API error)
 
   verdict:
-    name: "Cerberus / Verdict"
+    name: "Verdict"
     needs: [preflight, review]
     if: always() && needs.preflight.outputs.should_run == 'true'
     permissions:
