@@ -7,7 +7,7 @@
 
 ## Context
 
-Cerberus today is an open source GitHub Action that runs a multi-perspective PR review council (BYO model key).
+Cerberus today is an open source GitHub Action that runs a multi-perspective PR review (BYO model key).
 
 We want a path to a profitable, managed product (Cerberus Cloud) without turning the OSS action into a SaaS-shaped monolith.
 
@@ -27,7 +27,7 @@ Constraints:
 2. **Cerberus Cloud becomes a separate managed service** (separate repo):
    - Distributed as a **GitHub App** (single install surface).
    - Billing via **GitHub Marketplace**.
-   - Runs the same council/triage logic server-side and posts results back to GitHub.
+   - Runs the same review/triage logic server-side and posts results back to GitHub.
    - Enforces **metering** (rate limits / budgets) and **org controls** (policy, auditing).
 
 3. **Interfaces become the product boundary**:

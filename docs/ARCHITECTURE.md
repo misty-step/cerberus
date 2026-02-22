@@ -9,14 +9,14 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 ## Distribution
 
 - **OSS Core (this repo)**: GitHub Actions (BYOK model key). PR comments + checks as the UX.
-- **Cerberus Cloud (planned)**: GitHub App + GitHub Marketplace billing. Same council/triage loop, but managed keys + quotas + org controls, and zero-YAML onboarding.
+- **Cerberus Cloud (planned)**: GitHub App + GitHub Marketplace billing. Same review/triage loop, but managed keys + quotas + org controls, and zero-YAML onboarding.
 
 Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 
 ## Modules
 
-### Module 1: Council Review (GitHub Action) — **v1.0**
-**What:** Multi-AI code review council. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified council comment and a PR review with inline comments.
+### Module 1: Cerberus Review (GitHub Action) — **v1.0**
+**What:** Multi-AI code review. 6 specialist reviewers analyze every PR from different angles (correctness, architecture, security, performance, maintainability, testing). Synthesizes verdicts into a unified verdict comment and a PR review with inline comments.
 
 **Status:** Working. Deployed across all Misty Step repos. Needs hardening.
 
@@ -28,16 +28,16 @@ Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 - Clean documentation
 
 ### Module 2: Auto-Triage Agent — **v1.1**
-**What:** When the council identifies failures or issues, an auto-triage agent can diagnose root causes and optionally push fixes.
+**What:** When Cerberus identifies failures or issues, an auto-triage agent can diagnose root causes and optionally push fixes.
 
 **Key design constraint: NO INFINITE LOOPS.**
-- Circuit breaker: max 1 triage attempt per PR per council run
-- Triage commits are tagged `[triage]` — council skips these commits
+- Circuit breaker: max 1 triage attempt per PR per Cerberus run
+- Triage commits are tagged `[triage]` — Cerberus skips these commits
 - If triage fix doesn't resolve the issue, it opens a comment explaining what it tried and stops
 - Configurable: off / diagnose-only / diagnose-and-fix
 
 **Trigger modes:**
-1. Automatic: council FAIL verdict triggers triage
+1. Automatic: Cerberus FAIL verdict triggers triage
 2. Manual: comment command (`/cerberus triage`) triggers triage
 3. Scheduled: periodic triage of open PRs with unresolved findings
 
@@ -86,7 +86,7 @@ Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 
 ## Architecture Principles
 
-1. **Each module is a separate, independently deployable component.** Council is a GitHub Action. Health Checks could be a standalone service. They share interfaces, not code.
+1. **Each module is a separate, independently deployable component.** Cerberus Review is a GitHub Action. Health Checks could be a standalone service. They share interfaces, not code.
 
 2. **Composition over coupling.** Modules communicate through well-defined interfaces (webhooks, GitHub events, shared config). No direct imports between modules.
 
@@ -94,9 +94,9 @@ Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 
 4. **Configuration is declarative.** One `cerberus.yml` config file controls all modules. Each module reads its own section. Adding a module = adding a section to config.
 
-5. **Progressive enhancement.** Install just the council? Works. Add triage? Works. Add health checks? Works. Each module enhances the others but doesn't require them.
+5. **Progressive enhancement.** Install just the review? Works. Add triage? Works. Add health checks? Works. Each module enhances the others but doesn't require them.
 
-## v1.0 Game Plan (Council Review Polish)
+## v1.0 Game Plan (Cerberus Review Polish)
 
 ### Phase 1: Resilience (P0)
 - [x] Timeout handling: per-reviewer timeouts with graceful degradation

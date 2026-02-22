@@ -100,6 +100,6 @@ def test_all_reviewers_fail_end_to_end(tmp_path: Path) -> None:
     )
     assert aggregate_result.returncode == 0, aggregate_result.stderr
 
-    council = json.loads(Path("/tmp/council-verdict.json").read_text())
-    assert council["verdict"] == "FAIL"
-    assert council["stats"]["fail"] == len(perspectives)
+    result = json.loads(Path("/tmp/verdict.json").read_text())
+    assert result["verdict"] == "FAIL"
+    assert result["stats"]["fail"] == len(perspectives)

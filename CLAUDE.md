@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel OpenCode CLI reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a council action aggregates their verdicts into a single merge-gating check.
+Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel OpenCode CLI reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a verdict action aggregates their verdicts into a single merge-gating check.
 
 Repo scope: this repository is the OSS BYOK GitHub Actions distribution. Cerberus Cloud (managed GitHub App) is planned as a separate repo/product (see `docs/adr/002-oss-core-and-cerberus-cloud.md`).
 
@@ -34,14 +34,14 @@ consumer workflow (.github/workflows/cerberus.yml)
     ├── verdict job (needs: review, if: always() && should_run)
     │   └── uses: misty-step/cerberus/verdict@v2  (verdict/action.yml)
     │       ├── download verdict artifacts
-    │       ├── aggregate-verdict.py  (override handling + council decision)
-    │       ├── post council comment
+    │       ├── aggregate-verdict.py  (override handling + verdict decision)
+    │       ├── post verdict comment
     │       ├── post PR review w/ inline comments
     │       └── optional fail on FAIL
     │
     └── triage job (optional, separate workflow/job)
         └── uses: misty-step/cerberus/triage@v2  (triage/action.yml)
-            ├── read council verdict/comment state
+            ├── read verdict/comment state
             ├── enforce loop guards (`[triage]`, per-SHA attempt cap)
             ├── post diagnosis
             └── optional fix command + `[triage]` commit push
@@ -68,10 +68,10 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 
 - `action.yml` - review composite action entrypoint
 - `preflight/action.yml` - skip-condition gate (fork/draft/missing key) with PR comment support
-- `verdict/action.yml` - council verdict composite action entrypoint
+- `verdict/action.yml` - verdict composite action entrypoint
 - `triage/action.yml` - triage composite action entrypoint
 - `validate/action.yml` - consumer workflow validator (misconfig guardrail)
-- `defaults/config.yml` - council settings, reviewer list, verdict thresholds, override rules
+- `defaults/config.yml` - verdict settings, reviewer list, verdict thresholds, override rules
 - `.opencode/agents/<perspective>.md` - OpenCode agent config (YAML frontmatter) + system prompt (body)
 - `opencode.json` - OpenCode CLI config (provider, model, permissions)
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
@@ -80,8 +80,8 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `scripts/run-reviewer.sh` - orchestrates one reviewer: builds prompt, invokes `opencode run`
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
-- `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes council verdict
-- `scripts/post-council-review.py` - posts a single PR review with inline comments (best-effort) for council findings
+- `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes aggregated verdict
+- `scripts/post-verdict-review.py` - posts a single PR review with inline comments (best-effort) for verdict findings
 - `scripts/triage.py` - triage trigger router + circuit breaker + diagnosis/fix runtime
 
 ## Verdict Logic
@@ -89,9 +89,9 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 Each reviewer emits: `FAIL` (any critical OR 2+ major) | `WARN` (1 major OR 5+ minor OR 3+ minor in same category) | `PASS`.
 Only findings from reviews with confidence >= 0.7 count toward these thresholds.
 
-Council: `FAIL` on a critical reviewer FAIL or 2+ reviewer FAILs (unless overridden) | `WARN` on any WARN or a single non-critical FAIL | `PASS` otherwise.
+Cerberus verdict: `FAIL` on a critical reviewer FAIL or 2+ reviewer FAILs (unless overridden) | `WARN` on any WARN or a single non-critical FAIL | `PASS` otherwise.
 
-Override: `/council override sha=<sha>` comment on PR with reason. SHA must match HEAD. Actor constraints per `defaults/config.yml`.
+Override: `/cerberus override sha=<sha>` comment on PR with reason. SHA must match HEAD. Actor constraints per `defaults/config.yml`.
 
 ## Output Schema
 

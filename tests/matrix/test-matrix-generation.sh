@@ -13,7 +13,7 @@ trap 'rm -f "$test_config"' EXIT
 cat > "$test_config" << 'EOF'
 version: 1
 council:
-  name: "Test Council"
+  name: "Test Cerberus"
 reviewers:
   - name: TEST1
     perspective: correctness

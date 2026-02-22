@@ -38,13 +38,13 @@ class TestAggregateBasic:
     def test_fail_when_critical_reviewer_fails(self):
         code, out, _ = run_aggregate(str(FIXTURES))
         assert code == 0
-        verdict_path = Path("/tmp/council-verdict.json")
+        verdict_path = Path("/tmp/verdict.json")
         data = json.loads(verdict_path.read_text())
         assert data["verdict"] == "FAIL"
 
-    def test_council_verdict_json_created(self):
+    def test_verdict_json_created(self):
         run_aggregate(str(FIXTURES))
-        verdict_path = Path("/tmp/council-verdict.json")
+        verdict_path = Path("/tmp/verdict.json")
         assert verdict_path.exists()
         data = json.loads(verdict_path.read_text())
         assert data["verdict"] == "FAIL"
@@ -83,7 +83,7 @@ class TestAggregateOverride:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"  # Override turned FAIL into PASS
         assert data["override"]["used"] is True
 
@@ -108,7 +108,7 @@ class TestAggregateOverride:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"  # Still FAIL because override SHA didn't match
 
 
@@ -119,7 +119,7 @@ class TestAggregateAllPass:
             (tmp_path / f"{name}.json").write_text(json.dumps(v))
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
 
     def test_warn_verdict_when_no_fail(self, tmp_path):
@@ -131,7 +131,7 @@ class TestAggregateAllPass:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "WARN"
 
 
@@ -158,7 +158,7 @@ class TestCouncilFailThreshold:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "WARN"
 
     def test_two_noncritical_fails_is_fail(self, tmp_path):
@@ -184,7 +184,7 @@ class TestCouncilFailThreshold:
             )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
 
     def test_single_critical_fail_is_fail(self, tmp_path):
@@ -209,7 +209,7 @@ class TestCouncilFailThreshold:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
 
 
@@ -234,7 +234,7 @@ class TestOverrideSHAValidation:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"  # Override rejected due to short SHA
 
     def test_prefix_sha_match_works(self, tmp_path):
@@ -257,7 +257,7 @@ class TestOverrideSHAValidation:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"  # Override accepted
 
 
@@ -283,7 +283,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
         assert "rejected by policy" in err
@@ -309,7 +309,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -334,7 +334,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -358,7 +358,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
         assert "rejected by policy" in err
@@ -383,7 +383,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -408,7 +408,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
 
@@ -433,7 +433,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
 
@@ -458,7 +458,7 @@ class TestOverrideActorAuthorization:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
 
@@ -481,7 +481,7 @@ def test_read_json_handles_corrupt_file(tmp_path):
     code, _, err = run_aggregate(str(tmp_path))
     assert code == 0
     assert "skipped" in err.lower()
-    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    data = json.loads(Path("/tmp/verdict.json").read_text())
     assert data["verdict"] == "SKIP"
     assert len(data.get("skipped_artifacts", [])) == 1
 
@@ -526,7 +526,7 @@ def test_detects_fallback_verdicts(tmp_path):
     assert code == 0
     assert "fallback verdicts detected" in err
     assert "APOLLO" in err
-    # Default policy is warn: parse failures reclassified as SKIP, so council is PASS
+    # Default policy is warn: parse failures reclassified as SKIP, so verdict is PASS
     assert "Cerberus Verdict: PASS" in out
     assert "parse-failure verdict(s) reclassified as SKIP" in err
 
@@ -575,12 +575,12 @@ def test_preserves_reviewer_runtime_seconds(tmp_path):
 
     code, out, err = run_aggregate(str(tmp_path))
     assert code == 0
-    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    data = json.loads(Path("/tmp/verdict.json").read_text())
     assert data["reviewers"][0]["runtime_seconds"] == 37
 
 
 def test_propagates_model_metadata(tmp_path):
-    """model_used, primary_model, fallback_used should pass through to council verdict."""
+    """model_used, primary_model, fallback_used should pass through to verdict."""
     (tmp_path / "apollo.json").write_text(
         json.dumps(
             {
@@ -598,7 +598,7 @@ def test_propagates_model_metadata(tmp_path):
 
     code, _out, _err = run_aggregate(str(tmp_path))
     assert code == 0
-    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    data = json.loads(Path("/tmp/verdict.json").read_text())
     reviewer = data["reviewers"][0]
     assert reviewer["model_used"] == "openrouter/moonshotai/kimi-k2.5"
     assert reviewer["primary_model"] == "openrouter/moonshotai/kimi-k2.5"
@@ -624,7 +624,7 @@ def test_propagates_fallback_model_metadata(tmp_path):
 
     code, _out, _err = run_aggregate(str(tmp_path))
     assert code == 0
-    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    data = json.loads(Path("/tmp/verdict.json").read_text())
     reviewer = data["reviewers"][0]
     assert reviewer["model_used"] == "openrouter/deepseek/deepseek-v3.2"
     assert reviewer["primary_model"] == "openrouter/moonshotai/kimi-k2.5"
@@ -632,7 +632,7 @@ def test_propagates_fallback_model_metadata(tmp_path):
 
 
 def test_missing_model_metadata_defaults_to_none(tmp_path):
-    """Verdicts without model metadata should have None values in council output."""
+    """Verdicts without model metadata should have None values in output."""
     (tmp_path / "apollo.json").write_text(
         json.dumps(
             {
@@ -647,7 +647,7 @@ def test_missing_model_metadata_defaults_to_none(tmp_path):
 
     code, _out, _err = run_aggregate(str(tmp_path))
     assert code == 0
-    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    data = json.loads(Path("/tmp/verdict.json").read_text())
     reviewer = data["reviewers"][0]
     assert reviewer["model_used"] is None
     assert reviewer["primary_model"] is None
@@ -671,7 +671,7 @@ def test_partial_model_metadata_propagates_present_values(tmp_path):
 
     code, _out, _err = run_aggregate(str(tmp_path))
     assert code == 0
-    data = json.loads(Path("/tmp/council-verdict.json").read_text())
+    data = json.loads(Path("/tmp/verdict.json").read_text())
     reviewer = data["reviewers"][0]
     assert reviewer["model_used"] == "openrouter/moonshotai/kimi-k2.5"
     assert reviewer["primary_model"] is None
@@ -974,9 +974,9 @@ class TestPipelineIntegration:
             (tmp_path / f"{name.lower()}.json").write_text(result.stdout)
 
         # Aggregate
-        council = _aggregate([json.loads((tmp_path / f).read_text()) for f in ["apollo.json", "athena.json", "sentinel.json"]])
-        assert council["verdict"] == "PASS"
-        assert council["stats"]["total"] == 3
+        result = _aggregate([json.loads((tmp_path / f).read_text()) for f in ["apollo.json", "athena.json", "sentinel.json"]])
+        assert result["verdict"] == "PASS"
+        assert result["stats"]["total"] == 3
 
     def test_parse_then_aggregate_with_critical(self, tmp_path):
         # One reviewer finds a critical issue
@@ -1016,9 +1016,9 @@ class TestPipelineIntegration:
         )
         parsed2 = json.loads(result2.stdout)
 
-        council = _aggregate([parsed, parsed2])
-        assert council["verdict"] == "FAIL"
-        assert council["stats"]["fail"] == 1
+        result = _aggregate([parsed, parsed2])
+        assert result["verdict"] == "FAIL"
+        assert result["stats"]["fail"] == 1
 
     def test_parse_then_aggregate_single_noncritical_fail_is_warn(self, tmp_path):
         raw_fail = json.dumps(
@@ -1091,14 +1091,14 @@ class TestPipelineIntegration:
         )
         parsed2 = json.loads(result2.stdout)
 
-        council = _aggregate([parsed, parsed2])
-        assert council["verdict"] == "WARN"
-        assert council["stats"]["fail"] == 1
+        result = _aggregate([parsed, parsed2])
+        assert result["verdict"] == "WARN"
+        assert result["stats"]["fail"] == 1
 
 
 class TestSkipVerdicts:
     def test_skip_does_not_cause_fail(self, tmp_path):
-        """A single SKIP verdict should not cause council to FAIL."""
+        """A single SKIP verdict should not cause a FAIL."""
         skip_verdict = {
             "reviewer": "SYSTEM", "perspective": "error",
             "verdict": "SKIP", "confidence": 0.0, "summary": "API error occurred."
@@ -1106,17 +1106,17 @@ class TestSkipVerdicts:
         (tmp_path / "error.json").write_text(json.dumps(skip_verdict))
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "SKIP"
 
     def test_all_skips_results_in_skip_verdict(self, tmp_path):
-        """If all reviewers skip, council verdict should be SKIP."""
+        """If all reviewers skip, verdict should be SKIP."""
         for name in ["a", "b", "c"]:
             v = {"reviewer": name, "perspective": name, "verdict": "SKIP", "confidence": 0.0, "summary": "API error."}
             (tmp_path / f"{name}.json").write_text(json.dumps(v))
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "SKIP"
         assert data["stats"]["skip"] == 3
 
@@ -1130,7 +1130,7 @@ class TestSkipVerdicts:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["stats"]["skip"] == 1
         assert data["stats"]["pass"] == 1
@@ -1145,7 +1145,7 @@ class TestSkipVerdicts:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["stats"]["skip"] == 1
         assert data["stats"]["fail"] == 1
@@ -1160,7 +1160,7 @@ class TestSkipVerdicts:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "WARN"
         assert data["stats"]["skip"] == 1
         assert data["stats"]["warn"] == 1
@@ -1172,7 +1172,7 @@ class TestSkipVerdicts:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert "skipped: 1" in data["summary"]
 
     def test_timeout_skips_are_named_in_summary(self, tmp_path):
@@ -1192,7 +1192,7 @@ class TestSkipVerdicts:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert "Timed out reviewers: APOLLO." in data["summary"]
 
     def test_all_four_verdict_types_in_stats(self, tmp_path):
@@ -1211,7 +1211,7 @@ class TestSkipVerdicts:
         )
         code, out, _ = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["stats"]["pass"] == 1
         assert data["stats"]["warn"] == 1
         assert data["stats"]["fail"] == 1
@@ -1359,7 +1359,7 @@ class TestPerReviewerOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
         assert "rejected by policy" in err
@@ -1385,7 +1385,7 @@ class TestPerReviewerOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -1411,7 +1411,7 @@ class TestPerReviewerOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -1434,7 +1434,7 @@ class TestPerReviewerOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -1459,7 +1459,7 @@ class TestPerReviewerOverrideIntegration:
         )
         assert code == 0
         assert "invalid GH_REVIEWER_POLICIES" in err
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         # Falls back to global pr_author, so override succeeds
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
@@ -1485,7 +1485,7 @@ class TestPerReviewerOverrideIntegration:
         )
         assert code == 0
         assert "invalid GH_REVIEWER_POLICIES" in err
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
 
@@ -1590,7 +1590,7 @@ class TestArtifactValidationIntegration:
         (tmp_path / "bad.json").write_text("{not json}")
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert "skipped" in err.lower()
         assert len(data.get("skipped_artifacts", [])) == 1
@@ -1607,7 +1607,7 @@ class TestArtifactValidationIntegration:
         }))
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert len(data.get("skipped_artifacts", [])) == 1
         assert "size" in data["skipped_artifacts"][0]["reason"].lower()
@@ -1622,17 +1622,17 @@ class TestArtifactValidationIntegration:
         }))
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert len(data.get("skipped_artifacts", [])) == 1
 
     def test_all_artifacts_rejected_produces_skip(self, tmp_path):
-        """When every artifact is malformed, council verdict = SKIP."""
+        """When every artifact is malformed, verdict = SKIP."""
         (tmp_path / "a.json").write_text("{bad}")
         (tmp_path / "b.json").write_text("{also bad}")
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "SKIP"
         assert len(data.get("skipped_artifacts", [])) == 2
 
@@ -1644,7 +1644,7 @@ class TestArtifactValidationIntegration:
         (tmp_path / "corrupt.json").write_bytes(b"\x00\x01\x02")
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         skipped = data.get("skipped_artifacts", [])
         assert len(skipped) == 1
         assert "corrupt.json" in skipped[0]["file"]
@@ -1778,7 +1778,7 @@ class TestSelectOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
         assert data["override"]["actor"] == "author"
@@ -1804,7 +1804,7 @@ class TestSelectOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "FAIL"
         assert data["override"]["used"] is False
 
@@ -1831,7 +1831,7 @@ class TestSelectOverrideIntegration:
             },
         )
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
         assert data["override"]["actor"] == "maintainer"
@@ -1857,7 +1857,7 @@ class TestSelectOverrideIntegration:
         )
         assert code == 0
         assert "invalid GH_OVERRIDE_ACTOR_PERMISSIONS" in err
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         # pr_author policy doesn't need permissions, so override still works
         assert data["verdict"] == "PASS"
         assert data["override"]["used"] is True
@@ -1867,7 +1867,7 @@ class TestSelectOverrideIntegration:
 
 
 class TestParseFailurePolicy:
-    """Tests for parse-failure-policy handling in council aggregation."""
+    """Tests for parse-failure-policy handling in verdict aggregation."""
 
     @staticmethod
     def _make_fallback(reviewer: str, perspective: str) -> dict:
@@ -1880,7 +1880,7 @@ class TestParseFailurePolicy:
         }
 
     def test_all_parse_failures_produce_skip(self, tmp_path):
-        """When ALL reviewers are parse failures, council verdict is SKIP."""
+        """When ALL reviewers are parse failures, verdict is SKIP."""
         for name in ("apollo", "sentinel", "vulcan"):
             (tmp_path / f"{name}.json").write_text(
                 json.dumps(self._make_fallback(name.upper(), name))
@@ -1888,12 +1888,12 @@ class TestParseFailurePolicy:
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
         assert "Cerberus Verdict: SKIP" in out
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] == "SKIP"
         assert data["stats"]["parse_failures_reclassified"] == 3
 
     def test_parse_failure_with_real_fail_still_fails(self, tmp_path):
-        """A real FAIL alongside parse failures still causes council FAIL."""
+        """A real FAIL alongside parse failures still causes FAIL."""
         (tmp_path / "apollo.json").write_text(
             json.dumps(self._make_fallback("APOLLO", "correctness"))
         )
@@ -1949,7 +1949,7 @@ class TestParseFailurePolicy:
         }))
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["stats"]["parse_failures_reclassified"] == 1
 
 
@@ -1957,19 +1957,19 @@ class TestParseFailurePolicy:
 
 
 class TestVerdictJsonRobustness:
-    def test_council_verdict_always_has_verdict_field(self, tmp_path):
-        """Council verdict JSON always has a non-null .verdict field."""
+    def test_verdict_always_has_verdict_field(self, tmp_path):
+        """Verdict JSON always has a non-null .verdict field."""
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
             "verdict": "PASS", "confidence": 0.9, "summary": "ok",
         }))
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        data = json.loads(Path("/tmp/council-verdict.json").read_text())
+        data = json.loads(Path("/tmp/verdict.json").read_text())
         assert data["verdict"] in ("PASS", "WARN", "FAIL", "SKIP")
 
-    def test_council_verdict_json_atomic_write(self, tmp_path):
-        """Council verdict JSON is written atomically (no partial reads)."""
+    def test_verdict_json_atomic_write(self, tmp_path):
+        """Verdict JSON is written atomically (no partial reads)."""
         (tmp_path / "apollo.json").write_text(json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness",
             "verdict": "PASS", "confidence": 0.9, "summary": "ok",
@@ -1977,12 +1977,12 @@ class TestVerdictJsonRobustness:
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
         # File should exist and be valid JSON
-        path = Path("/tmp/council-verdict.json")
+        path = Path("/tmp/verdict.json")
         assert path.exists()
         data = json.loads(path.read_text())
         assert "verdict" in data
         # Temp file should not linger
-        assert not Path("/tmp/council-verdict.json.tmp").exists()
+        assert not Path("/tmp/verdict.json.tmp").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -2123,7 +2123,7 @@ class TestIsExplicitNoncriticalFailUnit:
 # --- generate_quality_report unknown verdict (lines 266->268, 295) ---
 
 class TestGenerateQualityReportEdgeCases:
-    def _council(self):
+    def _verdict(self):
         return {"verdict": "PASS"}
 
     def test_unknown_verdict_type_appears_in_distribution(self):
@@ -2135,7 +2135,7 @@ class TestGenerateQualityReportEdgeCases:
             "confidence": 0.0,
             "summary": "custom",
         }
-        report = _generate_quality_report([verdict], self._council(), [])
+        report = _generate_quality_report([verdict], self._verdict(), [])
         dist = report["summary"]["verdict_distribution"]
         assert "XFAIL" in dist
         assert dist["XFAIL"] == 1
@@ -2150,13 +2150,13 @@ class TestGenerateQualityReportEdgeCases:
             "summary": "custom",
             "model_used": "test-model",
         }
-        report = _generate_quality_report([verdict], self._council(), [])
+        report = _generate_quality_report([verdict], self._verdict(), [])
         model_stats = report["models"]["test-model"]
         assert "XFAIL" not in model_stats["verdicts"]
         assert model_stats["count"] == 1
 
     def test_empty_verdicts_returns_early(self):
-        report = _generate_quality_report([], self._council(), [])
+        report = _generate_quality_report([], self._verdict(), [])
         assert report["summary"]["total_reviewers"] == 0
         assert "No valid verdicts" in report["errors"]
 

@@ -3,7 +3,7 @@
 The consumer workflow template must enforce:
 - review jobs: read-only (no pull-requests: write)
 - verdict job: pull-requests: write (only job that posts comments)
-- review jobs: comment-policy: 'never' (artifact-only output, single council comment)
+- review jobs: comment-policy: 'never' (artifact-only output, single verdict comment)
 """
 
 import re

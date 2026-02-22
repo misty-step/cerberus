@@ -62,5 +62,5 @@ Error: Transform function did not return a value
 ```
 
 ## Notes
-- Council is green: `Council Verdict` passed on run `22026446412`.
+- Cerberus is green: `Cerberus Verdict` passed on run `22026446412`.
 - This smoke-eval failure happened in the eval step before pass-rate enforcement, so results weren't meaningful (`31 errors`).

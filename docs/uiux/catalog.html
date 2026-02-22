@@ -780,7 +780,7 @@
               <div class="card">
                 <h3>Issue Comment (PR timeline)</h3>
                 <p>
-                  Best for a single council report. Upsertable via hidden marker. Great for commands (override,
+                  Best for a single verdict report. Upsertable via hidden marker. Great for commands (override,
                   triage). Weak: not sticky; can get buried.
                 </p>
                 <div class="chips">
@@ -839,7 +839,7 @@
                 <ol class="rulelist">
                   <li><strong>One glance</strong>: verdict, scope, hotspot files, top 5 issues.</li>
                   <li><strong>One click</strong>: expand to reviewer breakdown and evidence.</li>
-                  <li><strong>One source of truth</strong>: exactly one canonical council report per SHA.</li>
+                  <li><strong>One source of truth</strong>: exactly one canonical verdict report per SHA.</li>
                   <li><strong>Noise budget</strong>: never flood timeline or diff threads.</li>
                   <li><strong>Machine readable</strong>: stable markers, versioned schema, small payloads.</li>
                 </ol>
@@ -868,9 +868,9 @@
 
             <div class="grid">
               <div class="card">
-                <h3>Strategy A: Timeline Report (Council Comment as Home)</h3>
+                <h3>Strategy A: Timeline Report (Verdict Comment as Home)</h3>
                 <p>
-                  Single upserted council comment is the product. Inline comments only for critical and major. No
+                  Single upserted verdict comment is the product. Inline comments only for critical and major. No
                   per-reviewer comments by default.
                 </p>
                 <div class="chips">
@@ -882,7 +882,7 @@
                   <div class="bar">
                     <div class="lhs">
                       <div class="t">PR: Harden webhook signature verification</div>
-                      <div class="s">Council verdict shown in timeline; details expandable</div>
+                      <div class="s">Cerberus verdict shown in timeline; details expandable</div>
                     </div>
                     <div class="rhs">
                       <span class="badge"><span class="dot fail"></span><strong>BLOCK</strong> (FAIL)</span>
@@ -895,7 +895,7 @@
                       <div class="name">Timeline</div>
                       <div class="item">
                         <div class="k">
-                          <strong>Cerberus council report</strong>
+                          <strong>Cerberus verdict report</strong>
                           <span class="badge"><span class="dot fail"></span>FAIL</span>
                         </div>
                         <div class="v">One comment, edited per run. Top issues visible without expanding.</div>
@@ -934,7 +934,7 @@
                   </div>
                 </div>
                 <div class="cta" style="margin-top: 10px">
-                  <button class="btn" data-open="#mockA">View mock council comment</button>
+                  <button class="btn" data-open="#mockA">View mock verdict comment</button>
                   <span class="sub" style="margin: 0">Best when timeline is the primary place humans look.</span>
                 </div>
               </div>
@@ -942,7 +942,7 @@
               <div class="card">
                 <h3>Strategy B: Review First (Inline Review as Home)</h3>
                 <p>
-                  The PR review is the product: one council review per SHA with inline comments. The council issue
+                  The PR review is the product: one Cerberus review per SHA with inline comments. The verdict issue
                   comment becomes a slim index + commands.
                 </p>
                 <div class="chips">
@@ -967,7 +967,7 @@
                       <div class="name">Timeline</div>
                       <div class="item">
                         <div class="k">
-                          <strong>Council index + commands</strong>
+                          <strong>Verdict index + commands</strong>
                           <span class="badge"><span class="dot warn"></span>WARN</span>
                         </div>
                         <div class="v">Minimal summary, links to review + artifacts.</div>
@@ -987,7 +987,7 @@
                       <div class="name">Review</div>
                       <div class="item">
                         <div class="k">
-                          <strong>Council review</strong>
+                          <strong>Cerberus review</strong>
                           <span class="badge"><span class="dot warn"></span>inline</span>
                         </div>
                         <div class="v">Top N comments. Dedupe per file and per issue.</div>
@@ -1049,7 +1049,7 @@
                       <div class="name">Checks</div>
                       <div class="item">
                         <div class="k">
-                          <strong>Council dashboard</strong>
+                          <strong>Cerberus dashboard</strong>
                           <span class="badge"><span class="dot pass"></span>PASS</span>
                         </div>
                         <div class="v">Tables, hotspots, drilldown sections, artifact links.</div>
@@ -1259,7 +1259,7 @@ Evidence: (collapsed) exact lines and context</pre>
                   machine ledger with a version tag and strict schema.
                 </p>
                 <ol class="rulelist">
-                  <li><strong>Stable marker</strong>: HTML comment marker per council SHA.</li>
+                  <li><strong>Stable marker</strong>: HTML comment marker per verdict SHA.</li>
                   <li><strong>Versioned schema</strong>: `cerberus.schema=1` in JSON.</li>
                   <li><strong>Small payload</strong>: avoid full evidence; include references only.</li>
                   <li><strong>Deterministic ordering</strong>: sort by severity, then file, then line.</li>
@@ -1327,7 +1327,7 @@ Evidence: (collapsed) exact lines and context</pre>
               <div class="card">
                 <h3>Reviewer Labels</h3>
                 <p>
-                  Show both: the council name and the perspective. Example: <code>APOLLO (Correctness)</code>.
+                  Show both: the reviewer name and the perspective. Example: <code>APOLLO (Correctness)</code>.
                   Humans remember roles; machines match identifiers.
                 </p>
                 <div class="chips">
@@ -1342,7 +1342,7 @@ Evidence: (collapsed) exact lines and context</pre>
                   Commands should be short, consistent, and always shown where needed. Put them in monospace and
                   always include required args.
                 </p>
-                <pre>/council override sha=3b15c52 (reason required)
+                <pre>/cerberus override sha=3b15c52 (reason required)
 /cerberus triage mode=diagnose</pre>
                 <div class="chips">
                   <span class="chip"><strong>Rule</strong>: copyable in 1 drag</span>
@@ -1394,7 +1394,7 @@ Evidence: (collapsed) exact lines and context</pre>
       <div class="mock-comment">
         <div class="head">
           <div class="who">
-            <div class="by">Cerberus Council</div>
+            <div class="by">Cerberus</div>
             <div class="when">Edited just now (upserted report)</div>
           </div>
           <div class="pillrow" style="margin-top: 2px">
@@ -1413,7 +1413,7 @@ Evidence: (collapsed) exact lines and context</pre>
               <span><strong>Hotspots</strong>: <code>api/webhooks/stripe.ts</code>, <code>billing/ledger.ts</code></span>
             </div>
             <div class="row">
-              <span><strong>Commands</strong>: <code>/council override sha=3b15c52</code> (reason required)</span>
+              <span><strong>Commands</strong>: <code>/cerberus override sha=3b15c52</code> (reason required)</span>
             </div>
           </div>
 
@@ -1472,7 +1472,7 @@ CASSANDRA (Testing): WARN, conf 0.80, runtime 47s</pre>
           </details>
 
           <div class="foot">
-            Cerberus Council v2.0.0 | Override policy <code>pr_author</code> | Commands always shown in report footer
+            Cerberus v2.0.0 | Override policy <code>pr_author</code> | Commands always shown in report footer
           </div>
         </div>
       </div>
@@ -1482,7 +1482,7 @@ CASSANDRA (Testing): WARN, conf 0.80, runtime 47s</pre>
       <div class="mock-comment">
         <div class="head">
           <div class="who">
-            <div class="by">Cerberus Council Review</div>
+            <div class="by">Cerberus Review</div>
             <div class="when">Review object (one per SHA)</div>
           </div>
           <div class="pillrow" style="margin-top: 2px">
@@ -1589,7 +1589,7 @@ Minors stay in report to avoid "diff confetti".</pre>
         </div>
         <div class="body">
           <div class="h">Marker + Ledger</div>
-          <pre>&lt;!-- cerberus:council-ledger sha=3b15c52 schema=1 --&gt;
+          <pre>&lt;!-- cerberus:verdict-ledger sha=3b15c52 schema=1 --&gt;
 ```json
 {
   "cerberus": { "schema": 1, "sha": "3b15c52a9f71", "verdict": "FAIL" },

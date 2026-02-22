@@ -1,6 +1,6 @@
 # Cerberus QA Runbook
 
-Cerberus is a multi-agent AI code review council for GitHub PRs, implemented as a GitHub Action. It runs 6 specialized reviewers in parallel and synthesizes a council verdict.
+Cerberus is a multi-agent AI code review system for GitHub PRs, implemented as a GitHub Action. It runs 6 specialized reviewers in parallel and synthesizes a single verdict.
 
 ## Build & Test
 
@@ -38,7 +38,7 @@ yamllint .
 ## Happy Path Testing
 
 ### 1. Basic Review (Consumer Workflow)
-Create a test PR and verify the full council review:
+Create a test PR and verify the full Cerberus review:
 
 1. Create a test repository or use an existing one
 2. Add the `OPENROUTER_API_KEY` secret to the repo
@@ -48,7 +48,7 @@ Create a test PR and verify the full council review:
    - 6 reviewer jobs spawn (APOLLO, ATHENA, SENTINEL, VULCAN, ARTEMIS, CASSANDRA)
    - Each reviewer produces findings (PASS/WARN/FAIL/SKIP)
    - Verdict job runs after all reviews complete
-   - Council verdict comment appears (FAIL/WARN/PASS)
+   - Cerberus verdict comment appears (FAIL/WARN/PASS)
    - Findings include file:line references
 
 ### 2. Reviewer Outputs
@@ -61,11 +61,11 @@ Each reviewer should produce:
 ### 3. Verdict Synthesis
 The verdict job should:
 - Aggregate all 6 reviewer verdicts
-- Apply council rules:
+- Apply verdict rules:
   - FAIL: any critical FAIL OR 2+ FAILs
   - WARN: any WARN OR single non-critical FAIL
   - PASS: all reviewers pass
-- Post a council summary comment with collapsible sections
+- Post a verdict summary comment with collapsible sections
 
 ### 4. Model Diversity
 Test custom model assignment:
@@ -78,7 +78,7 @@ Test the triage module:
 - Enable via `templates/triage-workflow.yml`
 - Modes: `diagnose`, `fix`, `off`
 - Verify:
-  - Auto-triage triggers on council FAIL
+  - Auto-triage triggers on Cerberus FAIL
   - `/cerberus triage` comment works
   - Loop protection (max-attempts, `[triage]` skip)
 
@@ -103,13 +103,13 @@ Test the triage module:
 - Check `Retry-After` header is honored
 
 ### 5. Override Protocol
-- Test `/council override sha=<short-sha>` comment
+- Test `/cerberus override sha=<short-sha>` comment
 - Verify it downgrades FAIL to non-blocking
 
 ## Regression Checks
 
 ### SKIP Verdict Tracking
-- When all reviews SKIP (timeout/API errors), council should emit SKIP verdict
+- When all reviews SKIP (timeout/API errors), Cerberus should emit SKIP verdict
 - `fail-on-skip` input controls whether to fail the workflow
 
 ### Retry with Model Fallback
@@ -119,7 +119,7 @@ Test the triage module:
 
 ### Consumer Workflow Matrix
 - Verify all 6 reviewers are in the matrix
-- Check that reviewer roster matches council composition
+- Check that reviewer roster matches Cerberus configuration
 - Ensure `fail-fast: false` is set for parallel execution
 
 ### Fork Protection
@@ -141,7 +141,7 @@ Test the triage module:
 - [ ] All 6 reviewers spawn and complete
 - [ ] Each reviewer produces findings (or clean pass)
 - [ ] Verdict comment appears with summary
-- [ ] Council verdict matches aggregated reviewer results
+- [ ] Cerberus verdict matches aggregated reviewer results
 - [ ] Override comment downgrades FAIL
 - [ ] Triage triggers on FAIL (if enabled)
 - [ ] Large PR completes within timeout

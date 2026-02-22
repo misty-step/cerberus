@@ -21,20 +21,20 @@ def load_triage_module():
     return module
 
 
-def test_extract_council_verdict() -> None:
+def test_extract_verdict() -> None:
     triage = load_triage_module()
 
-    body = """<!-- cerberus:council -->
+    body = """<!-- cerberus:verdict -->
 ## ❌ Cerberus Verdict: FAIL
 Details
 """
-    assert triage.extract_council_verdict(body) == "FAIL"
+    assert triage.extract_verdict(body) == "FAIL"
 
 
-def test_extract_council_verdict_missing() -> None:
+def test_extract_verdict_missing() -> None:
     triage = load_triage_module()
 
-    assert triage.extract_council_verdict("No verdict here") is None
+    assert triage.extract_verdict("No verdict here") is None
 
 
 def test_parse_triage_command_mode_default() -> None:
@@ -86,24 +86,24 @@ def test_count_attempts_ignores_untrusted_comments() -> None:
     assert triage.count_attempts_for_sha(comments, "abc1234deadbeef", "github-actions[bot]") == 1
 
 
-def test_latest_council_comment_ignores_untrusted_spoof() -> None:
+def test_latest_verdict_comment_ignores_untrusted_spoof() -> None:
     triage = load_triage_module()
 
     comments = [
         {
             "user": {"login": "external-user"},
             "updated_at": "2026-02-08T02:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ❌ Cerberus Verdict: FAIL",
+            "body": "<!-- cerberus:verdict -->\n## ❌ Cerberus Verdict: FAIL",
         },
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ✅ Cerberus Verdict: PASS",
+            "body": "<!-- cerberus:verdict -->\n## ✅ Cerberus Verdict: PASS",
         },
     ]
-    latest = triage.find_latest_council_comment(comments, "github-actions[bot]")
+    latest = triage.find_latest_verdict_comment(comments, "github-actions[bot]")
     assert latest is not None
-    assert triage.extract_council_verdict(latest["body"]) == "PASS"
+    assert triage.extract_verdict(latest["body"]) == "PASS"
 
 
 def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:
@@ -116,7 +116,7 @@ def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:
 
     assert triage.should_schedule_pr(
         verdict="FAIL",
-        council_updated_at=stale_fail_at,
+        verdict_updated_at=stale_fail_at,
         attempts_for_sha=0,
         max_attempts=1,
         stale_hours=24,
@@ -124,7 +124,7 @@ def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:
     )
     assert not triage.should_schedule_pr(
         verdict="FAIL",
-        council_updated_at=fresh_fail_at,
+        verdict_updated_at=fresh_fail_at,
         attempts_for_sha=0,
         max_attempts=1,
         stale_hours=24,
@@ -132,7 +132,7 @@ def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:
     )
     assert not triage.should_schedule_pr(
         verdict="PASS",
-        council_updated_at=old_pass_at,
+        verdict_updated_at=old_pass_at,
         attempts_for_sha=0,
         max_attempts=1,
         stale_hours=24,
@@ -140,7 +140,7 @@ def test_schedule_selector_requires_stale_fail_and_attempt_room() -> None:
     )
     assert not triage.should_schedule_pr(
         verdict="FAIL",
-        council_updated_at=stale_fail_at,
+        verdict_updated_at=stale_fail_at,
         attempts_for_sha=1,
         max_attempts=1,
         stale_hours=24,
@@ -220,7 +220,7 @@ def test_triage_pr_skips_when_verdict_not_fail(monkeypatch: pytest.MonkeyPatch) 
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ✅ Cerberus Verdict: PASS",
+            "body": "<!-- cerberus:verdict -->\n## ✅ Cerberus Verdict: PASS",
         }
     ]
     commit_payload = {"commit": {"message": "normal commit"}}
@@ -271,7 +271,7 @@ def test_triage_pr_diagnose_posts_comment(monkeypatch: pytest.MonkeyPatch) -> No
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ❌ Cerberus Verdict: FAIL\ncouncil details",
+            "body": "<!-- cerberus:verdict -->\n## ❌ Cerberus Verdict: FAIL\ncouncil details",
         }
     ]
     commit_payload = {"commit": {"message": "normal commit"}}
@@ -323,7 +323,7 @@ def test_triage_pr_fix_push_failure_reports_fix_failed(monkeypatch: pytest.Monke
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ❌ Cerberus Verdict: FAIL",
+            "body": "<!-- cerberus:verdict -->\n## ❌ Cerberus Verdict: FAIL",
         }
     ]
     commit_payload = {"commit": {"message": "normal commit"}}

@@ -1,8 +1,8 @@
 # Cerberus
 
-Multi-agent AI code review council for GitHub PRs.
+Multi-agent AI code review for GitHub PRs.
 
-Six specialized reviewers analyze every pull request in parallel, then a council verdict gates merge.
+Six specialized reviewers analyze every pull request in parallel, then Cerberus aggregates their verdicts into a single merge-gating check.
 
 ## Reviewers
 | Role | Codename | Focus |
@@ -21,7 +21,7 @@ Six specialized reviewers analyze every pull request in parallel, then a council
 2. Create `.github/workflows/cerberus.yml`:
 
 ```yaml
-name: Cerberus Council
+name: Cerberus
 
 on:
   pull_request:
@@ -87,7 +87,7 @@ jobs:
           timeout: '600'
 
   verdict:
-    name: "Council Verdict"
+    name: "Cerberus Verdict"
     needs: [review, draft-check]
     if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:
@@ -117,30 +117,30 @@ Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint
 2. OpenCode CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
 4. Each reviewer uploads a structured verdict artifact (optionally posts a per-reviewer PR comment)
-5. The verdict job aggregates all reviews, posts a council comment, and posts a PR review with inline comments (up to 30) anchored to diff lines
-6. Council verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
+5. The verdict job aggregates all reviews, posts a verdict comment, and posts a PR review with inline comments (up to 30) anchored to diff lines
+6. Cerberus verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
 
 ## Auto-Triage (v1.1)
-Cerberus ships a separate triage module for council failures:
+Cerberus ships a separate triage module for verdict failures:
 - Action: `misty-step/cerberus/triage@v2`
 - Modes: `off`, `diagnose`, `fix`
 - Loop protection:
   - skips if head commit message contains `[triage]`
   - caps attempts per PR + SHA (`max-attempts`, default `1`)
-  - trusts only bot-authored council/triage marker comments for gating
+  - trusts only bot-authored verdict/triage marker comments for gating
   - supports global kill switch: `CERBERUS_TRIAGE=off`
 
 Use `templates/triage-workflow.yml` to enable:
-- automatic triage on council `FAIL`
+- automatic triage on Cerberus `FAIL`
 - manual triage via PR comment: `/cerberus triage` (optional `mode=fix`)
-- scheduled triage for stale unresolved council failures
+- scheduled triage for stale unresolved verdict failures
 
 ## Fork PRs
 
 Cerberus supports both same-repo and fork PRs with appropriate security handling:
 
 ### Same-Repo PRs
-Full review council runs with full access to the `OPENROUTER_API_KEY` secret.
+Full Cerberus review runs with full access to the `OPENROUTER_API_KEY` secret.
 
 ### Fork PRs
 - Fork PRs trigger the workflow but skip the review jobs
@@ -172,8 +172,8 @@ This prevents confusing failures when secret-dependent operations can't access t
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | - | GitHub token for PR comments |
-| `fail-on-verdict` | no | `true` | Exit 1 if council fails |
-| `fail-on-skip` | no | `false` | Exit 1 if council verdict is SKIP (all reviews skipped) |
+| `fail-on-verdict` | no | `true` | Exit 1 if Cerberus verdict is FAIL |
+| `fail-on-skip` | no | `false` | Exit 1 if Cerberus verdict is SKIP (all reviews skipped) |
 
 ### Validate Action (`misty-step/cerberus/validate@v2`)
 | Input | Required | Default | Description |
@@ -188,7 +188,7 @@ Each reviewer emits:
 - **PASS**: otherwise
 - Only findings from reviews with confidence **>= 0.7** count toward verdict thresholds.
 
-Council:
+Cerberus verdict:
 - **FAIL**: any critical reviewer FAIL OR 2+ reviewer FAILs (unless overridden)
 - **WARN**: any reviewer WARN OR a single non-critical reviewer FAIL
 - **PASS**: all reviewers pass
@@ -197,7 +197,7 @@ Council:
 Comment on the PR:
 
 ```text
-/council override sha=<short-sha>
+/cerberus override sha=<short-sha>
 Reason: <explanation>
 ```
 
@@ -209,7 +209,7 @@ The SHA must match the current HEAD commit. Override downgrades FAIL to non-bloc
 - `verdict-json`: Path to the verdict JSON file
 
 ### Verdict Action
-- `verdict`: Council verdict (PASS, WARN, FAIL, SKIP)
+- `verdict`: Cerberus verdict (PASS, WARN, FAIL, SKIP)
 
 ## Customization
 ### Run fewer reviewers
