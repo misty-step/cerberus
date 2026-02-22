@@ -6,6 +6,11 @@ branding:
   icon: 'list'
   color: 'blue'
 
+inputs:
+  panel:
+    description: 'JSON array of perspective strings to filter the matrix (from router). Empty = all reviewers.'
+    default: ''
+
 outputs:
   matrix:
     description: 'JSON matrix of reviewers for use in strategy.matrix'
@@ -25,6 +30,7 @@ runs:
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}/..
+        PANEL_FILTER: ${{ inputs.panel }}
       run: |
         config_file="${CERBERUS_ROOT}/defaults/config.yml"
 
@@ -36,6 +42,22 @@ runs:
         pip install pyyaml --quiet
 
         python3 "${{ github.action_path }}/generate-matrix.py" "$config_file" > /dev/null
+
+        if [[ -n "${PANEL_FILTER:-}" && "$PANEL_FILTER" != "[]" ]]; then
+          python3 -c "
+import json, sys
+matrix = json.load(open('/tmp/matrix-output.json'))
+panel = json.loads(sys.argv[1])
+panel_set = set(panel)
+filtered = [r for r in matrix['include'] if r['perspective'] in panel_set]
+if not filtered:
+    filtered = matrix['include']
+    print('::warning::Panel filter matched no reviewers; using full matrix', file=sys.stderr)
+json.dump({'include': filtered}, open('/tmp/matrix-output.json', 'w'))
+open('/tmp/matrix-count.txt', 'w').write(str(len(filtered)))
+open('/tmp/matrix-names.txt', 'w').write(','.join(r['reviewer'] for r in filtered))
+" "$PANEL_FILTER"
+        fi
 
         matrix_json=$(cat /tmp/matrix-output.json)
         count=$(cat /tmp/matrix-count.txt)
