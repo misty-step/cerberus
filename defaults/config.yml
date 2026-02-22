@@ -12,6 +12,7 @@ model:
   fallback:
     - "openrouter/google/gemini-3-flash-preview"
     - "openrouter/z-ai/glm-5"
+    - "openrouter/qwen/qwen3-coder"
   pool:
     - "openrouter/moonshotai/kimi-k2.5"
     - "openrouter/minimax/minimax-m2.5"
@@ -19,6 +20,9 @@ model:
     - "openrouter/google/gemini-3-flash-preview"
     - "openrouter/deepseek/deepseek-v3.2"
     - "openrouter/z-ai/glm-5"
+    - "openrouter/qwen/qwen3-coder"
+    - "openrouter/xiaomi/mimo-v2-flash"
+    - "openrouter/mistralai/devstral-2512"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
@@ -60,7 +64,7 @@ cerberus_verdict:
 reviewers:
   - name: trace
     perspective: correctness
-    model: "openrouter/moonshotai/kimi-k2.5"
+    model: pool
     description: "Correctness — Find the bug"
     override: pr_author
     tools:
@@ -68,7 +72,7 @@ reviewers:
 
   - name: atlas
     perspective: architecture
-    model: "openrouter/z-ai/glm-5"
+    model: pool
     description: "Architecture — Zoom out"
     override: pr_author
     tools:
@@ -76,7 +80,7 @@ reviewers:
 
   - name: guard
     perspective: security
-    model: "openrouter/minimax/minimax-m2.5"
+    model: pool
     description: "Security — Think like an attacker"
     override: maintainers_only
     tools:
@@ -84,7 +88,7 @@ reviewers:
 
   - name: flux
     perspective: performance
-    model: "openrouter/google/gemini-3-flash-preview"
+    model: pool
     description: "Performance — Think at runtime"
     override: pr_author
     tools:
@@ -92,7 +96,7 @@ reviewers:
 
   - name: craft
     perspective: maintainability
-    model: "openrouter/moonshotai/kimi-k2.5"
+    model: pool
     description: "Maintainability — Think like the next dev"
     override: pr_author
     tools:
@@ -100,7 +104,7 @@ reviewers:
 
   - name: proof
     perspective: testing
-    model: "openrouter/google/gemini-3-flash-preview"
+    model: pool
     description: "Testing — See what will break"
     override: pr_author
     tools:

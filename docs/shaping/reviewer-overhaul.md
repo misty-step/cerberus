@@ -190,9 +190,9 @@ All models in the pool, randomly assigned per run. Gemini 3.1 Pro stays — powe
 | gemini-3-flash | $0.10 | $0.40 | 1M | Fast, cheap, good for exploration |
 | deepseek-v3.2 | $0.27 | $1.10 | 128K | Strong coder |
 | glm-5 | $0.43 | $1.70 | 128K | Solid generalist |
-| qwen3-coder | $0.22 | $1.00 | 128K | New, code-focused, cheap |
-| mimo-v2-flash | $0.09 | $0.29 | 128K | Cheapest option, surprisingly capable |
-| devstral-2 | $0.15 | $0.60 | 128K | Mistral's code model, good value |
+| qwen3-coder | $0.22 | $1.00 | 256K | MoE 480B/35B active, code-focused, cheap |
+| mimo-v2-flash | $0.09 | $0.29 | 256K | MoE 309B/15B active, cheapest, SWE-bench #1 open-source |
+| devstral-2512 | $0.40 | $2.00 | 256K | Mistral's code model, solid agentic coder |
 
 **Cost per PR (5 reviewers, ~50K input / ~10K output tokens each):**
 - Cheapest panel: ~$0.04 (all mimo-v2-flash)
