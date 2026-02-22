@@ -4,25 +4,25 @@ import subprocess
 import sys
 from pathlib import Path
 
-from lib.render_council_comment import (
+from lib.render_verdict_comment import (
     collect_hotspots,
     collect_issue_groups,
     count_findings,
     detect_skip_banner,
     normalize_severity,
     normalize_verdict,
-    main as render_council_comment_main,
+    main as render_verdict_comment_main,
     render_comment,
 )
 
 ROOT = Path(__file__).parent.parent
-SCRIPT = ROOT / "scripts" / "render-council-comment.py"
+SCRIPT = ROOT / "scripts" / "render-verdict-comment.py"
 
 
-def run_render(tmp_path: Path, council: dict, env_extra: dict | None = None) -> tuple[int, str, str]:
-    council_path = tmp_path / "council.json"
+def run_render(tmp_path: Path, verdict_data: dict, env_extra: dict | None = None) -> tuple[int, str, str]:
+    verdict_path = tmp_path / "verdict.json"
     output_path = tmp_path / "comment.md"
-    council_path.write_text(json.dumps(council), encoding="utf-8")
+    verdict_path.write_text(json.dumps(verdict_data), encoding="utf-8")
 
     env = os.environ.copy()
     env.update(
@@ -46,8 +46,8 @@ def run_render(tmp_path: Path, council: dict, env_extra: dict | None = None) -> 
         [
             sys.executable,
             str(SCRIPT),
-            "--council-json",
-            str(council_path),
+            "--verdict-json",
+            str(verdict_path),
             "--output",
             str(output_path),
         ],
@@ -60,7 +60,7 @@ def run_render(tmp_path: Path, council: dict, env_extra: dict | None = None) -> 
 
 
 def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "FAIL",
         "summary": "2 reviewers. Failures: 1, warnings: 0, skipped: 0.",
         "reviewers": [
@@ -101,11 +101,11 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
-    assert "<!-- cerberus:council -->" in body
-    assert "## ❌ Council Verdict: FAIL" in body
+    assert "<!-- cerberus:verdict -->" in body
+    assert "## ❌ Cerberus Verdict: FAIL" in body
     assert "**Summary:** 1/2 reviewers passed. 1 failed (Performance & Scalability)." in body
     assert "**Review Scope:** 7 files changed, +120 / -44 lines" in body
     assert "### Reviewer Overview" in body
@@ -114,7 +114,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert "runtime `1m 5s`" in body
     assert "Reviewer details (click to expand)" in body
     assert "blob/abcdef1234567890/src/service.py#L42" in body
-    assert "/council override sha=abcdef123456" in body
+    assert "/cerberus override sha=abcdef123456" in body
 
 
 def test_exits_nonzero_on_non_object_json(tmp_path: Path) -> None:
@@ -126,7 +126,7 @@ def test_exits_nonzero_on_non_object_json(tmp_path: Path) -> None:
 
 
 def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "WARN",
         "summary": "3 reviewers. Failures: 0, warnings: 1, skipped: 0.",
         "reviewers": [
@@ -213,7 +213,7 @@ def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
     assert code == 0, err
     assert "### Fix Order" in body
     assert "### Hotspots" in body
@@ -231,7 +231,7 @@ def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
 
 
 def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "WARN",
         "summary": "2 reviewers. Failures: 0, warnings: 1, skipped: 1.",
         "reviewers": [
@@ -272,7 +272,7 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert "API credits depleted for one or more reviewers" in body
@@ -290,13 +290,13 @@ def test_normalize_severity_defaults_unknown() -> None:
 
 
 def test_count_findings_uses_stats_block_when_available() -> None:
-    council = {
+    verdict_data = {
         "reviewers": [
             {"stats": {"critical": 1, "major": 2, "minor": 3, "info": 4}, "findings": []},
             {"stats": {"critical": 0, "major": 1}, "findings": [{"severity": "critical"}]},
         ]
     }
-    found = count_findings(council["reviewers"])
+    found = count_findings(verdict_data["reviewers"])
     assert found == {"critical": 1, "major": 3, "minor": 3, "info": 4}
 
 
@@ -378,12 +378,12 @@ def test_render_comment_renders_without_stats_or_findings() -> None:
         marker="<!-- test -->",
     )
     assert "<!-- test -->" in comment
-    assert "## ✅ Council Verdict: PASS" in comment
+    assert "## ✅ Cerberus Verdict: PASS" in comment
     assert "No reviewer verdicts available." in comment
 
 
 def test_raw_review_is_omitted_and_note_is_present(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "WARN",
         "summary": "1 reviewer warned.",
         "reviewers": [
@@ -403,7 +403,7 @@ def test_raw_review_is_omitted_and_note_is_present(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert "produced unstructured output" in body
@@ -412,7 +412,7 @@ def test_raw_review_is_omitted_and_note_is_present(tmp_path: Path) -> None:
 
 
 def test_no_raw_review_block_when_absent(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "PASS",
         "summary": "1 reviewer passed.",
         "reviewers": [
@@ -431,7 +431,7 @@ def test_no_raw_review_block_when_absent(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert "Full review output" not in body
@@ -442,7 +442,7 @@ def test_increased_truncation_limits(tmp_path: Path) -> None:
     long_desc = "D" * 500  # Would be truncated at 220 before, now fits in 1000
     long_sugg = "S" * 500
     long_title = "T" * 150  # Would be truncated at 100 before, now fits in 200
-    council = {
+    verdict_data = {
         "verdict": "WARN",
         "summary": "Test truncation limits.",
         "reviewers": [
@@ -471,7 +471,7 @@ def test_increased_truncation_limits(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     # Full strings should appear without truncation ellipsis
@@ -481,7 +481,7 @@ def test_increased_truncation_limits(tmp_path: Path) -> None:
 
 
 def test_renders_model_in_reviewer_details(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "PASS",
         "summary": "1 reviewer. Failures: 0, warnings: 0, skipped: 0.",
         "reviewers": [
@@ -503,7 +503,7 @@ def test_renders_model_in_reviewer_details(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     # Model should appear in reviewer overview
@@ -511,7 +511,7 @@ def test_renders_model_in_reviewer_details(tmp_path: Path) -> None:
 
 
 def test_renders_fallback_model_indicator(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "PASS",
         "summary": "1 reviewer.",
         "reviewers": [
@@ -533,14 +533,14 @@ def test_renders_fallback_model_indicator(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert "`deepseek-v3.2` ↩️ (fallback from `kimi-k2.5`)" in body
 
 
 def test_no_model_when_metadata_absent(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "PASS",
         "summary": "1 reviewer.",
         "reviewers": [
@@ -559,7 +559,7 @@ def test_no_model_when_metadata_absent(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert "| model " not in body
@@ -568,7 +568,7 @@ def test_no_model_when_metadata_absent(tmp_path: Path) -> None:
 
 
 def test_renders_override_details_when_present(tmp_path: Path) -> None:
-    council = {
+    verdict_data = {
         "verdict": "PASS",
         "summary": "Override by owner for abcdef1.",
         "reviewers": [],
@@ -576,7 +576,7 @@ def test_renders_override_details_when_present(tmp_path: Path) -> None:
         "override": {"used": True, "actor": "owner", "sha": "abcdef1", "reason": "False positive"},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert "**Override:** active by `owner` on `abcdef1`. Reason: False positive" in body
@@ -585,7 +585,7 @@ def test_renders_override_details_when_present(tmp_path: Path) -> None:
 def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     """Comments exceeding MAX_COMMENT_SIZE truncate reviewer details and add a note."""
     huge_summary = "x" * 70000
-    council = {
+    verdict_data = {
         "verdict": "WARN",
         "summary": "1 reviewer warned.",
         "reviewers": [
@@ -617,14 +617,14 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
         "override": {"used": False},
     }
 
-    code, body, err = run_render(tmp_path, council)
+    code, body, err = run_render(tmp_path, verdict_data)
 
     assert code == 0, err
     assert len(body) < 65536, f"Comment is {len(body)} bytes, should be under 65536"
     assert "Comment was truncated" in body
     assert "Reviewer details (click to expand)" not in body
     # Structural content should still be present
-    assert "## ⚠️ Council Verdict: WARN" in body
+    assert "## ⚠️ Cerberus Verdict: WARN" in body
     assert "### Reviewer Overview" in body
     assert "<summary>(click to expand)</summary>" in body
     assert "### Key Findings" in body
@@ -635,15 +635,15 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
 
 
 def test_main_allows_direct_arg_parsing(tmp_path: Path) -> None:
-    council = {"verdict": "PASS", "stats": {"total": 0, "pass": 0, "warn": 0, "fail": 0, "skip": 0}}
-    council_path = tmp_path / "council.json"
+    verdict_data = {"verdict": "PASS", "stats": {"total": 0, "pass": 0, "warn": 0, "fail": 0, "skip": 0}}
+    verdict_path = tmp_path / "verdict.json"
     output_path = tmp_path / "comment.md"
-    council_path.write_text(json.dumps(council), encoding="utf-8")
+    verdict_path.write_text(json.dumps(verdict_data), encoding="utf-8")
 
-    code = render_council_comment_main(
+    code = render_verdict_comment_main(
         [
-            "--council-json",
-            str(council_path),
+            "--verdict-json",
+            str(verdict_path),
             "--output",
             str(output_path),
             "--max-findings",
@@ -655,7 +655,7 @@ def test_main_allows_direct_arg_parsing(tmp_path: Path) -> None:
     body = output_path.read_text(encoding="utf-8")
 
     assert code == 0
-    assert "<!-- cerberus:council -->" in body
+    assert "<!-- cerberus:verdict -->" in body
 
 
 _FAIL_COUNCIL = {
@@ -694,11 +694,11 @@ def test_advisory_banner_shown_when_fail_on_verdict_false(tmp_path: Path) -> Non
     )
 
     assert code == 0, err
-    assert "Council Verdict: FAIL (advisory)" in body
+    assert "Cerberus Verdict: FAIL (advisory)" in body
     assert "Advisory mode" in body
     assert "fail-on-verdict" in body
     # Standard FAIL header must NOT appear when advisory
-    assert "## ❌ Council Verdict: FAIL\n" not in body
+    assert "## ❌ Cerberus Verdict: FAIL\n" not in body
 
 
 def test_no_advisory_banner_when_fail_on_verdict_true(tmp_path: Path) -> None:
@@ -707,13 +707,13 @@ def test_no_advisory_banner_when_fail_on_verdict_true(tmp_path: Path) -> None:
     )
 
     assert code == 0, err
-    assert "## ❌ Council Verdict: FAIL" in body
+    assert "## ❌ Cerberus Verdict: FAIL" in body
     assert "(advisory)" not in body
     assert "Advisory mode" not in body
 
 
 def test_advisory_banner_not_shown_for_pass_verdict(tmp_path: Path) -> None:
-    pass_council = {
+    pass_verdict_data = {
         "verdict": "PASS",
         "summary": "1 reviewer. Failures: 0.",
         "reviewers": [
@@ -732,7 +732,7 @@ def test_advisory_banner_not_shown_for_pass_verdict(tmp_path: Path) -> None:
         "override": {"used": False},
     }
     code, body, err = run_render(
-        tmp_path, pass_council, env_extra={"FAIL_ON_VERDICT": "false"}
+        tmp_path, pass_verdict_data, env_extra={"FAIL_ON_VERDICT": "false"}
     )
 
     assert code == 0, err
@@ -741,7 +741,7 @@ def test_advisory_banner_not_shown_for_pass_verdict(tmp_path: Path) -> None:
 
 
 def test_advisory_banner_not_shown_for_warn_verdict(tmp_path: Path) -> None:
-    warn_council = {
+    warn_verdict_data = {
         "verdict": "WARN",
         "summary": "1 reviewer. Warnings: 1.",
         "reviewers": [
@@ -770,7 +770,7 @@ def test_advisory_banner_not_shown_for_warn_verdict(tmp_path: Path) -> None:
         "override": {"used": False},
     }
     code, body, err = run_render(
-        tmp_path, warn_council, env_extra={"FAIL_ON_VERDICT": "false"}
+        tmp_path, warn_verdict_data, env_extra={"FAIL_ON_VERDICT": "false"}
     )
 
     assert code == 0, err
@@ -779,14 +779,14 @@ def test_advisory_banner_not_shown_for_warn_verdict(tmp_path: Path) -> None:
 
 
 def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
-    council_path = tmp_path / "council.json"
+    verdict_path = tmp_path / "verdict.json"
     output_path = tmp_path / "comment.md"
-    council_path.write_text(json.dumps({"verdict": "PASS"}), encoding="utf-8")
+    verdict_path.write_text(json.dumps({"verdict": "PASS"}), encoding="utf-8")
 
-    code = render_council_comment_main(
+    code = render_verdict_comment_main(
         [
-            "--council-json",
-            str(council_path),
+            "--verdict-json",
+            str(verdict_path),
             "--output",
             str(output_path),
             "--max-findings",

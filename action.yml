@@ -8,7 +8,7 @@ branding:
 
 inputs:
   perspective:
-    description: 'Review perspective (correctness, architecture, security, performance, maintainability, testing)'
+    description: 'Review perspective (correctness, architecture, security, performance, maintainability, testing, documentation, resilience, compatibility, dependencies, data-integrity, observability)'
     required: true
   github-token:
     description: 'GitHub token for PR comments'
@@ -84,7 +84,7 @@ runs:
       env:
         PERSPECTIVE: ${{ inputs.perspective }}
       run: |
-        VALID="correctness architecture security performance maintainability testing"
+        VALID="correctness architecture security performance maintainability testing documentation resilience compatibility dependencies data-integrity observability"
         if [[ ! " $VALID " =~ " $PERSPECTIVE " ]]; then
           echo "::error::Invalid perspective: $PERSPECTIVE. Must be one of: $VALID"
           exit 1
@@ -447,14 +447,14 @@ runs:
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
       run: |
         # Individual reviewers output their verdict but don't fail the job
-        # unless fail-on-verdict is true (#220). The Council Verdict job
+        # unless fail-on-verdict is true (#220). The Cerberus Verdict job
         # aggregates all reviews and makes the final decision.
         if [ "$VERDICT" = "FAIL" ]; then
           if [ "$FAIL_ON_VERDICT" = "true" ]; then
             echo "::error::${PERSPECTIVE} review verdict: FAIL"
             exit 1
           fi
-          echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to council)"
+          echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to Cerberus)"
         elif [ "$VERDICT" = "SKIP" ]; then
           if [ "$FAIL_ON_SKIP" = "true" ]; then
             echo "::error::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"

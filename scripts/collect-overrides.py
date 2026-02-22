@@ -61,7 +61,7 @@ def extract_override_comments(comments: list[dict]) -> list[dict[str, str]]:
     collected: list[dict[str, str]] = []
     for comment in comments:
         body = comment.get("body")
-        if not isinstance(body, str) or not body.startswith("/council override"):
+        if not isinstance(body, str) or not (body.startswith("/cerberus override") or body.startswith("/council override")):
             continue
         user = comment.get("user")
         actor = ""
@@ -127,7 +127,7 @@ def write_github_outputs(output_path: Path, overrides: list[dict[str, str]], act
 def parse_args() -> argparse.Namespace:
     """Parse args."""
     parser = argparse.ArgumentParser(
-        description="Collect council override comments and actor permissions.",
+        description="Collect override comments and actor permissions.",
     )
     parser.add_argument("--repo", required=True, help="owner/repo")
     parser.add_argument("--pr", type=int, required=True, help="pull request number")

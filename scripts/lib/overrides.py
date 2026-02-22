@@ -1,4 +1,4 @@
-"""Council override comment parsing and authorization.
+"""Cerberus override comment parsing and authorization.
 
 Extracts override detection, SHA validation, and actor authorization
 into a reusable module shared by aggregate-verdict.py and any future
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Override:
-    """A parsed and validated council override."""
+    """A parsed and validated override."""
 
     actor: str
     sha: str
@@ -47,7 +47,10 @@ def parse_override(raw: str | None, head_sha: str | None) -> Override | None:
     body = obj.get("body")
     if body:
         lines = [line.strip() for line in body.splitlines()]
-        command_line = next((l for l in lines if l.startswith("/council override")), "")
+        command_line = next(
+            (line for line in lines if line.startswith("/cerberus override") or line.startswith("/council override")),
+            "",
+        )
         if command_line:
             match = re.search(r"sha=([0-9a-fA-F]+)", command_line)
             if match:
@@ -56,7 +59,10 @@ def parse_override(raw: str | None, head_sha: str | None) -> Override | None:
             if line.lower().startswith("reason:"):
                 reason = reason or line.split(":", 1)[1].strip()
         if not reason:
-            remainder = [l for l in lines if l and not l.startswith("/council override")]
+            remainder = [
+                line for line in lines
+                if line and not line.startswith("/cerberus override") and not line.startswith("/council override")
+            ]
             if remainder:
                 reason = " ".join(remainder)
 

@@ -1,4 +1,4 @@
-# Cerberus AI Code Review Council — Minimal Consumer Workflow
+# Cerberus AI Code Review — Minimal Consumer Workflow
 # https://github.com/misty-step/cerberus
 #
 # This workflow uses the dynamic matrix action to automatically stay in sync
@@ -7,7 +7,7 @@
 #
 # Fork PR security: repository secrets are unavailable to forks.
 # Keep review job gated to same-repo PRs to avoid secret access attempts.
-name: Cerberus Council
+name: Cerberus
 
 on:
   pull_request:
@@ -43,9 +43,35 @@ jobs:
     steps:
       - uses: misty-step/cerberus/validate@v2
 
-  # Generate the reviewer matrix from Cerberus defaults/config.yml
+  # Route: select the most relevant reviewers for this PR
+  route:
+    needs: [validate, draft-check]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      panel: ${{ steps.router.outputs.panel }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch PR diff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+      - uses: misty-step/cerberus/router@v2
+        id: router
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          diff-file: /tmp/pr.diff
+          # routing: 'disabled'         # uncomment to skip LLM routing and use all reviewers
+          # reviewers: 'trace,guard'    # uncomment to force specific reviewers (bypasses routing)
+
+  # Generate the reviewer matrix, filtered by the router panel
   matrix:
-    needs: validate
+    needs: route
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
@@ -54,8 +80,10 @@ jobs:
     steps:
       - uses: misty-step/cerberus/matrix@v2
         id: generate
+        with:
+          panel: ${{ needs.route.outputs.panel }}
 
-  # Run reviews in parallel using the generated matrix
+  # Run reviews in parallel using the routed matrix
   review:
     needs: [matrix, draft-check]
     if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
@@ -87,7 +115,7 @@ jobs:
 
   # Aggregate all review results into a single verdict comment
   verdict:
-    name: "Council Verdict"
+    name: "Verdict"
     needs: [review, draft-check]
     if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:
@@ -98,4 +126,4 @@ jobs:
       - uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
+          # fail-on-skip: 'true' # optional: fail if Cerberus verdict is SKIP (no review happened)

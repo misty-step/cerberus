@@ -57,7 +57,7 @@ runs:
 
           comment_file="$preflight_tmp/skip-comment.md"
           {
-            printf '%s\n' "## 🏛️ Cerberus Council: $title"
+            printf '%s\n' "## 🐕 Cerberus: $title"
             printf '\n'
             printf '%s\n' "$body"
             printf '\n'

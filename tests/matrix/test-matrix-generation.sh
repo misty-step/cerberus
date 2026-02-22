@@ -13,7 +13,7 @@ trap 'rm -f "$test_config"' EXIT
 cat > "$test_config" << 'EOF'
 version: 1
 council:
-  name: "Test Council"
+  name: "Test Cerberus"
 reviewers:
   - name: TEST1
     perspective: correctness
@@ -51,22 +51,22 @@ echo "PASS: Synthetic config produces correct matrix"
 result=$(python3 "$SCRIPT" "defaults/config.yml")
 count=$(echo "$result" | sed -n '2p')
 
-if [[ "$count" != "6" ]]; then
-    echo "FAIL: Expected 6 reviewers from defaults/config.yml, got $count"
+if [[ "$count" != "8" ]]; then
+    echo "FAIL: Expected 8 reviewers from defaults/config.yml, got $count"
     exit 1
 fi
 
-echo "PASS: Actual config.yml produces 6 reviewers"
+echo "PASS: Actual config.yml produces 8 reviewers"
 
 # Verify key reviewers present
-if ! echo "$result" | grep -q "APOLLO"; then
-    echo "FAIL: APOLLO not found in matrix"
+if ! echo "$result" | grep -q "trace"; then
+    echo "FAIL: trace not found in matrix"
     exit 1
 fi
-if ! echo "$result" | grep -q "CASSANDRA"; then
-    echo "FAIL: CASSANDRA not found in matrix"
+if ! echo "$result" | grep -q "proof"; then
+    echo "FAIL: proof not found in matrix"
     exit 1
 fi
 
-echo "PASS: Matrix contains expected reviewers (APOLLO, CASSANDRA)"
+echo "PASS: Matrix contains expected reviewers (trace, proof)"
 echo "All matrix tests passed!"

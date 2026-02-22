@@ -18,7 +18,7 @@ Common causes:
 
 What to check:
 - Workflow logs: review step output for `API Error:` or `Review Timeout:`
-- Council comment SKIP banner (credits depleted vs key invalid vs timeout)
+- Verdict comment SKIP banner (credits depleted vs key invalid vs timeout)
 - Artifacts: `cerberus-review-<perspective>` and `cerberus-verdict-<perspective>`
 
 ## No PR Comments / Inline Review
@@ -32,7 +32,7 @@ Fix:
 ## Override Command Doesn’t Work
 
 Rules:
-- SHA must match current PR HEAD: `/council override sha=<sha>`
+- SHA must match current PR HEAD: `/cerberus override sha=<sha>`
 - Reason required
 - Actor must satisfy policy in `defaults/config.yml` (and may be stricter for some reviewers)
 

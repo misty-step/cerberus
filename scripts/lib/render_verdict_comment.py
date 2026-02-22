@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a scannable council PR comment from council verdict JSON."""
+"""Render a scannable Cerberus verdict PR comment from verdict JSON."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 def fail(message: str, code: int = 2) -> int:
     """Fail."""
-    print(f"render-council-comment: {message}", file=sys.stderr)
+    print(f"render-verdict-comment: {message}", file=sys.stderr)
     return code
 
 
@@ -88,7 +88,8 @@ _CODENAME_RE = re.compile(r"^[A-Z0-9_]+$")
 def friendly_codename(value: object) -> str:
     """Friendly codename."""
     raw = str(value or "").strip() or "unknown"
-    # Config uses ALLCAPS codenames; render as Title Case for readability.
+    # Legacy ALLCAPS codenames (APOLLO, etc.) → Title Case for readability.
+    # New lowercase codenames (trace, atlas, etc.) → pass through as-is.
     if raw.isupper() and _CODENAME_RE.match(raw):
         return raw.title()
     return raw
@@ -321,9 +322,9 @@ def footer_line() -> str:
     else:
         run_fragment = run_label
     return (
-        f"*Cerberus Council ({version}) | Run {run_fragment} | "
+        f"*Cerberus ({version}) | Run {run_fragment} | "
         f"Override policy `{override_policy}` | Fail on verdict `{fail_on_verdict}` | "
-        f"Override command: `/council override sha={short_sha()}` (reason required)*"
+        f"Override command: `/cerberus override sha={short_sha()}` (reason required)*"
     )
 
 
@@ -625,7 +626,7 @@ def _build_comment(
     verdict_label = f"{verdict} (advisory)" if advisory_banner else verdict
     lines = [
         marker,
-        f"## {icon} Council Verdict: {verdict_label}",
+        f"## {icon} Cerberus Verdict: {verdict_label}",
         "",
         f"**Summary:** {summary_line}",
     ]
@@ -701,14 +702,14 @@ def _build_comment(
 
 
 def render_comment(
-    council: dict,
+    verdict_data: dict,
     *,
     max_findings: int,
     max_key_findings: int,
     marker: str,
 ) -> str:
     """Render comment."""
-    reviewers = council.get("reviewers")
+    reviewers = verdict_data.get("reviewers")
     if not isinstance(reviewers, list):
         reviewers = []
     reviewers = [reviewer for reviewer in reviewers if isinstance(reviewer, dict)]
@@ -720,12 +721,12 @@ def render_comment(
         ),
     )
 
-    verdict = normalize_verdict(council.get("verdict"))
+    verdict = normalize_verdict(verdict_data.get("verdict"))
     icon = VERDICT_ICON[verdict]
     summary_line = summarize_reviewers(reviewers)
     skip_banner = detect_skip_banner(reviewers)
     finding_totals = count_findings(reviewers)
-    stats = council.get("stats")
+    stats = verdict_data.get("stats")
     if not isinstance(stats, dict):
         stats = {}
     reviewer_total = as_int(stats.get("total"))
@@ -781,7 +782,7 @@ def render_comment(
         reviewer_warn=reviewer_warn,
         reviewer_fail=reviewer_fail,
         reviewer_skip=reviewer_skip,
-        override=council.get("override"),
+        override=verdict_data.get("override"),
         reviewers=reviewers,
         detail_reviewers=detail_reviewers,
         include_fix_order=include_fix_order,
@@ -815,20 +816,20 @@ def render_comment(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse args."""
-    parser = argparse.ArgumentParser(description="Render Cerberus council comment markdown.")
+    parser = argparse.ArgumentParser(description="Render Cerberus verdict comment markdown.")
     parser.add_argument(
-        "--council-json",
-        default=str(CERBERUS_TMP / "council-verdict.json"),
-        help="Path to council verdict JSON.",
+        "--verdict-json",
+        default=str(CERBERUS_TMP / "verdict.json"),
+        help="Path to verdict JSON.",
     )
     parser.add_argument(
         "--output",
-        default=str(CERBERUS_TMP / "council-comment.md"),
+        default=str(CERBERUS_TMP / "verdict-comment.md"),
         help="Output markdown file path.",
     )
     parser.add_argument(
         "--marker",
-        default="<!-- cerberus:council -->",
+        default="<!-- cerberus:verdict -->",
         help="HTML marker for idempotent comment upsert.",
     )
     parser.add_argument(
@@ -854,15 +855,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_key_findings < 1:
         return fail("--max-key-findings must be >= 1")
 
-    council_path = Path(args.council_json)
+    verdict_path = Path(args.verdict_json)
     output_path = Path(args.output)
 
     try:
-        council = read_json(council_path)
+        verdict_data = read_json(verdict_path)
     except (OSError, ValueError) as exc:
         return fail(str(exc))
     markdown = render_comment(
-        council,
+        verdict_data,
         max_findings=args.max_findings,
         max_key_findings=args.max_key_findings,
         marker=args.marker,

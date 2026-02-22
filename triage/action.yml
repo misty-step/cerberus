@@ -1,5 +1,5 @@
 name: 'Cerberus Triage'
-description: 'Diagnose and optionally auto-fix failing council verdicts with loop protection'
+description: 'Diagnose and optionally auto-fix failing Cerberus verdicts with loop protection'
 author: 'misty-step'
 
 inputs:

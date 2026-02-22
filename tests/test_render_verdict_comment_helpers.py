@@ -1,4 +1,4 @@
-"""Branch coverage tests for render_council_comment helper functions.
+"""Branch coverage tests for render_verdict_comment helper functions.
 
 These test edge-case branches in helper functions that are hard to hit
 through the full subprocess rendering pipeline.
@@ -6,7 +6,7 @@ through the full subprocess rendering pipeline.
 
 import os
 
-from lib.render_council_comment import (
+from lib.render_verdict_comment import (
     as_int,
     collect_hotspots,
     collect_issue_groups,
@@ -418,7 +418,7 @@ class TestFooterLine:
         line = footer_line()
         assert "v2.1" in line
         assert "pr_author" in line
-        assert "/council override sha=" in line
+        assert "/cerberus override sha=" in line
 
     def test_no_run_url(self, monkeypatch):
         monkeypatch.setenv("CERBERUS_VERSION", "dev")
@@ -747,10 +747,10 @@ class TestReadJson:
 
 class TestMainErrorPaths:
     def test_max_key_findings_zero(self, tmp_path, capsys):
-        council_path = tmp_path / "council.json"
-        council_path.write_text('{"verdict":"PASS","reviewers":[]}')
+        verdict_path = tmp_path / "verdict.json"
+        verdict_path.write_text('{"verdict":"PASS","reviewers":[]}')
         code = main([
-            "--council-json", str(council_path),
+            "--verdict-json", str(verdict_path),
             "--output", str(tmp_path / "out.md"),
             "--max-key-findings", "0",
         ])
@@ -759,10 +759,10 @@ class TestMainErrorPaths:
         assert "max-key-findings" in captured.err
 
     def test_write_failure(self, tmp_path, capsys):
-        council_path = tmp_path / "council.json"
-        council_path.write_text('{"verdict":"PASS","reviewers":[]}')
+        verdict_path = tmp_path / "verdict.json"
+        verdict_path.write_text('{"verdict":"PASS","reviewers":[]}')
         code = main([
-            "--council-json", str(council_path),
+            "--verdict-json", str(verdict_path),
             "--output", str(tmp_path / "no" / "such" / "dir" / "out.md"),
         ])
         assert code == 2

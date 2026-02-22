@@ -46,7 +46,7 @@ def run_gh(args: list[str]) -> str:
 
 def fetch_artifacts(repo: str, limit: int = 20) -> list[dict]:
     """Fetch quality report artifacts from recent workflow runs."""
-    # Get recent successful workflow runs for the cerberus council
+    # Get recent successful workflow runs for Cerberus
     runs_json = run_gh([
         "run", "list",
         "--repo", repo,
@@ -144,11 +144,11 @@ def aggregate_reports(reports: list[dict]) -> dict:
     total_skips = sum(r.get("summary", {}).get("skip_count", 0) for r in reports)
     total_parse_failures = sum(r.get("summary", {}).get("parse_failure_count", 0) for r in reports)
 
-    # Council verdict distribution
-    council_verdicts: dict[str, int] = {}
+    # Verdict distribution
+    verdict_distribution: dict[str, int] = {}
     for r in reports:
-        v = r.get("summary", {}).get("council_verdict", "UNKNOWN")
-        council_verdicts[v] = council_verdicts.get(v, 0) + 1
+        v = r.get("summary", {}).get("cerberus_verdict", "UNKNOWN")
+        verdict_distribution[v] = verdict_distribution.get(v, 0) + 1
 
     # Per-model aggregation
     model_stats: dict[str, dict] = {}
@@ -219,7 +219,7 @@ def aggregate_reports(reports: list[dict]) -> dict:
             "total_reviewers": total_reviewers,
             "overall_skip_rate": round(total_skips / total_reviewers, 4) if total_reviewers > 0 else 0,
             "overall_parse_failure_rate": round(total_parse_failures / total_reviewers, 4) if total_reviewers > 0 else 0,
-            "council_verdict_distribution": council_verdicts,
+            "cerberus_verdict_distribution": verdict_distribution,
         },
         "model_rankings": model_summaries,
     }
@@ -239,8 +239,8 @@ def print_summary(summary: dict) -> None:
     print(f"Overall SKIP Rate: {s.get('overall_skip_rate', 0):.2%}")
     print(f"Overall Parse Failure Rate: {s.get('overall_parse_failure_rate', 0):.2%}")
 
-    print("\nCouncil Verdict Distribution:")
-    for verdict, count in s.get("council_verdict_distribution", {}).items():
+    print("\nCerberus Verdict Distribution:")
+    for verdict, count in s.get("cerberus_verdict_distribution", {}).items():
         print(f"  {verdict}: {count}")
 
     rankings = summary.get("model_rankings", [])

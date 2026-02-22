@@ -42,7 +42,7 @@
   Files: scripts/parse-review.py
   Issue: scratchpad/no-JSON path defaulted to WARN, while fail() treats scratchpad as SKIP
   Fix: make scratchpad/no-JSON fallback SKIP with preserved raw output
-  Verify: unit tests + next council run shows fewer false-positive FAILs
+  Verify: unit tests + next Cerberus run shows fewer false-positive FAILs
   ```
 
 - [x] [CODE FIX] Align eval cases and harden brittle JS assertions

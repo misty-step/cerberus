@@ -1,0 +1,87 @@
+name: 'Cerberus Router'
+description: 'Select a reviewer panel for a PR diff'
+author: 'misty-step'
+
+branding:
+  icon: 'shuffle'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token (reserved for future routing context fetch)'
+    required: true
+  api-key:
+    description: 'OpenRouter API key (falls back to OPENROUTER_API_KEY env if empty)'
+    required: true
+  diff-file:
+    description: 'Path to PR diff file'
+    required: true
+  panel-size:
+    description: 'Number of reviewers to route'
+    default: '5'
+  routing:
+    description: 'Routing mode: enabled or disabled'
+    default: 'enabled'
+  reviewers:
+    description: 'Comma-separated forced panel override (reviewer names or perspectives)'
+    default: ''
+
+outputs:
+  panel:
+    description: 'JSON array of selected perspective strings'
+    value: ${{ steps.output.outputs.panel }}
+  routing-used:
+    description: 'True if LLM routing was used'
+    value: ${{ steps.output.outputs.routing-used }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python deps
+      shell: bash
+      run: |
+        pip install pyyaml --quiet
+
+    - name: Route reviewers
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}/..
+        DIFF_FILE: ${{ inputs.diff-file }}
+        PANEL_SIZE: ${{ inputs.panel-size }}
+        ROUTING: ${{ inputs.routing }}
+        FORCED_REVIEWERS: ${{ inputs.reviewers }}
+        INPUT_API_KEY: ${{ inputs.api-key }}
+        ENV_OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
+      run: |
+        if [[ -n "${INPUT_API_KEY:-}" ]]; then
+          export OPENROUTER_API_KEY="$INPUT_API_KEY"
+        else
+          export OPENROUTER_API_KEY="${ENV_OPENROUTER_API_KEY:-}"
+        fi
+
+        python3 "${{ github.action_path }}/route.py"
+
+    - name: Set outputs
+      id: output
+      shell: bash
+      run: |
+        if [[ ! -f /tmp/router-output.json ]]; then
+          echo "::warning::router output not found; using empty defaults"
+          echo 'panel=[]' >> "$GITHUB_OUTPUT"
+          echo 'routing-used=false' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        panel="$(python3 -c 'import json; print(json.dumps(json.load(open("/tmp/router-output.json")).get("panel", []), separators=(",", ":")))' )"
+        routing_used="$(python3 -c 'import json; print(str(bool(json.load(open("/tmp/router-output.json")).get("routing_used", False))).lower())' )"
+
+        echo "panel=$panel" >> "$GITHUB_OUTPUT"
+        echo "routing-used=$routing_used" >> "$GITHUB_OUTPUT"
+
+        echo "Routed panel: $panel"
+        echo "Routing used: $routing_used"
