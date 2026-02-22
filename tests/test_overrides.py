@@ -162,6 +162,25 @@ class TestParseOverride:
         assert result is not None
         assert result.reason == "uppercase reason"
 
+    def test_legacy_council_override_command(self):
+        raw = json.dumps({
+            "actor": "user",
+            "body": "/council override sha=abc1234\nReason: Legacy command still works",
+        })
+        result = parse_override(raw, "abc1234567890")
+        assert result is not None
+        assert result.sha == "abc1234"
+        assert result.reason == "Legacy command still works"
+
+    def test_legacy_council_override_remainder_reason(self):
+        raw = json.dumps({
+            "actor": "user",
+            "body": "/council override sha=abc1234\nFalse positive from old syntax",
+        })
+        result = parse_override(raw, "abc1234567890")
+        assert result is not None
+        assert result.reason == "False positive from old syntax"
+
 
 # ---------------------------------------------------------------------------
 # validate_actor
