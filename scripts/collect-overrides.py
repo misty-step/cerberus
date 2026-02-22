@@ -61,7 +61,7 @@ def extract_override_comments(comments: list[dict]) -> list[dict[str, str]]:
     collected: list[dict[str, str]] = []
     for comment in comments:
         body = comment.get("body")
-        if not isinstance(body, str) or not body.startswith("/cerberus override"):
+        if not isinstance(body, str) or not (body.startswith("/cerberus override") or body.startswith("/council override")):
             continue
         user = comment.get("user")
         actor = ""

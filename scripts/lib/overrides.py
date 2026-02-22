@@ -48,7 +48,7 @@ def parse_override(raw: str | None, head_sha: str | None) -> Override | None:
     if body:
         lines = [line.strip() for line in body.splitlines()]
         command_line = next(
-            (l for l in lines if l.startswith("/cerberus override") or l.startswith("/council override")),
+            (line for line in lines if line.startswith("/cerberus override") or line.startswith("/council override")),
             "",
         )
         if command_line:
@@ -60,8 +60,8 @@ def parse_override(raw: str | None, head_sha: str | None) -> Override | None:
                 reason = reason or line.split(":", 1)[1].strip()
         if not reason:
             remainder = [
-                l for l in lines
-                if l and not l.startswith("/cerberus override") and not l.startswith("/council override")
+                line for line in lines
+                if line and not line.startswith("/cerberus override") and not line.startswith("/council override")
             ]
             if remainder:
                 reason = " ".join(remainder)

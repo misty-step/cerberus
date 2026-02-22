@@ -153,6 +153,19 @@ def test_extract_override_comments_handles_malformed_entries() -> None:
     ]
 
 
+def test_extract_override_comments_accepts_legacy_council_prefix() -> None:
+    mod = _import_script()
+    comments = [
+        {"body": "/council override sha=abc1234\nReason: legacy command", "user": {"login": "dev"}},
+        {"body": "/cerberus override sha=def5678\nReason: new command", "user": {"login": "dev"}},
+        {"body": "plain comment", "user": {"login": "ignored"}},
+    ]
+    extracted = mod.extract_override_comments(comments)
+    assert len(extracted) == 2
+    assert extracted[0] == {"actor": "dev", "body": "/council override sha=abc1234\nReason: legacy command"}
+    assert extracted[1] == {"actor": "dev", "body": "/cerberus override sha=def5678\nReason: new command"}
+
+
 def test_fetch_actor_permissions_dedupes_and_handles_invalid_payloads(monkeypatch) -> None:
     mod = _import_script()
     calls: list[list[str]] = []

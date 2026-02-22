@@ -69,7 +69,7 @@ class TestFilterPanel:
     """Tests for the panel filter script."""
 
     def test_filters_to_matching_perspectives(self, _tmp_files):
-        tmp_path, matrix_file, count_file, names_file = _tmp_files
+        _tmp_path, matrix_file, count_file, names_file = _tmp_files
         panel = ["correctness", "security", "maintainability"]
 
         with mock.patch("sys.argv", ["filter-panel.py", json.dumps(panel)]):
@@ -82,7 +82,7 @@ class TestFilterPanel:
         assert names_file.read_text() == "trace,guard,craft"
 
     def test_falls_back_to_full_matrix_when_no_match(self, _tmp_files, capsys):
-        tmp_path, matrix_file, count_file, names_file = _tmp_files
+        _tmp_path, matrix_file, count_file, _names_file = _tmp_files
         panel = ["nonexistent"]
 
         with mock.patch("sys.argv", ["filter-panel.py", json.dumps(panel)]):
@@ -95,7 +95,7 @@ class TestFilterPanel:
         assert "warning" in captured.err.lower() or "full matrix" in captured.err.lower()
 
     def test_single_reviewer_panel(self, _tmp_files):
-        tmp_path, matrix_file, count_file, names_file = _tmp_files
+        _tmp_path, matrix_file, count_file, names_file = _tmp_files
         panel = ["architecture"]
 
         with mock.patch("sys.argv", ["filter-panel.py", json.dumps(panel)]):
@@ -108,7 +108,7 @@ class TestFilterPanel:
         assert names_file.read_text() == "atlas"
 
     def test_preserves_all_entry_fields(self, _tmp_files):
-        tmp_path, matrix_file, count_file, names_file = _tmp_files
+        _tmp_path, matrix_file, _count_file, _names_file = _tmp_files
         panel = ["trace"]
 
         with mock.patch("sys.argv", ["filter-panel.py", json.dumps(panel)]):
@@ -119,8 +119,8 @@ class TestFilterPanel:
         assert entry["reviewer"] == "trace"
         assert entry["perspective"] == "correctness"
 
-    def test_empty_panel_triggers_fallback(self, _tmp_files, capsys):
-        tmp_path, matrix_file, count_file, names_file = _tmp_files
+    def test_empty_panel_triggers_fallback(self, _tmp_files):
+        _tmp_path, matrix_file, _count_file, _names_file = _tmp_files
         panel = []
 
         with mock.patch("sys.argv", ["filter-panel.py", json.dumps(panel)]):

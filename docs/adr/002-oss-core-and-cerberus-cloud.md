@@ -7,7 +7,7 @@
 
 ## Context
 
-Cerberus today is an open source GitHub Action that runs a multi-perspective PR review (BYO model key).
+Cerberus today is an open-source GitHub Action that runs a multi-perspective PR review (BYO model key).
 
 We want a path to a profitable, managed product (Cerberus Cloud) without turning the OSS action into a SaaS-shaped monolith.
 
