@@ -454,7 +454,7 @@ runs:
             echo "::error::${PERSPECTIVE} review verdict: FAIL"
             exit 1
           fi
-          echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to council)"
+          echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to Cerberus)"
         elif [ "$VERDICT" = "SKIP" ]; then
           if [ "$FAIL_ON_SKIP" = "true" ]; then
             echo "::error::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Override:
-    """A parsed and validated council override."""
+    """A parsed and validated override."""
 
     actor: str
     sha: str

@@ -52,7 +52,7 @@ verdict:
   warn_on: "any_major_or_5_minor_or_3_minor_same_category"  # any_major | any_major_or_5_minor_or_3_minor_same_category
   confidence_min: 0.7
 
-council_verdict:
+cerberus_verdict:
   fail_on: "any_critical_fail_or_2_fails"  # single non-critical FAIL is downgraded to WARN
 
 # The twelve reviewers of Cerberus.

@@ -2,7 +2,7 @@
 """Cerberus triage runtime.
 
 This script is intentionally deterministic:
-- It reads council output/comments and produces a diagnosis comment.
+- It reads verdict output/comments and produces a diagnosis comment.
 - It can optionally run a configured fix command and push a `[triage]` commit.
 - It enforces circuit breakers to prevent infinite loops.
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 from lib.github import upsert_pr_comment
 
 VALID_MODES = {"off", "diagnose", "fix"}
-COUNCIL_MARKER = "cerberus:council"
+VERDICT_MARKER = "cerberus:verdict"
 TRIAGE_MARKER = "cerberus:triage"
 TRIAGE_COMMAND = "/cerberus triage"
 CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
@@ -85,7 +85,7 @@ def ensure_mode(value: str) -> str:
     return mode
 
 
-def extract_council_verdict(body: str) -> str | None:
+def extract_verdict(body: str) -> str | None:
     """Extract cerberus verdict from comment body."""
     match = re.search(r"(?:Council|Cerberus) Verdict:\s*(PASS|WARN|FAIL|SKIP)\b", body, flags=re.IGNORECASE)
     return match.group(1).upper() if match else None
@@ -129,7 +129,7 @@ def parse_iso8601(value: str) -> datetime:
 def should_schedule_pr(
     *,
     verdict: str | None,
-    council_updated_at: str | None,
+    verdict_updated_at: str | None,
     attempts_for_sha: int,
     max_attempts: int,
     stale_hours: int,
@@ -138,22 +138,22 @@ def should_schedule_pr(
     """Should schedule pr."""
     if verdict != "FAIL":
         return False
-    if council_updated_at is None:
+    if verdict_updated_at is None:
         return False
     if attempts_for_sha >= max_attempts:
         return False
-    updated_at = parse_iso8601(council_updated_at)
+    updated_at = parse_iso8601(verdict_updated_at)
     return now - updated_at >= timedelta(hours=stale_hours)
 
 
-def find_latest_council_comment(comments: list[dict], trusted: str) -> dict | None:
-    """Find latest council comment."""
-    council_comments = [
-        c for c in comments if is_trusted_comment(c, trusted) and COUNCIL_MARKER in str(c.get("body", ""))
+def find_latest_verdict_comment(comments: list[dict], trusted: str) -> dict | None:
+    """Find latest verdict comment."""
+    verdict_comments = [
+        c for c in comments if is_trusted_comment(c, trusted) and VERDICT_MARKER in str(c.get("body", ""))
     ]
-    if not council_comments:
+    if not verdict_comments:
         return None
-    return max(council_comments, key=lambda c: str(c.get("updated_at", "")))
+    return max(verdict_comments, key=lambda c: str(c.get("updated_at", "")))
 
 
 def write_output(status: str, attempted: bool, reason: str, processed: int) -> None:
@@ -273,18 +273,18 @@ def post_triage_comment(
     )
 
 
-def gather_diagnosis(council_body: str | None) -> str:
+def gather_diagnosis(verdict_body: str | None) -> str:
     """Gather diagnosis."""
-    if not council_body:
+    if not verdict_body:
         return "- Cerberus verdict comment not found; cannot extract detailed findings."
-    lines = [line.strip() for line in council_body.splitlines() if line.strip()]
+    lines = [line.strip() for line in verdict_body.splitlines() if line.strip()]
     interesting = []
     for line in lines:
         if line.startswith("##"):
             continue
         if line.startswith("---"):
             continue
-        if line.startswith("*Cerberus Council*") or line.startswith("*Cerberus ("):
+        if line.startswith("*Cerberus Council*") or line.startswith("*Cerberus*") or line.startswith("*Cerberus ("):
             continue
         interesting.append(line)
     if not interesting:
@@ -372,16 +372,16 @@ def triage_pr(
     comments_obj = gh_json([f"repos/{repo}/issues/{pr_number}/comments?per_page=100"])
     comments = comments_obj if isinstance(comments_obj, list) else []
     trusted = trusted_login()
-    latest_council = find_latest_council_comment(comments, trusted)
-    council_body = str(latest_council.get("body", "")) if latest_council else None
-    verdict = extract_council_verdict(council_body or "")
+    latest_verdict = find_latest_verdict_comment(comments, trusted)
+    verdict_body = str(latest_verdict.get("body", "")) if latest_verdict else None
+    verdict = extract_verdict(verdict_body or "")
     attempts = count_attempts_for_sha(comments, head_sha, trusted)
 
     if trigger == "scheduled":
-        updated_at = str(latest_council.get("updated_at")) if latest_council else None
+        updated_at = str(latest_verdict.get("updated_at")) if latest_verdict else None
         if not should_schedule_pr(
             verdict=verdict,
-            council_updated_at=updated_at,
+            verdict_updated_at=updated_at,
             attempts_for_sha=attempts,
             max_attempts=max_attempts,
             stale_hours=stale_hours,
@@ -400,7 +400,7 @@ def triage_pr(
     if has_triage_commit_tag(message):
         return RunResult("skipped", False, f"pr_{pr_number}_triage_commit")
 
-    diagnosis = gather_diagnosis(council_body)
+    diagnosis = gather_diagnosis(verdict_body)
     fix_command = os.environ.get("TRIAGE_FIX_COMMAND", "")
     outcome = "diagnosed"
     details = "Diagnosis completed. No code changes requested in current mode."

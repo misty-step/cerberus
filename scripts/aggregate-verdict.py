@@ -156,9 +156,9 @@ def aggregate(
     override: Override | None = None,
     parse_failure_policy: str = "warn",
 ) -> dict:
-    """Compute council verdict from individual reviewer verdicts.
+    """Compute Cerberus verdict from individual reviewer verdicts.
 
-    Returns the council dict with verdict, summary, reviewers, override, and stats.
+    Returns a dict with verdict, summary, reviewers, override, and stats.
 
     *parse_failure_policy* controls how parse-failure verdicts (detected via
     ``is_fallback_verdict``) are treated during aggregation:
@@ -170,7 +170,7 @@ def aggregate(
     override_used = override is not None
 
     # Determine effective verdict per reviewer — parse failures may be
-    # reclassified so they don't block the council (#216).
+    # reclassified so they don't block the verdict (#216).
     def _effective(v: dict) -> str:
         if is_fallback_verdict(v) and parse_failure_policy != "fail":
             return "SKIP"
@@ -189,15 +189,15 @@ def aggregate(
     noncritical_fails = [v for v in fails if is_explicit_noncritical_fail(v)]
     blocking_fails = [v for v in fails if v not in noncritical_fails]
 
-    # If ALL reviewers skipped, council verdict is SKIP (not FAIL)
+    # If ALL reviewers skipped, verdict is SKIP (not FAIL)
     if len(skips) == len(verdicts) and len(verdicts) > 0:
-        council_verdict = "SKIP"
+        final_verdict = "SKIP"
     elif (blocking_fails or len(noncritical_fails) >= 2) and not override_used:
-        council_verdict = "FAIL"
+        final_verdict = "FAIL"
     elif warns or noncritical_fails:
-        council_verdict = "WARN"
+        final_verdict = "WARN"
     else:
-        council_verdict = "PASS"
+        final_verdict = "PASS"
 
     summary = f"{len(verdicts)} reviewers. "
     if override_used:
@@ -213,7 +213,7 @@ def aggregate(
     ]
 
     result = {
-        "verdict": council_verdict,
+        "verdict": final_verdict,
         "summary": summary,
         "reviewers": verdicts,
         "override": {
@@ -245,13 +245,13 @@ def aggregate(
 
 def generate_quality_report(
     verdicts: list[dict],
-    council: dict,
+    aggregated: dict,
     skipped_artifacts: list[dict],
     repo: str | None = None,
     pr_number: str | None = None,
     head_sha: str | None = None,
 ) -> dict:
-    """Generate a quality report from council verdict data."""
+    """Generate a quality report from aggregated verdict data."""
     total = len(verdicts)
     if total == 0:
         return {
@@ -265,7 +265,7 @@ def generate_quality_report(
                 "total_reviewers": 0,
                 "skip_rate": 0.0,
                 "parse_failure_rate": 0.0,
-                "council_verdict": council.get("verdict", "UNKNOWN"),
+                "cerberus_verdict": aggregated.get("verdict", "UNKNOWN"),
             },
             "reviewers": [],
             "models": {},
@@ -353,7 +353,7 @@ def generate_quality_report(
             "skip_rate": round(skip_rate, 4),
             "parse_failure_count": len(fallback_verdicts),
             "parse_failure_rate": round(parse_failure_rate, 4),
-            "council_verdict": council.get("verdict", "UNKNOWN"),
+            "cerberus_verdict": aggregated.get("verdict", "UNKNOWN"),
             "verdict_distribution": verdict_distribution,
         },
         "reviewers": reviewer_details,
@@ -367,7 +367,7 @@ def generate_quality_report(
 
 
 def main() -> None:
-    """Aggregate reviewer verdict JSON files and write the council verdict to CERBERUS_TMP/council-verdict.json."""
+    """Aggregate reviewer verdict JSON files and write the verdict to CERBERUS_TMP/verdict.json."""
     verdict_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("./verdicts")
     if not verdict_dir.exists():
         fail(f"verdict dir not found: {verdict_dir}")
@@ -403,7 +403,7 @@ def main() -> None:
         verdicts.append(entry)
 
     if not verdicts and skipped_artifacts:
-        council = {
+        result = {
             "verdict": "SKIP",
             "summary": f"All {len(skipped_artifacts)} verdict artifact(s) were malformed and skipped.",
             "reviewers": [],
@@ -418,10 +418,10 @@ def main() -> None:
             },
             "skipped_artifacts": skipped_artifacts,
         }
-        _council_json = json.dumps(council, indent=2)
-        _tmp = CERBERUS_TMP / "council-verdict.json.tmp"
-        _tmp.write_text(_council_json)
-        _tmp.rename(CERBERUS_TMP / "council-verdict.json")
+        _result_json = json.dumps(result, indent=2)
+        _tmp = CERBERUS_TMP / "verdict.json.tmp"
+        _tmp.write_text(_result_json)
+        _tmp.rename(CERBERUS_TMP / "verdict.json")
         print(f"Cerberus Verdict: SKIP\n\nAll artifacts skipped: {len(skipped_artifacts)} malformed.")
         sys.exit(0)
 
@@ -506,40 +506,40 @@ def main() -> None:
         )
         parse_failure_policy = "warn"
 
-    council = aggregate(verdicts, override, parse_failure_policy=parse_failure_policy)
+    result = aggregate(verdicts, override, parse_failure_policy=parse_failure_policy)
 
     if skipped_artifacts:
-        council["skipped_artifacts"] = skipped_artifacts
+        result["skipped_artifacts"] = skipped_artifacts
 
     # Defensive guard: ensure .verdict is always present and valid (#213).
-    if council.get("verdict") not in VALID_VERDICTS:
-        council["verdict"] = "SKIP"
-        council.setdefault(
+    if result.get("verdict") not in VALID_VERDICTS:
+        result["verdict"] = "SKIP"
+        result.setdefault(
             "summary", "Verdict missing or invalid after aggregation; defaulted to SKIP."
         )
         print(
-            "aggregate-verdict: warning: council verdict was missing/invalid, "
+            "aggregate-verdict: warning: verdict was missing/invalid, "
             "defaulted to SKIP",
             file=sys.stderr,
         )
 
-    council_json = json.dumps(council, indent=2)
-    tmp_path = CERBERUS_TMP / "council-verdict.json.tmp"
-    tmp_path.write_text(council_json)
-    tmp_path.rename(CERBERUS_TMP / "council-verdict.json")
+    result_json = json.dumps(result, indent=2)
+    tmp_path = CERBERUS_TMP / "verdict.json.tmp"
+    tmp_path.write_text(result_json)
+    tmp_path.rename(CERBERUS_TMP / "verdict.json")
 
     # Generate quality report
     repo = os.environ.get("GITHUB_REPOSITORY")
     pr_number = os.environ.get("GH_PR_NUMBER")
     quality_report = generate_quality_report(
-        verdicts, council, skipped_artifacts, repo, pr_number, head_sha
+        verdicts, result, skipped_artifacts, repo, pr_number, head_sha
     )
     quality_report_path = CERBERUS_TMP / "quality-report.json"
     quality_report_path.write_text(json.dumps(quality_report, indent=2))
     print(f"aggregate-verdict: quality report written to {quality_report_path}", file=sys.stderr)
 
-    council_verdict = council["verdict"]
-    lines = [f"Cerberus Verdict: {council_verdict}", ""]
+    verdict_result = result["verdict"]
+    lines = [f"Cerberus Verdict: {verdict_result}", ""]
     lines.append("Reviewers:")
     for v in verdicts:
         lines.append(f"- {v['reviewer']} ({v['perspective']}): {v['verdict']}")

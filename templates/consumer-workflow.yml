@@ -107,4 +107,4 @@ jobs:
       - uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
+          # fail-on-skip: 'true' # optional: fail if Cerberus verdict is SKIP (no review happened)

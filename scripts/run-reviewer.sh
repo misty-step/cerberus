@@ -210,7 +210,7 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
   fi
 fi
 
-# Persist reviewer name for downstream steps (parse, council).
+# Persist reviewer name for downstream steps (parse, verdict).
 printf '%s' "$reviewer_name" > "${CERBERUS_TMP}/${perspective}-reviewer-name"
 if [[ -n "${reviewer_desc:-}" ]]; then
   printf '%s' "$reviewer_desc" > "${CERBERUS_TMP}/${perspective}-reviewer-desc"
@@ -283,7 +283,7 @@ if [[ -n "$input_model" ]]; then
   primary_model="$input_model"
 fi
 
-# Persist "what we'd use without input override" for downstream (council/debug).
+# Persist "what we'd use without input override" for downstream (verdict/debug).
 printf '%s' "$configured_model" > "${CERBERUS_TMP}/${perspective}-configured-model"
 
 # Persist primary model for downstream steps (parse, comment metadata).

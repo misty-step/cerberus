@@ -1,7 +1,7 @@
 """GitHub PR comment utilities.
 
 Provides idempotent comment upsert using HTML markers for identification.
-Used by per-reviewer comments, council verdict, and triage diagnosis.
+Used by per-reviewer comments, verdict, and triage diagnosis.
 """
 from __future__ import annotations
 

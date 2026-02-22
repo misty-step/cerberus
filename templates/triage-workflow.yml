@@ -63,13 +63,13 @@ jobs:
     if: github.event_name == 'pull_request' && needs.draft-check.outputs.is_draft != 'true'
     runs-on: ubuntu-latest
     outputs:
-      verdict: ${{ steps.council.outputs.verdict }}
+      verdict: ${{ steps.verdict.outputs.verdict }}
     steps:
       - uses: misty-step/cerberus/verdict@v2
-        id: council
+        id: verdict
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
+          # fail-on-skip: 'true' # optional: fail if Cerberus verdict is SKIP (no review happened)
 
   triage-auto:
     name: "Cerberus Triage (Auto)"

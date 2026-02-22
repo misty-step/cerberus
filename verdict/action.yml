@@ -112,11 +112,11 @@ runs:
         PARSE_FAILURE_POLICY: ${{ inputs.parse-failure-policy }}
       run: |
         python3 "$CERBERUS_ROOT/scripts/aggregate-verdict.py" ./verdicts/
-        VERDICT=$(jq -r .verdict "${CERBERUS_TMP}/council-verdict.json" 2>/dev/null)
+        VERDICT=$(jq -r .verdict "${CERBERUS_TMP}/verdict.json" 2>/dev/null)
         if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
           echo "::warning::aggregate-verdict.py did not write a valid .verdict; defaulting to SKIP"
-          echo "council-verdict.json contents:" >&2
-          cat "${CERBERUS_TMP}/council-verdict.json" 2>/dev/null || echo "(file missing)" >&2
+          echo "verdict.json contents:" >&2
+          cat "${CERBERUS_TMP}/verdict.json" 2>/dev/null || echo "(file missing)" >&2
           VERDICT="SKIP"
         fi
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
@@ -142,15 +142,15 @@ runs:
           echo "::error::Cerberus verdict output is empty; was the aggregate step skipped or failed?"
           exit 1
         fi
-        python3 "$CERBERUS_ROOT/scripts/render-council-comment.py" \
-          --council-json "${CERBERUS_TMP}/council-verdict.json" \
-          --output "${CERBERUS_TMP}/council-comment.md"
+        python3 "$CERBERUS_ROOT/scripts/render-verdict-comment.py" \
+          --verdict-json "${CERBERUS_TMP}/verdict.json" \
+          --output "${CERBERUS_TMP}/verdict-comment.md"
 
         python3 "$CERBERUS_ROOT/scripts/lib/github.py" \
           --repo "$REPO" \
           --pr "$PR_NUMBER" \
-          --marker "<!-- cerberus:council -->" \
-          --body-file "${CERBERUS_TMP}/council-comment.md"
+          --marker "<!-- cerberus:verdict -->" \
+          --body-file "${CERBERUS_TMP}/verdict-comment.md"
 
     - name: Post inline review comments
       if: always() && steps.aggregate.outcome == 'success'
@@ -162,12 +162,12 @@ runs:
         REPO: ${{ github.repository }}
         GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        python3 "$CERBERUS_ROOT/scripts/post-council-review.py" \
+        python3 "$CERBERUS_ROOT/scripts/post-verdict-review.py" \
           --repo "$REPO" \
           --pr "$PR_NUMBER" \
           --head-sha "$GH_HEAD_SHA" \
-          --council-json "${CERBERUS_TMP}/council-verdict.json" \
-          --body-file "${CERBERUS_TMP}/council-comment.md"
+          --verdict-json "${CERBERUS_TMP}/verdict.json" \
+          --body-file "${CERBERUS_TMP}/verdict-comment.md"
 
     - name: Upload quality report artifact
       if: always() && steps.aggregate.outcome == 'success'
