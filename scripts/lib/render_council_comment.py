@@ -88,7 +88,8 @@ _CODENAME_RE = re.compile(r"^[A-Z0-9_]+$")
 def friendly_codename(value: object) -> str:
     """Friendly codename."""
     raw = str(value or "").strip() or "unknown"
-    # Config uses ALLCAPS codenames; render as Title Case for readability.
+    # Legacy ALLCAPS codenames (APOLLO, etc.) → Title Case for readability.
+    # New lowercase codenames (trace, atlas, etc.) → pass through as-is.
     if raw.isupper() and _CODENAME_RE.match(raw):
         return raw.title()
     return raw
@@ -321,9 +322,9 @@ def footer_line() -> str:
     else:
         run_fragment = run_label
     return (
-        f"*Cerberus Council ({version}) | Run {run_fragment} | "
+        f"*Cerberus ({version}) | Run {run_fragment} | "
         f"Override policy `{override_policy}` | Fail on verdict `{fail_on_verdict}` | "
-        f"Override command: `/council override sha={short_sha()}` (reason required)*"
+        f"Override command: `/cerberus override sha={short_sha()}` (reason required)*"
     )
 
 
@@ -625,7 +626,7 @@ def _build_comment(
     verdict_label = f"{verdict} (advisory)" if advisory_banner else verdict
     lines = [
         marker,
-        f"## {icon} Council Verdict: {verdict_label}",
+        f"## {icon} Cerberus Verdict: {verdict_label}",
         "",
         f"**Summary:** {summary_line}",
     ]

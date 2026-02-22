@@ -86,8 +86,8 @@ def ensure_mode(value: str) -> str:
 
 
 def extract_council_verdict(body: str) -> str | None:
-    """Extract council verdict."""
-    match = re.search(r"Council Verdict:\s*(PASS|WARN|FAIL|SKIP)\b", body, flags=re.IGNORECASE)
+    """Extract cerberus verdict from comment body."""
+    match = re.search(r"(?:Council|Cerberus) Verdict:\s*(PASS|WARN|FAIL|SKIP)\b", body, flags=re.IGNORECASE)
     return match.group(1).upper() if match else None
 
 
@@ -254,7 +254,7 @@ def post_triage_comment(
         f"## {emoji} Cerberus Triage: {outcome}\n\n"
         f"- Trigger: `{trigger}`\n"
         f"- Mode: `{mode}`\n"
-        f"- Council verdict: `{verdict or 'unknown'}`\n"
+        f"- Cerberus verdict: `{verdict or 'unknown'}`\n"
         f"- Head SHA: `{short_sha}`\n\n"
         f"### Diagnosis\n{diagnosis}\n\n"
         f"### Attempt Details\n{details}\n\n"
@@ -276,7 +276,7 @@ def post_triage_comment(
 def gather_diagnosis(council_body: str | None) -> str:
     """Gather diagnosis."""
     if not council_body:
-        return "- Council comment not found; cannot extract detailed findings."
+        return "- Cerberus verdict comment not found; cannot extract detailed findings."
     lines = [line.strip() for line in council_body.splitlines() if line.strip()]
     interesting = []
     for line in lines:
@@ -284,11 +284,11 @@ def gather_diagnosis(council_body: str | None) -> str:
             continue
         if line.startswith("---"):
             continue
-        if line.startswith("*Cerberus Council*"):
+        if line.startswith("*Cerberus Council*") or line.startswith("*Cerberus ("):
             continue
         interesting.append(line)
     if not interesting:
-        return "- Council comment found but summary section was empty."
+        return "- Cerberus verdict comment found but summary section was empty."
     return "- " + "\n- ".join(interesting[:6])
 
 

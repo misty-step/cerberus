@@ -418,7 +418,7 @@ class TestFooterLine:
         line = footer_line()
         assert "v2.1" in line
         assert "pr_author" in line
-        assert "/council override sha=" in line
+        assert "/cerberus override sha=" in line
 
     def test_no_run_url(self, monkeypatch):
         monkeypatch.setenv("CERBERUS_VERSION", "dev")

@@ -395,7 +395,7 @@ class TestPrintSummary:
         assert "CERBERUS QUALITY REPORT SUMMARY" in out
         assert "Runs Analyzed: 2" in out
         assert "Overall SKIP Rate: 16.67%" in out
-        assert "Council Verdict Distribution:" in out
+        assert "Cerberus Verdict Distribution:" in out
         assert "Model Rankings (by success rate):" in out
         assert "kimi-k2.5" in out
 

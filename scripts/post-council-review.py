@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Post council output as a PR review with inline comments.
+"""Post verdict output as a PR review with inline comments.
 
-This is additive: the verdict action still posts the council issue comment
+This is additive: the verdict action still posts the verdict issue comment
 (used by triage). This script posts a single PR review for the same SHA with
 up to 30 inline comments anchored to diff `position`s.
 """
@@ -182,7 +182,7 @@ def build_patch_index(repo: str, pr_number: int) -> dict[str, tuple[str, dict[in
 
 def main() -> None:
     """Main."""
-    p = argparse.ArgumentParser(description="Post Cerberus council as a PR review with inline comments.")
+    p = argparse.ArgumentParser(description="Post Cerberus verdict as a PR review with inline comments.")
     p.add_argument("--repo", required=True, help="owner/repo")
     p.add_argument("--pr", type=int, required=True, help="PR number")
     p.add_argument("--head-sha", default="", help="Head SHA (default: env GH_HEAD_SHA)")
@@ -194,7 +194,7 @@ def main() -> None:
     p.add_argument(
         "--body-file",
         default=str(CERBERUS_TMP / "council-comment.md"),
-        help="Council markdown body file (unused; council issue comment is canonical).",
+        help="Verdict markdown body file (unused; verdict issue comment is canonical).",
     )
     args = p.parse_args()
 
@@ -207,7 +207,7 @@ def main() -> None:
     try:
         reviews = list_pr_reviews(args.repo, args.pr)
         if find_review_id_by_marker(reviews, marker) is not None:
-            notice(f"Council review already posted for sha={head_sha[:12]} (marker match). Skipping.")
+            notice(f"Cerberus review already posted for sha={head_sha[:12]} (marker match). Skipping.")
             return
 
         council = read_json(Path(args.council_json))
@@ -282,14 +282,14 @@ def main() -> None:
             comments = fetch_comments(args.repo, args.pr, stop_on_marker="<!-- cerberus:council -->")
             council_comment_url = find_comment_url_by_marker(comments, "<!-- cerberus:council -->") or ""
         except (CommentPermissionError, TransientGitHubError, subprocess.CalledProcessError) as exc:
-            warn(f"Unable to fetch council comment URL: {exc}")
+            warn(f"Unable to fetch verdict comment URL: {exc}")
             council_comment_url = ""
 
         council_verdict = str(council.get("verdict") or "").strip().upper() or "UNKNOWN"
         council_summary = str(council.get("summary") or "").strip()
         sha_short = head_sha[:12]
 
-        link_line = f"[council report]({council_comment_url})" if council_comment_url else "council report (timeline)"
+        link_line = f"[verdict report]({council_comment_url})" if council_comment_url else "verdict report (timeline)"
         review_body = "\n".join(
             [
                 marker,
@@ -297,7 +297,7 @@ def main() -> None:
                 "",
                 f"- Inline comments posted: {posted}/{eligible}{limit_note}",
                 f"- Canonical report: {link_line}",
-                f"- Council verdict: `{council_verdict}`" + (f" ({council_summary})" if council_summary else ""),
+                f"- Cerberus verdict: `{council_verdict}`" + (f" ({council_summary})" if council_summary else ""),
                 "",
             ]
         )
@@ -310,7 +310,7 @@ def main() -> None:
                 body=review_body,
                 comments=inline,
             )
-            notice(f"Posted council PR review for sha={head_sha[:12]} with {posted} inline comments.")
+            notice(f"Posted Cerberus PR review for sha={head_sha[:12]} with {posted} inline comments.")
         except subprocess.CalledProcessError as exc:
             warn(f"Review with inline comments failed; skipping PR review. ({exc.stderr or exc})")
 
@@ -319,7 +319,7 @@ def main() -> None:
     except TransientGitHubError as exc:
         warn(str(exc))
     except Exception as exc:  # don't block verdict on UX extras
-        warn(f"Unable to post council PR review: {exc}")
+        warn(f"Unable to post Cerberus PR review: {exc}")
 
 
 if __name__ == "__main__":

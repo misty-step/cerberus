@@ -25,7 +25,7 @@ def test_extract_council_verdict() -> None:
     triage = load_triage_module()
 
     body = """<!-- cerberus:council -->
-## ❌ Council Verdict: FAIL
+## ❌ Cerberus Verdict: FAIL
 Details
 """
     assert triage.extract_council_verdict(body) == "FAIL"
@@ -93,12 +93,12 @@ def test_latest_council_comment_ignores_untrusted_spoof() -> None:
         {
             "user": {"login": "external-user"},
             "updated_at": "2026-02-08T02:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ❌ Council Verdict: FAIL",
+            "body": "<!-- cerberus:council -->\n## ❌ Cerberus Verdict: FAIL",
         },
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ✅ Council Verdict: PASS",
+            "body": "<!-- cerberus:council -->\n## ✅ Cerberus Verdict: PASS",
         },
     ]
     latest = triage.find_latest_council_comment(comments, "github-actions[bot]")
@@ -220,7 +220,7 @@ def test_triage_pr_skips_when_verdict_not_fail(monkeypatch: pytest.MonkeyPatch) 
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ✅ Council Verdict: PASS",
+            "body": "<!-- cerberus:council -->\n## ✅ Cerberus Verdict: PASS",
         }
     ]
     commit_payload = {"commit": {"message": "normal commit"}}
@@ -271,7 +271,7 @@ def test_triage_pr_diagnose_posts_comment(monkeypatch: pytest.MonkeyPatch) -> No
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ❌ Council Verdict: FAIL\ncouncil details",
+            "body": "<!-- cerberus:council -->\n## ❌ Cerberus Verdict: FAIL\ncouncil details",
         }
     ]
     commit_payload = {"commit": {"message": "normal commit"}}
@@ -323,7 +323,7 @@ def test_triage_pr_fix_push_failure_reports_fix_failed(monkeypatch: pytest.Monke
         {
             "user": {"login": "github-actions[bot]"},
             "updated_at": "2026-02-08T01:00:00Z",
-            "body": "<!-- cerberus:council -->\n## ❌ Council Verdict: FAIL",
+            "body": "<!-- cerberus:council -->\n## ❌ Cerberus Verdict: FAIL",
         }
     ]
     commit_payload = {"commit": {"message": "normal commit"}}

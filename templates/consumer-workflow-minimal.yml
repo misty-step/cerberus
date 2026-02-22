@@ -1,4 +1,4 @@
-# Cerberus AI Code Review Council — Minimal Consumer Workflow
+# Cerberus AI Code Review — Minimal Consumer Workflow
 # https://github.com/misty-step/cerberus
 #
 # This workflow uses the dynamic matrix action to automatically stay in sync
@@ -7,7 +7,7 @@
 #
 # Fork PR security: repository secrets are unavailable to forks.
 # Keep review job gated to same-repo PRs to avoid secret access attempts.
-name: Cerberus Council
+name: Cerberus
 
 on:
   pull_request:
@@ -87,7 +87,7 @@ jobs:
 
   # Aggregate all review results into a single verdict comment
   verdict:
-    name: "Council Verdict"
+    name: "Cerberus / Verdict"
     needs: [review, draft-check]
     if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
     permissions:

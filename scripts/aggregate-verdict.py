@@ -422,7 +422,7 @@ def main() -> None:
         _tmp = CERBERUS_TMP / "council-verdict.json.tmp"
         _tmp.write_text(_council_json)
         _tmp.rename(CERBERUS_TMP / "council-verdict.json")
-        print(f"Council Verdict: SKIP\n\nAll artifacts skipped: {len(skipped_artifacts)} malformed.")
+        print(f"Cerberus Verdict: SKIP\n\nAll artifacts skipped: {len(skipped_artifacts)} malformed.")
         sys.exit(0)
 
     expected_reviewers = parse_expected_reviewers(os.environ.get("EXPECTED_REVIEWERS"))
@@ -539,7 +539,7 @@ def main() -> None:
     print(f"aggregate-verdict: quality report written to {quality_report_path}", file=sys.stderr)
 
     council_verdict = council["verdict"]
-    lines = [f"Council Verdict: {council_verdict}", ""]
+    lines = [f"Cerberus Verdict: {council_verdict}", ""]
     lines.append("Reviewers:")
     for v in verdicts:
         lines.append(f"- {v['reviewer']} ({v['perspective']}): {v['verdict']}")

@@ -1,5 +1,5 @@
-name: 'Cerberus Council Verdict'
-description: 'Aggregate Cerberus review verdicts into a council decision'
+name: 'Cerberus Verdict'
+description: 'Aggregate Cerberus review verdicts into a verdict decision'
 author: 'misty-step'
 
 inputs:
@@ -7,18 +7,18 @@ inputs:
     description: 'GitHub token for PR comments'
     required: true
   fail-on-verdict:
-    description: 'Exit with failure if council verdict is FAIL'
+    description: 'Exit with failure if verdict is FAIL'
     default: 'true'
   fail-on-skip:
-    description: 'Exit with failure if council verdict is SKIP (all reviews skipped)'
+    description: 'Exit with failure if verdict is SKIP (all reviews skipped)'
     default: 'false'
   parse-failure-policy:
-    description: 'How to treat reviewer parse failures in council aggregation: fail (count as FAIL), warn (reclassify as SKIP with warning, default), skip (reclassify as SKIP silently)'
+    description: 'How to treat reviewer parse failures in verdict aggregation: fail (count as FAIL), warn (reclassify as SKIP with warning, default), skip (reclassify as SKIP silently)'
     default: 'warn'
 
 outputs:
   verdict:
-    description: 'Council verdict (PASS, WARN, FAIL, SKIP)'
+    description: 'Cerberus verdict (PASS, WARN, FAIL, SKIP)'
     value: ${{ steps.aggregate.outputs.verdict }}
 
 runs:
@@ -121,7 +121,7 @@ runs:
         fi
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 
-    - name: Post council verdict
+    - name: Post verdict
       if: always() && steps.aggregate.outcome == 'success'
       shell: bash
       env:
@@ -139,7 +139,7 @@ runs:
       run: |
         VERDICT="${{ steps.aggregate.outputs.verdict }}"
         if [ "$VERDICT" = "null" ] || [ -z "$VERDICT" ]; then
-          echo "::error::Council verdict output is empty; was the aggregate step skipped or failed?"
+          echo "::error::Cerberus verdict output is empty; was the aggregate step skipped or failed?"
           exit 1
         fi
         python3 "$CERBERUS_ROOT/scripts/render-council-comment.py" \
@@ -152,7 +152,7 @@ runs:
           --marker "<!-- cerberus:council -->" \
           --body-file "${CERBERUS_TMP}/council-comment.md"
 
-    - name: Post council inline review comments
+    - name: Post inline review comments
       if: always() && steps.aggregate.outcome == 'success'
       shell: bash
       env:
@@ -186,15 +186,15 @@ runs:
       run: |
         VERDICT="${{ steps.aggregate.outputs.verdict }}"
         if [ "$VERDICT" = "FAIL" ] && [ "$FAIL_ON_VERDICT" = "true" ]; then
-          echo "::error::Council Verdict: FAIL"
+          echo "::error::Cerberus Verdict: FAIL"
           exit 1
         fi
         if [ "$VERDICT" = "SKIP" ]; then
           if [ "$FAIL_ON_SKIP" = "true" ]; then
-            echo "::error::Council Verdict: SKIP (all reviews skipped due to timeout/API errors)"
+            echo "::error::Cerberus Verdict: SKIP (all reviews skipped due to timeout/API errors)"
             exit 1
           fi
-          echo "::notice::Council Verdict: SKIP (all reviews skipped due to timeout/API errors)"
+          echo "::notice::Cerberus Verdict: SKIP (all reviews skipped due to timeout/API errors)"
         fi
 
     - name: Clean up temp directory

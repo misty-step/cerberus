@@ -17,7 +17,7 @@ class TestFindCommentByMarker:
     def test_finds_matching_comment(self):
         comments = [
             {"id": 100, "body": "unrelated comment"},
-            {"id": 200, "body": "<!-- cerberus:council -->\nCouncil verdict"},
+            {"id": 200, "body": "<!-- cerberus:council -->\nCerberus verdict"},
             {"id": 300, "body": "another comment"},
         ]
         assert find_comment_by_marker(comments, "<!-- cerberus:council -->") == 200
@@ -35,7 +35,7 @@ class TestFindCommentByMarker:
     def test_different_markers_dont_conflict(self):
         comments = [
             {"id": 100, "body": "<!-- cerberus:correctness -->\nReview"},
-            {"id": 200, "body": "<!-- cerberus:council -->\nCouncil verdict"},
+            {"id": 200, "body": "<!-- cerberus:council -->\nCerberus verdict"},
         ]
         assert find_comment_by_marker(comments, "<!-- cerberus:correctness -->") == 100
         assert find_comment_by_marker(comments, "<!-- cerberus:council -->") == 200
@@ -240,7 +240,7 @@ class TestUpsertPrComment:
                     stdout=json.dumps(
                         [
                             {"id": 1, "body": "first comment"},
-                            {"id": 2, "body": "<!-- cerberus:council -->\nCouncil verdict"},
+                            {"id": 2, "body": "<!-- cerberus:council -->\nCerberus verdict"},
                         ]
                     ),
                     stderr="",

@@ -370,8 +370,8 @@ def test_main_posts_review_with_inline_comments() -> None:
     assert kwargs["comments"][0].path == "src/app.py"
     assert kwargs["comments"][0].position == 7
     assert "<!-- cerberus:council-review sha=abcdef123456 -->" in kwargs["body"]
-    assert "Council verdict: `FAIL` (must fix)" in kwargs["body"]
-    assert "Posted council PR review" in notice_mock.call_args.args[0]
+    assert "Cerberus verdict: `FAIL` (must fix)" in kwargs["body"]
+    assert "Posted Cerberus PR review" in notice_mock.call_args.args[0]
 
 
 def test_main_respects_per_file_cap_and_notes_omitted() -> None:
@@ -399,7 +399,7 @@ def test_main_respects_per_file_cap_and_notes_omitted() -> None:
     kwargs = create_mock.call_args.kwargs
     assert len(kwargs["comments"]) == 3
     assert "top 3/4 anchored" in kwargs["body"]
-    assert "council report (timeline)" in kwargs["body"]
+    assert "verdict report (timeline)" in kwargs["body"]
 
 
 def test_main_skips_findings_outside_diff_hunk() -> None:
@@ -453,7 +453,7 @@ def test_main_warns_on_comment_lookup_failure_but_still_posts() -> None:
     ):
         post_council_review.main()
     create_mock.assert_called_once()
-    assert "Unable to fetch council comment URL" in warn_mock.call_args.args[0]
+    assert "Unable to fetch verdict comment URL" in warn_mock.call_args.args[0]
 
 
 def test_main_handles_comment_permission_error() -> None:
@@ -514,4 +514,4 @@ def test_main_warns_on_unexpected_exception() -> None:
         patch.object(post_council_review, "warn") as warn_mock,
     ):
         post_council_review.main()
-    assert "Unable to post council PR review: boom" in warn_mock.call_args.args[0]
+    assert "Unable to post Cerberus PR review: boom" in warn_mock.call_args.args[0]

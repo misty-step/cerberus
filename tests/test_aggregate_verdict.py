@@ -527,7 +527,7 @@ def test_detects_fallback_verdicts(tmp_path):
     assert "fallback verdicts detected" in err
     assert "APOLLO" in err
     # Default policy is warn: parse failures reclassified as SKIP, so council is PASS
-    assert "Council Verdict: PASS" in out
+    assert "Cerberus Verdict: PASS" in out
     assert "parse-failure verdict(s) reclassified as SKIP" in err
 
 
@@ -556,7 +556,7 @@ def test_fallback_verdicts_with_fail_policy(tmp_path):
         },
     )
     assert code == 0
-    assert "Council Verdict: FAIL" in out
+    assert "Cerberus Verdict: FAIL" in out
 
 
 def test_preserves_reviewer_runtime_seconds(tmp_path):
@@ -748,7 +748,7 @@ class TestParseOverrideUnit:
     def test_body_parsing_extracts_sha_and_reason(self):
         raw = json.dumps({
             "actor": "user",
-            "body": "/council override sha=abc1234\nReason: False positive confirmed",
+            "body": "/cerberus override sha=abc1234\nReason: False positive confirmed",
         })
         result = _parse_override(raw, "abc1234567890")
         assert result is not None
@@ -758,7 +758,7 @@ class TestParseOverrideUnit:
     def test_body_parsing_remainder_as_reason(self):
         raw = json.dumps({
             "actor": "user",
-            "body": "/council override sha=abc1234\nThis is a false positive and safe to merge",
+            "body": "/cerberus override sha=abc1234\nThis is a false positive and safe to merge",
         })
         result = _parse_override(raw, "abc1234567890")
         assert result is not None
@@ -768,7 +768,7 @@ class TestParseOverrideUnit:
         raw = json.dumps({
             "actor": "user",
             "sha": "explicit1",
-            "body": "/council override sha=body1234\nReason: test",
+            "body": "/cerberus override sha=body1234\nReason: test",
         })
         result = _parse_override(raw, "explicit1234567890")
         assert result is not None
@@ -1887,7 +1887,7 @@ class TestParseFailurePolicy:
             )
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        assert "Council Verdict: SKIP" in out
+        assert "Cerberus Verdict: SKIP" in out
         data = json.loads(Path("/tmp/council-verdict.json").read_text())
         assert data["verdict"] == "SKIP"
         assert data["stats"]["parse_failures_reclassified"] == 3
@@ -1904,7 +1904,7 @@ class TestParseFailurePolicy:
         }))
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        assert "Council Verdict: FAIL" in out
+        assert "Cerberus Verdict: FAIL" in out
 
     def test_skip_policy_silent(self, tmp_path):
         """skip policy reclassifies without warning."""
@@ -1920,7 +1920,7 @@ class TestParseFailurePolicy:
             env_extra={"PARSE_FAILURE_POLICY": "skip"},
         )
         assert code == 0
-        assert "Council Verdict: PASS" in out
+        assert "Cerberus Verdict: PASS" in out
         assert "reclassified" not in err
 
     def test_warn_policy_emits_warning(self, tmp_path):
@@ -1934,7 +1934,7 @@ class TestParseFailurePolicy:
         }))
         code, out, err = run_aggregate(str(tmp_path))
         assert code == 0
-        assert "Council Verdict: PASS" in out
+        assert "Cerberus Verdict: PASS" in out
         assert "reclassified as SKIP" in err
         assert "APOLLO" in err
 

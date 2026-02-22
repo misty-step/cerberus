@@ -105,7 +105,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "<!-- cerberus:council -->" in body
-    assert "## ❌ Council Verdict: FAIL" in body
+    assert "## ❌ Cerberus Verdict: FAIL" in body
     assert "**Summary:** 1/2 reviewers passed. 1 failed (Performance & Scalability)." in body
     assert "**Review Scope:** 7 files changed, +120 / -44 lines" in body
     assert "### Reviewer Overview" in body
@@ -114,7 +114,7 @@ def test_renders_scannable_header_and_reviewer_details(tmp_path: Path) -> None:
     assert "runtime `1m 5s`" in body
     assert "Reviewer details (click to expand)" in body
     assert "blob/abcdef1234567890/src/service.py#L42" in body
-    assert "/council override sha=abcdef123456" in body
+    assert "/cerberus override sha=abcdef123456" in body
 
 
 def test_exits_nonzero_on_non_object_json(tmp_path: Path) -> None:
@@ -378,7 +378,7 @@ def test_render_comment_renders_without_stats_or_findings() -> None:
         marker="<!-- test -->",
     )
     assert "<!-- test -->" in comment
-    assert "## ✅ Council Verdict: PASS" in comment
+    assert "## ✅ Cerberus Verdict: PASS" in comment
     assert "No reviewer verdicts available." in comment
 
 
@@ -624,7 +624,7 @@ def test_oversized_comment_strips_raw_review(tmp_path: Path) -> None:
     assert "Comment was truncated" in body
     assert "Reviewer details (click to expand)" not in body
     # Structural content should still be present
-    assert "## ⚠️ Council Verdict: WARN" in body
+    assert "## ⚠️ Cerberus Verdict: WARN" in body
     assert "### Reviewer Overview" in body
     assert "<summary>(click to expand)</summary>" in body
     assert "### Key Findings" in body
@@ -694,11 +694,11 @@ def test_advisory_banner_shown_when_fail_on_verdict_false(tmp_path: Path) -> Non
     )
 
     assert code == 0, err
-    assert "Council Verdict: FAIL (advisory)" in body
+    assert "Cerberus Verdict: FAIL (advisory)" in body
     assert "Advisory mode" in body
     assert "fail-on-verdict" in body
     # Standard FAIL header must NOT appear when advisory
-    assert "## ❌ Council Verdict: FAIL\n" not in body
+    assert "## ❌ Cerberus Verdict: FAIL\n" not in body
 
 
 def test_no_advisory_banner_when_fail_on_verdict_true(tmp_path: Path) -> None:
@@ -707,7 +707,7 @@ def test_no_advisory_banner_when_fail_on_verdict_true(tmp_path: Path) -> None:
     )
 
     assert code == 0, err
-    assert "## ❌ Council Verdict: FAIL" in body
+    assert "## ❌ Cerberus Verdict: FAIL" in body
     assert "(advisory)" not in body
     assert "Advisory mode" not in body
 

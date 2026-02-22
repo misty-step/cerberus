@@ -144,7 +144,7 @@ def aggregate_reports(reports: list[dict]) -> dict:
     total_skips = sum(r.get("summary", {}).get("skip_count", 0) for r in reports)
     total_parse_failures = sum(r.get("summary", {}).get("parse_failure_count", 0) for r in reports)
 
-    # Council verdict distribution
+    # Verdict distribution
     council_verdicts: dict[str, int] = {}
     for r in reports:
         v = r.get("summary", {}).get("council_verdict", "UNKNOWN")
@@ -239,7 +239,7 @@ def print_summary(summary: dict) -> None:
     print(f"Overall SKIP Rate: {s.get('overall_skip_rate', 0):.2%}")
     print(f"Overall Parse Failure Rate: {s.get('overall_parse_failure_rate', 0):.2%}")
 
-    print("\nCouncil Verdict Distribution:")
+    print("\nCerberus Verdict Distribution:")
     for verdict, count in s.get("council_verdict_distribution", {}).items():
         print(f"  {verdict}: {count}")
 

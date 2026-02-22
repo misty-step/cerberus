@@ -108,7 +108,7 @@ class TestParseOverride:
     def test_body_parsing_extracts_sha_and_reason(self):
         raw = json.dumps({
             "actor": "user",
-            "body": "/council override sha=abc1234\nReason: False positive confirmed",
+            "body": "/cerberus override sha=abc1234\nReason: False positive confirmed",
         })
         result = parse_override(raw, "abc1234567890")
         assert result is not None
@@ -118,7 +118,7 @@ class TestParseOverride:
     def test_body_parsing_remainder_as_reason(self):
         raw = json.dumps({
             "actor": "user",
-            "body": "/council override sha=abc1234\nThis is a false positive and safe to merge",
+            "body": "/cerberus override sha=abc1234\nThis is a false positive and safe to merge",
         })
         result = parse_override(raw, "abc1234567890")
         assert result is not None
@@ -128,7 +128,7 @@ class TestParseOverride:
         raw = json.dumps({
             "actor": "user",
             "sha": "explicit1",
-            "body": "/council override sha=body1234\nReason: test",
+            "body": "/cerberus override sha=body1234\nReason: test",
         })
         result = parse_override(raw, "explicit1234567890")
         assert result is not None
@@ -147,7 +147,7 @@ class TestParseOverride:
     def test_extra_whitespace_in_body(self):
         raw = json.dumps({
             "actor": "user",
-            "body": "  /council override sha=abc1234  \n  Reason:  spaced out  ",
+            "body": "  /cerberus override sha=abc1234  \n  Reason:  spaced out  ",
         })
         result = parse_override(raw, "abc1234567890")
         assert result is not None
@@ -156,7 +156,7 @@ class TestParseOverride:
     def test_mixed_case_reason_prefix(self):
         raw = json.dumps({
             "actor": "user",
-            "body": "/council override sha=abc1234\nREASON: uppercase reason",
+            "body": "/cerberus override sha=abc1234\nREASON: uppercase reason",
         })
         result = parse_override(raw, "abc1234567890")
         assert result is not None
