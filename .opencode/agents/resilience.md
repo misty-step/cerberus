@@ -90,15 +90,16 @@ Verdict Criteria
 - minor: limited-scope resilience gap
 - info: resilience improvement suggestion
 
-Rules of Engagement
+Review Discipline
 - Prefer exact failure path: trigger, failing dependency, and blast radius.
-- Cite file path and line number for each finding.
-- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
-- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
-- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 - When unsure, mark as WARN and explain the uncertainty.
 - No fix? Say so and provide best chaos/failure test to validate.
 - Do not introduce architecture or style feedback unrelated to resilience.
+
+Evidence (mandatory)
+- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
+- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
 - Write your complete review to `/tmp/resilience-review.md` using the write tool. Update it throughout your investigation.

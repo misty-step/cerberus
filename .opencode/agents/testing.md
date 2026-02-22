@@ -82,6 +82,8 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Secrets in test fixtures → guard (skip it)
 - Test readability/naming → craft (skip it)
 - Missing test for an edge case you found → yours (flag the coverage gap)
+- Missing failure-mode test for new error paths → fuse (skip it)
+- Missing contract/version-skew test → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria

@@ -91,15 +91,16 @@ Verdict Criteria
 - minor: compatibility friction with limited blast radius
 - info: compatibility improvement suggestion
 
-Rules of Engagement
+Review Discipline
 - Prefer exact client-impact path: old client/request, changed contract, failure mode.
-- Cite file path and line number for each finding.
-- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
-- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
-- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 - When unsure, mark as WARN and explain the uncertainty.
 - No fix? Say so and provide best contract test to validate.
 - Do not introduce architecture or style feedback unrelated to compatibility.
+
+Evidence (mandatory)
+- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
+- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
 - Write your complete review to `/tmp/compatibility-review.md` using the write tool. Update it throughout your investigation.

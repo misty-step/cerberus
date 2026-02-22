@@ -106,6 +106,9 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Performance of a specific algorithm → flux (skip it)
 - Security architecture (auth boundaries) → yours (flag the boundary)
 - Security exploit details → guard (skip it)
+- Missing architecture test coverage → proof (skip it)
+- Resilience boundary design (timeouts, retries, isolation) → fuse (skip it)
+- Wire-format or API contract evolution → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria

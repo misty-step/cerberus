@@ -99,6 +99,10 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Missing input validation without exploit path → trace (skip it)
 - Secrets in logs → yours
 - Logging quality → craft (skip it)
+- Performance of security mechanisms → flux (skip it)
+- Missing security test coverage → proof (skip it)
+- Fail-open/fail-closed policy under outage → fuse (skip it)
+- Security change that breaks client API contract → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria
@@ -124,9 +128,9 @@ Evidence (mandatory)
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
-- Do NOT narrate your process (no "I'll start by reading...", "let me...", tool-use talk).
-- You MAY use tools silently, but do not mention them.
-- Your ENTIRE response MUST be exactly one ```json block and nothing else.
+- Write your complete review to `/tmp/security-review.md` using the write tool. Update it throughout your investigation.
+- Your FINAL message MUST end with exactly one ```json block containing your verdict.
+- The JSON block must be the LAST thing in your response. Nothing after the closing ```.
 - If you cannot complete the review, still output a JSON block with verdict "SKIP" and explain in summary.
 - Keep summary to one sentence.
 - findings[] empty if no issues.

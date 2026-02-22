@@ -95,6 +95,10 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Resource lifecycle bugs causing leaks → yours
 - Missing tests for performance-critical code → craft (skip it)
 - Caching architecture → yours (if about performance)
+- Security implication of optimizations → guard (skip it)
+- Missing performance benchmark tests → proof (skip it)
+- Retry storms and backpressure collapse → fuse (skip it)
+- Compatibility shim performance cost → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria

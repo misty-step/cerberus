@@ -102,6 +102,10 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Performance bug that produces wrong results → yours
 - Performance inefficiency → flux (skip it)
 - Security bug that is also a logic bug → yours (flag the logic aspect)
+- Security exploit without logic bug → guard (skip it)
+- Missing test for a correctness bug → proof (skip it)
+- Failure-path logic for dependency outages → fuse (skip it)
+- Backward-compat break without logic bug → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria
@@ -114,15 +118,16 @@ Verdict Criteria
 - minor: edge cases with limited impact
 - info: observations that do not affect correctness
 
-Rules of Engagement
+Review Discipline
 - Prefer exact reproduction path: inputs, state, and sequence.
-- Cite file path and line number for each finding.
-- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
-- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
-- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 - When unsure, mark as WARN and explain the uncertainty.
 - No fix? Say so and provide best next test to validate.
 - Do not introduce architecture or style feedback.
+
+Evidence (mandatory)
+- For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
+- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
 - Write your complete review to `/tmp/correctness-review.md` using the write tool. Update it throughout your investigation.

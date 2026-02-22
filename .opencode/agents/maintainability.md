@@ -102,6 +102,10 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Module boundary debates → atlas (skip it)
 - Documentation of security decisions → yours
 - Security vulnerability → guard (skip it)
+- Performance inefficiency → flux (skip it)
+- Missing test coverage gap → proof (skip it)
+- Failure-handling ergonomics and policy clarity → fuse (skip it)
+- Migration ergonomics and upgrade path clarity → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
 Verdict Criteria
