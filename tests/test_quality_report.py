@@ -51,20 +51,20 @@ def _sample_verdicts():
     ]
 
 
-def _sample_council():
+def _sample_verdict():
     return {"verdict": "WARN", "summary": "test"}
 
 
 class TestQualityReportStructure:
     def test_report_has_required_sections(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert "meta" in report
         assert "summary" in report
         assert "reviewers" in report
         assert "models" in report
 
     def test_meta_contains_repo(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert report["meta"]["repo"] == "misty-step/test"
         assert report["meta"]["pr_number"] == "123"
         assert report["meta"]["head_sha"] == "abc123"
@@ -73,20 +73,20 @@ class TestQualityReportStructure:
 
 class TestQualityReportSummary:
     def test_total_reviewers(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert report["summary"]["total_reviewers"] == 3
 
     def test_skip_count_and_rate(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert report["summary"]["skip_count"] == 1
         assert report["summary"]["skip_rate"] == round(1 / 3, 4)
 
-    def test_council_verdict(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
-        assert report["summary"]["council_verdict"] == "WARN"
+    def test_cerberus_verdict(self):
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
+        assert report["summary"]["cerberus_verdict"] == "WARN"
 
     def test_verdict_distribution(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         dist = report["summary"]["verdict_distribution"]
         assert dist["PASS"] == 1
         assert dist["WARN"] == 1
@@ -96,24 +96,24 @@ class TestQualityReportSummary:
 
 class TestQualityReportModels:
     def test_model_aggregation(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert "kimi" in report["models"]
         assert report["models"]["kimi"]["count"] == 1
         assert report["models"]["kimi"]["verdicts"]["PASS"] == 1
 
     def test_fallback_tracked(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert report["models"]["glm"]["fallback_count"] == 1
         assert report["models"]["glm"]["fallback_rate"] > 0
 
     def test_runtime_stats(self):
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert report["models"]["kimi"]["avg_runtime_seconds"] == 45
         assert report["models"]["kimi"]["median_runtime_seconds"] == 45
 
     def test_runtime_count_in_model_stats(self):
         """runtime_count must be included so quality-report.py can aggregate correctly."""
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         assert report["models"]["kimi"]["runtime_count"] == 1
         # SENTINEL has runtime 600 (timeout) — still counted as runtime data
         assert report["models"]["minimax"]["runtime_count"] == 1
@@ -127,7 +127,7 @@ class TestQualityReportEdgeCases:
 
     def test_timed_out_field_set_correctly(self):
         """timed_out should be True for timeout-skip reviewers."""
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), [], "misty-step/test", "123", "abc123")
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
         reviewers = {r["reviewer"]: r for r in report["reviewers"]}
         # SENTINEL has SKIP + 600s runtime → timeout
         assert reviewers["SENTINEL"]["timed_out"] is True
@@ -136,7 +136,7 @@ class TestQualityReportEdgeCases:
 
     def test_skipped_artifacts_included(self):
         skipped = [{"file": "bad.json", "reason": "invalid JSON"}]
-        report = generate_quality_report(_sample_verdicts(), _sample_council(), skipped)
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), skipped)
         assert "skipped_artifacts" in report
         assert len(report["skipped_artifacts"]) == 1
 
@@ -154,7 +154,7 @@ class TestQualityReportEdgeCases:
 
 # --- Tests for quality-report.py aggregate_reports ---
 
-def _sample_quality_report(council_verdict="PASS", model="kimi", runtime=45, runtime_count=1):
+def _sample_quality_report(cerberus_verdict="PASS", model="kimi", runtime=45, runtime_count=1):
     """Build a minimal quality report dict for testing aggregate_reports."""
     return {
         "meta": {"generated_at": 1700000000.0},
@@ -162,7 +162,7 @@ def _sample_quality_report(council_verdict="PASS", model="kimi", runtime=45, run
             "total_reviewers": 3,
             "skip_count": 0,
             "parse_failure_count": 0,
-            "council_verdict": council_verdict,
+            "cerberus_verdict": cerberus_verdict,
         },
         "models": {
             model: {
@@ -189,14 +189,14 @@ class TestAggregateReports:
         assert result["model_rankings"][0]["model"] == "kimi"
         assert result["model_rankings"][0]["success_rate"] == 1.0
 
-    def test_council_verdict_distribution(self):
+    def test_cerberus_verdict_distribution(self):
         reports = [
-            _sample_quality_report(council_verdict="PASS"),
-            _sample_quality_report(council_verdict="PASS"),
-            _sample_quality_report(council_verdict="FAIL"),
+            _sample_quality_report(cerberus_verdict="PASS"),
+            _sample_quality_report(cerberus_verdict="PASS"),
+            _sample_quality_report(cerberus_verdict="FAIL"),
         ]
         result = aggregate_reports(reports)
-        dist = result["summary"]["council_verdict_distribution"]
+        dist = result["summary"]["cerberus_verdict_distribution"]
         assert dist["PASS"] == 2
         assert dist["FAIL"] == 1
 
@@ -204,7 +204,7 @@ class TestAggregateReports:
         """aggregate_reports should use runtime_count from model stats, not total count."""
         report = {
             "meta": {"generated_at": 1700000000.0},
-            "summary": {"total_reviewers": 3, "skip_count": 1, "parse_failure_count": 0, "council_verdict": "PASS"},
+            "summary": {"total_reviewers": 3, "skip_count": 1, "parse_failure_count": 0, "cerberus_verdict": "PASS"},
             "models": {
                 "test-model": {
                     "count": 3,
@@ -241,7 +241,7 @@ class TestAggregateReports:
     def test_skips_models_with_zero_count(self):
         report = {
             "meta": {"generated_at": 1700000000.0},
-            "summary": {"total_reviewers": 2, "skip_count": 0, "parse_failure_count": 0, "council_verdict": "PASS"},
+            "summary": {"total_reviewers": 2, "skip_count": 0, "parse_failure_count": 0, "cerberus_verdict": "PASS"},
             "models": {
                 "zero-model": {
                     "count": 0,
@@ -379,7 +379,7 @@ class TestPrintSummary:
                 "total_reviewers": 6,
                 "overall_skip_rate": 0.1667,
                 "overall_parse_failure_rate": 0.0,
-                "council_verdict_distribution": {"PASS": 1, "WARN": 1},
+                "cerberus_verdict_distribution": {"PASS": 1, "WARN": 1},
             },
             "model_rankings": [{
                 "model": "kimi-k2.5",
@@ -395,7 +395,7 @@ class TestPrintSummary:
         assert "CERBERUS QUALITY REPORT SUMMARY" in out
         assert "Runs Analyzed: 2" in out
         assert "Overall SKIP Rate: 16.67%" in out
-        assert "Council Verdict Distribution:" in out
+        assert "Cerberus Verdict Distribution:" in out
         assert "Model Rankings (by success rate):" in out
         assert "kimi-k2.5" in out
 

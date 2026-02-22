@@ -42,16 +42,16 @@ runs:
         marker="<!-- cerberus:draft-check -->"
         comment_file="/tmp/cerberus-draft-check-comment.md"
         {
-          printf '%s\n' "## 🏛️ Cerberus Council: Draft PR Detected"
+          printf '%s\n' "## 🐕 Cerberus: Draft PR Detected"
           printf '\n'
           printf '%s\n' "This PR is currently a **draft**. Cerberus AI Code Review will run automatically when you mark the PR as **ready for review**."
           printf '\n'
           printf '%s\n' "### Next Steps"
           printf '%s\n' "1. Click **Ready for review** in the GitHub PR UI when your changes are complete"
-          printf '%s\n' "2. Cerberus will then run the full council review"
+          printf '%s\n' "2. Cerberus will then run the full review"
           printf '\n'
           printf '%s\n' "---"
-          printf '%s\n' "*Cerberus Council | Skip reason: draft PR*"
+          printf '%s\n' "*Cerberus | Skip reason: draft PR*"
           printf '%s\n' "$marker"
         } > "$comment_file"
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Sync v1 floating tag to latest v1.x.x release
-# Addresses Council feedback: consistent triggers, test coverage, annotated tag handling
+# Addresses review feedback: consistent triggers, test coverage, annotated tag handling
 
 set -euo pipefail
 

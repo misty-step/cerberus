@@ -1,6 +1,6 @@
-# Cerberus AI Code Review Council
+# Cerberus AI Code Review
 # https://github.com/misty-step/cerberus
-name: Cerberus Council
+name: Cerberus
 
 on:
   pull_request:
@@ -31,33 +31,58 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
 
-  review:
+  route:
     needs: preflight
+    if: needs.preflight.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      panel: ${{ steps.router.outputs.panel }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch PR diff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+      - uses: ./router
+        id: router
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          diff-file: /tmp/pr.diff
+
+  matrix:
+    needs: route
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      count: ${{ steps.generate.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./matrix
+        id: generate
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+
+  review:
+    needs: [matrix, preflight]
     if: needs.preflight.outputs.should_run == 'true'
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        include:
-          - { reviewer: APOLLO,    perspective: correctness,      model: 'openrouter/moonshotai/kimi-k2.5' }
-          - { reviewer: ATHENA,    perspective: architecture,     model: 'openrouter/z-ai/glm-5' }
-          - { reviewer: SENTINEL,  perspective: security,         model: 'openrouter/minimax/minimax-m2.5' }
-          - { reviewer: VULCAN,    perspective: performance,      model: 'openrouter/google/gemini-3-flash-preview' }
-          - { reviewer: ARTEMIS,   perspective: maintainability,  model: 'openrouter/moonshotai/kimi-k2.5' }
-          - { reviewer: CASSANDRA, perspective: testing,          model: 'openrouter/google/gemini-3-flash-preview' }
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
       - uses: ./
         with:
           perspective: ${{ matrix.perspective }}
-          model: ${{ matrix.model }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           timeout: '600'
 
   verdict:
-    name: "Council Verdict"
+    name: "Verdict"
     needs: [review, preflight]
     if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest

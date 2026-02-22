@@ -1,35 +1,51 @@
-# Cerberus Council Configuration
+# Cerberus Configuration
 # Multi-agent AI code review system
 version: 1
 
-council:
-  name: "Cerberus Council"
-  required_check: "Council Verdict"
-  mode: parallel                      # parallel | sequential
-  cancel_in_progress: true            # Cancel stale runs on new push
+name: "Cerberus"
+required_check: "Cerberus / Verdict"
+mode: parallel                      # parallel | sequential
+cancel_in_progress: true            # Cancel stale runs on new push
 
 model:
   default: "openrouter/moonshotai/kimi-k2.5"
   fallback:
     - "openrouter/google/gemini-3-flash-preview"
     - "openrouter/z-ai/glm-5"
-  # Pool for random model assignment per run (issue #148).
-  # When a reviewer has "model: pool", a random model is selected each run.
-  # Benefits: resilience (no single model failure tanks a reviewer),
-  # implicit eval data, cost optimization, diversity of perspectives.
-  # pool:
-  #   - "openrouter/moonshotai/kimi-k2.5"
-  #   - "openrouter/z-ai/glm-5"
-  #   - "openrouter/minimax/minimax-m2.5"
-  #   - "openrouter/google/gemini-3-flash-preview"
+    - "openrouter/qwen/qwen3-coder"
+  pool:
+    - "openrouter/moonshotai/kimi-k2.5"
+    - "openrouter/minimax/minimax-m2.5"
+    - "openrouter/google/gemini-3.1-pro-preview"
+    - "openrouter/google/gemini-3-flash-preview"
+    - "openrouter/deepseek/deepseek-v3.2"
+    - "openrouter/z-ai/glm-5"
+    - "openrouter/qwen/qwen3-coder"
+    - "openrouter/xiaomi/mimo-v2-flash"
+    - "openrouter/mistralai/devstral-2512"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
   timeout: 600                        # Seconds per reviewer
 
+routing:
+  enabled: true
+  model: "openrouter/google/gemini-3-flash-preview"
+  panel_size: 5
+  always_include:
+    - trace      # correctness always runs
+  include_if_code_changed:
+    - guard      # security runs if non-test/non-doc code changed
+  fallback_panel:
+    - trace
+    - atlas
+    - guard
+    - craft
+    - proof
+
 override:
   enabled: true
-  command: "/council override"
+  command: "/cerberus override"
   actor: pr_author                    # pr_author | write_access | maintainers_only
   require_reason: true
   pin_to_sha: true
@@ -40,56 +56,72 @@ verdict:
   warn_on: "any_major_or_5_minor_or_3_minor_same_category"  # any_major | any_major_or_5_minor_or_3_minor_same_category
   confidence_min: 0.7
 
-council_verdict:
+cerberus_verdict:
   fail_on: "any_critical_fail_or_2_fails"  # single non-critical FAIL is downgraded to WARN
 
-# The six heads of Cerberus.
-# Names are cosmetic — perspective determines behavior.
+# The eight reviewers of Cerberus.
+# Names are codenames — perspective determines behavior.
 reviewers:
-  - name: APOLLO
+  - name: trace
     perspective: correctness
-    model: "openrouter/moonshotai/kimi-k2.5"  # optional, falls back to model.default
-    description: "Correctness & Logic — Find the bug"
+    model: pool
+    description: "Correctness — Find the bug"
     override: pr_author
     tools:
       shell: false
 
-  - name: ATHENA
+  - name: atlas
     perspective: architecture
-    model: "openrouter/z-ai/glm-5"  # optional, falls back to model.default
-    description: "Architecture & Design — Zoom out"
+    model: pool
+    description: "Architecture — Zoom out"
     override: pr_author
     tools:
       shell: false
 
-  - name: SENTINEL
+  - name: guard
     perspective: security
-    model: "openrouter/minimax/minimax-m2.5"  # rotated from deepseek-v3.2 (reasoning trace issues)
-    description: "Security & Threat Model — Think like an attacker"
+    model: pool
+    description: "Security — Think like an attacker"
     override: maintainers_only
     tools:
       shell: false
 
-  - name: VULCAN
+  - name: flux
     perspective: performance
-    model: "openrouter/google/gemini-3-flash-preview"  # optional, falls back to model.default
-    description: "Performance & Scalability — Think at runtime"
+    model: pool
+    description: "Performance — Think at runtime"
     override: pr_author
     tools:
       shell: false
 
-  - name: ARTEMIS
+  - name: craft
     perspective: maintainability
-    model: "openrouter/moonshotai/kimi-k2.5"  # replaced qwen3-max-thinking (frequent fallbacks)
-    description: "Maintainability & DX — Think like the next developer"
+    model: pool
+    description: "Maintainability — Think like the next dev"
     override: pr_author
     tools:
       shell: false
 
-  - name: CASSANDRA
+  - name: proof
     perspective: testing
-    model: "openrouter/google/gemini-3-flash-preview"  # replaced qwen3-max-thinking (frequent fallbacks)
-    description: "Testing & Coverage — See what will break"
+    model: pool
+    description: "Testing — See what will break"
+    override: pr_author
+    tools:
+      shell: false
+
+  - name: fuse
+    perspective: resilience
+    model: pool
+    description: "Resilience — What happens when the happy path fails"
+    override: pr_author
+    tools:
+      shell: false
+
+  - name: pact
+    perspective: compatibility
+    model: pool
+    description: "Compatibility — Trace the client impact"
     override: pr_author
     tools:
       shell: false

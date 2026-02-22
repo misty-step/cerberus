@@ -1,4 +1,4 @@
-# Cerberus AI Code Review Council
+# Cerberus AI Code Review
 # https://github.com/misty-step/cerberus
 #
 # ⚠️ DEPRECATED: This template hardcodes the reviewer matrix and will drift
@@ -12,7 +12,7 @@
 # - The GITHUB_TOKEN is read-only for fork PRs
 # - This workflow gates full review to same-repo PRs only
 # - Fork PRs trigger the workflow but skip review jobs
-name: Cerberus Council
+name: Cerberus
 
 on:
   pull_request:
@@ -63,12 +63,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - { reviewer: APOLLO,    perspective: correctness,      reviewer_label: "Correctness & Logic" }
-          - { reviewer: ATHENA,    perspective: architecture,     reviewer_label: "Architecture & Design" }
-          - { reviewer: SENTINEL,  perspective: security,         reviewer_label: "Security & Threat Model" }
-          - { reviewer: VULCAN,    perspective: performance,      reviewer_label: "Performance & Scalability" }
-          - { reviewer: ARTEMIS,   perspective: maintainability,  reviewer_label: "Maintainability & DX" }
-          - { reviewer: CASSANDRA, perspective: testing,          reviewer_label: "Testing & Coverage" }
+          - { reviewer: trace,   perspective: correctness,     reviewer_label: "Correctness" }
+          - { reviewer: atlas,   perspective: architecture,    reviewer_label: "Architecture" }
+          - { reviewer: guard,   perspective: security,        reviewer_label: "Security" }
+          - { reviewer: flux,    perspective: performance,     reviewer_label: "Performance" }
+          - { reviewer: craft,   perspective: maintainability, reviewer_label: "Maintainability" }
+          - { reviewer: proof,   perspective: testing,         reviewer_label: "Testing" }
+          - { reviewer: fuse,    perspective: resilience,      reviewer_label: "Resilience" }
+          - { reviewer: pact,    perspective: compatibility,   reviewer_label: "Compatibility" }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +92,7 @@ jobs:
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPS (timeout/API error)
 
   verdict:
-    name: "Council Verdict"
+    name: "Verdict"
     needs: [preflight, review]
     if: always() && needs.preflight.outputs.should_run == 'true'
     permissions:
@@ -101,4 +103,4 @@ jobs:
       - uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # fail-on-skip: 'true' # optional: fail if council verdict is SKIP (no review happened)
+          # fail-on-skip: 'true' # optional: fail if Cerberus verdict is SKIP (no review happened)

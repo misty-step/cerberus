@@ -88,12 +88,12 @@ cp tests/fixtures/sample-verdicts/*.json /tmp/cerberus-docs-verdicts/
 python scripts/aggregate-verdict.py /tmp/cerberus-docs-verdicts
 ```
 
-Render a council comment from the aggregated verdict:
+Render a verdict comment from the aggregated verdict:
 
 ```bash
-python scripts/render-council-comment.py \
-  --council-json /tmp/council-verdict.json \
-  --output /tmp/council-comment.md
+python scripts/render-verdict-comment.py \
+  --verdict-json /tmp/verdict.json \
+  --output /tmp/verdict-comment.md
 ```
 
 Run one real reviewer locally (requires credentials and OpenCode CLI):

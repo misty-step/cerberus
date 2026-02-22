@@ -154,7 +154,7 @@ reviewer_code="$(
   printf '\n'
 
   printf '%s\n' "---"
-  printf '%s\n' "*Cerberus Council | ${sha_short} | Override: /council override sha=${sha_short} (reason required)*"
+  printf '%s\n' "*Cerberus | ${sha_short} | Override: /cerberus override sha=${sha_short} (reason required)*"
   printf '%s\n' "${marker}"
 } > "$comment_file"
 

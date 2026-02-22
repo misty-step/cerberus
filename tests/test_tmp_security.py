@@ -35,8 +35,8 @@ PYTHON_SCRIPTS = [
     SCRIPTS_DIR / "aggregate-verdict.py",
     SCRIPTS_DIR / "parse-review.py",
     SCRIPTS_DIR / "triage.py",
-    SCRIPTS_DIR / "post-council-review.py",
-    SCRIPTS_DIR / "lib" / "render_council_comment.py",
+    SCRIPTS_DIR / "post-verdict-review.py",
+    SCRIPTS_DIR / "lib" / "render_verdict_comment.py",
 ]
 
 
@@ -61,14 +61,14 @@ def aggregate_env(tmp_path: Path) -> dict[str, str]:
 
 
 class TestAggregateUsesCerberusTmp:
-    def test_council_verdict_written_to_cerberus_tmp(
+    def test_verdict_written_to_cerberus_tmp(
         self, tmp_path: Path, aggregate_env: dict[str, str]
     ) -> None:
-        """aggregate-verdict.py writes council-verdict.json to CERBERUS_TMP."""
+        """aggregate-verdict.py writes verdict.json to CERBERUS_TMP."""
         code, _, _ = _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
         assert code == 0
-        assert (tmp_path / "council-verdict.json").exists()
+        assert (tmp_path / "verdict.json").exists()
 
     def test_quality_report_written_to_cerberus_tmp(
         self, tmp_path: Path, aggregate_env: dict[str, str]
@@ -78,23 +78,23 @@ class TestAggregateUsesCerberusTmp:
 
         assert (tmp_path / "quality-report.json").exists()
 
-    def test_council_verdict_not_in_fixed_tmp(
+    def test_verdict_not_in_fixed_tmp(
         self, tmp_path: Path, aggregate_env: dict[str, str]
     ) -> None:
         """When CERBERUS_TMP is set to a unique dir, the file goes there, not /tmp/."""
         _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
-        output = tmp_path / "council-verdict.json"
+        output = tmp_path / "verdict.json"
         assert output.exists()
-        assert str(output) != "/tmp/council-verdict.json"
+        assert str(output) != "/tmp/verdict.json"
 
-    def test_council_verdict_json_is_valid(
+    def test_verdict_json_is_valid(
         self, tmp_path: Path, aggregate_env: dict[str, str]
     ) -> None:
         """Output JSON is parseable and has expected fields."""
         _run(SCRIPT_AGGREGATE, [str(FIXTURES)], aggregate_env)
 
-        data = json.loads((tmp_path / "council-verdict.json").read_text())
+        data = json.loads((tmp_path / "verdict.json").read_text())
         assert "verdict" in data
 
 

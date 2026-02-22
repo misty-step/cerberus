@@ -369,7 +369,7 @@ reviewers:
         assert "model_used=" in result.stdout
 
     def test_mixed_reviewers_some_pool_some_pinned(self, tmp_path: Path) -> None:
-        """Council can have some reviewers using pool and others pinned."""
+        """Cerberus can have some reviewers using pool and others pinned."""
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         write_stub_opencode(bin_dir / "opencode")

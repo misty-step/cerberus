@@ -11,9 +11,9 @@ Replace CodeRabbit. Ship a GitHub-native platform where AI agents review code, f
 CodeRabbit: $30/seat/mo (GitHub Marketplace). Single-model, single-pass review with inline comments and conversational follow-up.
 
 Cerberus differentiators:
-- **Multi-perspective council** — 6 specialized reviewers vs single-pass
+- **Multi-perspective review** — 6 specialized reviewers vs single-pass
 - **Model diversity** — each reviewer can use a different model (Kimi, Gemini, GLM, Minimax)
-- **Council verdict with override protocol** — not binary pass/fail
+- **Aggregated verdict with override protocol** — not binary pass/fail
 - **Open core** — OSS GitHub Action (BYOK) + optional managed Cerberus Cloud
 - **Agentic triage** — findings auto-remediated via fix PRs
 - **Observability modules** — health checks, error tracking, status pages (future)
@@ -29,10 +29,10 @@ Engineering teams (2-50 devs) who want automated code review that catches what h
 ## Roadmap
 
 ### v2.x: Review Quality & Reliability (current)
-Make reviews world-class. Fix reliability (SKIPs, parse failures), improve formatting (inline comments, scannable council), reduce noise (hallucinations, pre-existing issues, false positives). Match CodeRabbit UX, then exceed it.
+Make reviews world-class. Fix reliability (SKIPs, parse failures), improve formatting (inline comments, scannable verdicts), reduce noise (hallucinations, pre-existing issues, false positives). Match CodeRabbit UX, then exceed it.
 
 ### v3.0: Agentic Triage
-Generalize the triage agent to accept findings from any source. Council flags an issue → triage agent opens a fix PR → Cerberus re-reviews the fix. Loop guards prevent infinite cycles.
+Generalize the triage agent to accept findings from any source. Cerberus flags an issue → triage agent opens a fix PR → Cerberus re-reviews the fix. Loop guards prevent infinite cycles.
 
 ### v4.0: Observability Platform
 Three new modules, each a deep module with a simple interface:

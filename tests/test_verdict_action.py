@@ -27,16 +27,16 @@ def test_verdict_action_uses_shared_upsert() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
     assert "scripts/lib/github.py" in content
-    assert '--body-file "${CERBERUS_TMP}/council-comment.md"' in content
+    assert '--body-file "${CERBERUS_TMP}/verdict-comment.md"' in content
     assert "--marker" in content
 
 
 def test_verdict_action_posts_inline_review_comments() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
-    assert "scripts/post-council-review.py" in content
-    assert '--council-json "${CERBERUS_TMP}/council-verdict.json"' in content
-    assert '--body-file "${CERBERUS_TMP}/council-comment.md"' in content
+    assert "scripts/post-verdict-review.py" in content
+    assert '--verdict-json "${CERBERUS_TMP}/verdict.json"' in content
+    assert '--body-file "${CERBERUS_TMP}/verdict-comment.md"' in content
 
 
 def test_post_comment_uses_shared_upsert() -> None:
@@ -125,11 +125,11 @@ def test_verdict_action_avoids_heredoc_in_run_block() -> None:
     assert "cat >&2 <<'EOF'" not in content
 
 
-def test_verdict_action_uses_python_renderer_for_council_comment() -> None:
+def test_verdict_action_uses_python_renderer_for_verdict_comment() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 
-    assert "scripts/render-council-comment.py" in content
-    assert '--output "${CERBERUS_TMP}/council-comment.md"' in content
+    assert "scripts/render-verdict-comment.py" in content
+    assert '--output "${CERBERUS_TMP}/verdict-comment.md"' in content
 
 
 def test_verdict_action_does_not_use_sparse_checkout_dot() -> None:
@@ -159,7 +159,7 @@ def test_fail_on_verdict_is_wired_in_review_action() -> None:
     assert "FAIL_ON_VERDICT" in review_content
     assert 'if [ "$FAIL_ON_VERDICT" = "true" ]; then' in review_content
     assert 'echo "::error::${PERSPECTIVE} review verdict: FAIL"' in review_content
-    assert 'echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to council)"' in review_content
+    assert 'echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to Cerberus)"' in review_content
 
 
 def test_review_prompt_references_diff_file_placeholder() -> None:

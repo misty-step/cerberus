@@ -361,7 +361,7 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                     findings.append(
                         Finding(
                             "error",
-                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post council comment/review)",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post verdict comment/review)",
                         )
                     )
                 elif pr_write is None:

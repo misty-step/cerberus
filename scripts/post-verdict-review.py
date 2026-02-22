@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Post council output as a PR review with inline comments.
+"""Post verdict output as a PR review with inline comments.
 
-This is additive: the verdict action still posts the council issue comment
+This is additive: the verdict action still posts the verdict issue comment
 (used by triage). This script posts a single PR review for the same SHA with
 up to 30 inline comments anchored to diff `position`s.
 """
@@ -45,7 +45,7 @@ CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 def fail(message: str, code: int = 2) -> None:
     """Fail."""
-    print(f"post-council-review: {message}", file=sys.stderr)
+    print(f"post-verdict-review: {message}", file=sys.stderr)
     sys.exit(code)
 
 
@@ -83,12 +83,12 @@ def read_json(path: Path) -> dict:
 def review_marker(head_sha: str) -> str:
     """Review marker."""
     short = head_sha[:12] if head_sha else "<head-sha>"
-    return f"<!-- cerberus:council-review sha={short} -->"
+    return f"<!-- cerberus:verdict-review sha={short} -->"
 
 
-def collect_inline_findings(council: dict) -> list[dict]:
+def collect_inline_findings(verdict: dict) -> list[dict]:
     """Collect inline findings."""
-    reviewers = council.get("reviewers")
+    reviewers = verdict.get("reviewers")
     if not isinstance(reviewers, list):
         return []
 
@@ -182,19 +182,19 @@ def build_patch_index(repo: str, pr_number: int) -> dict[str, tuple[str, dict[in
 
 def main() -> None:
     """Main."""
-    p = argparse.ArgumentParser(description="Post Cerberus council as a PR review with inline comments.")
+    p = argparse.ArgumentParser(description="Post Cerberus verdict as a PR review with inline comments.")
     p.add_argument("--repo", required=True, help="owner/repo")
     p.add_argument("--pr", type=int, required=True, help="PR number")
     p.add_argument("--head-sha", default="", help="Head SHA (default: env GH_HEAD_SHA)")
     p.add_argument(
-        "--council-json",
-        default=str(CERBERUS_TMP / "council-verdict.json"),
-        help="Path to council verdict JSON.",
+        "--verdict-json",
+        default=str(CERBERUS_TMP / "verdict.json"),
+        help="Path to verdict JSON.",
     )
     p.add_argument(
         "--body-file",
-        default=str(CERBERUS_TMP / "council-comment.md"),
-        help="Council markdown body file (unused; council issue comment is canonical).",
+        default=str(CERBERUS_TMP / "verdict-comment.md"),
+        help="Verdict markdown body file (unused; verdict issue comment is canonical).",
     )
     args = p.parse_args()
 
@@ -207,12 +207,12 @@ def main() -> None:
     try:
         reviews = list_pr_reviews(args.repo, args.pr)
         if find_review_id_by_marker(reviews, marker) is not None:
-            notice(f"Council review already posted for sha={head_sha[:12]} (marker match). Skipping.")
+            notice(f"Cerberus review already posted for sha={head_sha[:12]} (marker match). Skipping.")
             return
 
-        council = read_json(Path(args.council_json))
+        verdict_data = read_json(Path(args.verdict_json))
 
-        findings = collect_inline_findings(council)
+        findings = collect_inline_findings(verdict_data)
         eligible = len(findings)
         if eligible == 0:
             notice("No critical/major findings eligible for inline comments. Skipping PR review.")
@@ -276,20 +276,20 @@ def main() -> None:
             notice(f"No inline comments could be anchored to the diff{limit_note}. Skipping PR review.")
             return
 
-        council_comment_url = ""
+        verdict_comment_url = ""
         try:
-            # Use stop_on_marker for early exit - we only need to find the council comment
-            comments = fetch_comments(args.repo, args.pr, stop_on_marker="<!-- cerberus:council -->")
-            council_comment_url = find_comment_url_by_marker(comments, "<!-- cerberus:council -->") or ""
+            # Use stop_on_marker for early exit - we only need to find the verdict comment
+            comments = fetch_comments(args.repo, args.pr, stop_on_marker="<!-- cerberus:verdict -->")
+            verdict_comment_url = find_comment_url_by_marker(comments, "<!-- cerberus:verdict -->") or ""
         except (CommentPermissionError, TransientGitHubError, subprocess.CalledProcessError) as exc:
-            warn(f"Unable to fetch council comment URL: {exc}")
-            council_comment_url = ""
+            warn(f"Unable to fetch verdict comment URL: {exc}")
+            verdict_comment_url = ""
 
-        council_verdict = str(council.get("verdict") or "").strip().upper() or "UNKNOWN"
-        council_summary = str(council.get("summary") or "").strip()
+        verdict_value = str(verdict_data.get("verdict") or "").strip().upper() or "UNKNOWN"
+        verdict_summary = str(verdict_data.get("summary") or "").strip()
         sha_short = head_sha[:12]
 
-        link_line = f"[council report]({council_comment_url})" if council_comment_url else "council report (timeline)"
+        link_line = f"[verdict report]({verdict_comment_url})" if verdict_comment_url else "verdict report (timeline)"
         review_body = "\n".join(
             [
                 marker,
@@ -297,7 +297,7 @@ def main() -> None:
                 "",
                 f"- Inline comments posted: {posted}/{eligible}{limit_note}",
                 f"- Canonical report: {link_line}",
-                f"- Council verdict: `{council_verdict}`" + (f" ({council_summary})" if council_summary else ""),
+                f"- Cerberus verdict: `{verdict_value}`" + (f" ({verdict_summary})" if verdict_summary else ""),
                 "",
             ]
         )
@@ -310,7 +310,7 @@ def main() -> None:
                 body=review_body,
                 comments=inline,
             )
-            notice(f"Posted council PR review for sha={head_sha[:12]} with {posted} inline comments.")
+            notice(f"Posted Cerberus PR review for sha={head_sha[:12]} with {posted} inline comments.")
         except subprocess.CalledProcessError as exc:
             warn(f"Review with inline comments failed; skipping PR review. ({exc.stderr or exc})")
 
@@ -319,7 +319,7 @@ def main() -> None:
     except TransientGitHubError as exc:
         warn(str(exc))
     except Exception as exc:  # don't block verdict on UX extras
-        warn(f"Unable to post council PR review: {exc}")
+        warn(f"Unable to post Cerberus PR review: {exc}")
 
 
 if __name__ == "__main__":

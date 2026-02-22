@@ -60,7 +60,7 @@ jobs:
           COVERAGE_PROCESS_START: ${{ github.workspace }}/.coveragerc
           COVERAGE_FILE: ${{ github.workspace }}/.coverage
         run: |
-          python3 -m pytest tests/ -v --cov=scripts --cov-report=term-missing
+          python3 -m pytest tests/ -v --cov=scripts --cov=matrix --cov-report=term-missing
           if ls .coverage.* >/dev/null 2>&1; then
             python3 -m coverage combine
           fi

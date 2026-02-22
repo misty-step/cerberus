@@ -22,7 +22,7 @@ def _import_script():
 
 def test_extract_override_comments_preserves_metacharacters() -> None:
     mod = _import_script()
-    payload = "/council override sha=abc1234\nReason: `id` $(uname); rm -rf / | cat /etc/passwd"
+    payload = "/cerberus override sha=abc1234\nReason: `id` $(uname); rm -rf / | cat /etc/passwd"
 
     comments = [
         {"body": payload, "user": {"login": "attacker"}},
@@ -35,7 +35,7 @@ def test_extract_override_comments_preserves_metacharacters() -> None:
 
 def test_collect_override_data_uses_repo_api(monkeypatch) -> None:
     mod = _import_script()
-    payload = "/council override sha=abc1234\nReason: `id` $(uname); rm -rf / | cat /etc/passwd"
+    payload = "/cerberus override sha=abc1234\nReason: `id` $(uname); rm -rf / | cat /etc/passwd"
     calls: list[list[str]] = []
 
     def fake_gh_json(args, *, timeout=20):
@@ -135,10 +135,10 @@ def test_fetch_pr_comments_raises_on_non_list_payload(monkeypatch) -> None:
 def test_extract_override_comments_handles_malformed_entries() -> None:
     mod = _import_script()
     comments = [
-        {"body": "/council override sha=abc1234\nReason: no user"},
-        {"body": "/council override sha=abc1234\nReason: user none", "user": None},
-        {"body": "/council override sha=abc1234\nReason: user string", "user": "bad"},
-        {"body": "/council override sha=abc1234\nReason: login none", "user": {"login": None}},
+        {"body": "/cerberus override sha=abc1234\nReason: no user"},
+        {"body": "/cerberus override sha=abc1234\nReason: user none", "user": None},
+        {"body": "/cerberus override sha=abc1234\nReason: user string", "user": "bad"},
+        {"body": "/cerberus override sha=abc1234\nReason: login none", "user": {"login": None}},
         {"body": 123, "user": {"login": "ignored"}},
         {"body": "plain comment", "user": {"login": "ignored"}},
     ]
@@ -146,11 +146,24 @@ def test_extract_override_comments_handles_malformed_entries() -> None:
     extracted = mod.extract_override_comments(comments)
 
     assert extracted == [
-        {"actor": "", "body": "/council override sha=abc1234\nReason: no user"},
-        {"actor": "", "body": "/council override sha=abc1234\nReason: user none"},
-        {"actor": "", "body": "/council override sha=abc1234\nReason: user string"},
-        {"actor": "", "body": "/council override sha=abc1234\nReason: login none"},
+        {"actor": "", "body": "/cerberus override sha=abc1234\nReason: no user"},
+        {"actor": "", "body": "/cerberus override sha=abc1234\nReason: user none"},
+        {"actor": "", "body": "/cerberus override sha=abc1234\nReason: user string"},
+        {"actor": "", "body": "/cerberus override sha=abc1234\nReason: login none"},
     ]
+
+
+def test_extract_override_comments_accepts_legacy_council_prefix() -> None:
+    mod = _import_script()
+    comments = [
+        {"body": "/council override sha=abc1234\nReason: legacy command", "user": {"login": "dev"}},
+        {"body": "/cerberus override sha=def5678\nReason: new command", "user": {"login": "dev"}},
+        {"body": "plain comment", "user": {"login": "ignored"}},
+    ]
+    extracted = mod.extract_override_comments(comments)
+    assert len(extracted) == 2
+    assert extracted[0] == {"actor": "dev", "body": "/council override sha=abc1234\nReason: legacy command"}
+    assert extracted[1] == {"actor": "dev", "body": "/cerberus override sha=def5678\nReason: new command"}
 
 
 def test_fetch_actor_permissions_dedupes_and_handles_invalid_payloads(monkeypatch) -> None:
@@ -271,7 +284,7 @@ def test_main_writes_safe_empty_outputs_when_fetch_fails(monkeypatch, tmp_path, 
 
 def test_stdout_mode_outputs_valid_json(monkeypatch, capsys) -> None:
     mod = _import_script()
-    payload = "/council override sha=abc1234\nReason: done"
+    payload = "/cerberus override sha=abc1234\nReason: done"
 
     def fake_collect(repo: str, pr_number: int):
         return ([{"actor": "author", "body": payload}], {"author": "write"})

@@ -6,6 +6,11 @@ branding:
   icon: 'list'
   color: 'blue'
 
+inputs:
+  panel:
+    description: 'JSON array of perspective strings to filter the matrix (from router). Empty = all reviewers.'
+    default: ''
+
 outputs:
   matrix:
     description: 'JSON matrix of reviewers for use in strategy.matrix'
@@ -25,6 +30,7 @@ runs:
       shell: bash
       env:
         CERBERUS_ROOT: ${{ github.action_path }}/..
+        PANEL_FILTER: ${{ inputs.panel }}
       run: |
         config_file="${CERBERUS_ROOT}/defaults/config.yml"
 
@@ -36,6 +42,10 @@ runs:
         pip install pyyaml --quiet
 
         python3 "${{ github.action_path }}/generate-matrix.py" "$config_file" > /dev/null
+
+        if [[ -n "${PANEL_FILTER:-}" && "$PANEL_FILTER" != "[]" ]]; then
+          python3 "${{ github.action_path }}/filter-panel.py" "$PANEL_FILTER"
+        fi
 
         matrix_json=$(cat /tmp/matrix-output.json)
         count=$(cat /tmp/matrix-count.txt)

@@ -19,10 +19,10 @@ flowchart TD
 
   ART --> VERDICT[Verdict job\nuses: cerberus/verdict@v2]
 
-  OVERRIDE[/PR comment command\n/council override sha=<sha>\n(reason required)/] --> VERDICT
+  OVERRIDE[/PR comment command\n/cerberus override sha=<sha>\n(reason required)/] --> VERDICT
 
   VERDICT --> AGG[Aggregate verdicts + apply overrides\nscripts/aggregate-verdict.py]
-  AGG --> CCOMMENT[PR issue comment\nmarker: cerberus:council]
+  AGG --> CCOMMENT[PR issue comment\nmarker: cerberus:verdict]
   AGG --> INLINE[PR review\ninline comments (best-effort, capped)]
   AGG --> CHECK[Final job conclusion\n(fail-on-verdict gates merge)]
 ```
@@ -38,11 +38,11 @@ stateDiagram-v2
   SelectTargets --> EvaluatePR: issue_comment (manual)\ncommand starts with /cerberus triage
   SelectTargets --> EvaluatePR: schedule|workflow_dispatch (scheduled)\nscan open PRs
 
-  EvaluatePR --> Skipped: latest trusted council comment missing
-  EvaluatePR --> Skipped: council verdict != FAIL
+  EvaluatePR --> Skipped: latest trusted verdict comment missing
+  EvaluatePR --> Skipped: Cerberus verdict != FAIL
   EvaluatePR --> Skipped: attempts_for_sha >= max_attempts
   EvaluatePR --> Skipped: head commit message contains [triage]
-  EvaluatePR --> Skipped: scheduled && not stale_enough\n(now - council.updated_at < stale_hours)
+  EvaluatePR --> Skipped: scheduled && not stale_enough\n(now - verdict.updated_at < stale_hours)
 
   EvaluatePR --> Diagnosed: mode=diagnose
   EvaluatePR --> Diagnosed: mode=fix but blocked\n(trigger != automatic | fork | no .git)
@@ -62,7 +62,7 @@ stateDiagram-v2
 
   note right of EvaluatePR
     "trusted" = CERBERUS_BOT_LOGIN (default github-actions[bot])
-    council marker = cerberus:council
+    verdict marker = cerberus:verdict
     attempt count = trusted comments containing "cerberus:triage sha=<sha-prefix>"
   end note
 ```
@@ -93,13 +93,13 @@ sequenceDiagram
   end
 
   AGG->>DB: Read all verdicts + overrides
-  AGG->>AGG: Compute council verdict
+  AGG->>AGG: Compute aggregated verdict
   AGG->>GH: Create/Update Check Run on head_sha\nsummary + annotations
-  AGG->>GH: Optional PR issue comment\nmarker: cerberus:council
+  AGG->>GH: Optional PR issue comment\nmarker: cerberus:verdict
 
-  GH->>WH: Webhook: issue_comment created\n(/council override sha=...)
+  GH->>WH: Webhook: issue_comment created\n(/cerberus override sha=...)
   WH->>DB: Persist override (only if sha matches HEAD)
   WH->>Q: Enqueue Re-aggregate(head_sha)
-  Q->>AGG: Update Check Run / council comment
+  Q->>AGG: Update Check Run / verdict comment
 ```
 

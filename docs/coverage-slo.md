@@ -51,9 +51,9 @@ These modules produce user-visible output or mediate GitHub API calls. Bugs are 
 
 | Module | Location | Rationale |
 |--------|----------|-----------|
-| `post-council-review.py` | `scripts/post-council-review.py` | Posts PR review with inline comments; interacts with GitHub Reviews API; complex branching over findings. |
+| `post-verdict-review.py` | `scripts/post-verdict-review.py` | Posts PR review with inline comments; interacts with GitHub Reviews API; complex branching over findings. |
 | `triage.py` | `scripts/triage.py` | Diagnoses failing verdicts and optionally triggers fix commits; circuit-breaker logic must not misfire. |
-| `render_council_comment.py` | `scripts/lib/render_council_comment.py` | Renders the council PR comment; incorrect rendering causes confusing output but not wrong verdicts. |
+| `render_verdict_comment.py` | `scripts/lib/render_verdict_comment.py` | Renders the verdict PR comment; incorrect rendering causes confusing output but not wrong verdicts. |
 | `render_findings.py` | `scripts/lib/render_findings.py` | Renders findings markdown; consumed by PR comments. |
 | `findings.py` | `scripts/lib/findings.py` | Finding normalization, grouping, and reviewer-list formatting; feeds rendering pipeline. |
 | `github.py` | `scripts/lib/github.py` | Idempotent comment upsert via HTML markers; used by all comment writers. |
@@ -61,7 +61,7 @@ These modules produce user-visible output or mediate GitHub API calls. Bugs are 
 | `defaults_config.py` | `scripts/lib/defaults_config.py` | Typed loader for `defaults/config.yml`; incorrect parsing propagates to all reviewer config consumers. |
 | `consumer_workflow_validator.py` | `scripts/lib/consumer_workflow_validator.py` | Validates consumer workflow YAML; misconfig detection. |
 | `collect-overrides.py` | `scripts/collect-overrides.py` | Collects override comments; feeds `aggregate-verdict.py`. |
-| `generate-matrix.py` | `matrix/generate-matrix.py` | Parses config and emits reviewer matrix; wrong output silently drops reviewers from the council. |
+| `generate-matrix.py` | `matrix/generate-matrix.py` | Parses config and emits reviewer matrix; wrong output silently drops reviewers from the bench. |
 
 **SLO targets — Tier 2:**
 
@@ -78,7 +78,7 @@ Low-complexity entrypoints, tooling scripts, and infrastructure helpers. Failure
 
 | Module | Location | Rationale |
 |--------|----------|-----------|
-| `render-council-comment.py` | `scripts/render-council-comment.py` | One-line entrypoint shim delegating to `lib/render_council_comment.py`. |
+| `render-verdict-comment.py` | `scripts/render-verdict-comment.py` | One-line entrypoint shim delegating to `lib/render_verdict_comment.py`. |
 | `render-findings.py` | `scripts/render-findings.py` | One-line entrypoint shim delegating to `lib/render_findings.py`. |
 | `render-review-prompt.py` | `scripts/render-review-prompt.py` | Renders reviewer prompt template; used in CI, not verdict logic. |
 | `read-defaults-config.py` | `scripts/read-defaults-config.py` | CLI wrapper around `defaults_config.py` for shell script consumption. |
@@ -104,8 +104,8 @@ Low-complexity entrypoints, tooling scripts, and infrastructure helpers. Failure
 | Tier | Line target | Branch target | Modules |
 |------|-------------|---------------|---------|
 | 1 — Critical | 90% | 85% | `parse-review.py`, `aggregate-verdict.py`, `lib/overrides.py`, `lib/prompt_sanitize.py`, `lib/diff_positions.py` |
-| 2 — Important | 80% | 75% | `post-council-review.py`, `triage.py`, `lib/render_council_comment.py`, `lib/render_findings.py`, `lib/findings.py`, `lib/github.py`, `lib/github_reviews.py`, `lib/defaults_config.py`, `lib/consumer_workflow_validator.py`, `collect-overrides.py`, `matrix/generate-matrix.py` |
-| 3 — Supporting | 70% | 65% | `render-council-comment.py`, `render-findings.py`, `render-review-prompt.py`, `read-defaults-config.py`, `validate-consumer-workflow.py`, `quality-report.py`, `lib/review_prompt.py`, `lib/markdown.py`, `sitecustomize.py` |
+| 2 — Important | 80% | 75% | `post-verdict-review.py`, `triage.py`, `lib/render_verdict_comment.py`, `lib/render_findings.py`, `lib/findings.py`, `lib/github.py`, `lib/github_reviews.py`, `lib/defaults_config.py`, `lib/consumer_workflow_validator.py`, `collect-overrides.py`, `matrix/generate-matrix.py` |
+| 3 — Supporting | 70% | 65% | `render-verdict-comment.py`, `render-findings.py`, `render-review-prompt.py`, `read-defaults-config.py`, `validate-consumer-workflow.py`, `quality-report.py`, `lib/review_prompt.py`, `lib/markdown.py`, `sitecustomize.py` |
 
 ---
 
