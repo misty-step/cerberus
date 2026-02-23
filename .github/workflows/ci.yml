@@ -119,6 +119,7 @@ jobs:
             patch-coverage.md
           retention-days: 30
 
+  # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   CI:
     name: CI
     needs: [lint, test]

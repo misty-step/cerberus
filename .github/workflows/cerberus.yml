@@ -26,8 +26,8 @@ on:
     inputs:
       timeout:
         description: 'Max seconds per reviewer'
-        type: string
-        default: '600'
+        type: number
+        default: 600
       model:
         description: 'LLM model override for all reviewers (pins models; Cerberus will warn)'
         type: string
@@ -76,6 +76,7 @@ jobs:
       panel: ${{ steps.router.outputs.panel }}
     steps:
       - name: Fetch PR diff
+        # gh is pre-installed on GitHub-hosted runners; no checkout needed
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -90,6 +91,7 @@ jobs:
 
   matrix:
     needs: route
+    if: needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate.outputs.matrix }}
