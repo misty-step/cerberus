@@ -186,7 +186,9 @@ def test__comment_policy_comment_policy_wins_when_non_empty():
 @pytest.mark.parametrize(
     "path",
     [
-        ROOT / ".github/workflows/cerberus.yml",
+        # self-review.yml = self-hosted workflow (on: pull_request, local paths)
+        # cerberus.yml = reusable workflow (on: workflow_call, no pull_request trigger)
+        ROOT / ".github/workflows/self-review.yml",
         ROOT / "templates/consumer-workflow-minimal.yml",
         ROOT / "templates/consumer-workflow.yml",
         ROOT / "templates/triage-workflow.yml",
@@ -199,10 +201,24 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
     assert "converted_to_draft" in types
 
 
+def _has_skip_gate(wf: dict) -> bool:
+    """Return True if the workflow has an explicit skip-gate job or delegates to
+    the Cerberus reusable workflow (which has preflight built in)."""
+    jobs = wf.get("jobs", {})
+    if "draft-check" in jobs or "preflight" in jobs:
+        return True
+    # Reusable-workflow callers: skip gate is inside the called workflow
+    for job in jobs.values():
+        uses = job.get("uses", "")
+        if "misty-step/cerberus/.github/workflows/cerberus.yml" in uses:
+            return True
+    return False
+
+
 @pytest.mark.parametrize(
     "path",
     [
-        ROOT / ".github/workflows/cerberus.yml",
+        ROOT / ".github/workflows/self-review.yml",
         ROOT / "templates/consumer-workflow-minimal.yml",
         ROOT / "templates/consumer-workflow.yml",
         ROOT / "templates/triage-workflow.yml",
@@ -211,7 +227,10 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
 def test_workflows_have_skip_gate_job(path: Path):
     wf = _load_workflow(path)
     # TODO: tighten to preflight-only after minimal/triage templates are migrated (#208 follow-up)
-    assert "draft-check" in wf["jobs"] or "preflight" in wf["jobs"]
+    assert _has_skip_gate(wf), (
+        f"{path.name}: workflow must have a skip-gate job (preflight/draft-check) "
+        "or delegate to the Cerberus reusable workflow"
+    )
 
 
 # ---------------------------------------------------------------------------

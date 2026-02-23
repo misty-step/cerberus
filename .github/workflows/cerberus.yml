@@ -1,18 +1,57 @@
-# Cerberus AI Code Review
+# Cerberus AI Code Review — Reusable Workflow
 # https://github.com/misty-step/cerberus
-name: Cerberus
+#
+# Minimal consumer usage (~13 lines):
+#
+#   name: Cerberus
+#   on:
+#     pull_request:
+#       types: [opened, synchronize, reopened]
+#   permissions:
+#     contents: read
+#     pull-requests: write
+#   jobs:
+#     review:
+#       uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+#       secrets:
+#         api-key: ${{ secrets.OPENROUTER_API_KEY }}
+#
+# Inputs and the decomposed-pipeline power-user option:
+#   See templates/consumer-workflow.yml (recommended) and
+#   templates/consumer-workflow-minimal.yml (decomposed pipeline)
+name: Cerberus AI Code Review
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-concurrency:
-  group: cerberus-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  workflow_call:
+    inputs:
+      timeout:
+        description: 'Max seconds per reviewer'
+        type: string
+        default: '600'
+      model:
+        description: 'LLM model override for all reviewers (pins models; Cerberus will warn)'
+        type: string
+        required: false
+      context:
+        description: 'Project/domain context for reviewers. Helps calibrate severity. Do not include secrets.'
+        type: string
+        required: false
+      reviewers:
+        description: 'Comma-separated reviewer override (bypasses LLM routing). Example: trace,guard,craft'
+        type: string
+        required: false
+      fail-on-verdict:
+        description: 'Fail the workflow when Cerberus verdict is FAIL'
+        type: string
+        default: 'true'
+      fail-on-skip:
+        description: 'Fail the workflow when Cerberus verdict is SKIP (all reviews skipped)'
+        type: string
+        default: 'false'
+    secrets:
+      api-key:
+        description: 'OpenRouter API key'
+        required: true
 
 jobs:
   preflight:
@@ -22,14 +61,12 @@ jobs:
       pull-requests: write
     outputs:
       should_run: ${{ steps.preflight.outputs.should_run }}
-      skip_reason: ${{ steps.preflight.outputs.skip_reason }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./preflight
+      - uses: misty-step/cerberus/preflight@v2
         id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          api-key: ${{ secrets.api-key }}
 
   route:
     needs: preflight
@@ -38,28 +75,26 @@ jobs:
     outputs:
       panel: ${{ steps.router.outputs.panel }}
     steps:
-      - uses: actions/checkout@v4
       - name: Fetch PR diff
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
-      - uses: ./router
+      - uses: misty-step/cerberus/router@v2
         id: router
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          api-key: ${{ secrets.api-key }}
           diff-file: /tmp/pr.diff
+          reviewers: ${{ inputs.reviewers }}
 
   matrix:
     needs: route
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate.outputs.matrix }}
-      count: ${{ steps.generate.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./matrix
+      - uses: misty-step/cerberus/matrix@v2
         id: generate
         with:
           panel: ${{ needs.route.outputs.panel }}
@@ -67,27 +102,35 @@ jobs:
   review:
     needs: [matrix, preflight]
     if: needs.preflight.outputs.should_run == 'true'
-    name: "${{ matrix.reviewer }}"
+    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     strategy:
       matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./
+      - uses: misty-step/cerberus@v2
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          timeout: '600'
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          context: ${{ inputs.context }}
 
   verdict:
     name: "Verdict"
     needs: [review, preflight]
     if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./verdict
+      - uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on-verdict: ${{ inputs.fail-on-verdict }}
+          fail-on-skip: ${{ inputs.fail-on-skip }}

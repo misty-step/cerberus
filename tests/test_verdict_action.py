@@ -97,8 +97,9 @@ def test_workflow_templates_use_current_major_version() -> None:
     assert "@v1" not in consumer
     assert "@v1" not in triage
 
-    assert "uses: misty-step/cerberus@v2" in consumer
-    assert "uses: misty-step/cerberus/verdict@v2" in consumer
+    # consumer-workflow.yml now uses the reusable workflow (not individual actions)
+    assert "misty-step/cerberus" in consumer
+    assert "@v2" in consumer
 
     assert "uses: misty-step/cerberus@v2" in triage
     assert "uses: misty-step/cerberus/verdict@v2" in triage
