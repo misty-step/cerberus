@@ -310,8 +310,8 @@ def classify_skip_reviewer(reviewer: dict) -> dict:
     title = str(findings[0].get("title") or "").strip().upper() if findings else ""
     summary = str(reviewer.get("summary") or "").lower()
 
-    # Timeout — extract duration from summary when available
-    if category == "timeout" or "timeout after" in summary:
+    # Timeout — aligned with detect_skip_banner (checks "timeout" in summary broadly)
+    if category == "timeout" or "timeout" in summary:
         m = re.search(r"timeout after (\d+)s", summary)
         duration = f" ({m.group(1)}s)" if m else ""
         return {
@@ -346,8 +346,8 @@ def classify_skip_reviewer(reviewer: dict) -> dict:
             "recovery": "Check API key and quota settings.",
         }
 
-    # Parse failure — model produced no structured JSON
-    if category == "parse-failure":
+    # Parse failure — detected by finding category or summary prefix
+    if category == "parse-failure" or summary.startswith("review output could not be parsed"):
         return {
             "reason": "Parse failure",
             "recovery": "Check workflow logs/artifacts; consider a more capable model.",
@@ -378,9 +378,11 @@ def format_skip_diagnostics_table(skip_reviewers: list[dict]) -> list[str]:
         "|----------|--------|----------|",
     ]
     for reviewer in skip_reviewers:
-        label = reviewer_label(reviewer)
+        label = reviewer_label(reviewer).replace("|", "&#124;")
         diag = classify_skip_reviewer(reviewer)
-        lines.append(f"| {label} | {diag['reason']} | {diag['recovery']} |")
+        reason = diag["reason"].replace("|", "&#124;")
+        recovery = diag["recovery"].replace("|", "&#124;")
+        lines.append(f"| {label} | {reason} | {recovery} |")
     return lines
 
 

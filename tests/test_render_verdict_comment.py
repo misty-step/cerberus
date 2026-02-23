@@ -870,6 +870,44 @@ def test_classify_skip_reviewer_parse_failure() -> None:
     assert "model" in result["recovery"].lower() or "logs" in result["recovery"].lower()
 
 
+def test_classify_skip_reviewer_parse_failure_empty_findings() -> None:
+    """parse-review.py can emit parse-failure SKIPs with empty findings list."""
+    rv = {
+        "reviewer": "craft",
+        "verdict": "SKIP",
+        "summary": "review output could not be parsed: no ```json block found",
+        "findings": [],
+    }
+    result = classify_skip_reviewer(rv)
+    assert "parse" in result["reason"].lower() or "failure" in result["reason"].lower()
+    assert "model" in result["recovery"].lower() or "logs" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_timeout_broad_summary_match() -> None:
+    """Timeout without structured finding — detected from 'timeout' keyword in summary."""
+    rv = {"reviewer": "flux", "verdict": "SKIP", "summary": "review skipped due to timeout.", "findings": []}
+    result = classify_skip_reviewer(rv)
+    assert "Timeout" in result["reason"]
+
+
+def test_format_skip_diagnostics_table_escapes_pipe_in_label() -> None:
+    rv = {
+        "reviewer": "pipe|reviewer",
+        "perspective": "pipe|perspective",
+        "verdict": "SKIP",
+        "summary": "skipped",
+        "findings": [],
+    }
+    lines = format_skip_diagnostics_table([rv])
+    table = "\n".join(lines)
+    # The raw pipe in the label must be escaped
+    for row in lines:
+        if row.startswith("| ") and "Reviewer" not in row and "---" not in row:
+            parts = row.split("|")
+            # Should have 5 parts: '' | label | reason | recovery | ''
+            assert len(parts) == 5, f"Unescaped pipe in row: {row}"
+
+
 def test_classify_skip_reviewer_network_error_in_summary() -> None:
     rv = {
         "reviewer": "test",
