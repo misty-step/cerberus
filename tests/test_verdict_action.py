@@ -152,6 +152,25 @@ def test_fail_on_skip_is_wired_in_actions() -> None:
     assert "FAIL_ON_SKIP" in review_content
 
 
+def test_skip_verdict_emits_warning_not_notice() -> None:
+    """SKIP verdict without fail-on-skip should warn, not silently pass."""
+    verdict_content = VERDICT_ACTION_FILE.read_text()
+
+    assert '::warning::Cerberus Verdict: SKIP' in verdict_content
+    assert '::notice::Cerberus Verdict: SKIP' not in verdict_content
+
+
+def test_fail_on_skip_env_passed_to_render_step() -> None:
+    """FAIL_ON_SKIP must be available to render-verdict-comment.py for advisory banner."""
+    verdict_content = VERDICT_ACTION_FILE.read_text()
+
+    # Verify FAIL_ON_SKIP is in the Post verdict step (before the render script call)
+    post_verdict_idx = verdict_content.index("Post verdict")
+    render_idx = verdict_content.index("render-verdict-comment.py")
+    fail_on_skip_idx = verdict_content.index("FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}")
+    assert post_verdict_idx < fail_on_skip_idx < render_idx
+
+
 def test_fail_on_verdict_is_wired_in_review_action() -> None:
     review_content = ACTION_FILE.read_text()
 

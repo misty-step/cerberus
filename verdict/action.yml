@@ -135,6 +135,7 @@ runs:
         PR_ADDITIONS: ${{ github.event.pull_request.additions }}
         PR_DELETIONS: ${{ github.event.pull_request.deletions }}
         FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
+        FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
         CERBERUS_VERSION: ${{ github.action_ref || 'dev' }}
       run: |
         VERDICT="${{ steps.aggregate.outputs.verdict }}"
@@ -194,7 +195,7 @@ runs:
             echo "::error::Cerberus Verdict: SKIP (all reviews skipped due to timeout/API errors)"
             exit 1
           fi
-          echo "::notice::Cerberus Verdict: SKIP (all reviews skipped due to timeout/API errors)"
+          echo "::warning::Cerberus Verdict: SKIP (all reviews skipped due to timeout/API errors)"
         fi
 
     - name: Clean up temp directory

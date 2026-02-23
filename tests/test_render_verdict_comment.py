@@ -782,6 +782,90 @@ def test_advisory_banner_not_shown_for_warn_verdict(tmp_path: Path) -> None:
     assert "Advisory mode" not in body
 
 
+_SKIP_COUNCIL = {
+    "verdict": "SKIP",
+    "summary": "2 reviewers. Failures: 0, warnings: 0, skipped: 2.",
+    "reviewers": [
+        {
+            "reviewer": "trace",
+            "perspective": "correctness",
+            "verdict": "SKIP",
+            "confidence": 0.0,
+            "summary": "review skipped due to timeout after 600s.",
+            "runtime_seconds": 600,
+            "findings": [
+                {
+                    "severity": "info",
+                    "category": "timeout",
+                    "file": "",
+                    "line": 0,
+                    "title": "Reviewer timeout after 600s",
+                    "description": "",
+                    "suggestion": "",
+                }
+            ],
+            "stats": {"critical": 0, "major": 0, "minor": 0, "info": 1},
+        },
+        {
+            "reviewer": "atlas",
+            "perspective": "architecture",
+            "verdict": "SKIP",
+            "confidence": 0.0,
+            "summary": "review skipped due to timeout after 600s.",
+            "runtime_seconds": 600,
+            "findings": [
+                {
+                    "severity": "info",
+                    "category": "timeout",
+                    "file": "",
+                    "line": 0,
+                    "title": "Reviewer timeout after 600s",
+                    "description": "",
+                    "suggestion": "",
+                }
+            ],
+            "stats": {"critical": 0, "major": 0, "minor": 0, "info": 1},
+        },
+    ],
+    "stats": {"total": 2, "pass": 0, "warn": 0, "fail": 0, "skip": 2},
+    "override": {"used": False},
+}
+
+
+def test_advisory_banner_shown_when_fail_on_skip_false_and_skip_verdict(tmp_path: Path) -> None:
+    code, body, err = run_render(
+        tmp_path, _SKIP_COUNCIL, env_extra={"FAIL_ON_SKIP": "false"}
+    )
+
+    assert code == 0, err
+    assert "Cerberus Verdict: SKIP (advisory)" in body
+    assert "Advisory mode" in body
+    assert "fail-on-skip" in body
+    assert "## ⏭️ Cerberus Verdict: SKIP\n" not in body
+
+
+def test_no_advisory_banner_when_fail_on_skip_true_and_skip_verdict(tmp_path: Path) -> None:
+    code, body, err = run_render(
+        tmp_path, _SKIP_COUNCIL, env_extra={"FAIL_ON_SKIP": "true"}
+    )
+
+    assert code == 0, err
+    assert "## ⏭️ Cerberus Verdict: SKIP" in body
+    assert "(advisory)" not in body
+    assert "Advisory mode" not in body
+
+
+def test_skip_verdict_shows_skip_advisory_not_fail_advisory(tmp_path: Path) -> None:
+    """SKIP verdict with both advisory flags off: skip banner fires, fail banner does not."""
+    code, body, err = run_render(
+        tmp_path, _SKIP_COUNCIL, env_extra={"FAIL_ON_VERDICT": "false", "FAIL_ON_SKIP": "false"}
+    )
+
+    assert code == 0, err
+    assert "fail-on-skip" in body
+    assert "fail-on-verdict" not in body
+
+
 def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
     verdict_path = tmp_path / "verdict.json"
     output_path = tmp_path / "comment.md"

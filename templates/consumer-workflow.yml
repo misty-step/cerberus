@@ -11,6 +11,8 @@
 #   reviewers:   Force specific reviewers, bypassing routing (e.g. trace,guard)
 #   fail-on-verdict: Fail when verdict is FAIL (default: true)
 #   fail-on-skip:    Fail when verdict is SKIP (default: false)
+#                    Recommended: set to "true" so timeout/API failures don't
+#                    silently appear as green checks.
 #
 # Example with options:
 #   jobs:
