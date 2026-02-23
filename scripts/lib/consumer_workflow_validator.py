@@ -134,7 +134,8 @@ _COE_REMEDIATION = (
 )
 
 _V1_UPGRADE_GUIDANCE = (
-    "Upgrade to v2: see templates/consumer-workflow-minimal.yml for the recommended setup. "
+    "Upgrade to v2: see docs/MIGRATION.md for the full migration guide "
+    "or templates/consumer-workflow-minimal.yml for the recommended setup. "
     "v2 includes reliability hardening (empty-output retries, model fallback chain, parse-failure recovery, "
     "timeout fast-path fallback, staged OpenCode config, isolated HOME) "
     "and supports fail-on-skip to turn SKIPs into CI failures."
