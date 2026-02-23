@@ -686,6 +686,32 @@ jobs:
     assert "isolated HOME" in msg
 
 
+def test_v1_warning_mentions_migration_guide(tmp_path: Path):
+    """The v1 warning should reference docs/MIGRATION.md."""
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text("""
+name: Cerberus
+on: pull_request
+jobs:
+  check:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip())
+
+    findings, _ = validate_workflow_file(wf)
+    v1 = _v1_warnings(findings)
+    assert v1, "Expected a v1 upgrade warning"
+    assert any("MIGRATION.md" in w.message for w in v1), (
+        "Warning should mention docs/MIGRATION.md"
+    )
+
+
 @pytest.mark.parametrize("uses", [
     "misty-step/cerberus@v2",
     "misty-step/cerberus@v2.0.0",

@@ -108,6 +108,7 @@ Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint
 
 ## Docs
 
+- Migration guide (v1 → v2): `docs/MIGRATION.md`
 - OSS vs Cloud: `docs/OSS-VS-CLOUD.md`
 - Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
 - Troubleshooting: `docs/TROUBLESHOOTING.md`
