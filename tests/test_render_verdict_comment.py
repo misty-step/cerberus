@@ -863,7 +863,7 @@ def test_fail_advisory_banner_not_shown_for_skip_verdict(tmp_path: Path) -> None
 
     assert code == 0, err
     assert "fail-on-skip" in body
-    assert "fail-on-verdict" not in body or "fail-on-skip" in body
+    assert "fail-on-verdict" not in body
 
 
 def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
