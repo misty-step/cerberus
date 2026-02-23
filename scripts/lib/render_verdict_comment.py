@@ -867,6 +867,14 @@ def render_comment(
             "> ⚠️ **Advisory mode:** `fail-on-verdict` is disabled — this is a FAIL verdict "
             "but the check run is green. Set `fail-on-verdict: \"true\"` in your workflow to gate merges on failures."
         )
+    elif (
+        os.environ.get("FAIL_ON_SKIP", "false").strip().lower() == "false"
+        and verdict == "SKIP"
+    ):
+        advisory_banner = (
+            "> ⚠️ **Advisory mode:** `fail-on-skip` is disabled — all reviewers were skipped "
+            "but the check run is green. Set `fail-on-skip: \"true\"` in your workflow to gate merges on skipped reviews."
+        )
 
     total_findings = sum(len(findings_for(r)) for r in reviewers)
     include_key_findings = total_findings > 0
