@@ -4,11 +4,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from lib.render_verdict_comment import (
+    classify_skip_reviewer,
     collect_hotspots,
     collect_issue_groups,
     count_findings,
     detect_skip_banner,
+    format_skip_diagnostics_table,
     normalize_severity,
     normalize_verdict,
     main as render_verdict_comment_main,
@@ -797,3 +801,335 @@ def test_main_rejects_invalid_max_findings(tmp_path: Path, capsys) -> None:
 
     assert code == 2
     assert "max-findings must be >= 1" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# classify_skip_reviewer — unit tests for all 5 error types
+# ---------------------------------------------------------------------------
+
+def _skip_reviewer(category: str, title: str, summary: str = "") -> dict:
+    return {
+        "reviewer": "test",
+        "verdict": "SKIP",
+        "summary": summary,
+        "findings": [{"category": category, "title": title, "file": "", "line": 0}],
+    }
+
+
+def test_classify_skip_reviewer_timeout_with_duration() -> None:
+    rv = _skip_reviewer("timeout", "Reviewer timeout after 600s", "review skipped due to timeout after 600s.")
+    result = classify_skip_reviewer(rv)
+    assert "Timeout" in result["reason"]
+    assert "600s" in result["reason"]
+    assert "timeout" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_timeout_without_duration() -> None:
+    rv = _skip_reviewer("timeout", "Timeout", "review skipped")
+    result = classify_skip_reviewer(rv)
+    assert "Timeout" in result["reason"]
+    assert "timeout" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_auth_error() -> None:
+    rv = _skip_reviewer("api_error", "API Error: API_KEY_INVALID")
+    result = classify_skip_reviewer(rv)
+    assert "Auth" in result["reason"] or "key" in result["reason"].lower()
+    assert "key" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_credits_depleted() -> None:
+    rv = _skip_reviewer("api_error", "API Error: API_CREDITS_DEPLETED")
+    result = classify_skip_reviewer(rv)
+    assert "credits" in result["reason"].lower() or "exhausted" in result["reason"].lower()
+    assert "credits" in result["recovery"].lower() or "model" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_quota_exceeded() -> None:
+    rv = _skip_reviewer("api_error", "API Error: API_QUOTA_EXCEEDED")
+    result = classify_skip_reviewer(rv)
+    assert "credits" in result["reason"].lower() or "exhausted" in result["reason"].lower()
+
+
+def test_classify_skip_reviewer_rate_limit() -> None:
+    rv = _skip_reviewer("api_error", "API Error: RATE_LIMIT")
+    result = classify_skip_reviewer(rv)
+    assert "rate" in result["reason"].lower() or "limit" in result["reason"].lower()
+    assert "retry" in result["recovery"].lower() or "concurrency" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_service_unavailable() -> None:
+    rv = _skip_reviewer("api_error", "API Error: SERVICE_UNAVAILABLE")
+    result = classify_skip_reviewer(rv)
+    assert "unavailable" in result["reason"].lower()
+    assert "retry" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_parse_failure() -> None:
+    rv = _skip_reviewer("parse-failure", "Review output could not be parsed")
+    result = classify_skip_reviewer(rv)
+    assert "parse" in result["reason"].lower() or "failure" in result["reason"].lower()
+    assert "model" in result["recovery"].lower() or "logs" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_parse_failure_empty_findings() -> None:
+    """parse-review.py can emit parse-failure SKIPs with empty findings list."""
+    rv = {
+        "reviewer": "craft",
+        "verdict": "SKIP",
+        "summary": "review output could not be parsed: no ```json block found",
+        "findings": [],
+    }
+    result = classify_skip_reviewer(rv)
+    assert "parse" in result["reason"].lower() or "failure" in result["reason"].lower()
+    assert "model" in result["recovery"].lower() or "logs" in result["recovery"].lower()
+
+
+def test_classify_skip_reviewer_timeout_broad_summary_match() -> None:
+    """Timeout without structured finding — detected from 'timeout' keyword in summary."""
+    rv = {"reviewer": "flux", "verdict": "SKIP", "summary": "review skipped due to timeout.", "findings": []}
+    result = classify_skip_reviewer(rv)
+    assert "Timeout" in result["reason"]
+
+
+def test_format_skip_diagnostics_table_escapes_pipe_in_label() -> None:
+    rv = {
+        "reviewer": "pipe|reviewer",
+        "perspective": "pipe|perspective",
+        "verdict": "SKIP",
+        "summary": "skipped",
+        "findings": [],
+    }
+    lines = format_skip_diagnostics_table([rv])
+    table = "\n".join(lines)
+    # The raw pipe in the label must be escaped
+    for row in lines:
+        if row.startswith("| ") and "Reviewer" not in row and "---" not in row:
+            parts = row.split("|")
+            # Should have 5 parts: '' | label | reason | recovery | ''
+            assert len(parts) == 5, f"Unescaped pipe in row: {row}"
+
+
+def test_classify_skip_reviewer_network_error_in_summary() -> None:
+    rv = {
+        "reviewer": "test",
+        "verdict": "SKIP",
+        "summary": "service unavailable error connecting to provider",
+        "findings": [],
+    }
+    result = classify_skip_reviewer(rv)
+    assert "network" in result["reason"].lower() or "unavailable" in result["reason"].lower()
+
+
+def test_classify_skip_reviewer_unknown_fallback() -> None:
+    rv = {"reviewer": "test", "verdict": "SKIP", "summary": "something went wrong", "findings": []}
+    result = classify_skip_reviewer(rv)
+    assert result["reason"].lower() == "unknown"
+    assert result["recovery"]
+
+
+# ---------------------------------------------------------------------------
+# format_skip_diagnostics_table
+# ---------------------------------------------------------------------------
+
+def test_format_skip_diagnostics_table_empty() -> None:
+    assert format_skip_diagnostics_table([]) == []
+
+
+def test_format_skip_diagnostics_table_single_timeout() -> None:
+    rv = _skip_reviewer("timeout", "Reviewer timeout after 300s", "review skipped due to timeout after 300s.")
+    lines = format_skip_diagnostics_table([rv])
+    table = "\n".join(lines)
+    assert "### Skipped Reviews" in table
+    assert "| Reviewer | Reason | Recovery |" in table
+    assert "300s" in table
+    assert "timeout" in table.lower()
+
+
+def test_format_skip_diagnostics_table_multiple_reviewers() -> None:
+    rvs = [
+        _skip_reviewer("timeout", "Timeout", "timeout after 600s."),
+        _skip_reviewer("api_error", "API Error: API_CREDITS_DEPLETED"),
+        _skip_reviewer("parse-failure", "Review output could not be parsed"),
+    ]
+    lines = format_skip_diagnostics_table(rvs)
+    table = "\n".join(lines)
+    # Three data rows plus header/separator
+    data_rows = [l for l in lines if l.startswith("| ") and "Reviewer" not in l and "---" not in l]
+    assert len(data_rows) == 3
+
+
+# ---------------------------------------------------------------------------
+# Integration: skip diagnostics table in rendered verdict comment
+# ---------------------------------------------------------------------------
+
+def _make_skip_reviewer(name: str, category: str, title: str, summary: str = "") -> dict:
+    return {
+        "reviewer": name,
+        "perspective": name.lower(),
+        "verdict": "SKIP",
+        "confidence": 0.0,
+        "summary": summary or f"Skipped: {title}",
+        "runtime_seconds": 5,
+        "findings": [
+            {
+                "severity": "info",
+                "category": category,
+                "file": "",
+                "line": 0,
+                "title": title,
+                "description": "",
+                "suggestion": "",
+            }
+        ],
+        "stats": {"critical": 0, "major": 0, "minor": 0, "info": 1},
+    }
+
+
+def test_verdict_comment_includes_skip_diagnostics_table_on_timeout(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "WARN",
+        "summary": "2 reviewers. Failures: 0, warnings: 1, skipped: 1.",
+        "reviewers": [
+            _make_skip_reviewer("flux", "timeout", "Reviewer timeout after 600s", "review skipped due to timeout after 600s."),
+            {
+                "reviewer": "trace",
+                "perspective": "correctness",
+                "verdict": "WARN",
+                "confidence": 0.8,
+                "summary": "One issue.",
+                "runtime_seconds": 90,
+                "findings": [],
+                "stats": {"critical": 0, "major": 1, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 2, "pass": 0, "warn": 1, "fail": 0, "skip": 1},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### Skipped Reviews" in body
+    assert "| Reviewer | Reason | Recovery |" in body
+    assert "600s" in body
+    assert "timeout" in body.lower()
+
+
+def test_verdict_comment_includes_skip_diagnostics_table_with_all_types(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "WARN",
+        "summary": "5 reviewers. Failures: 0, warnings: 0, skipped: 5.",
+        "reviewers": [
+            _make_skip_reviewer("flux", "timeout", "Reviewer timeout after 600s", "review skipped due to timeout after 600s."),
+            _make_skip_reviewer("guard", "api_error", "API Error: API_KEY_INVALID"),
+            _make_skip_reviewer("atlas", "api_error", "API Error: API_CREDITS_DEPLETED"),
+            _make_skip_reviewer("craft", "parse-failure", "Review output could not be parsed"),
+            {
+                "reviewer": "fuse",
+                "perspective": "resilience",
+                "verdict": "SKIP",
+                "confidence": 0.0,
+                "summary": "service unavailable error",
+                "runtime_seconds": 2,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 5, "pass": 0, "warn": 0, "fail": 0, "skip": 5},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### Skipped Reviews" in body
+    # At least the 4 structured-finding reviewers should have rows
+    data_rows = [
+        l for l in body.splitlines()
+        if l.startswith("| ") and "Reviewer" not in l and "---" not in l and "Skipped Reviews" not in l
+    ]
+    assert len(data_rows) >= 4
+
+
+def test_verdict_comment_no_skip_diagnostics_table_when_no_skips(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "PASS",
+        "summary": "1 reviewer passed.",
+        "reviewers": [
+            {
+                "reviewer": "trace",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.95,
+                "summary": "All good.",
+                "runtime_seconds": 30,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### Skipped Reviews" not in body
+
+
+def test_detect_skip_banner_parse_failure() -> None:
+    rv = {
+        "verdict": "SKIP",
+        "summary": "no json block",
+        "findings": [{"category": "parse-failure", "title": "No JSON", "file": "", "line": 0}],
+    }
+    banner = detect_skip_banner([rv])
+    assert "parse" in banner.lower() or "parsed" in banner.lower()
+
+
+def test_detect_skip_banner_rate_limit() -> None:
+    rv = {
+        "verdict": "SKIP",
+        "summary": "rate limited",
+        "findings": [{"category": "api_error", "title": "API Error: RATE_LIMIT", "file": "", "line": 0}],
+    }
+    banner = detect_skip_banner([rv])
+    assert "rate" in banner.lower() or "limit" in banner.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cross-boundary contract: generate_skip_verdict → classify_skip_reviewer
+# Pins the implicit contract between parse-review.py's error_type strings
+# and render_verdict_comment.py's classification logic.
+# ---------------------------------------------------------------------------
+
+def _load_generate_skip_verdict():
+    """Import generate_skip_verdict from parse-review.py via importlib."""
+    import importlib.util
+
+    script = ROOT / "scripts" / "parse-review.py"
+    spec = importlib.util.spec_from_file_location("parse_review", str(script))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate_skip_verdict
+
+
+@pytest.mark.parametrize("error_type,expected_reason_fragment", [
+    ("RATE_LIMIT", "rate"),
+    ("API_KEY_INVALID", "auth"),
+    ("API_CREDITS_DEPLETED", "credits"),
+    ("SERVICE_UNAVAILABLE", "unavailable"),
+])
+def test_classify_skip_reviewer_contract_with_generate_skip_verdict(
+    error_type: str,
+    expected_reason_fragment: str,
+) -> None:
+    """classify_skip_reviewer correctly parses verdicts produced by generate_skip_verdict."""
+    generate_skip_verdict = _load_generate_skip_verdict()
+    reviewer = generate_skip_verdict(error_type, f"Simulated {error_type} error")
+    result = classify_skip_reviewer(reviewer)
+    assert expected_reason_fragment in result["reason"].lower(), (
+        f"classify_skip_reviewer({error_type!r}) reason={result['reason']!r} "
+        f"did not contain {expected_reason_fragment!r}"
+    )
