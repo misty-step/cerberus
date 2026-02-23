@@ -226,7 +226,7 @@ def _has_skip_gate(wf: dict) -> bool:
 )
 def test_workflows_have_skip_gate_job(path: Path):
     wf = _load_workflow(path)
-    # TODO: tighten to preflight-only after minimal/triage templates are migrated (#208 follow-up)
+    # TODO: tighten to preflight-only after triage template is migrated (#208 follow-up)
     assert _has_skip_gate(wf), (
         f"{path.name}: workflow must have a skip-gate job (preflight/draft-check) "
         "or delegate to the Cerberus reusable workflow"

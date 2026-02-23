@@ -12,15 +12,12 @@ model:
   fallback:
     - "openrouter/google/gemini-3-flash-preview"
     - "openrouter/z-ai/glm-5"
-    - "openrouter/qwen/qwen3-coder"
   pool:
     - "openrouter/moonshotai/kimi-k2.5"
     - "openrouter/minimax/minimax-m2.5"
     - "openrouter/google/gemini-3.1-pro-preview"
     - "openrouter/google/gemini-3-flash-preview"
-    - "openrouter/deepseek/deepseek-v3.2"
     - "openrouter/z-ai/glm-5"
-    - "openrouter/qwen/qwen3-coder"
     - "openrouter/xiaomi/mimo-v2-flash"
     - "openrouter/mistralai/devstral-2512"
   cli: opencode
