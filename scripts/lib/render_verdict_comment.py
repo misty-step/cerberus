@@ -273,6 +273,16 @@ def detect_skip_banner(reviewers: list[dict]) -> str:
                     "> **🔑 API key error for one or more reviewers.** "
                     "Some reviews were skipped due to authentication failures."
                 )
+            if re.search(r"\bRATE_LIMIT\b", title):
+                return (
+                    "> **⏩ Rate limit exceeded for one or more reviewers.** "
+                    "Some reviews were skipped due to provider rate limiting."
+                )
+            if re.search(r"SERVICE_UNAVAILABLE|503", title):
+                return (
+                    "> **🔌 Provider unavailable for one or more reviewers.** "
+                    "Some reviews were skipped because the API provider returned a service error."
+                )
             return "> **⚠️ API error for one or more reviewers.** Some reviews were skipped due to API errors."
 
         if category == "timeout" or "timeout" in summary:
@@ -280,7 +290,98 @@ def detect_skip_banner(reviewers: list[dict]) -> str:
                 "> **⏱️ One or more reviewers timed out.** "
                 "Some reviews were skipped because they exceeded the configured runtime limit."
             )
+
+        if category == "parse-failure":
+            return (
+                "> **📝 One or more reviewers could not be parsed.** "
+                "Some reviews were skipped because the model output lacked a structured JSON block."
+            )
+
     return ""
+
+
+def classify_skip_reviewer(reviewer: dict) -> dict:
+    """Classify skip reason for a single reviewer.
+
+    Returns dict with ``reason`` (human-readable) and ``recovery`` (actionable step).
+    """
+    findings = findings_for(reviewer)
+    category = str(findings[0].get("category") or "").strip().lower() if findings else ""
+    title = str(findings[0].get("title") or "").strip().upper() if findings else ""
+    summary = str(reviewer.get("summary") or "").lower()
+
+    # Timeout — extract duration from summary when available
+    if category == "timeout" or "timeout after" in summary:
+        m = re.search(r"timeout after (\d+)s", summary)
+        duration = f" ({m.group(1)}s)" if m else ""
+        return {
+            "reason": f"Timeout{duration}",
+            "recovery": "Increase `timeout` input or break PR into smaller changes.",
+        }
+
+    # API errors — sub-classified by finding title
+    if category == "api_error":
+        if re.search(r"CREDITS_DEPLETED|QUOTA_EXCEEDED", title):
+            return {
+                "reason": "API credits exhausted",
+                "recovery": "Add credits at your API provider or configure a fallback model.",
+            }
+        if "KEY_INVALID" in title:
+            return {
+                "reason": "Auth error (invalid key)",
+                "recovery": "Check that the API key secret is set and valid.",
+            }
+        if re.search(r"\bRATE_LIMIT\b", title):
+            return {
+                "reason": "Rate limit exceeded",
+                "recovery": "Wait and retry, or reduce reviewer concurrency.",
+            }
+        if re.search(r"SERVICE_UNAVAILABLE|503", title):
+            return {
+                "reason": "Service unavailable",
+                "recovery": "Check provider status and retry later.",
+            }
+        return {
+            "reason": "API error",
+            "recovery": "Check API key and quota settings.",
+        }
+
+    # Parse failure — model produced no structured JSON
+    if category == "parse-failure":
+        return {
+            "reason": "Parse failure",
+            "recovery": "Check workflow logs/artifacts; consider a more capable model.",
+        }
+
+    # Network / infrastructure errors detected in summary
+    if re.search(r"service.unavailable|503|network|connection", summary):
+        return {
+            "reason": "Network error",
+            "recovery": "Check provider status at your API provider and retry.",
+        }
+
+    return {
+        "reason": "Unknown",
+        "recovery": "Check workflow logs and artifacts for details.",
+    }
+
+
+def format_skip_diagnostics_table(skip_reviewers: list[dict]) -> list[str]:
+    """Render a '### Skipped Reviews' diagnostics table for the verdict comment."""
+    if not skip_reviewers:
+        return []
+
+    lines = [
+        "### Skipped Reviews",
+        "",
+        "| Reviewer | Reason | Recovery |",
+        "|----------|--------|----------|",
+    ]
+    for reviewer in skip_reviewers:
+        label = reviewer_label(reviewer)
+        diag = classify_skip_reviewer(reviewer)
+        lines.append(f"| {label} | {diag['reason']} | {diag['recovery']} |")
+    return lines
 
 
 def scope_summary() -> str:
@@ -622,6 +723,7 @@ def _build_comment(
     raw_output_note: str = "",
     size_note: str = "",
     advisory_banner: str = "",
+    skip_diagnostics_table: list[str] | None = None,
 ) -> str:
     verdict_label = f"{verdict} (advisory)" if advisory_banner else verdict
     lines = [
@@ -662,6 +764,9 @@ def _build_comment(
         lines.extend(["", raw_output_note])
     if size_note:
         lines.extend(["", size_note])
+
+    if skip_diagnostics_table:
+        lines.extend(["", *skip_diagnostics_table])
 
     # Progressive disclosure: collapse details on PASS, show key findings on WARN/FAIL
     is_fail_or_warn = verdict in ("FAIL", "WARN")
@@ -748,6 +853,9 @@ def render_comment(
             "Raw output is preserved in workflow artifacts/logs, but omitted from PR comments."
         )
 
+    skip_reviewers_list = [r for r in reviewers if normalize_verdict(r.get("verdict")) == "SKIP"]
+    skip_diagnostics_table = format_skip_diagnostics_table(skip_reviewers_list)
+
     advisory_banner = ""
     if (
         os.environ.get("FAIL_ON_VERDICT", "true").strip().lower() == "false"
@@ -795,6 +903,7 @@ def render_comment(
         max_key_findings=max_key_findings,
         raw_output_note=raw_note,
         advisory_banner=advisory_banner,
+        skip_diagnostics_table=skip_diagnostics_table,
     )
 
     result = _build_comment(**common)
