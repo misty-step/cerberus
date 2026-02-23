@@ -855,8 +855,8 @@ def test_no_advisory_banner_when_fail_on_skip_true_and_skip_verdict(tmp_path: Pa
     assert "Advisory mode" not in body
 
 
-def test_fail_advisory_banner_not_shown_for_skip_verdict(tmp_path: Path) -> None:
-    """SKIP verdict should not trigger the FAIL advisory banner."""
+def test_skip_verdict_shows_skip_advisory_not_fail_advisory(tmp_path: Path) -> None:
+    """SKIP verdict with both advisory flags off: skip banner fires, fail banner does not."""
     code, body, err = run_render(
         tmp_path, _SKIP_COUNCIL, env_extra={"FAIL_ON_VERDICT": "false", "FAIL_ON_SKIP": "false"}
     )
