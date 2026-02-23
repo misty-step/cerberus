@@ -10,6 +10,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$REPO_ROOT"
 
+# If consumer-workflow.yml delegates to the reusable workflow, skip matrix parity.
+# The matrix is centralized in .github/workflows/cerberus.yml — drift is impossible by design.
+if grep -q "uses: misty-step/cerberus/.github/workflows/cerberus.yml" templates/consumer-workflow.yml; then
+  echo "consumer-workflow.yml uses reusable workflow — matrix parity check not applicable"
+  exit 0
+fi
+
 # Extract reviewers from config.yml
 config_reviewers=$(python3 -c "
 import yaml

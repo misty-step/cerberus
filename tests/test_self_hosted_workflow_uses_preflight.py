@@ -1,7 +1,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-SELF_HOSTED_WORKFLOW = ROOT / ".github" / "workflows" / "cerberus.yml"
+SELF_HOSTED_WORKFLOW = ROOT / ".github" / "workflows" / "self-review.yml"
 
 
 def _read_workflow() -> str:
