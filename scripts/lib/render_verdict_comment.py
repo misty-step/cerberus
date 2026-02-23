@@ -725,7 +725,7 @@ def _build_comment(
     raw_output_note: str = "",
     size_note: str = "",
     advisory_banner: str = "",
-    skip_diagnostics_table: list[str] | None = None,
+    skip_diagnostics_table: list[str],
 ) -> str:
     verdict_label = f"{verdict} (advisory)" if advisory_banner else verdict
     lines = [

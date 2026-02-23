@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from lib.render_verdict_comment import (
     classify_skip_reviewer,
     collect_hotspots,
@@ -922,7 +924,7 @@ def test_classify_skip_reviewer_network_error_in_summary() -> None:
 def test_classify_skip_reviewer_unknown_fallback() -> None:
     rv = {"reviewer": "test", "verdict": "SKIP", "summary": "something went wrong", "findings": []}
     result = classify_skip_reviewer(rv)
-    assert "unknown" in result["reason"].lower() or result["reason"]
+    assert result["reason"].lower() == "unknown"
     assert result["recovery"]
 
 
@@ -1094,3 +1096,40 @@ def test_detect_skip_banner_rate_limit() -> None:
     }
     banner = detect_skip_banner([rv])
     assert "rate" in banner.lower() or "limit" in banner.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cross-boundary contract: generate_skip_verdict → classify_skip_reviewer
+# Pins the implicit contract between parse-review.py's error_type strings
+# and render_verdict_comment.py's classification logic.
+# ---------------------------------------------------------------------------
+
+def _load_generate_skip_verdict():
+    """Import generate_skip_verdict from parse-review.py via importlib."""
+    import importlib.util
+
+    script = ROOT / "scripts" / "parse-review.py"
+    spec = importlib.util.spec_from_file_location("parse_review", str(script))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate_skip_verdict
+
+
+@pytest.mark.parametrize("error_type,expected_reason_fragment", [
+    ("RATE_LIMIT", "rate"),
+    ("API_KEY_INVALID", "auth"),
+    ("API_CREDITS_DEPLETED", "credits"),
+    ("SERVICE_UNAVAILABLE", "unavailable"),
+])
+def test_classify_skip_reviewer_contract_with_generate_skip_verdict(
+    error_type: str,
+    expected_reason_fragment: str,
+) -> None:
+    """classify_skip_reviewer correctly parses verdicts produced by generate_skip_verdict."""
+    generate_skip_verdict = _load_generate_skip_verdict()
+    reviewer = generate_skip_verdict(error_type, f"Simulated {error_type} error")
+    result = classify_skip_reviewer(reviewer)
+    assert expected_reason_fragment in result["reason"].lower(), (
+        f"classify_skip_reviewer({error_type!r}) reason={result['reason']!r} "
+        f"did not contain {expected_reason_fragment!r}"
+    )
