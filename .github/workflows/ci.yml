@@ -119,6 +119,22 @@ jobs:
             patch-coverage.md
           retention-days: 30
 
+  CI:
+    name: CI
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: All checks passed
+        run: |
+          if [[ "${{ needs.lint.result }}" == "success" && \
+                "${{ needs.test.result }}" == "success" ]]; then
+            echo "CI green"
+          else
+            echo "CI red (lint=${{ needs.lint.result }}, test=${{ needs.test.result }})"
+            exit 1
+          fi
+
   coverage-comment:
     runs-on: ubuntu-latest
     needs: test
