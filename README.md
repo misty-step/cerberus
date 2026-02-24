@@ -23,15 +23,15 @@ Eight specialized reviewers analyze every pull request in parallel, then Cerberu
 npx cerberus init
 ```
 
-The command does three things:
+The command does the following:
 
-1. Detects your git repository root.
-2. Writes `.github/workflows/cerberus.yml`.
-3. Prompts once for `OPENROUTER_API_KEY` and stores it with `gh secret set`.
+- Detects your git repository root.
+- Writes `.github/workflows/cerberus.yml`.
+- Prompts for `OPENROUTER_API_KEY` (via `gh secret set`) and saves it as a repository secret.
 
-Then open a pull request and you're done.
+Then commit the new workflow file and open a pull request.
 
-Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml` (optional) instead of hand-editing YAML.
+Optional power-user path: use `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml`.
 
 2. Open a pull request. That's it.
 

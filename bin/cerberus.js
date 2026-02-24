@@ -5,7 +5,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const readline = require('node:readline');
 
 const TEMPLATE_PATH = path.join(__dirname, '../templates/consumer-workflow.yml');
 const DEST_PATH = path.join('.github', 'workflows', 'cerberus.yml');
@@ -53,20 +52,10 @@ function readApiKey() {
   }
 
   if (!process.stdin.isTTY) {
-    fail('No API key in OPENROUTER_API_KEY and no interactive TTY available.');
+    fail('No API key in OPENROUTER_API_KEY and no interactive TTY available for gh prompt.');
   }
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question('OPENROUTER_API_KEY: ', (value) => {
-      rl.close();
-      resolve(value.trim());
-    });
-  });
+  return '';
 }
 
 async function readTemplate() {
@@ -88,17 +77,18 @@ function writeWorkflow(repoRoot, template) {
 }
 
 function setSecret(repoRoot, key) {
-  const payload = `${key}\n`;
-  const result = spawnSync(
-    'gh',
-    ['secret', 'set', 'OPENROUTER_API_KEY', '--body', '-'],
-    {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      input: payload,
-      stdio: ['pipe', 'inherit', 'pipe'],
-    },
-  );
+  const args = ['secret', 'set', 'OPENROUTER_API_KEY'];
+  const options = {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['inherit', 'inherit', 'pipe'],
+  };
+
+  if (key) {
+    args.push('--body', key);
+  }
+
+  const result = spawnSync('gh', args, options);
 
   if (result.status !== 0) {
     const message =
@@ -118,10 +108,6 @@ async function initCommand() {
   const { changed, dest } = writeWorkflow(repoRoot, template);
 
   const key = await readApiKey();
-  if (!key) {
-    fail('A non-empty OPENROUTER_API_KEY is required.');
-  }
-
   setSecret(repoRoot, key);
 
   if (changed) {

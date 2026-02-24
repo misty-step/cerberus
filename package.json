@@ -12,7 +12,7 @@
     "bin/cerberus.js",
     "templates/consumer-workflow.yml"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=16"
   }
