@@ -45,17 +45,17 @@ function getRepoRoot() {
   return result.stdout.trim();
 }
 
-function readApiKey() {
+function readApiKeySource() {
   const envKey = process.env.OPENROUTER_API_KEY;
   if (envKey && envKey.trim()) {
-    return envKey.trim();
+    return { kind: 'env', value: envKey.trim() };
   }
 
   if (!process.stdin.isTTY) {
     fail('No API key in OPENROUTER_API_KEY and no interactive TTY available for gh prompt.');
   }
 
-  return '';
+  return { kind: 'prompt' };
 }
 
 async function readTemplate() {
@@ -80,7 +80,7 @@ function writeWorkflow(repoRoot, template) {
   return { changed: false, skipped: true, dest };
 }
 
-function setSecret(repoRoot, key) {
+function setSecret(repoRoot, keySource) {
   const args = ['secret', 'set', 'OPENROUTER_API_KEY'];
   const options = {
     cwd: repoRoot,
@@ -88,8 +88,8 @@ function setSecret(repoRoot, key) {
     stdio: ['inherit', 'inherit', 'pipe'],
   };
 
-  if (key) {
-    args.push('--body', key);
+  if (keySource.kind === 'env') {
+    args.push('--body', keySource.value);
   }
 
   const result = spawnSync('gh', args, options);
@@ -111,8 +111,8 @@ async function initCommand() {
   const template = await readTemplate();
   const { changed, skipped, dest } = writeWorkflow(repoRoot, template);
 
-  const key = await readApiKey();
-  setSecret(repoRoot, key);
+  const keySource = await readApiKeySource();
+  setSecret(repoRoot, keySource);
 
   if (changed) {
     process.stdout.write(`Created ${path.relative(repoRoot, dest)}\n`);
@@ -123,7 +123,11 @@ async function initCommand() {
   }
 
   process.stdout.write('Configured OPENROUTER_API_KEY as GitHub Actions secret.\n');
-  process.stdout.write('Run: git add .github/workflows/cerberus.yml && git commit -m "Add Cerberus workflow"\n');
+  if (changed) {
+    process.stdout.write('Run: git add .github/workflows/cerberus.yml && git commit -m "Add Cerberus workflow"\n');
+  } else {
+    process.stdout.write('No workflow file changes to commit.\n');
+  }
 }
 
 async function main() {

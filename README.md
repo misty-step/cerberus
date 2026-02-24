@@ -26,7 +26,7 @@ npx cerberus init
 The command does the following:
 
 - Detects your git repository root.
-- Writes `.github/workflows/cerberus.yml`.
+- Creates `.github/workflows/cerberus.yml` if missing; leaves differing existing file unchanged.
 - Prompts for `OPENROUTER_API_KEY` (via `gh secret set`) and saves it as a repository secret.
 
 Then commit the new workflow file and open a pull request.
