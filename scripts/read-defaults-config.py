@@ -7,6 +7,7 @@ Commands:
   reviewer-meta  Print: <name>\t<model>\t<description> for a perspective
   model-default  Print: model.default (or empty)
   model-pool     Print: model.pool entries (one per line)
+  model-pool-for-tier  Print: model.tiers.<tier> entries (one per line)
 """
 
 from __future__ import annotations
@@ -39,6 +40,10 @@ def main(argv: list[str]) -> int:
 
     model_pool = sub.add_parser("model-pool")
     model_pool.add_argument("--config", required=True)
+
+    model_pool_for_tier = sub.add_parser("model-pool-for-tier")
+    model_pool_for_tier.add_argument("--config", required=True)
+    model_pool_for_tier.add_argument("--tier", required=True)
 
     args = parser.parse_args(argv)
 
@@ -76,10 +81,19 @@ def main(argv: list[str]) -> int:
             print(_single_line(item))
         return 0
 
+    if args.cmd == "model-pool-for-tier":
+        tier = str(args.tier).strip().lower()
+        if not tier:
+            print("defaults config error: --tier must be non-empty", file=sys.stderr)
+            return 2
+        tier_pool = cfg.model.tiers.get(tier, [])
+        for item in tier_pool:
+            print(_single_line(item))
+        return 0
+
     print("unknown command", file=sys.stderr)  # pragma: no cover
     return 2  # pragma: no cover
 
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

@@ -108,6 +108,133 @@ def cleanup_tmp_outputs() -> None:
 class TestModelPool:
     """Tests for model pool random assignment."""
 
+    def test_tiered_model_pool_selects_requested_tier(self, tmp_path: Path) -> None:
+        """When MODEL_TIER is set and tier exists, select from that tier pool."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        write_stub_opencode(bin_dir / "opencode")
+
+        cerberus_root = tmp_path / "cerberus-root"
+        config = '''
+model:
+  default: "openrouter/moonshotai/kimi-k2.5"
+  pool:
+    - "openrouter/legacy-a"
+    - "openrouter/legacy-b"
+  tiers:
+    flash:
+      - "openrouter/flash-a"
+      - "openrouter/flash-b"
+    standard:
+      - "openrouter/standard-a"
+
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: pool
+'''
+        write_fake_cerberus_root(cerberus_root, config_yml=config)
+
+        diff_file = tmp_path / "test.diff"
+        write_simple_diff(diff_file)
+
+        env = make_env(bin_dir, diff_file, cerberus_root)
+        env["MODEL_TIER"] = "flash"
+
+        result = subprocess.run(
+            [str(RUN_REVIEWER), "security"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        model = Path("/tmp/security-primary-model").read_text().strip()
+        assert model in {"openrouter/flash-a", "openrouter/flash-b"}
+
+    def test_requested_tier_falls_back_to_standard_tier(self, tmp_path: Path) -> None:
+        """When requested tier is empty, fallback to configured standard tier."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        write_stub_opencode(bin_dir / "opencode")
+
+        cerberus_root = tmp_path / "cerberus-root"
+        config = '''
+model:
+  default: "openrouter/moonshotai/kimi-k2.5"
+  pool:
+    - "openrouter/legacy-a"
+    - "openrouter/legacy-b"
+  tiers:
+    standard:
+      - "openrouter/standard-a"
+      - "openrouter/standard-b"
+
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: pool
+'''
+        write_fake_cerberus_root(cerberus_root, config_yml=config)
+
+        diff_file = tmp_path / "test.diff"
+        write_simple_diff(diff_file)
+
+        env = make_env(bin_dir, diff_file, cerberus_root)
+        env["MODEL_TIER"] = "pro"
+
+        result = subprocess.run(
+            [str(RUN_REVIEWER), "security"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        model = Path("/tmp/security-primary-model").read_text().strip()
+        assert model in {"openrouter/standard-a", "openrouter/standard-b"}
+
+    def test_requested_tier_falls_back_to_unscoped_pool(self, tmp_path: Path) -> None:
+        """When requested and standard tiers are absent, fallback to legacy model.pool."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        write_stub_opencode(bin_dir / "opencode")
+
+        cerberus_root = tmp_path / "cerberus-root"
+        config = '''
+model:
+  default: "openrouter/moonshotai/kimi-k2.5"
+  pool:
+    - "openrouter/legacy-a"
+    - "openrouter/legacy-b"
+  tiers:
+    flash:
+      - "openrouter/flash-a"
+
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: pool
+'''
+        write_fake_cerberus_root(cerberus_root, config_yml=config)
+
+        diff_file = tmp_path / "test.diff"
+        write_simple_diff(diff_file)
+
+        env = make_env(bin_dir, diff_file, cerberus_root)
+        env["MODEL_TIER"] = "pro"
+
+        result = subprocess.run(
+            [str(RUN_REVIEWER), "security"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        model = Path("/tmp/security-primary-model").read_text().strip()
+        assert model in {"openrouter/legacy-a", "openrouter/legacy-b"}
+
     def test_model_pool_selects_random_model_from_pool(self, tmp_path: Path) -> None:
         """When reviewer has model: pool, a random model from pool is selected."""
         bin_dir = tmp_path / "bin"

@@ -17,6 +17,9 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ROUTER_MODEL = "google/gemini-3-flash-preview"
 OUTPUT_PATH = "/tmp/router-output.json"
 DEFAULT_PANEL = ["correctness", "architecture", "security", "maintainability", "testing"]
+MODEL_TIER_FLASH = "flash"
+MODEL_TIER_STANDARD = "standard"
+MODEL_TIER_PRO = "pro"
 
 DOC_EXTENSIONS = {
     ".md",
@@ -344,6 +347,37 @@ def parse_diff(diff_path: str) -> dict[str, Any]:
     }
 
 
+def classify_model_tier(summary: dict[str, Any]) -> str:
+    """Classify PR complexity for model selection."""
+    total_lines = int(summary.get("total_changed_lines", 0))
+    code_files = int(summary.get("code_files", 0))
+    test_files = int(summary.get("test_files", 0))
+    doc_files = int(summary.get("doc_files", 0))
+
+    security_hints = {
+        "auth",
+        "security",
+        "permission",
+        "permissions",
+        "oauth",
+        "jwt",
+        "api",
+        "route",
+        "router",
+    }
+
+    has_security_hint = any(
+        any(hint in file_path.lower() for hint in security_hints)
+        for file_path in (item.get("path", "") for item in summary.get("files", []))
+    )
+
+    if total_lines <= 50 and code_files == 0 and (test_files + doc_files) > 0:
+        return MODEL_TIER_FLASH
+    if total_lines >= 300 or has_security_hint:
+        return MODEL_TIER_PRO
+    return MODEL_TIER_STANDARD
+
+
 def build_prompt(cfg: dict[str, Any], summary: dict[str, Any], panel_size: int) -> str:
     """Build structured router prompt for Gemini."""
     required = required_perspectives(cfg, summary["code_changed"])
@@ -529,12 +563,13 @@ def validate_panel(panel: list[str], cfg: dict[str, Any], panel_size: int, code_
     return normalized
 
 
-def write_output(panel: list[str], routing_used: bool, model: str) -> None:
+def write_output(panel: list[str], routing_used: bool, model: str, model_tier: str) -> None:
     """Write router result for composite action output step."""
     payload = {
         "panel": panel,
         "routing_used": bool(routing_used),
         "model": model,
+        "model_tier": model_tier,
     }
     with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
         json.dump(payload, handle)
@@ -554,7 +589,7 @@ def main() -> int:
     except Exception as exc:
         warn(f"Failed to load config: {exc}")
         fallback = DEFAULT_PANEL[:5]
-        write_output(fallback, False, "fallback")
+        write_output(fallback, False, "fallback", MODEL_TIER_STANDARD)
         return 0
 
     panel_size = as_int(os.getenv("PANEL_SIZE"), cfg["default_panel_size"])
@@ -567,24 +602,25 @@ def main() -> int:
         forced_tokens = [part for part in forced_reviewers.split(",")]
         forced_panel = resolve_tokens(forced_tokens, cfg)
         if forced_panel:
-            write_output(forced_panel, False, "forced")
+            write_output(forced_panel, False, "forced", MODEL_TIER_STANDARD)
             return 0
         warn("Forced reviewers input was set but no valid reviewers were resolved; using fallback panel")
-        write_output(fallback_panel, False, "fallback")
+        write_output(fallback_panel, False, "fallback", MODEL_TIER_STANDARD)
         return 0
 
     if routing == "disabled":
         full_panel = cfg["perspectives"][:]
         if not full_panel:
             full_panel = DEFAULT_PANEL[:]
-        write_output(full_panel, False, "disabled")
+        write_output(full_panel, False, "disabled", MODEL_TIER_STANDARD)
         return 0
 
     if not api_key:
         warn("OPENROUTER_API_KEY missing; routing skipped")
-        write_output(fallback_panel, False, "fallback")
+        write_output(fallback_panel, False, "fallback", MODEL_TIER_STANDARD)
         return 0
 
+    model_tier = classify_model_tier(summary)
     prompt = build_prompt(cfg, summary, panel_size)
     raw_text, model_used = call_router(api_key, prompt, panel_size)
     parsed_panel = parse_panel_from_text(raw_text)
@@ -592,10 +628,20 @@ def main() -> int:
 
     if not validated_panel:
         warn("Router returned invalid panel; using fallback panel")
-        write_output(fallback_panel, False, model_used or ROUTER_MODEL)
+        write_output(
+            fallback_panel,
+            False,
+            model_used or ROUTER_MODEL,
+            model_tier,
+        )
         return 0
 
-    write_output(validated_panel, True, model_used or ROUTER_MODEL)
+    write_output(
+        validated_panel,
+        True,
+        model_used or ROUTER_MODEL,
+        model_tier,
+    )
     return 0
 
 
@@ -605,7 +651,7 @@ if __name__ == "__main__":
     except Exception as exc:  # noqa: BLE001 - hard safety net for workflow stability.
         warn(f"Router failed unexpectedly: {exc}")
         try:
-            write_output(DEFAULT_PANEL[:5], False, "fallback")
+            write_output(DEFAULT_PANEL[:5], False, "fallback", MODEL_TIER_STANDARD)
         except Exception:
             print("[]")
         raise SystemExit(0)

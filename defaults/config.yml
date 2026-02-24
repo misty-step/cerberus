@@ -20,6 +20,25 @@ model:
     - "openrouter/z-ai/glm-5"
     - "openrouter/xiaomi/mimo-v2-flash"
     - "openrouter/mistralai/devstral-2512"
+  tiers:
+    flash:
+      - "openrouter/google/gemini-3-flash-preview"
+      - "openrouter/z-ai/glm-5"
+      - "openrouter/xiaomi/mimo-v2-flash"
+    standard:
+      - "openrouter/moonshotai/kimi-k2.5"
+      - "openrouter/minimax/minimax-m2.5"
+      - "openrouter/z-ai/glm-5"
+      - "openrouter/xiaomi/mimo-v2-flash"
+      - "openrouter/mistralai/devstral-2512"
+    pro:
+      - "openrouter/moonshotai/kimi-k2.5"
+      - "openrouter/minimax/minimax-m2.5"
+      - "openrouter/google/gemini-3.1-pro-preview"
+      - "openrouter/google/gemini-3-flash-preview"
+      - "openrouter/z-ai/glm-5"
+      - "openrouter/xiaomi/mimo-v2-flash"
+      - "openrouter/mistralai/devstral-2512"
   cli: opencode
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer

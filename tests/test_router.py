@@ -237,6 +237,52 @@ class TestLoadConfig:
         assert cfg["default_panel_size"] == 5
 
 
+class TestModelTierClassification:
+    def test_flash_tier(self) -> None:
+        assert route.classify_model_tier(
+            {
+                "total_changed_lines": 10,
+                "code_files": 0,
+                "test_files": 1,
+                "doc_files": 0,
+                "files": [{"path": "tests/test_foo.py"}],
+            }
+        ) == route.MODEL_TIER_FLASH
+
+    def test_pro_tier_from_size(self) -> None:
+        assert route.classify_model_tier(
+            {
+                "total_changed_lines": 500,
+                "code_files": 4,
+                "test_files": 1,
+                "doc_files": 0,
+                "files": [{"path": "src/app.py"}],
+            }
+        ) == route.MODEL_TIER_PRO
+
+    def test_pro_tier_from_security_hint(self) -> None:
+        assert route.classify_model_tier(
+            {
+                "total_changed_lines": 10,
+                "code_files": 1,
+                "test_files": 0,
+                "doc_files": 0,
+                "files": [{"path": "api/auth.py"}],
+            }
+        ) == route.MODEL_TIER_PRO
+
+    def test_standard_tier(self) -> None:
+        assert route.classify_model_tier(
+            {
+                "total_changed_lines": 120,
+                "code_files": 2,
+                "test_files": 1,
+                "doc_files": 0,
+                "files": [{"path": "src/app.py"}],
+            }
+        ) == route.MODEL_TIER_STANDARD
+
+
 # ---------------------------------------------------------------------------
 # Diff parsing
 # ---------------------------------------------------------------------------
@@ -456,11 +502,17 @@ class TestValidatePanel:
 
 class TestWriteOutput:
     def test_writes_json(self) -> None:
-        route.write_output(["correctness", "security"], True, "test-model")
+        route.write_output(
+            ["correctness", "security"],
+            True,
+            "test-model",
+            route.MODEL_TIER_STANDARD,
+        )
         data = json.loads(Path(route.OUTPUT_PATH).read_text())
         assert data["panel"] == ["correctness", "security"]
         assert data["routing_used"] is True
         assert data["model"] == "test-model"
+        assert data["model_tier"] == route.MODEL_TIER_STANDARD
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +537,7 @@ class TestMainIntegration:
         assert result["panel"] == ["correctness", "security", "architecture"]
         assert result["routing_used"] is False
         assert result["model"] == "forced"
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     def test_routing_disabled(self, cerberus_root: Path, diff_file: Path) -> None:
         result = self._run_main({
@@ -498,6 +551,7 @@ class TestMainIntegration:
         assert len(result["panel"]) == 8
         assert result["routing_used"] is False
         assert result["model"] == "disabled"
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     def test_missing_api_key_uses_fallback(self, cerberus_root: Path, diff_file: Path) -> None:
         result = self._run_main({
@@ -509,6 +563,7 @@ class TestMainIntegration:
         })
         assert len(result["panel"]) == 5
         assert result["routing_used"] is False
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     @mock.patch("route.call_router")
     def test_successful_routing(self, mock_call: mock.Mock,
@@ -528,6 +583,7 @@ class TestMainIntegration:
             "correctness", "security", "architecture", "resilience", "compatibility"
         ]
         assert result["routing_used"] is True
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     @mock.patch("route.call_router")
     def test_invalid_router_output_falls_back(self, mock_call: mock.Mock,
@@ -543,6 +599,7 @@ class TestMainIntegration:
         })
         assert len(result["panel"]) == 5
         assert result["routing_used"] is False
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     @mock.patch("route.call_router")
     def test_wrong_panel_size_falls_back(self, mock_call: mock.Mock,
@@ -561,6 +618,7 @@ class TestMainIntegration:
         })
         assert len(result["panel"]) == 5
         assert result["routing_used"] is False
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     @mock.patch("route.call_router")
     def test_missing_required_reviewer_falls_back(self, mock_call: mock.Mock,
@@ -579,6 +637,7 @@ class TestMainIntegration:
         })
         assert result["routing_used"] is False
         assert "correctness" in result["panel"]
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     @mock.patch("route.call_router")
     def test_api_returns_none(self, mock_call: mock.Mock,
@@ -593,6 +652,7 @@ class TestMainIntegration:
         })
         assert result["routing_used"] is False
         assert len(result["panel"]) == 5
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     def test_invalid_forced_reviewers_uses_fallback(self, cerberus_root: Path, diff_file: Path) -> None:
         result = self._run_main({
@@ -604,6 +664,7 @@ class TestMainIntegration:
         })
         assert result["routing_used"] is False
         assert len(result["panel"]) == 5
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     def test_custom_panel_size(self, cerberus_root: Path, diff_file: Path) -> None:
         result = self._run_main({
@@ -616,6 +677,7 @@ class TestMainIntegration:
         })
         # Disabled routing returns full bench, not panel_size-limited
         assert len(result["panel"]) == 8
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     def test_config_load_failure_uses_hardcoded_fallback(self, tmp_path: Path, diff_file: Path) -> None:
         result = self._run_main({
@@ -627,3 +689,42 @@ class TestMainIntegration:
         })
         assert result["panel"] == route.DEFAULT_PANEL[:5]
         assert result["routing_used"] is False
+        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+
+    @mock.patch("route.call_router")
+    def test_successful_routing_uses_flash_tier(self, mock_call: mock.Mock,
+                                                cerberus_root: Path, tmp_path: Path) -> None:
+        mock_call.return_value = (
+            '["correctness","security","architecture","resilience","compatibility"]',
+            "google/gemini-3-flash-preview",
+        )
+        doc_diff = tmp_path / "doc.diff"
+        doc_diff.write_text("diff --git a/tests/test_auth.py b/tests/test_auth.py\n+def test_auth():\n    assert True\n")
+        result = self._run_main({
+            "CERBERUS_ROOT": str(cerberus_root),
+            "DIFF_FILE": str(doc_diff),
+            "FORCED_REVIEWERS": "",
+            "ROUTING": "enabled",
+            "OPENROUTER_API_KEY": "fake-key",
+        })
+        assert result["model_tier"] == route.MODEL_TIER_FLASH
+
+    @mock.patch("route.call_router")
+    def test_successful_routing_uses_pro_tier_for_security_hint(self, mock_call: mock.Mock,
+                                                               cerberus_root: Path, tmp_path: Path) -> None:
+        mock_call.return_value = (
+            '["correctness","security","architecture","resilience","compatibility"]',
+            "google/gemini-3-flash-preview",
+        )
+        security_diff = tmp_path / "security.diff"
+        security_diff.write_text(
+            "diff --git a/api/oauth.py b/api/oauth.py\n+print('oauth')\n"
+        )
+        result = self._run_main({
+            "CERBERUS_ROOT": str(cerberus_root),
+            "DIFF_FILE": str(security_diff),
+            "FORCED_REVIEWERS": "",
+            "ROUTING": "enabled",
+            "OPENROUTER_API_KEY": "fake-key",
+        })
+        assert result["model_tier"] == route.MODEL_TIER_PRO

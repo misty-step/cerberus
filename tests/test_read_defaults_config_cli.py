@@ -90,6 +90,54 @@ reviewers:
         assert "openrouter/b" in captured.out
 
 
+class TestModelPoolForTier:
+    def test_prints_tier_pool(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+model:
+  tiers:
+    flash:
+      - openrouter/flash-a
+      - openrouter/flash-b
+reviewers:
+  - name: A
+    perspective: b
+""")
+        code = main(["model-pool-for-tier", "--config", cfg, "--tier", "flash"])
+        assert code == 0
+        captured = capsys.readouterr()
+        assert captured.out.strip().splitlines() == ["openrouter/flash-a", "openrouter/flash-b"]
+
+    def test_unknown_tier_prints_nothing(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+model:
+  tiers:
+    standard:
+      - openrouter/standard-a
+reviewers:
+  - name: A
+    perspective: b
+""")
+        code = main(["model-pool-for-tier", "--config", cfg, "--tier", "missing"])
+        assert code == 0
+        captured = capsys.readouterr()
+        assert captured.out.strip() == ""
+
+    def test_empty_tier_is_error(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+model:
+  tiers:
+    standard:
+      - openrouter/standard-a
+reviewers:
+  - name: A
+    perspective: b
+""")
+        code = main(["model-pool-for-tier", "--config", cfg, "--tier", ""])
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "--tier must be non-empty" in captured.err
+
+
 class TestConfigError:
     def test_bad_config_file(self, tmp_path, capsys):
         code = main(["model-default", "--config", str(tmp_path / "missing.yml")])

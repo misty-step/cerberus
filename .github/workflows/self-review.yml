@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       panel: ${{ steps.router.outputs.panel }}
+      model-tier: ${{ steps.router.outputs.model-tier }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch PR diff
@@ -60,9 +61,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./matrix
-        id: generate
+      id: generate
         with:
           panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
 
   review:
     needs: [matrix, preflight]
@@ -80,6 +82,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           timeout: '600'
+          model-tier: ${{ matrix.model_tier }}
 
   verdict:
     name: "Verdict"

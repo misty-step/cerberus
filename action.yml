@@ -22,6 +22,9 @@ inputs:
   model:
     description: 'Model name (optional). If set, overrides per-reviewer config for this review (Cerberus will annotate when overridden).'
     default: ''
+  model-tier:
+    description: 'Model complexity tier propagated from router output (flash, standard, pro).'
+    default: 'standard'
   fallback-models:
     description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
     default: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
@@ -256,6 +259,7 @@ runs:
         PERSPECTIVE: ${{ inputs.perspective }}
         OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
         OPENCODE_MODEL: ${{ inputs.model }}
+        MODEL_TIER: ${{ inputs.model-tier }}
         CERBERUS_CONTEXT: ${{ inputs.context }}
         CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}

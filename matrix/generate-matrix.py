@@ -16,6 +16,7 @@ Also prints to stdout for test consumption:
 """
 import json
 import sys
+import os
 
 import yaml
 
@@ -61,6 +62,9 @@ def generate_matrix(config_path):
                 "reviewer_label": label,
                 "reviewer_codename": codename,
             }
+            model_tier = os.getenv("MODEL_TIER", "").strip().lower()
+            if model_tier:
+                entry["model_tier"] = model_tier
             if isinstance(desc, str) and desc.strip():
                 entry["reviewer_description"] = desc.strip()
             if tagline:

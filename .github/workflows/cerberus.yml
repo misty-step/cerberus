@@ -74,6 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       panel: ${{ steps.router.outputs.panel }}
+      model-tier: ${{ steps.router.outputs.model-tier }}
     steps:
       - name: Fetch PR diff
         # gh is pre-installed on GitHub-hosted runners; no checkout needed
@@ -97,9 +98,10 @@ jobs:
       matrix: ${{ steps.generate.outputs.matrix }}
     steps:
       - uses: misty-step/cerberus/matrix@v2
-        id: generate
+      id: generate
         with:
           panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
 
   review:
     needs: [matrix, preflight]
@@ -120,6 +122,7 @@ jobs:
           api-key: ${{ secrets.api-key }}
           timeout: ${{ inputs.timeout }}
           model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
           context: ${{ inputs.context }}
 
   verdict:

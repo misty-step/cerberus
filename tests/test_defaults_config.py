@@ -40,6 +40,13 @@ model:
   pool:
     - openrouter/a
     - openrouter/b
+  tiers:
+    flash:
+      - openrouter/flash-model
+    standard:
+      - openrouter/standard-model
+    pro:
+      - openrouter/pro-model
 reviewers:
   - name: SENTINEL
     perspective: security
@@ -49,8 +56,30 @@ reviewers:
         cfg = load_defaults_config(path)
         assert cfg.model.default == "openrouter/kimi-k2.5"
         assert cfg.model.pool == ["openrouter/a", "openrouter/b"]
+        assert cfg.model.tiers == {
+            "flash": ["openrouter/flash-model"],
+            "standard": ["openrouter/standard-model"],
+            "pro": ["openrouter/pro-model"],
+        }
         assert cfg.reviewers[0].model == "openrouter/specific"
         assert cfg.reviewers[0].description == "Security reviewer"
+
+    def test_model_tiers_parsed(self, tmp_path):
+        path = write_config(tmp_path, """
+model:
+  tiers:
+    flash:
+      - openrouter/flash-a
+      - openrouter/flash-b
+    standard:
+      - openrouter/std-a
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        cfg = load_defaults_config(path)
+        assert cfg.model.tiers["flash"] == ["openrouter/flash-a", "openrouter/flash-b"]
+        assert cfg.model.tiers["standard"] == ["openrouter/std-a"]
 
     def test_legacy_list_format(self, tmp_path):
         path = write_config(tmp_path, """
@@ -141,6 +170,42 @@ reviewers:
     perspective: b
 """)
         with pytest.raises(ConfigError, match="expected string"):
+            load_defaults_config(path)
+
+    def test_model_tiers_not_a_mapping(self, tmp_path):
+        path = write_config(tmp_path, """
+model:
+  tiers: not_a_mapping
+reviewers:
+  - name: A
+    perspective: b
+""")
+        with pytest.raises(ConfigError, match="config.model.tiers: expected mapping"):
+            load_defaults_config(path)
+
+    def test_model_tier_not_a_list(self, tmp_path):
+        path = write_config(tmp_path, """
+model:
+  tiers:
+    flash: not_a_list
+reviewers:
+  - name: A
+    perspective: b
+""")
+        with pytest.raises(ConfigError, match="config.model.tiers\\[flash\\]: expected list"):
+            load_defaults_config(path)
+
+    def test_model_tier_item_not_string(self, tmp_path):
+        path = write_config(tmp_path, """
+model:
+  tiers:
+    flash:
+      - 42
+reviewers:
+  - name: A
+    perspective: b
+""")
+        with pytest.raises(ConfigError, match="config.model.tiers\\[flash\\]\\[0\\]: expected string"):
             load_defaults_config(path)
 
     def test_optional_str_non_string(self, tmp_path):
