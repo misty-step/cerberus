@@ -189,15 +189,67 @@ config_default_model_raw="$(
     --config "$config_file"
 )"
 
-# If reviewer model is "pool", randomly select from the model.pool config list.
+# Normalize model tier for pool lookup.
+requested_tier="$(printf '%s' "${MODEL_TIER:-standard}" | tr '[:upper:]' '[:lower:]' | xargs)"
+if [[ -z "$requested_tier" ]]; then
+  requested_tier="standard"
+fi
+
+# If reviewer model is "pool", first try the tiered pool then fall back to standard
+# and finally to the legacy unscoped model.pool list.
 if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
   model_pool=()
-  while IFS= read -r _pool_line; do
-    [[ -n "$_pool_line" ]] && model_pool+=("$_pool_line")
-  done < <(
-    python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-pool \
-      --config "$config_file"
-  )
+  _found_tier=""
+
+  candidate_tiers=("$requested_tier")
+  if [[ "$requested_tier" != "standard" ]]; then
+    candidate_tiers+=("standard")
+  fi
+  candidate_tiers+=("")
+
+  for _candidate_tier in "${candidate_tiers[@]}"; do
+    candidate_pool=()
+    if [[ -n "$_candidate_tier" ]]; then
+      while IFS= read -r _pool_line; do
+        [[ -n "$_pool_line" ]] && candidate_pool+=("$_pool_line")
+      done < <(
+        python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-pool-for-tier \
+          --config "$config_file" \
+          --tier "$_candidate_tier"
+      )
+    else
+      while IFS= read -r _pool_line; do
+        [[ -n "$_pool_line" ]] && candidate_pool+=("$_pool_line")
+      done < <(
+        python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" model-pool \
+          --config "$config_file"
+      )
+    fi
+
+    if [[ ${#candidate_pool[@]} -gt 0 ]]; then
+      model_pool=("${candidate_pool[@]}")
+      _found_tier="$_candidate_tier"
+      break
+    fi
+  done
+
+  pool_selection_note=""
+  if [[ -n "$_found_tier" ]]; then
+    if [[ "${_found_tier}" == "$requested_tier" ]]; then
+      pool_selection_note="Selected random model from ${_found_tier} tier pool for ${reviewer_name}."
+    elif [[ "${_found_tier}" == "standard" ]]; then
+      if [[ "$requested_tier" != "standard" ]]; then
+        pool_selection_note="Tier '${requested_tier}' had no models; falling back to standard tier pool for ${reviewer_name}."
+      else
+        pool_selection_note="Selected random model from ${_found_tier} tier pool for ${reviewer_name}."
+      fi
+    else
+      pool_selection_note="Selected random model from unscoped pool for ${reviewer_name}."
+    fi
+  else
+    pool_selection_note="Selected random model from unscoped pool for ${reviewer_name}."
+  fi
+  echo "::notice::${pool_selection_note}"
 
   if [[ ${#model_pool[@]} -gt 0 ]]; then
     if command -v shuf >/dev/null 2>&1; then
@@ -206,9 +258,9 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
       idx=$((RANDOM % ${#model_pool[@]}))
       reviewer_model_raw="${model_pool[$idx]}"
     fi
-    echo "Selected random model from pool: $reviewer_model_raw"
+    echo "::notice::Selected random model from pool: $reviewer_model_raw"
   else
-    echo "Warning: reviewer uses 'pool' but no pool defined. Falling back to default."
+    echo "::warning::Reviewer uses 'pool' but no pool defined. Falling back to default."
     reviewer_model_raw=""
   fi
 fi

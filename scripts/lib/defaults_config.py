@@ -31,6 +31,7 @@ class ModelConfig:
     """Data class for Model Config."""
     default: str | None = None
     pool: list[str] = field(default_factory=list)
+    tiers: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,14 @@ def _require_list(value: Any, ctx: str) -> list[Any]:
     if not isinstance(value, list):
         raise ConfigError(f"{ctx}: expected list")
     return value
+
+
+def _require_str_list(value: Any, ctx: str) -> list[str]:
+    raw = _require_list(value, ctx)
+    out: list[str] = []
+    for idx, item in enumerate(raw):
+        out.append(_require_str(item, f"{ctx}[{idx}]"))
+    return out
 
 
 def _require_str(value: Any, ctx: str) -> str:
@@ -131,10 +140,14 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
         pool_raw = model_cfg.get("pool")
         pool: list[str] = []
         if pool_raw is not None:
-            pool_list = _require_list(pool_raw, "config.model.pool")
-            for idx, item in enumerate(pool_list):
-                pool.append(_require_str(item, f"config.model.pool[{idx}]"))
-        model = ModelConfig(default=model_default, pool=pool)
+            pool = _require_str_list(pool_raw, "config.model.pool")
+        tiers: dict[str, list[str]] = {}
+        tiers_raw = model_cfg.get("tiers")
+        if tiers_raw is not None:
+            tiers_map = _require_mapping(tiers_raw, "config.model.tiers")
+            for tier, models in tiers_map.items():
+                tier_name = _require_str(tier, f"config.model.tiers key '{tier}'")
+                tiers[tier_name] = _require_str_list(models, f"config.model.tiers[{tier_name}]")
+        model = ModelConfig(default=model_default, pool=pool, tiers=tiers)
 
     return DefaultsConfig(reviewers=reviewers, model=model)
-

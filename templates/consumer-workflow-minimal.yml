@@ -55,6 +55,7 @@ jobs:
       pull-requests: read
     outputs:
       panel: ${{ steps.router.outputs.panel }}
+      model-tier: ${{ steps.router.outputs.model-tier }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch PR diff
@@ -79,10 +80,11 @@ jobs:
       matrix: ${{ steps.generate.outputs.matrix }}
       count: ${{ steps.generate.outputs.count }}
     steps:
-      - uses: misty-step/cerberus/matrix@v2
-        id: generate
+      - id: generate
+        uses: misty-step/cerberus/matrix@v2
         with:
           panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
 
   # Run reviews in parallel using the routed matrix
   review:
@@ -105,6 +107,7 @@ jobs:
           api-key: ${{ secrets.OPENROUTER_API_KEY }}
           comment-policy: 'never'
           timeout: '600'
+          model-tier: ${{ matrix.model_tier }}
           # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
           # context: |
           #   Moneta is a single-user personal finance and tax tool.

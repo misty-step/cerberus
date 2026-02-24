@@ -33,6 +33,9 @@ outputs:
   routing-used:
     description: 'True if LLM routing was used'
     value: ${{ steps.output.outputs.routing-used }}
+  model-tier:
+    description: 'Model complexity tier selected by the router'
+    value: ${{ steps.output.outputs.model-tier }}
 
 runs:
   using: 'composite'
@@ -72,16 +75,21 @@ runs:
       run: |
         if [[ ! -f /tmp/router-output.json ]]; then
           echo "::warning::router output not found; using empty defaults"
+          echo "::warning::model-tier defaulting to standard because router output is missing"
           echo 'panel=[]' >> "$GITHUB_OUTPUT"
           echo 'routing-used=false' >> "$GITHUB_OUTPUT"
+          echo 'model-tier=standard' >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
         panel="$(python3 -c 'import json; print(json.dumps(json.load(open("/tmp/router-output.json")).get("panel", []), separators=(",", ":")))' )"
         routing_used="$(python3 -c 'import json; print(str(bool(json.load(open("/tmp/router-output.json")).get("routing_used", False))).lower())' )"
+        model_tier="$(python3 -c 'import json; print(json.load(open("/tmp/router-output.json")).get("model_tier", "standard"))' )"
 
         echo "panel=$panel" >> "$GITHUB_OUTPUT"
         echo "routing-used=$routing_used" >> "$GITHUB_OUTPUT"
+        echo "model-tier=$model_tier" >> "$GITHUB_OUTPUT"
 
         echo "Routed panel: $panel"
         echo "Routing used: $routing_used"
+        echo "Model tier: $model_tier"

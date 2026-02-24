@@ -10,6 +10,9 @@ inputs:
   panel:
     description: 'JSON array of perspective strings to filter the matrix (from router). Empty = all reviewers.'
     default: ''
+  model-tier:
+    description: 'Model complexity tier propagated from router output'
+    default: 'standard'
 
 outputs:
   matrix:
@@ -31,6 +34,7 @@ runs:
       env:
         CERBERUS_ROOT: ${{ github.action_path }}/..
         PANEL_FILTER: ${{ inputs.panel }}
+        INPUT_MODEL_TIER: ${{ inputs.model-tier }}
       run: |
         config_file="${CERBERUS_ROOT}/defaults/config.yml"
 
@@ -39,9 +43,17 @@ runs:
           exit 1
         fi
 
+        routing_enabled="$(python3 -c 'import sys,yaml; cfg=yaml.safe_load(open(sys.argv[1], "r", encoding="utf-8")) or {}; routing=cfg.get("routing", {}) or {}; print(str(bool(routing.get("enabled", False))).lower())' "$config_file")"
+
+        if [[ "${PANEL_FILTER:-}" == "" || "${PANEL_FILTER:-}" == "[]" ]]; then
+          if [[ "$routing_enabled" == "true" ]]; then
+            echo "::warning::Routing is enabled in defaults/config.yml but no panel was passed to cerberus/matrix. All 8 reviewers will run. To enable reviewer selection, add the route step from templates/consumer-workflow-minimal.yml."
+          fi
+        fi
+
         pip install pyyaml --quiet
 
-        python3 "${{ github.action_path }}/generate-matrix.py" "$config_file" > /dev/null
+        MODEL_TIER="$INPUT_MODEL_TIER" python3 "${{ github.action_path }}/generate-matrix.py" "$config_file" > /dev/null
 
         if [[ -n "${PANEL_FILTER:-}" && "$PANEL_FILTER" != "[]" ]]; then
           python3 "${{ github.action_path }}/filter-panel.py" "$PANEL_FILTER"

@@ -47,6 +47,26 @@ fi
 
 echo "PASS: Synthetic config produces correct matrix"
 
+# --- Test 1b: model-tier propagation ---
+with_tier_output="$(MODEL_TIER=flash python3 "$SCRIPT" "$test_config")"
+with_tier_matrix=$(echo "$with_tier_output" | sed -n '1p')
+
+if ! python3 - "$with_tier_matrix" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+missing = [item for item in payload["include"] if item.get("model_tier") != "flash"]
+if missing:
+    sys.exit(1)
+PY
+then
+    echo "FAIL: matrix entries did not propagate model_tier from MODEL_TIER env"
+    exit 1
+fi
+
+echo "PASS: Matrix includes propagated model_tier from env"
+
 # --- Test 2: actual defaults/config.yml ---
 result=$(python3 "$SCRIPT" "defaults/config.yml")
 count=$(echo "$result" | sed -n '2p')

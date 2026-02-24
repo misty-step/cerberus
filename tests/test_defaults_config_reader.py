@@ -56,6 +56,77 @@ def test_simple_yaml_config_parsed(tmp_path: Path) -> None:
     assert pool.stdout.strip().splitlines() == ["openrouter/a", "openrouter/b"]
 
 
+def test_model_pool_for_tier(tmp_path: Path) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "model:",
+                "  tiers:",
+                "    flash:",
+                "      - openrouter/flash-a",
+                "      - openrouter/flash-b",
+                "    standard:",
+                "      - openrouter/standard-a",
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                "",
+            ]
+        )
+    )
+
+    tier = _run(
+        "model-pool-for-tier",
+        "--config",
+        str(config),
+        "--tier",
+        "flash",
+    )
+    assert tier.returncode == 0, tier.stderr
+    assert tier.stdout.strip().splitlines() == ["openrouter/flash-a", "openrouter/flash-b"]
+
+    unknown = _run(
+        "model-pool-for-tier",
+        "--config",
+        str(config),
+        "--tier",
+        "missing",
+    )
+    assert unknown.returncode == 0
+    assert unknown.stdout.strip() == ""
+
+
+def test_model_pool_for_tier_empty_tier_is_error(tmp_path: Path) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "model:",
+                "  tiers:",
+                "    standard:",
+                "      - openrouter/default",
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                "",
+            ]
+        )
+    )
+
+    tier = _run(
+        "model-pool-for-tier",
+        "--config",
+        str(config),
+        "--tier",
+        "",
+    )
+    assert tier.returncode == 2
+    assert "--tier must be non-empty" in tier.stderr
+
+
 def test_complex_yaml_features_parsed(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(
@@ -121,4 +192,3 @@ def test_invalid_yaml_errors_clearly(tmp_path: Path) -> None:
     result = _run("model-default", "--config", str(config))
     assert result.returncode == 2
     assert "invalid YAML" in result.stderr
-
