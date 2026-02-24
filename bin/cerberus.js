@@ -67,13 +67,17 @@ function writeWorkflow(repoRoot, template) {
   const dir = path.dirname(dest);
   fs.mkdirSync(dir, { recursive: true });
 
-  const existing = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
-  if (existing.trim() === template.trim()) {
-    return { changed: false, dest };
+  if (!fs.existsSync(dest)) {
+    fs.writeFileSync(dest, template);
+    return { changed: true, skipped: false, dest };
   }
 
-  fs.writeFileSync(dest, template);
-  return { changed: true, dest };
+  const existing = fs.readFileSync(dest, 'utf8');
+  if (existing.trim() === template.trim()) {
+    return { changed: false, skipped: false, dest };
+  }
+
+  return { changed: false, skipped: true, dest };
 }
 
 function setSecret(repoRoot, key) {
@@ -105,13 +109,15 @@ async function initCommand() {
 
   const repoRoot = getRepoRoot();
   const template = await readTemplate();
-  const { changed, dest } = writeWorkflow(repoRoot, template);
+  const { changed, skipped, dest } = writeWorkflow(repoRoot, template);
 
   const key = await readApiKey();
   setSecret(repoRoot, key);
 
   if (changed) {
     process.stdout.write(`Created ${path.relative(repoRoot, dest)}\n`);
+  } else if (skipped) {
+    process.stdout.write(`Left unchanged: ${path.relative(repoRoot, dest)} (existing file differs from template)\n`);
   } else {
     process.stdout.write(`Up-to-date: ${path.relative(repoRoot, dest)}\n`);
   }
