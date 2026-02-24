@@ -11,7 +11,7 @@ Copy this into `.github/workflows/cerberus.yml`:
 name: Cerberus
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 permissions:
   contents: read
   pull-requests: write
