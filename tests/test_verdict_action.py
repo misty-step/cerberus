@@ -7,7 +7,7 @@ VERDICT_ACTION_FILE = ROOT / "verdict" / "action.yml"
 POST_COMMENT_SCRIPT = ROOT / "scripts" / "post-comment.sh"
 RUN_REVIEWER_SCRIPT = ROOT / "scripts" / "run-reviewer.sh"
 COLLECT_OVERRIDES_SCRIPT = ROOT / "scripts" / "collect-overrides.py"
-CONSUMER_WORKFLOW_TEMPLATE = ROOT / "templates" / "consumer-workflow.yml"
+CONSUMER_WORKFLOW_TEMPLATE = ROOT / "templates" / "consumer-workflow-reusable.yml"
 TRIAGE_WORKFLOW_TEMPLATE = ROOT / "templates" / "triage-workflow.yml"
 REVIEW_PROMPT_TEMPLATE = ROOT / "templates" / "review-prompt.md"
 README_FILE = ROOT / "README.md"
@@ -97,7 +97,7 @@ def test_workflow_templates_use_current_major_version() -> None:
     assert "@v1" not in consumer
     assert "@v1" not in triage
 
-    # consumer-workflow.yml now uses the reusable workflow (not individual actions)
+    # consumer-workflow-reusable.yml now uses the reusable workflow (not individual actions)
     assert "misty-step/cerberus" in consumer
     assert "@v2" in consumer
 

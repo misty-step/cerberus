@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Validate that templates/consumer-workflow.yml matches defaults/config.yml
+# Validate that templates/consumer-workflow-reusable.yml matches defaults/config.yml
 # This catches drift between the hardcoded template and the actual reviewer roster.
 
 # Find repo root
@@ -10,10 +10,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$REPO_ROOT"
 
-# If consumer-workflow.yml delegates to the reusable workflow, skip matrix parity.
+# If consumer-workflow-reusable.yml delegates to the reusable workflow, skip matrix parity.
 # The matrix is centralized in .github/workflows/cerberus.yml — drift is impossible by design.
-if grep -q "uses: misty-step/cerberus/.github/workflows/cerberus.yml" templates/consumer-workflow.yml; then
-  echo "consumer-workflow.yml uses reusable workflow — matrix parity check not applicable"
+if grep -q "uses: misty-step/cerberus/.github/workflows/cerberus.yml" templates/consumer-workflow-reusable.yml; then
+  echo "consumer-workflow-reusable.yml uses reusable workflow — matrix parity check not applicable"
   exit 0
 fi
 
@@ -35,8 +35,8 @@ for r in reviewers:
 print(','.join(sorted(result)))
 ")
 
-# Extract reviewers from consumer-workflow.yml
-template_reviewers=$(grep -A 20 'matrix:' templates/consumer-workflow.yml | \
+# Extract reviewers from consumer-workflow-reusable.yml
+template_reviewers=$(grep -A 20 'matrix:' templates/consumer-workflow-reusable.yml | \
     grep -E '^\s+- \{ reviewer:' | \
     sed -E 's/.*reviewer: ([^,}]+).*perspective: ([^,}]+).*/\1:\2/' | \
     sed 's/[[:space:]]*$//' | \
@@ -49,11 +49,11 @@ echo "Template reviewers:  $template_reviewers"
 
 if [[ "$config_reviewers" != "$template_reviewers" ]]; then
     echo ""
-    echo "ERROR: templates/consumer-workflow.yml does not match defaults/config.yml"
+    echo "ERROR: templates/consumer-workflow-reusable.yml does not match defaults/config.yml"
     echo ""
     echo "The hardcoded reviewer matrix in the template has drifted from the actual roster."
     echo "Either:"
-    echo "  1. Update templates/consumer-workflow.yml to match defaults/config.yml, or"
+    echo "  1. Update templates/consumer-workflow-reusable.yml to match defaults/config.yml, or"
     echo "  2. Switch to templates/consumer-workflow-minimal.yml which stays in sync automatically"
     exit 1
 fi

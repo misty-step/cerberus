@@ -10,7 +10,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 CLI = REPO_ROOT / "bin" / "cerberus.js"
-TEMPLATE = (REPO_ROOT / "templates" / "consumer-workflow.yml").read_text()
+TEMPLATE = (REPO_ROOT / "templates" / "consumer-workflow-reusable.yml").read_text()
 
 
 def make_executable(path: Path, content: str) -> None:

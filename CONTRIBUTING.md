@@ -149,7 +149,7 @@ python -m pytest tests/security/ -v
 
 Use the consumer workflow template and keep reviewer comments disabled:
 
-- Start from [`templates/consumer-workflow.yml`](templates/consumer-workflow.yml).
+- Start from [`templates/consumer-workflow-reusable.yml`](templates/consumer-workflow-reusable.yml).
 - Keep `comment-policy: 'never'` in the review job.
 - Optionally set `fail-on-verdict: 'false'` in the verdict step while testing.
 - Open a same-repo PR (fork PRs are intentionally blocked by the action).
@@ -188,7 +188,7 @@ git rev-parse --verify refs/tags/v2^{commit}
 
 ### Add Cerberus to Another Repository
 
-Use [`templates/consumer-workflow.yml`](templates/consumer-workflow.yml)
+Use [`templates/consumer-workflow-reusable.yml`](templates/consumer-workflow-reusable.yml)
 as the baseline workflow:
 
 - Review jobs must have read-only permissions.

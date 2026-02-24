@@ -1,11 +1,11 @@
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-CONSUMER_WORKFLOW_FILE = ROOT / "templates" / "consumer-workflow.yml"
+CONSUMER_WORKFLOW_FILE = ROOT / "templates" / "consumer-workflow-reusable.yml"
 
 
 def test_consumer_workflow_uses_reusable_workflow() -> None:
-    """consumer-workflow.yml delegates to the Cerberus reusable workflow."""
+    """consumer-workflow-reusable.yml delegates to the Cerberus reusable workflow."""
     content = CONSUMER_WORKFLOW_FILE.read_text()
 
     assert "uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2" in content

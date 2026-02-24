@@ -4,7 +4,7 @@
 # ⚠️ ADVANCED: This template exposes every job for direct customization.
 # For most users, the reusable workflow is simpler (~13 lines):
 #
-#   See templates/consumer-workflow.yml
+#   See templates/consumer-workflow-reusable.yml
 #
 # Use this template when you need full control: custom job conditions,
 # extra steps between stages, or per-job runner customization.

@@ -190,7 +190,7 @@ def test__comment_policy_comment_policy_wins_when_non_empty():
         # cerberus.yml = reusable workflow (on: workflow_call, no pull_request trigger)
         ROOT / ".github/workflows/self-review.yml",
         ROOT / "templates/consumer-workflow-minimal.yml",
-        ROOT / "templates/consumer-workflow.yml",
+        ROOT / "templates/consumer-workflow-reusable.yml",
         ROOT / "templates/triage-workflow.yml",
     ],
 )
@@ -220,7 +220,7 @@ def _has_skip_gate(wf: dict) -> bool:
     [
         ROOT / ".github/workflows/self-review.yml",
         ROOT / "templates/consumer-workflow-minimal.yml",
-        ROOT / "templates/consumer-workflow.yml",
+        ROOT / "templates/consumer-workflow-reusable.yml",
         ROOT / "templates/triage-workflow.yml",
     ],
 )
@@ -629,8 +629,8 @@ jobs:
     findings, _ = validate_workflow_file(wf)
     v1 = _v1_warnings(findings)
     assert v1, "Expected a v1 upgrade warning"
-    assert any("consumer-workflow-minimal.yml" in w.message for w in v1), (
-        "Warning should mention consumer-workflow-minimal.yml"
+    assert any("consumer-workflow-reusable.yml" in w.message for w in v1), (
+        "Warning should mention consumer-workflow-reusable.yml"
     )
 
 

@@ -2,7 +2,38 @@
 
 Multi-agent AI code review for GitHub PRs.
 
-Eight specialized reviewers analyze every pull request in parallel, then Cerberus aggregates their verdicts into a single merge-gating check.
+Cerberus has an 8-reviewer bench, but uses smart routing so most PRs run a focused 5-reviewer panel instead of all 8.
+
+## Quick Start (Reusable Workflow)
+Copy this into `.github/workflows/cerberus.yml`:
+
+```yaml
+name: Cerberus
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+    secrets:
+      api-key: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+Then set one repository secret: `OPENROUTER_API_KEY`.
+
+Prefer scaffolding? Run `npx cerberus init` to install the same reusable template and prompt for the secret.
+
+## Smart Routing (Why 5 reviewers, not 8)
+Cerberus routes each PR to the most relevant panel (default size: 5):
+
+- `trace` (correctness) always runs
+- `guard` (security) is required when non-doc/non-test code changes
+- Remaining slots are selected for relevance (architecture, maintainability, testing, performance, etc.)
+
+This keeps signal high and cost/latency lower while retaining broad bench coverage.
 
 ## Reviewers
 | Codename | Perspective | Focus |
@@ -16,22 +47,12 @@ Eight specialized reviewers analyze every pull request in parallel, then Cerberu
 | fuse | Resilience | Failure handling, retries, graceful degradation |
 | pact | Compatibility | Contract safety, version skew, rollback |
 
-## Quick Start
-1. Install the workflow and secrets in one command:
+## Cost Snapshot
+Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups.
 
-```bash
-npx cerberus init
-```
-
-The command does the following:
-
-- Detects your git repository root.
-- Creates `.github/workflows/cerberus.yml` if missing; leaves differing existing file unchanged.
-- Prompts for `OPENROUTER_API_KEY` (via `gh secret set`) and saves it as a repository secret.
-
-Then commit the new workflow file and open a pull request.
-
-Optional power-user path: use `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml`.
+- Cerberus: 8-perspective bench, usually routed to 5 reviewers per PR
+- Practical monthly spend is typically below a single CodeRabbit seat for small/medium teams
+- Exact spend depends on PR volume, diff size, and configured model tiers
 
 ## Docs
 
@@ -41,6 +62,11 @@ Optional power-user path: use `templates/consumer-workflow-minimal.yml` and `tem
 - Troubleshooting: `docs/TROUBLESHOOTING.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
+
+## Workflow Architecture
+- **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@v2`
+- **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`
+- **Optional:** add `templates/triage-workflow.yml` for automated failure triage
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
@@ -148,8 +174,8 @@ Remove rows from the matrix:
 ```yaml
 matrix:
   include:
-    - { reviewer: APOLLO, perspective: correctness }
-    - { reviewer: SENTINEL, perspective: security }
+    - { reviewer: trace, perspective: correctness }
+    - { reviewer: guard, perspective: security }
 ```
 
 ### Non-blocking reviews
@@ -165,19 +191,19 @@ By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
 Router now emits a `model_tier` (`flash`, `standard`, `pro`) based on diff complexity and route heuristics. The matrix passes that tier into each reviewer so pool-based reviewers draw from `model.tiers.<tier>` before falling back.
 
-Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow.yml` for a full example.
+Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow-minimal.yml` for a full decomposed example.
 
 If you set `model`, Cerberus annotates the run with the configured model it would have used vs the override. Prefer leaving `model` unset to stay in sync with evolving per-reviewer defaults.
 
 ```yaml
 matrix:
   include:
-    - { reviewer: APOLLO,    perspective: correctness,     model: 'openrouter/moonshotai/kimi-k2.5' }
-    - { reviewer: ATHENA,    perspective: architecture,    model: 'openrouter/z-ai/glm-5' }
-    - { reviewer: SENTINEL,  perspective: security,        model: 'openrouter/minimax/minimax-m2.5' }
-    - { reviewer: VULCAN,    perspective: performance,     model: 'openrouter/google/gemini-3-flash-preview' }
-    - { reviewer: ARTEMIS,   perspective: maintainability, model: 'openrouter/moonshotai/kimi-k2.5' }
-    - { reviewer: CASSANDRA, perspective: testing,         model: 'openrouter/google/gemini-3-flash-preview' }
+    - { reviewer: trace, perspective: correctness, model: 'openrouter/moonshotai/kimi-k2.5' }
+    - { reviewer: atlas, perspective: architecture, model: 'openrouter/z-ai/glm-5' }
+    - { reviewer: guard, perspective: security, model: 'openrouter/minimax/minimax-m2.5' }
+    - { reviewer: flux, perspective: performance, model: 'openrouter/google/gemini-3-flash-preview' }
+    - { reviewer: craft, perspective: maintainability, model: 'openrouter/moonshotai/kimi-k2.5' }
+    - { reviewer: proof, perspective: testing, model: 'openrouter/google/gemini-3-flash-preview' }
 ```
 
 If a reviewer's primary model fails with a transient error (429, 5xx, network), it retries with exponential backoff then falls through to the `fallback-models` chain before emitting SKIP.

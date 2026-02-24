@@ -17,7 +17,7 @@ Multi-agent AI PR review. Six parallel reviewers. Single Cerberus verdict gates 
 - agents: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - scripts: `scripts/`
 - templates: `templates/review-prompt.md`
-- consumer template: `templates/consumer-workflow.yml`
+- consumer template: `templates/consumer-workflow-reusable.yml`
 - workflow lint template: `templates/workflow-lint.yml`
 - tests: `tests/`
 - CI: `.github/workflows/ci.yml`

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const TEMPLATE_PATH = path.join(__dirname, '../templates/consumer-workflow.yml');
+const TEMPLATE_PATH = path.join(__dirname, '../templates/consumer-workflow-reusable.yml');
 const DEST_PATH = path.join('.github', 'workflows', 'cerberus.yml');
 
 const command = process.argv[2];

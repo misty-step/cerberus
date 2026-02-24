@@ -2,7 +2,7 @@
 
 Two consumer templates, two permission models:
 
-1. consumer-workflow.yml (reusable workflow caller):
+1. consumer-workflow-reusable.yml (reusable workflow caller):
    - Single `review` job delegates to the Cerberus reusable workflow
    - Job-level permissions: contents: read + pull-requests: write
    - No workflow-level pull-requests: write
@@ -18,12 +18,12 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-REUSABLE_CONSUMER = ROOT / "templates" / "consumer-workflow.yml"
+REUSABLE_CONSUMER = ROOT / "templates" / "consumer-workflow-reusable.yml"
 DECOMPOSED_CONSUMER = ROOT / "templates" / "consumer-workflow-minimal.yml"
 
 
 # ---------------------------------------------------------------------------
-# Reusable workflow consumer (consumer-workflow.yml)
+# Reusable workflow consumer (consumer-workflow-reusable.yml)
 # ---------------------------------------------------------------------------
 
 
@@ -48,7 +48,7 @@ def test_reusable_consumer_review_job_has_required_permissions():
     review_block = re.search(
         r"^  review:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
     )
-    assert review_block is not None, "review job not found in consumer-workflow.yml"
+    assert review_block is not None, "review job not found in consumer-workflow-reusable.yml"
     block = review_block.group(0)
 
     assert re.search(r"contents:\s*read", block), "review job must have contents: read"

@@ -41,11 +41,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - { reviewer: APOLLO, perspective: correctness,      reviewer_label: "Correctness & Logic" }
-          - { reviewer: ATHENA, perspective: architecture,     reviewer_label: "Architecture & Design" }
-          - { reviewer: SENTINEL, perspective: security,        reviewer_label: "Security & Threat Model" }
-          - { reviewer: VULCAN, perspective: performance,       reviewer_label: "Performance & Scalability" }
-          - { reviewer: ARTEMIS, perspective: maintainability,  reviewer_label: "Maintainability & DX" }
+          - { reviewer: trace, perspective: correctness,      reviewer_label: "Correctness" }
+          - { reviewer: atlas, perspective: architecture,     reviewer_label: "Architecture" }
+          - { reviewer: guard, perspective: security,         reviewer_label: "Security" }
+          - { reviewer: craft, perspective: maintainability,  reviewer_label: "Maintainability" }
+          - { reviewer: proof, perspective: testing,          reviewer_label: "Testing" }
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
