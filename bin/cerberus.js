@@ -82,14 +82,15 @@ function writeWorkflow(repoRoot, template) {
 
 function setSecret(repoRoot, keySource) {
   const args = ['secret', 'set', 'OPENROUTER_API_KEY'];
+  const isEnv = keySource.kind === 'env';
   const options = {
     cwd: repoRoot,
     encoding: 'utf8',
-    stdio: ['inherit', 'inherit', 'pipe'],
+    stdio: [isEnv ? 'pipe' : 'inherit', 'inherit', 'pipe'],
   };
 
-  if (keySource.kind === 'env') {
-    args.push('--body', keySource.value);
+  if (isEnv) {
+    options.input = keySource.value;
   }
 
   const result = spawnSync('gh', args, options);
@@ -108,10 +109,10 @@ async function initCommand() {
   requireBinary('gh');
 
   const repoRoot = getRepoRoot();
+  const keySource = await readApiKeySource();
   const template = await readTemplate();
   const { changed, skipped, dest } = writeWorkflow(repoRoot, template);
 
-  const keySource = await readApiKeySource();
   setSecret(repoRoot, keySource);
 
   if (changed) {

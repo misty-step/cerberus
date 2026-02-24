@@ -99,7 +99,10 @@ def test_init_creates_workflow_when_missing(tmp_path: Path) -> None:
     assert workflow.exists()
     assert workflow.read_text() == TEMPLATE
     assert "Created .github/workflows/cerberus.yml" in result.stdout
-    assert "--body env-key" in calls_file.read_text()
+    gh_call = calls_file.read_text()
+    assert "secret set OPENROUTER_API_KEY" in gh_call
+    assert "--body" not in gh_call
+    assert "env-key" not in gh_call
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
@@ -130,7 +133,10 @@ def test_init_preserves_custom_existing_workflow(tmp_path: Path) -> None:
     assert custom_workflow.read_text() == "name: Custom Cerberus\n"
     assert "Left unchanged: .github/workflows/cerberus.yml" in result.stdout
     assert "No workflow file changes to commit." in result.stdout
-    assert "--body env-key" in calls_file.read_text()
+    gh_call = calls_file.read_text()
+    assert "secret set OPENROUTER_API_KEY" in gh_call
+    assert "--body" not in gh_call
+    assert "env-key" not in gh_call
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")

@@ -10,7 +10,9 @@
   },
   "files": [
     "bin/cerberus.js",
-    "templates/consumer-workflow.yml"
+    "templates/consumer-workflow.yml",
+    "templates/consumer-workflow-minimal.yml",
+    "templates/workflow-lint.yml"
   ],
   "license": "Apache-2.0",
   "engines": {
