@@ -102,8 +102,9 @@ Run one real reviewer locally (requires credentials and OpenCode CLI):
 export CERBERUS_ROOT="$PWD"
 export OPENROUTER_API_KEY="<your-openrouter-api-key>"
 export GH_TOKEN="$(gh auth token)"
-gh pr diff <pr-number> > /tmp/pr.diff
-gh pr view <pr-number> --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
+export GITHUB_REPOSITORY="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+gh pr diff <pr-number> --repo "$GITHUB_REPOSITORY" > /tmp/pr.diff
+gh pr view <pr-number> --repo "$GITHUB_REPOSITORY" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
 export GH_DIFF_FILE=/tmp/pr.diff
 export GH_PR_CONTEXT=/tmp/pr-context.json
 export OPENCODE_MODEL="openrouter/moonshotai/kimi-k2.5"
