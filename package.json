@@ -1,0 +1,21 @@
+{
+  "name": "cerberus",
+  "version": "0.0.0",
+  "description": "Cerberus workflow scaffolder CLI",
+  "bin": {
+    "cerberus": "./bin/cerberus.js"
+  },
+  "scripts": {
+    "test": "node --check bin/cerberus.js"
+  },
+  "files": [
+    "bin/cerberus.js",
+    "templates/consumer-workflow.yml",
+    "templates/consumer-workflow-minimal.yml",
+    "templates/workflow-lint.yml"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16"
+  }
+}

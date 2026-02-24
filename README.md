@@ -17,94 +17,21 @@ Eight specialized reviewers analyze every pull request in parallel, then Cerberu
 | pact | Compatibility | Contract safety, version skew, rollback |
 
 ## Quick Start
-1. Add one secret to your repository (Settings -> Secrets -> Actions):
-   - `OPENROUTER_API_KEY` — get one at [openrouter.ai](https://openrouter.ai)
+1. Install the workflow and secrets in one command:
 
-2. Create `.github/workflows/cerberus.yml`:
-
-```yaml
-name: Cerberus
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-
-concurrency:
-  group: cerberus-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-jobs:
-  draft-check:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    outputs:
-      is_draft: ${{ steps.draft.outputs.is_draft }}
-    steps:
-      - uses: misty-step/cerberus/draft-check@v2
-        id: draft
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-  validate:
-    needs: draft-check
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: misty-step/cerberus/validate@v2
-
-  matrix:
-    needs: validate
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    steps:
-      - uses: misty-step/cerberus/matrix@v2
-        id: generate
-
-  review:
-    needs: [matrix, draft-check]
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.draft-check.outputs.is_draft != 'true'
-    permissions:
-      contents: read
-      pull-requests: read
-    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v2
-        with:
-          perspective: ${{ matrix.perspective }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          comment-policy: 'never'
-          timeout: '600'
-
-  verdict:
-    name: "Cerberus Verdict"
-    needs: [review, draft-check]
-    if: always() && needs.review.result != 'skipped' && needs.draft-check.outputs.is_draft != 'true'
-    permissions:
-      contents: read
-      pull-requests: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: misty-step/cerberus/verdict@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+```bash
+npx cerberus init
 ```
 
-Tip: copy `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml` (optional) instead of hand-editing YAML.
+The command does the following:
 
-3. Open a pull request. That's it.
+- Detects your git repository root.
+- Creates `.github/workflows/cerberus.yml` if missing; leaves differing existing file unchanged.
+- Prompts for `OPENROUTER_API_KEY` (via `gh secret set`) and saves it as a repository secret.
+
+Then commit the new workflow file and open a pull request.
+
+Optional power-user path: use `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml`.
 
 ## Docs
 
