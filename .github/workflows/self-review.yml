@@ -60,8 +60,8 @@ jobs:
       count: ${{ steps.generate.outputs.count }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./matrix
-      id: generate
+      - id: generate
+        uses: ./matrix
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}

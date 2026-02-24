@@ -75,6 +75,7 @@ runs:
       run: |
         if [[ ! -f /tmp/router-output.json ]]; then
           echo "::warning::router output not found; using empty defaults"
+          echo "::warning::model-tier defaulting to standard because router output is missing"
           echo 'panel=[]' >> "$GITHUB_OUTPUT"
           echo 'routing-used=false' >> "$GITHUB_OUTPUT"
           echo 'model-tier=standard' >> "$GITHUB_OUTPUT"

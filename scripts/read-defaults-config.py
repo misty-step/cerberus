@@ -7,7 +7,7 @@ Commands:
   reviewer-meta  Print: <name>\t<model>\t<description> for a perspective
   model-default  Print: model.default (or empty)
   model-pool     Print: model.pool entries (one per line)
-  model-pool-for-tier  Print: model.tiers.<tier> entries (one per line)
+  model-pool-for-tier  Print: model.tiers.<tier> entries (one per line, requires --tier)
 """
 
 from __future__ import annotations
@@ -84,7 +84,10 @@ def main(argv: list[str]) -> int:
     if args.cmd == "model-pool-for-tier":
         tier = str(args.tier).strip().lower()
         if not tier:
-            print("defaults config error: --tier must be non-empty", file=sys.stderr)
+            print(
+                "defaults config error (model-pool-for-tier): --tier must be non-empty",
+                file=sys.stderr,
+            )
             return 2
         tier_pool = cfg.model.tiers.get(tier, [])
         for item in tier_pool:

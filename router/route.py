@@ -604,7 +604,10 @@ def main() -> int:
         if forced_panel:
             write_output(forced_panel, False, "forced", MODEL_TIER_STANDARD)
             return 0
-        warn("Forced reviewers input was set but no valid reviewers were resolved; using fallback panel")
+        warn(
+            "Forced reviewers input was set but no valid reviewers were resolved; "
+            "using fallback panel and model tier standard"
+        )
         write_output(fallback_panel, False, "fallback", MODEL_TIER_STANDARD)
         return 0
 

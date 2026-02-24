@@ -43,17 +43,7 @@ runs:
           exit 1
         fi
 
-        routing_enabled="$(python3 - <<'PY'
-import yaml
-
-with open("${config_file}", "r", encoding="utf-8") as f:
-    cfg = yaml.safe_load(f) or {}
-
-routing = cfg.get("routing", {}) or {}
-enabled = routing.get("enabled", False)
-print(str(bool(enabled)).lower())
-PY
-        )"
+        routing_enabled="$(python3 -c 'import sys,yaml; cfg=yaml.safe_load(open(sys.argv[1], "r", encoding="utf-8")) or {}; routing=cfg.get("routing", {}) or {}; print(str(bool(routing.get("enabled", False))).lower())' "$config_file")"
 
         if [[ "${PANEL_FILTER:-}" == "" || "${PANEL_FILTER:-}" == "[]" ]]; then
           if [[ "$routing_enabled" == "true" ]]; then

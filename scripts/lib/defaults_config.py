@@ -146,7 +146,7 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
         if tiers_raw is not None:
             tiers_map = _require_mapping(tiers_raw, "config.model.tiers")
             for tier, models in tiers_map.items():
-                tier_name = _require_str(tier, f"config.model.tiers key")
+                tier_name = _require_str(tier, f"config.model.tiers key '{tier}'")
                 tiers[tier_name] = _require_str_list(models, f"config.model.tiers[{tier_name}]")
         model = ModelConfig(default=model_default, pool=pool, tiers=tiers)
 

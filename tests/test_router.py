@@ -583,7 +583,7 @@ class TestMainIntegration:
             "correctness", "security", "architecture", "resilience", "compatibility"
         ]
         assert result["routing_used"] is True
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     @mock.patch("route.call_router")
     def test_invalid_router_output_falls_back(self, mock_call: mock.Mock,
@@ -599,7 +599,7 @@ class TestMainIntegration:
         })
         assert len(result["panel"]) == 5
         assert result["routing_used"] is False
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     @mock.patch("route.call_router")
     def test_wrong_panel_size_falls_back(self, mock_call: mock.Mock,
@@ -618,7 +618,7 @@ class TestMainIntegration:
         })
         assert len(result["panel"]) == 5
         assert result["routing_used"] is False
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     @mock.patch("route.call_router")
     def test_missing_required_reviewer_falls_back(self, mock_call: mock.Mock,
@@ -637,7 +637,7 @@ class TestMainIntegration:
         })
         assert result["routing_used"] is False
         assert "correctness" in result["panel"]
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     @mock.patch("route.call_router")
     def test_api_returns_none(self, mock_call: mock.Mock,
@@ -652,7 +652,7 @@ class TestMainIntegration:
         })
         assert result["routing_used"] is False
         assert len(result["panel"]) == 5
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     def test_invalid_forced_reviewers_uses_fallback(self, cerberus_root: Path, diff_file: Path) -> None:
         result = self._run_main({

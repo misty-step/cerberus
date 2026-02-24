@@ -233,21 +233,23 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
     fi
   done
 
+  pool_selection_note=""
   if [[ -n "$_found_tier" ]]; then
     if [[ "${_found_tier}" == "$requested_tier" ]]; then
-      echo "Selected random model from ${_found_tier} tier pool for ${reviewer_name}."
+      pool_selection_note="Selected random model from ${_found_tier} tier pool for ${reviewer_name}."
     elif [[ "${_found_tier}" == "standard" ]]; then
       if [[ "$requested_tier" != "standard" ]]; then
-        echo "Tier '${requested_tier}' had no models; falling back to standard tier pool for ${reviewer_name}."
+        pool_selection_note="Tier '${requested_tier}' had no models; falling back to standard tier pool for ${reviewer_name}."
       else
-        echo "Selected random model from ${_found_tier} tier pool for ${reviewer_name}."
+        pool_selection_note="Selected random model from ${_found_tier} tier pool for ${reviewer_name}."
       fi
     else
-      echo "Selected random model from unscoped pool for ${reviewer_name}."
+      pool_selection_note="Selected random model from unscoped pool for ${reviewer_name}."
     fi
   else
-    echo "Selected random model from unscoped pool for ${reviewer_name}."
+    pool_selection_note="Selected random model from unscoped pool for ${reviewer_name}."
   fi
+  echo "::notice::${pool_selection_note}"
 
   if [[ ${#model_pool[@]} -gt 0 ]]; then
     if command -v shuf >/dev/null 2>&1; then
@@ -256,9 +258,9 @@ if [[ "${reviewer_model_raw:-}" == "pool" ]]; then
       idx=$((RANDOM % ${#model_pool[@]}))
       reviewer_model_raw="${model_pool[$idx]}"
     fi
-    echo "Selected random model from pool: $reviewer_model_raw"
+    echo "::notice::Selected random model from pool: $reviewer_model_raw"
   else
-    echo "Warning: reviewer uses 'pool' but no pool defined. Falling back to default."
+    echo "::warning::Reviewer uses 'pool' but no pool defined. Falling back to default."
     reviewer_model_raw=""
   fi
 fi

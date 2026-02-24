@@ -80,8 +80,8 @@ jobs:
       matrix: ${{ steps.generate.outputs.matrix }}
       count: ${{ steps.generate.outputs.count }}
     steps:
-      - uses: misty-step/cerberus/matrix@v2
-      id: generate
+      - id: generate
+        uses: misty-step/cerberus/matrix@v2
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
