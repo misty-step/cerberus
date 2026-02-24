@@ -51,11 +51,11 @@ echo "PASS: Synthetic config produces correct matrix"
 with_tier_output="$(MODEL_TIER=flash python3 "$SCRIPT" "$test_config")"
 with_tier_matrix=$(echo "$with_tier_output" | sed -n '1p')
 
-if ! printf '%s' "$with_tier_matrix" | python3 - <<'PY'
+if ! python3 - "$with_tier_matrix" <<'PY'
 import json
 import sys
 
-payload = json.loads(sys.stdin.read())
+payload = json.loads(sys.argv[1])
 missing = [item for item in payload["include"] if item.get("model_tier") != "flash"]
 if missing:
     sys.exit(1)
