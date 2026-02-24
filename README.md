@@ -33,8 +33,6 @@ Then commit the new workflow file and open a pull request.
 
 Optional power-user path: use `templates/consumer-workflow-minimal.yml` and `templates/workflow-lint.yml`.
 
-2. Open a pull request. That's it.
-
 ## Docs
 
 - Migration guide (v1 → v2): `docs/MIGRATION.md`
