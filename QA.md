@@ -42,7 +42,7 @@ Create a test PR and verify the full Cerberus review:
 
 1. Create a test repository or use an existing one
 2. Add the `OPENROUTER_API_KEY` secret to the repo
-3. Copy `templates/consumer-workflow.yml` to `.github/workflows/cerberus.yml`
+3. Copy `templates/consumer-workflow-reusable.yml` to `.github/workflows/cerberus.yml`
 4. Open a PR with meaningful code changes
 5. Verify:
    - 6 reviewer jobs spawn (APOLLO, ATHENA, SENTINEL, VULCAN, ARTEMIS, CASSANDRA)

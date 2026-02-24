@@ -77,7 +77,7 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `.opencode/agents/<perspective>.md` - OpenCode agent config (YAML frontmatter) + system prompt (body)
 - `opencode.json` - OpenCode CLI config (provider, model, permissions)
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
-- `templates/consumer-workflow.yml` - recommended workflow for downstream repositories
+- `templates/consumer-workflow-reusable.yml` - recommended workflow for downstream repositories
 - `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
 - `scripts/run-reviewer.sh` - orchestrates one reviewer: builds prompt, invokes `opencode run`
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
@@ -153,6 +153,6 @@ End-to-end testing requires pushing to a branch and having a target repo use `mi
 
 ## Deployment
 
-Consumers reference this repo as a GitHub Action. See `templates/consumer-workflow.yml` for the recommended setup. The only required secret is `OPENROUTER_API_KEY`.
+Consumers reference this repo as a GitHub Action. See `templates/consumer-workflow-reusable.yml` for the recommended setup. The only required secret is `OPENROUTER_API_KEY`.
 
 Tagged releases follow semver. Consumers pin to `@v2` for automatic patch updates.

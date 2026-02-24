@@ -17,7 +17,7 @@
 #         api-key: ${{ secrets.OPENROUTER_API_KEY }}
 #
 # Inputs and the decomposed-pipeline power-user option:
-#   See templates/consumer-workflow.yml (recommended) and
+#   See templates/consumer-workflow-reusable.yml (recommended) and
 #   templates/consumer-workflow-minimal.yml (decomposed pipeline)
 name: Cerberus AI Code Review
 

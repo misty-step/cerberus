@@ -63,7 +63,7 @@ jobs:
       api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-Or copy `templates/consumer-workflow.yml` from this repo.
+Or copy `templates/consumer-workflow-reusable.yml` from this repo.
 
 **Power-user path** (full job control) — use `templates/consumer-workflow-minimal.yml`.
 

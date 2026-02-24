@@ -228,7 +228,7 @@ All models in the pool, randomly assigned per run. Gemini 3.1 Pro stays — powe
 | File | Change |
 |------|--------|
 | README.md | Update bench table (8 reviewers, new codenames), remove "Council" references |
-| templates/consumer-workflow.yml | Already clean (`name: Cerberus`), update matrix to 8 reviewers |
+| templates/consumer-workflow-reusable.yml | Already clean (`name: Cerberus`), update matrix to 8 reviewers |
 | defaults/config.yml | Remove 4 reviewers, update `council_verdict:` key to `verdict:` |
 
 ### Router Updates (A8)
