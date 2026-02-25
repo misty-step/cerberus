@@ -130,6 +130,7 @@ def test_init_accepts_legacy_openrouter_env_key(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     gh_call = calls_file.read_text()
     assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
+    assert "secret set OPENROUTER_API_KEY" not in gh_call
     assert "legacy-env-key" not in gh_call
 
 
