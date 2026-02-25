@@ -11,3 +11,6 @@ healthy
 unhealthy
 
 .flywheel/
+
+.env*
+!.env.example
