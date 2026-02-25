@@ -10,6 +10,9 @@ MINIMAL_TEMPLATE = ROOT / "templates" / "consumer-workflow-minimal.yml"
 
 def test_reusable_workflow_route_fetches_diff_with_repo_flag() -> None:
     content = REUSABLE_WORKFLOW.read_text()
+    assert 'REPO: ${{ github.repository }}' in content, (
+        "Reusable workflow route job must define REPO env var"
+    )
     assert 'gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO"' in content, (
         "Reusable workflow route job must pass --repo to gh pr diff"
     )
@@ -17,6 +20,9 @@ def test_reusable_workflow_route_fetches_diff_with_repo_flag() -> None:
 
 def test_self_review_workflow_route_fetches_diff_with_repo_flag() -> None:
     content = SELF_REVIEW_WORKFLOW.read_text()
+    assert 'REPO: ${{ github.repository }}' in content, (
+        "Self-review workflow route job must define REPO env var"
+    )
     assert 'gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO"' in content, (
         "Self-review workflow route job must pass --repo to gh pr diff"
     )
@@ -24,6 +30,9 @@ def test_self_review_workflow_route_fetches_diff_with_repo_flag() -> None:
 
 def test_decomposed_template_fetches_diff_with_repo_flag() -> None:
     content = MINIMAL_TEMPLATE.read_text()
+    assert 'REPO: ${{ github.repository }}' in content, (
+        "Decomposed consumer template route job must define REPO env var"
+    )
     assert 'gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO"' in content, (
         "Decomposed consumer template should pass --repo to gh pr diff for robustness"
     )
