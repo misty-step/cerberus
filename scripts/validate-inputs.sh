@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-resolved_key="${INPUT_API_KEY:-}"
+resolved_key="$(echo "${INPUT_API_KEY:-}" | xargs)"
 if [[ -z "$resolved_key" ]]; then
   if [[ -n "${INPUT_KIMI_API_KEY:-}" ]]; then
-    resolved_key="${INPUT_KIMI_API_KEY}"
+    resolved_key="$(echo "${INPUT_KIMI_API_KEY}" | xargs)"
     invoked_ref="${GITHUB_ACTION_REF:-v2}"
     cat >&2 <<EOF
 ::warning::Input 'kimi-api-key' is deprecated and will be removed in a future release. Migrate to 'api-key' (OpenRouter key).
@@ -12,17 +12,20 @@ if [[ -z "$resolved_key" ]]; then
 Migration (recommended):
 - uses: misty-step/cerberus@${invoked_ref}
   with:
-    api-key: \${{ secrets.OPENROUTER_API_KEY }}
+    api-key: \${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 
 The 'kimi-api-key' alias continues to work for backward compatibility but may be removed in v3.
 EOF
   fi
 fi
 if [[ -z "$resolved_key" ]]; then
-  resolved_key="${CERBERUS_API_KEY:-}"
+  resolved_key="$(echo "${CERBERUS_API_KEY:-}" | xargs)"
 fi
 if [[ -z "$resolved_key" ]]; then
-  resolved_key="${OPENROUTER_API_KEY:-}"
+  resolved_key="$(echo "${CERBERUS_OPENROUTER_API_KEY:-}" | xargs)"
+fi
+if [[ -z "$resolved_key" ]]; then
+  resolved_key="$(echo "${OPENROUTER_API_KEY:-}" | xargs)"
 fi
 
 if [[ -z "$resolved_key" ]]; then
@@ -34,7 +37,8 @@ Provide one of:
 1) with: api-key  (recommended)
 2) with: kimi-api-key  (deprecated alias)
 3) env: CERBERUS_API_KEY  (job-level env only)
-4) env: OPENROUTER_API_KEY  (job-level env only)
+4) env: CERBERUS_OPENROUTER_API_KEY  (job-level env only)
+5) env: OPENROUTER_API_KEY  (job-level env only, legacy)
 
 Note: step-level env: does NOT propagate into composite actions.
 Use 'with: api-key' or set env at the job level.
@@ -42,10 +46,11 @@ Use 'with: api-key' or set env at the job level.
 Example:
 - uses: misty-step/cerberus@${invoked_ref}
   with:
-    api-key: \${{ secrets.OPENROUTER_API_KEY }}
+    api-key: \${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 EOF
   exit 1
 fi
 
 echo "::add-mask::$resolved_key"
+echo "CERBERUS_OPENROUTER_API_KEY=$resolved_key" >> "$GITHUB_ENV"
 echo "OPENROUTER_API_KEY=$resolved_key" >> "$GITHUB_ENV"

@@ -14,7 +14,7 @@ inputs:
     description: 'GitHub token for PR comments'
     required: true
   api-key:
-    description: 'OpenRouter API key (optional if CERBERUS_API_KEY or OPENROUTER_API_KEY env is set)'
+    description: 'OpenRouter API key (optional if CERBERUS_API_KEY, CERBERUS_OPENROUTER_API_KEY, or OPENROUTER_API_KEY env is set)'
     required: false
   kimi-api-key:
     description: 'Deprecated alias for api-key (OpenRouter API key)'
@@ -100,6 +100,7 @@ runs:
         INPUT_API_KEY: ${{ inputs.api-key }}
         INPUT_KIMI_API_KEY: ${{ inputs.kimi-api-key }}
         CERBERUS_API_KEY: ${{ env.CERBERUS_API_KEY }}
+        CERBERUS_OPENROUTER_API_KEY: ${{ env.CERBERUS_OPENROUTER_API_KEY }}
         OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/validate-inputs.sh"

@@ -27,7 +27,7 @@ def test_preflight_action_checks_fork_then_draft_then_api_key() -> None:
     assert 'if [ "$IS_DRAFT" = "true" ]' in content
     assert 'echo "skip_reason=draft" >> "$GITHUB_OUTPUT"' in content
 
-    assert 'if [ -z "$API_KEY" ]' in content
+    assert 'if [ -z "$API_KEY" ] && [ -z "$CERBERUS_API_KEY" ] && [ -z "$CERBERUS_OPENROUTER_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ]' in content
     assert 'echo "skip_reason=missing_api_key" >> "$GITHUB_OUTPUT"' in content
 
     assert 'echo "should_run=true" >> "$GITHUB_OUTPUT"' in content
@@ -36,7 +36,7 @@ def test_preflight_action_checks_fork_then_draft_then_api_key() -> None:
     # Verify check order: fork → draft → API key (matches function name)
     fork_idx = content.index('if [ "$HEAD_REPO" != "$BASE_REPO" ]')
     draft_idx = content.index('if [ "$IS_DRAFT" = "true" ]')
-    api_key_idx = content.index('if [ -z "$API_KEY" ]')
+    api_key_idx = content.index('if [ -z "$API_KEY" ] && [ -z "$CERBERUS_API_KEY" ] && [ -z "$CERBERUS_OPENROUTER_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ]')
     assert fork_idx < draft_idx < api_key_idx, "Checks must be in order: fork → draft → API key"
 
 

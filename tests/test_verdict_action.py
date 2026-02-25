@@ -87,7 +87,8 @@ def test_action_reads_configured_model_file_when_present() -> None:
 def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
-    assert "api-key: ${{ secrets.OPENROUTER_API_KEY }}" in content
+    assert "api-key:" in content
+    assert "CERBERUS_OPENROUTER_API_KEY" in content
 
 
 def test_workflow_templates_use_current_major_version() -> None:
@@ -106,10 +107,10 @@ def test_workflow_templates_use_current_major_version() -> None:
     assert "uses: misty-step/cerberus/triage@v2" in triage
 
 
-def test_readme_quick_start_uses_openrouter_secret_name() -> None:
+def test_readme_quick_start_uses_cerberus_openrouter_secret_name() -> None:
     content = README_FILE.read_text()
 
-    assert "OPENROUTER_API_KEY" in content
+    assert "CERBERUS_OPENROUTER_API_KEY" in content
     assert "MOONSHOT_API_KEY" not in content
 
 

@@ -53,7 +53,7 @@ jobs:
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
           timeout: '600'
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 

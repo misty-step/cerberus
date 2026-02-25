@@ -21,7 +21,7 @@ v1 is EOL — no further patches or features. v2 ships:
 | Area | v1 | v2 |
 |------|----|----|
 | CLI runtime | KimiCode CLI | OpenCode CLI |
-| Required secret | `MOONSHOT_API_KEY` | `OPENROUTER_API_KEY` |
+| Required secret | `MOONSHOT_API_KEY` | `CERBERUS_OPENROUTER_API_KEY` |
 | Action input | `kimi-api-key` | `api-key` |
 | Skip-condition gate | `draft-check` | `preflight` (fork + draft + missing key) |
 | Reviewer panel | Fixed 6 | Smart-routed, up to 8 available |
@@ -35,7 +35,7 @@ v1 is EOL — no further patches or features. v2 ships:
 
 In your repository: **Settings → Secrets and variables → Actions → New repository secret**
 
-- Name: `OPENROUTER_API_KEY`
+- Name: `CERBERUS_OPENROUTER_API_KEY`
 - Value: get one at [openrouter.ai](https://openrouter.ai) (free tier available)
 
 ### 2. Replace your workflow
@@ -60,7 +60,7 @@ jobs:
       contents: read
       pull-requests: write
     secrets:
-      api-key: ${{ secrets.OPENROUTER_API_KEY }}
+      api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 ```
 
 Or copy `templates/consumer-workflow-reusable.yml` from this repo.
@@ -78,7 +78,7 @@ with:
 
 # after (v2)
 with:
-  api-key: ${{ secrets.OPENROUTER_API_KEY }}
+  api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 ```
 
 ### 4. Test on a non-default branch first
@@ -95,7 +95,7 @@ Push to a branch and open a PR against it. Confirm the Cerberus jobs appear and 
 ## Common Issues
 
 **Jobs are skipped with "missing API key"**
-: The secret name changed. Ensure `OPENROUTER_API_KEY` is set (not `MOONSHOT_API_KEY`).
+: The secret name changed. Ensure `CERBERUS_OPENROUTER_API_KEY` is set (not `MOONSHOT_API_KEY` / legacy `OPENROUTER_API_KEY`).
 
 **`kimi-api-key` input not recognized**
 : Rename to `api-key` in your workflow `with:` block.

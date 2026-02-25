@@ -100,7 +100,8 @@ Run one real reviewer locally (requires credentials and OpenCode CLI):
 
 ```bash
 export CERBERUS_ROOT="$PWD"
-export OPENROUTER_API_KEY="<your-openrouter-api-key>"
+export CERBERUS_OPENROUTER_API_KEY="<your-openrouter-api-key>"
+export OPENROUTER_API_KEY="$CERBERUS_OPENROUTER_API_KEY"  # optional legacy alias
 export GH_TOKEN="$(gh auth token)"
 export GITHUB_REPOSITORY="$(gh repo view --jq .nameWithOwner)"
 gh pr diff <pr-number> --repo "$GITHUB_REPOSITORY" > /tmp/pr.diff
@@ -197,7 +198,7 @@ as the baseline workflow:
 
 ### Required Secrets and Permissions
 
-- `OPENROUTER_API_KEY` secret in the consumer repository.
+- `CERBERUS_OPENROUTER_API_KEY` secret in the consumer repository.
 - `GITHUB_TOKEN` is provided by GitHub Actions.
 - Use the least-privilege permissions split shown in the template.
 

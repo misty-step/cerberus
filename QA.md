@@ -31,7 +31,7 @@ yamllint .
 ## Prerequisites
 
 - GitHub repository with Actions enabled
-- `OPENROUTER_API_KEY` secret (get at [openrouter.ai](https://openrouter.ai))
+- `CERBERUS_OPENROUTER_API_KEY` secret (get at [openrouter.ai](https://openrouter.ai))
 - Optional: `ANTHROPIC_AUTH_TOKEN` for Claude models
 - GitHub CLI (`gh`) authenticated for testing
 
@@ -41,7 +41,7 @@ yamllint .
 Create a test PR and verify the full Cerberus review:
 
 1. Create a test repository or use an existing one
-2. Add the `OPENROUTER_API_KEY` secret to the repo
+2. Add the `CERBERUS_OPENROUTER_API_KEY` secret to the repo
 3. Copy `templates/consumer-workflow-reusable.yml` to `.github/workflows/cerberus.yml`
 4. Open a PR with meaningful code changes
 5. Verify:
@@ -130,7 +130,7 @@ Test the triage module:
 
 | Issue | Likely Cause | Fix |
 |-------|--------------|-----|
-| All reviews SKIP | API key missing or invalid | Check `OPENROUTER_API_KEY` secret |
+| All reviews SKIP | API key missing or invalid | Check `CERBERUS_OPENROUTER_API_KEY` secret |
 | Verdict never runs | Missing `needs: review` | Add dependency in workflow |
 | No comments on PR | `comment-policy: 'never'` | Set to `non-pass` or `always` |
 | Fork PR fails | Fork security | Use `if: github.event.pull_request.head.repo.full_name == github.repository` |
