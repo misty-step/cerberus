@@ -111,7 +111,7 @@ Optional fields added by the pipeline:
 ## OpenCode CLI
 
 - Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool` each run.
-- Env vars: `OPENROUTER_API_KEY`
+- Env vars: `CERBERUS_OPENROUTER_API_KEY` (preferred), `OPENROUTER_API_KEY` (legacy)
 - Agent config: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
 - CLI config: `opencode.json` at repo root (auto-discovered)
 - Invocation: `opencode run -m <model> --agent <perspective> "<prompt>"`
@@ -153,6 +153,6 @@ End-to-end testing requires pushing to a branch and having a target repo use `mi
 
 ## Deployment
 
-Consumers reference this repo as a GitHub Action. See `templates/consumer-workflow-reusable.yml` for the recommended setup. The only required secret is `OPENROUTER_API_KEY`.
+Consumers reference this repo as a GitHub Action. See `templates/consumer-workflow-reusable.yml` for the recommended setup. The only required secret is `CERBERUS_OPENROUTER_API_KEY`.
 
 Tagged releases follow semver. Consumers pin to `@v2` for automatic patch updates.

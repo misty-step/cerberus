@@ -11,6 +11,7 @@ def run_validator(env_extra: dict[str, str], github_env: Path) -> tuple[int, str
     env.pop("INPUT_API_KEY", None)
     env.pop("INPUT_KIMI_API_KEY", None)
     env.pop("CERBERUS_API_KEY", None)
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
     env.pop("OPENROUTER_API_KEY", None)
     env.update(env_extra)
 
@@ -31,6 +32,7 @@ def test_prefers_explicit_input_key(tmp_path: Path) -> None:
         {
             "INPUT_API_KEY": "input-key",
             "CERBERUS_API_KEY": "cerberus-key",
+            "CERBERUS_OPENROUTER_API_KEY": "cerberus-openrouter-key",
             "OPENROUTER_API_KEY": "openrouter-key",
         },
         tmp_path / "github.env",
@@ -50,6 +52,16 @@ def test_uses_cerberus_env_fallback(tmp_path: Path) -> None:
     assert "OPENROUTER_API_KEY=cerberus-key" in github_env
 
 
+def test_uses_cerberus_openrouter_env_fallback(tmp_path: Path) -> None:
+    code, _out, _err, github_env = run_validator(
+        {"CERBERUS_OPENROUTER_API_KEY": "cerberus-openrouter-key"},
+        tmp_path / "github.env",
+    )
+
+    assert code == 0
+    assert "OPENROUTER_API_KEY=cerberus-openrouter-key" in github_env
+
+
 def test_uses_openrouter_env_fallback(tmp_path: Path) -> None:
     code, _out, _err, github_env = run_validator(
         {"OPENROUTER_API_KEY": "openrouter-key"},
@@ -66,6 +78,7 @@ def test_fails_with_clear_message_when_no_key(tmp_path: Path) -> None:
     assert code != 0
     assert "Missing API key for Cerberus review" in err
     assert "CERBERUS_API_KEY" in err
+    assert "CERBERUS_OPENROUTER_API_KEY" in err
     assert "OPENROUTER_API_KEY" in err
 
 

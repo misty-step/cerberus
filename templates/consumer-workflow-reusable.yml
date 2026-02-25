@@ -2,7 +2,7 @@
 # https://github.com/misty-step/cerberus
 #
 # Drop this file into .github/workflows/cerberus.yml in your repository.
-# Set OPENROUTER_API_KEY in your repository secrets and you're done.
+# Set CERBERUS_OPENROUTER_API_KEY in your repository secrets and you're done.
 #
 # Optional inputs:
 #   timeout:     Max seconds per reviewer (default: 600)
@@ -22,7 +22,7 @@
 #         context: "Single-user personal finance app. Data bounded to ~500 tx/year."
 #         timeout: 900
 #       secrets:
-#         api-key: ${{ secrets.OPENROUTER_API_KEY }}
+#         api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 #
 # Power-user option (decomposed pipeline with full control):
 #   See templates/consumer-workflow-minimal.yml
@@ -43,4 +43,4 @@ jobs:
       contents: read
       pull-requests: write
     secrets:
-      api-key: ${{ secrets.OPENROUTER_API_KEY }}
+      api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}

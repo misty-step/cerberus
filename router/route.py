@@ -582,7 +582,10 @@ def main() -> int:
     diff_file = os.getenv("DIFF_FILE", "")
     routing = clean_token(os.getenv("ROUTING", "enabled"))
     forced_reviewers = os.getenv("FORCED_REVIEWERS", "")
-    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    api_key = (
+        os.getenv("OPENROUTER_API_KEY", "").strip()
+        or os.getenv("CERBERUS_OPENROUTER_API_KEY", "").strip()
+    )
 
     try:
         cfg = load_config(cerberus_root)
@@ -619,7 +622,7 @@ def main() -> int:
         return 0
 
     if not api_key:
-        warn("OPENROUTER_API_KEY missing; routing skipped")
+        warn("OPENROUTER_API_KEY/CERBERUS_OPENROUTER_API_KEY missing; routing skipped")
         write_output(fallback_panel, False, "fallback", MODEL_TIER_STANDARD)
         return 0
 

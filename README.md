@@ -19,10 +19,10 @@ jobs:
   review:
     uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
     secrets:
-      api-key: ${{ secrets.OPENROUTER_API_KEY }}
+      api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 ```
 
-Then set one repository secret: `OPENROUTER_API_KEY`.
+Then set one repository secret: `CERBERUS_OPENROUTER_API_KEY`.
 
 Prefer scaffolding? Run `npx cerberus init` to install the same reusable template and prompt for the secret.
 
@@ -96,7 +96,7 @@ Use `templates/triage-workflow.yml` to enable:
 Cerberus supports both same-repo and fork PRs with appropriate security handling:
 
 ### Same-Repo PRs
-Full Cerberus review runs with full access to the `OPENROUTER_API_KEY` secret.
+Full Cerberus review runs with full access to the `CERBERUS_OPENROUTER_API_KEY` secret.
 
 ### Fork PRs
 - Fork PRs trigger the workflow but skip the review jobs
@@ -112,7 +112,7 @@ This prevents confusing failures when secret-dependent operations can't access t
 |-------|----------|---------|-------------|
 | `perspective` | yes | - | Review perspective |
 | `github-token` | yes | - | GitHub token for PR comments |
-| `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY` or `OPENROUTER_API_KEY` env is set) |
+| `api-key` | no | - | OpenRouter API key (optional if `CERBERUS_API_KEY`, `CERBERUS_OPENROUTER_API_KEY`, or `OPENROUTER_API_KEY` env is set) |
 | `kimi-api-key` | no | - | Deprecated alias for `api-key` (OpenRouter API key) |
 | `context` | no | `''` | Maintainer-provided project context injected into the reviewer prompt (do not include secrets) |
 | `model` | no | `defaults/config.yml` | Model override (else per-reviewer config, then `model.default`) |
@@ -218,7 +218,7 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
 
 ## Requirements
 - GitHub repository with Actions enabled
-- One secret: `OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
+- One secret: `CERBERUS_OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
 - Permissions: `pull-requests: read` on review jobs, `pull-requests: write` on verdict job only
 
 ## License

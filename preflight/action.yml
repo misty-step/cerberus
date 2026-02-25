@@ -8,7 +8,7 @@ inputs:
     required: false
     default: ""
   api-key:
-    description: "OpenRouter API key (checked for presence only, value is not used or logged)"
+    description: "Cerberus OpenRouter API key (checked for presence only, value is not used or logged)"
     required: false
     default: ""
   post-comment:
@@ -105,15 +105,15 @@ runs:
         if [ -z "$API_KEY" ]; then
           echo "should_run=false" >> "$GITHUB_OUTPUT"
           echo "skip_reason=missing_api_key" >> "$GITHUB_OUTPUT"
-          echo "::notice::OPENROUTER_API_KEY is missing. Cerberus review is skipped."
+          echo "::notice::CERBERUS_OPENROUTER_API_KEY is missing. Cerberus review is skipped."
 
           if [ "$POST_COMMENT" = "true" ] && [ -n "$GH_TOKEN" ] && [ -n "$PR_NUMBER" ]; then
             write_skip_comment \
-              "Missing OPENROUTER_API_KEY" \
-              "Cerberus review is skipped because \`OPENROUTER_API_KEY\` is not configured for this repository." \
+              "Missing CERBERUS_OPENROUTER_API_KEY" \
+              "Cerberus review is skipped because \`CERBERUS_OPENROUTER_API_KEY\` is not configured for this repository." \
               "Setup" \
               "1. Open **Settings → Secrets and variables → Actions**" \
-              "2. Add a repository secret named \`OPENROUTER_API_KEY\`" \
+              "2. Add a repository secret named \`CERBERUS_OPENROUTER_API_KEY\`" \
               "3. Re-run this workflow (or push a new commit)" \
               "missing_api_key"
           fi

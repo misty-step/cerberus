@@ -32,7 +32,7 @@ def setup_fake_gh(bin_dir: Path, calls_file: Path) -> None:
             "  echo \"gh version test\"\n"
             "  exit 0\n"
             "fi\n"
-            "if [[ \"${1:-}\" == \"secret\" && \"${2:-}\" == \"set\" && \"${3:-}\" == \"OPENROUTER_API_KEY\" ]]; then\n"
+            "if [[ \"${1:-}\" == \"secret\" && \"${2:-}\" == \"set\" && \"${3:-}\" == \"CERBERUS_OPENROUTER_API_KEY\" ]]; then\n"
             f"  printf '%s\\n' \"$*\" >> {str(calls_file)!r}\n"
             "  exit 0\n"
             "fi\n"
@@ -88,7 +88,7 @@ def test_init_creates_workflow_when_missing(tmp_path: Path) -> None:
     result = subprocess.run(
         ["node", str(CLI), "init"],
         cwd=repo,
-        env=build_env(bin_dir, {"OPENROUTER_API_KEY": "env-key"}),
+        env=build_env(bin_dir, {"CERBERUS_OPENROUTER_API_KEY": "env-key"}),
         capture_output=True,
         text=True,
         timeout=20,
@@ -100,7 +100,7 @@ def test_init_creates_workflow_when_missing(tmp_path: Path) -> None:
     assert workflow.read_text() == TEMPLATE
     assert "Created .github/workflows/cerberus.yml" in result.stdout
     gh_call = calls_file.read_text()
-    assert "secret set OPENROUTER_API_KEY" in gh_call
+    assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
     assert "--body" not in gh_call
     assert "env-key" not in gh_call
 
@@ -123,7 +123,7 @@ def test_init_preserves_custom_existing_workflow(tmp_path: Path) -> None:
     result = subprocess.run(
         ["node", str(CLI), "init"],
         cwd=repo,
-        env=build_env(bin_dir, {"OPENROUTER_API_KEY": "env-key"}),
+        env=build_env(bin_dir, {"CERBERUS_OPENROUTER_API_KEY": "env-key"}),
         capture_output=True,
         text=True,
         timeout=20,
@@ -134,7 +134,7 @@ def test_init_preserves_custom_existing_workflow(tmp_path: Path) -> None:
     assert "Left unchanged: .github/workflows/cerberus.yml" in result.stdout
     assert "No workflow file changes to commit." in result.stdout
     gh_call = calls_file.read_text()
-    assert "secret set OPENROUTER_API_KEY" in gh_call
+    assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
     assert "--body" not in gh_call
     assert "env-key" not in gh_call
 
@@ -151,6 +151,7 @@ def test_init_requires_key_when_non_interactive_and_env_missing(tmp_path: Path) 
     setup_fake_gh(bin_dir, calls_file)
 
     env = build_env(bin_dir)
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
     env.pop("OPENROUTER_API_KEY", None)
 
     result = subprocess.run(
@@ -163,5 +164,5 @@ def test_init_requires_key_when_non_interactive_and_env_missing(tmp_path: Path) 
     )
 
     assert result.returncode != 0
-    assert "No API key in OPENROUTER_API_KEY and no interactive TTY available for gh prompt." in result.stderr
+    assert "No API key in CERBERUS_OPENROUTER_API_KEY (or OPENROUTER_API_KEY) and no interactive TTY available for gh prompt." in result.stderr
     assert not calls_file.exists()

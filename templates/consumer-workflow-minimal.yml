@@ -33,7 +33,7 @@ jobs:
         id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 
   # Preflight: validate workflow structure (permissions, required inputs, etc)
   validate:
@@ -68,7 +68,7 @@ jobs:
         id: router
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
           diff-file: /tmp/pr.diff
           # routing: 'disabled'         # uncomment to skip LLM routing and use all reviewers
           # reviewers: 'trace,guard'    # uncomment to force specific reviewers (bypasses routing)
@@ -105,7 +105,7 @@ jobs:
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
           comment-policy: 'never'
           timeout: '600'
           model-tier: ${{ matrix.model_tier }}
