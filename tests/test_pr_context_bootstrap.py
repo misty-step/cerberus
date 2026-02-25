@@ -58,6 +58,19 @@ def test_fetch_step_uses_per_attempt_timeout() -> None:
     )
 
 
+def test_fetch_step_passes_explicit_repo_to_gh_cli() -> None:
+    content = _action_content()
+    assert 'REPO: ${{ github.repository }}' in content, (
+        "Fetch step must expose github.repository as REPO for gh commands"
+    )
+    assert 'gh pr diff "$PR_NUMBER" --repo "$REPO"' in content, (
+        "gh pr diff must pass --repo so it works without a checked-out git repo"
+    )
+    assert 'gh pr view "$PR_NUMBER" --repo "$REPO"' in content, (
+        "gh pr view must pass --repo so it works without a checked-out git repo"
+    )
+
+
 def test_fetch_step_applies_exponential_backoff_on_auth_error() -> None:
     content = _action_content()
     # Backoff: wait_seconds = attempt * 2

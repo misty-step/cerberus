@@ -77,11 +77,13 @@ jobs:
       model-tier: ${{ steps.router.outputs.model-tier }}
     steps:
       - name: Fetch PR diff
-        # gh is pre-installed on GitHub-hosted runners; no checkout needed
+        # gh is pre-installed on GitHub-hosted runners; no checkout needed.
+        # Always pass --repo so this also works outside a git checkout.
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          REPO: ${{ github.repository }}
+        run: gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO" > /tmp/pr.diff
       - uses: misty-step/cerberus/router@v2
         id: router
         with:

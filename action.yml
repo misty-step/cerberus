@@ -136,6 +136,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
         if ! command -v gh >/dev/null 2>&1; then
@@ -168,7 +169,7 @@ runs:
           echo "pr-context-error-message=Missing pull request number for gh context fetch." >> "$GITHUB_OUTPUT"
           exit 1
         fi
-        if ! gh pr diff "$PR_NUMBER" > "$CERBERUS_TMP/pr.diff"; then
+        if ! gh pr diff "$PR_NUMBER" --repo "$REPO" > "$CERBERUS_TMP/pr.diff"; then
           echo "::error::Failed to fetch PR diff via gh pr diff."
           echo "pr-context-error-kind=other" >> "$GITHUB_OUTPUT"
           echo "pr-context-error-message=Unable to fetch PR diff via GitHub CLI (gh pr diff)." >> "$GITHUB_OUTPUT"
@@ -189,7 +190,7 @@ runs:
         while [[ "$pr_view_attempt" -le "$max_pr_view_retries" ]]; do
           pr_view_stdout="$(mktemp "${CERBERUS_TMP}/cerberus-pr-view-stdout.XXXXXX")"
           pr_view_stderr="$(mktemp "${CERBERUS_TMP}/cerberus-pr-view-stderr.XXXXXX")"
-          timeout "$pr_view_timeout_seconds" gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,body \
+          timeout "$pr_view_timeout_seconds" gh pr view "$PR_NUMBER" --repo "$REPO" --json title,author,headRefName,baseRefName,body \
             > "$pr_view_stdout" 2> "$pr_view_stderr"
           pr_view_rc=$?
           if [[ "$pr_view_rc" -eq 0 ]]; then
