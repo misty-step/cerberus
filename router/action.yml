@@ -64,13 +64,13 @@ runs:
         ENV_OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
       run: |
         if [[ -n "${INPUT_API_KEY:-}" ]]; then
-          export OPENROUTER_API_KEY="$INPUT_API_KEY"
+          export CERBERUS_OPENROUTER_API_KEY="$INPUT_API_KEY"
         elif [[ -n "${ENV_CERBERUS_API_KEY:-}" ]]; then
-          export OPENROUTER_API_KEY="${ENV_CERBERUS_API_KEY}"
+          export CERBERUS_OPENROUTER_API_KEY="${ENV_CERBERUS_API_KEY}"
         elif [[ -n "${ENV_CERBERUS_OPENROUTER_API_KEY:-}" ]]; then
-          export OPENROUTER_API_KEY="${ENV_CERBERUS_OPENROUTER_API_KEY}"
+          export CERBERUS_OPENROUTER_API_KEY="${ENV_CERBERUS_OPENROUTER_API_KEY}"
         else
-          export OPENROUTER_API_KEY="${ENV_OPENROUTER_API_KEY:-}"
+          export CERBERUS_OPENROUTER_API_KEY="${ENV_OPENROUTER_API_KEY:-}"
         fi
 
         python3 "${{ github.action_path }}/route.py"

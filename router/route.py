@@ -583,7 +583,8 @@ def main() -> int:
     routing = clean_token(os.getenv("ROUTING", "enabled"))
     forced_reviewers = os.getenv("FORCED_REVIEWERS", "")
     api_key = (
-        os.getenv("CERBERUS_OPENROUTER_API_KEY", "").strip()
+        os.getenv("CERBERUS_API_KEY", "").strip()
+        or os.getenv("CERBERUS_OPENROUTER_API_KEY", "").strip()
         or os.getenv("OPENROUTER_API_KEY", "").strip()
     )
 
@@ -622,7 +623,7 @@ def main() -> int:
         return 0
 
     if not api_key:
-        warn("CERBERUS_OPENROUTER_API_KEY/OPENROUTER_API_KEY missing; routing skipped")
+        warn("CERBERUS_API_KEY/CERBERUS_OPENROUTER_API_KEY/OPENROUTER_API_KEY missing; routing skipped")
         write_output(fallback_panel, False, "fallback", MODEL_TIER_STANDARD)
         return 0
 

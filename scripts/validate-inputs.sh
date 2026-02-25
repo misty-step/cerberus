@@ -52,4 +52,5 @@ EOF
 fi
 
 echo "::add-mask::$resolved_key"
+echo "CERBERUS_OPENROUTER_API_KEY=$resolved_key" >> "$GITHUB_ENV"
 echo "OPENROUTER_API_KEY=$resolved_key" >> "$GITHUB_ENV"

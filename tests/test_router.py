@@ -567,6 +567,30 @@ class TestMainIntegration:
         assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     @mock.patch("route.call_router")
+    def test_precedence_cerberus_api_key_wins(
+        self,
+        mock_call: mock.Mock,
+        cerberus_root: Path,
+        diff_file: Path,
+    ) -> None:
+        mock_call.return_value = (
+            '["correctness","security","architecture","resilience","compatibility"]',
+            "google/gemini-3-flash-preview",
+        )
+        result = self._run_main({
+            "CERBERUS_ROOT": str(cerberus_root),
+            "DIFF_FILE": str(diff_file),
+            "FORCED_REVIEWERS": "",
+            "ROUTING": "enabled",
+            "CERBERUS_API_KEY": "highest-key",
+            "CERBERUS_OPENROUTER_API_KEY": "middle-key",
+            "OPENROUTER_API_KEY": "lowest-key",
+        })
+        assert result["routing_used"] is True
+        assert mock_call.call_args is not None
+        assert mock_call.call_args.args[0] == "highest-key"
+
+    @mock.patch("route.call_router")
     def test_prefers_cerberus_openrouter_key_over_legacy_openrouter_key(
         self,
         mock_call: mock.Mock,

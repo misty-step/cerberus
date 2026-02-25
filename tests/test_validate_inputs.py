@@ -39,6 +39,7 @@ def test_prefers_explicit_input_key(tmp_path: Path) -> None:
     )
 
     assert code == 0
+    assert "CERBERUS_OPENROUTER_API_KEY=input-key" in github_env
     assert "OPENROUTER_API_KEY=input-key" in github_env
 
 
