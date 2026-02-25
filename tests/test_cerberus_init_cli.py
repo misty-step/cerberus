@@ -206,6 +206,7 @@ def test_init_mirrors_legacy_secret_for_custom_legacy_workflow(tmp_path: Path) -
     gh_call = calls_file.read_text()
     assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
     assert "secret set OPENROUTER_API_KEY" in gh_call
+    assert "env-key" not in gh_call
     assert "mirrored that legacy secret" in result.stdout
 
 

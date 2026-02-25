@@ -131,7 +131,7 @@ async function initCommand() {
   requireBinary('gh');
 
   const repoRoot = getRepoRoot();
-  const initialKeySource = await readApiKeySource();
+  const initialKeySource = readApiKeySource();
   const keySource =
     initialKeySource.kind === 'prompt'
       ? { kind: 'env', value: await promptApiKeyOnce() }
