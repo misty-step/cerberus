@@ -14,7 +14,7 @@
 #     review:
 #       uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
 #       secrets:
-#         api-key: ${{ secrets.OPENROUTER_API_KEY }}
+#         api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 #
 # Inputs and the decomposed-pipeline power-user option:
 #   See templates/consumer-workflow-reusable.yml (recommended) and
