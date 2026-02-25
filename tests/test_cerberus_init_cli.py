@@ -237,3 +237,32 @@ def test_init_requires_key_when_non_interactive_and_env_missing(tmp_path: Path) 
     assert result.returncode != 0
     assert "No API key in CERBERUS_OPENROUTER_API_KEY (or OPENROUTER_API_KEY) and no interactive TTY available for gh prompt." in result.stderr
     assert not calls_file.exists()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_trims_whitespace_keys(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_fake_gh(bin_dir, calls_file)
+
+    result = subprocess.run(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=build_env(
+            bin_dir,
+            {"CERBERUS_OPENROUTER_API_KEY": "  ", "OPENROUTER_API_KEY": "real-key"},
+        ),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0
+    gh_call = calls_file.read_text()
+    assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
+    assert "real-key" not in gh_call

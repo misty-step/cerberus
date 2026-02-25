@@ -47,9 +47,12 @@ function getRepoRoot() {
 }
 
 function readApiKeySource() {
-  const envKey = process.env.CERBERUS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
-  if (envKey && envKey.trim()) {
-    return { kind: 'env', value: envKey.trim() };
+  const preferredKey = (process.env.CERBERUS_OPENROUTER_API_KEY || '').trim();
+  const legacyKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  const envKey = preferredKey || legacyKey;
+
+  if (envKey) {
+    return { kind: 'env', value: envKey };
   }
 
   if (!process.stdin.isTTY) {

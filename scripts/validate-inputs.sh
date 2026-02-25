@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-resolved_key="${INPUT_API_KEY:-}"
+resolved_key="$(echo "${INPUT_API_KEY:-}" | xargs)"
 if [[ -z "$resolved_key" ]]; then
   if [[ -n "${INPUT_KIMI_API_KEY:-}" ]]; then
-    resolved_key="${INPUT_KIMI_API_KEY}"
+    resolved_key="$(echo "${INPUT_KIMI_API_KEY}" | xargs)"
     invoked_ref="${GITHUB_ACTION_REF:-v2}"
     cat >&2 <<EOF
 ::warning::Input 'kimi-api-key' is deprecated and will be removed in a future release. Migrate to 'api-key' (OpenRouter key).
@@ -19,13 +19,13 @@ EOF
   fi
 fi
 if [[ -z "$resolved_key" ]]; then
-  resolved_key="${CERBERUS_API_KEY:-}"
+  resolved_key="$(echo "${CERBERUS_API_KEY:-}" | xargs)"
 fi
 if [[ -z "$resolved_key" ]]; then
-  resolved_key="${CERBERUS_OPENROUTER_API_KEY:-}"
+  resolved_key="$(echo "${CERBERUS_OPENROUTER_API_KEY:-}" | xargs)"
 fi
 if [[ -z "$resolved_key" ]]; then
-  resolved_key="${OPENROUTER_API_KEY:-}"
+  resolved_key="$(echo "${OPENROUTER_API_KEY:-}" | xargs)"
 fi
 
 if [[ -z "$resolved_key" ]]; then

@@ -102,3 +102,16 @@ def test_prefers_api_key_over_kimi_api_key(tmp_path: Path) -> None:
 
     assert code == 0
     assert "OPENROUTER_API_KEY=new-key" in github_env
+
+
+def test_trims_whitespace_and_falls_through(tmp_path: Path) -> None:
+    code, _out, _err, github_env = run_validator(
+        {
+            "CERBERUS_OPENROUTER_API_KEY": "  ",
+            "OPENROUTER_API_KEY": "real-key",
+        },
+        tmp_path / "github.env",
+    )
+
+    assert code == 0
+    assert "OPENROUTER_API_KEY=real-key" in github_env
