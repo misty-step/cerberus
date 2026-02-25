@@ -6,19 +6,22 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 const DEFAULT_SYSTEM_PROMPT_FILE = process.env.CERBERUS_TRUSTED_SYSTEM_PROMPT_FILE;
 const MAX_STEPS = Number.parseInt(process.env.CERBERUS_MAX_STEPS || "", 10);
 
-// Intentionally focused on high-impact destructive commands.
-// Patterns are conservative: block when command intent is clearly dangerous.
+// Intentionally focused on high-impact destructive commands and network egress.
+// Prefix/suffix boundaries include shell separators to reduce trivial bypasses.
 export const BLOCKED_BASH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
-	{ re: /(^|\s)rm\s+-rf\s+\/$/, reason: "Refusing destructive root delete" },
-	{ re: /(^|\s)rm\s+-rf\s+--no-preserve-root/, reason: "Refusing destructive root delete" },
-	{ re: /(^|\s)git\s+push(\s|$)/, reason: "Refusing remote git push from reviewer runtime" },
-	{ re: /(^|\s)git\s+reset\s+--hard(\s|$)/, reason: "Refusing irreversible git reset --hard" },
+	{ re: /(^|[;&|()\s])rm\s+-rf\s+\/([\s;|&)]|$)/i, reason: "Refusing destructive root delete" },
+	{ re: /(^|[;&|()\s])rm\s+-rf\s+--no-preserve-root([\s;|&)]|$)/i, reason: "Refusing destructive root delete" },
+	{ re: /(^|[;&|()\s])git\s+push([\s;|&)]|$)/i, reason: "Refusing remote git push from reviewer runtime" },
+	{ re: /(^|[;&|()\s])git\s+reset\s+--hard([\s;|&)]|$)/i, reason: "Refusing irreversible git reset --hard" },
 	// Covers: -f, -fd, -fx, -fdx, and long combined flags after -f.
-	{ re: /(^|\s)git\s+clean\b[^\n]*\s-f[a-zA-Z]*\b/, reason: "Refusing destructive git clean" },
-	{ re: /(^|\s)dd\s+if=\/?dev\/(zero|random)/, reason: "Refusing destructive disk write pattern" },
-	{ re: /(^|\s)mkfs(\.|\s|$)/, reason: "Refusing filesystem format command" },
-	{ re: /(^|\s)shutdown(\s|$)/, reason: "Refusing host shutdown command" },
-	{ re: /(^|\s)reboot(\s|$)/, reason: "Refusing host reboot command" },
+	{ re: /(^|[;&|()\s])git\s+clean\b[^\n;|&)]*\s-f[a-zA-Z]*\b/i, reason: "Refusing destructive git clean" },
+	{ re: /(^|[;&|()\s])dd\s+if=\/?dev\/(zero|random)([\s;|&)]|$)/i, reason: "Refusing destructive disk write pattern" },
+	{ re: /(^|[;&|()\s])mkfs(\.|\s|$)/i, reason: "Refusing filesystem format command" },
+	{ re: /(^|[;&|()\s])shutdown([\s;|&)]|$)/i, reason: "Refusing host shutdown command" },
+	{ re: /(^|[;&|()\s])reboot([\s;|&)]|$)/i, reason: "Refusing host reboot command" },
+	{ re: /(^|[;&|()\s])(curl|wget)\b[^\n]*/i, reason: "Refusing network egress command from reviewer runtime" },
+	{ re: /(^|[;&|()\s])(nc|ncat|netcat|socat|telnet|ssh|scp)\b[^\n]*/i, reason: "Refusing network socket command from reviewer runtime" },
+	{ re: /\/dev\/tcp\//i, reason: "Refusing bash /dev/tcp network egress" },
 ];
 
 export function normalizePath(input: string, cwd: string): string {

@@ -17,7 +17,6 @@ base:
     - ls
     - write
     - edit
-    - bash
   # Extensions are loaded explicitly by runtime orchestration (no ambient discovery).
   extensions:
     - pi/extensions/reviewer-guard.ts

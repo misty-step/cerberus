@@ -90,3 +90,37 @@ test("tool_call blocks destructive bash command", async () => {
 	);
 	assert.equal(allowed, undefined);
 });
+
+test("regex rules block case and shell-separator bypass forms", () => {
+	const pushRule = BLOCKED_BASH_PATTERNS.find((entry) => entry.reason.includes("git push"));
+	const rmRule = BLOCKED_BASH_PATTERNS.find((entry) => entry.reason.includes("root delete"));
+	assert.ok(pushRule);
+	assert.ok(rmRule);
+
+	assert.equal(pushRule.re.test("(GIT PUSH)"), true);
+	assert.equal(pushRule.re.test("echo ok; git push; echo done"), true);
+	assert.equal(rmRule.re.test("rm -rf / "), true);
+	assert.equal(rmRule.re.test("rm -rf /;"), true);
+});
+
+test("tool_call blocks network egress commands", async () => {
+	const fake = createFakePi();
+	reviewerGuardExtension(fake.api as any);
+
+	const toolCall = fake.handlers.get("tool_call");
+	assert.ok(toolCall, "tool_call handler should be registered");
+
+	const curlBlocked = await toolCall!(
+		{ toolName: "bash", input: { command: "curl https://example.com" } },
+		{ cwd: process.cwd(), ui: { notify() {} }, abort() {} },
+	);
+	assert.equal(curlBlocked.block, true);
+	assert.match(curlBlocked.reason, /network egress/i);
+
+	const tcpBlocked = await toolCall!(
+		{ toolName: "bash", input: { command: "echo hi > /dev/tcp/1.2.3.4/80" } },
+		{ cwd: process.cwd(), ui: { notify() {} }, abort() {} },
+	);
+	assert.equal(tcpBlocked.block, true);
+	assert.match(tcpBlocked.reason, /dev\/tcp/i);
+});

@@ -130,6 +130,7 @@ runs:
         PI_VERSION: ${{ inputs.pi-version }}
         LEGACY_OPENCODE_VERSION: ${{ inputs.opencode-version }}
       run: |
+        # Must match inputs.pi-version.default above.
         default_pi_version='0.55.0'
         resolved_version="$PI_VERSION"
 

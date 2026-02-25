@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Mapping
 
 from lib.defaults_config import ConfigError, load_defaults_config
 from lib.review_prompt import render_review_prompt_file
@@ -64,6 +65,31 @@ def sanitize_model(value: str | None) -> str:
 def normalize_tier(value: str | None) -> str:
     tier = (value or "standard").strip().lower()
     return tier or "standard"
+
+
+def provider_api_key_env_var(provider: str) -> str:
+    mapping = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "azure": "AZURE_OPENAI_API_KEY",
+        "azure-openai": "AZURE_OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "google": "GEMINI_API_KEY",
+        "xai": "XAI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
+    }
+    return mapping.get(provider.strip().lower(), "OPENROUTER_API_KEY")
+
+
+def resolve_api_key_for_provider(provider: str, env: Mapping[str, str]) -> tuple[str, str]:
+    key_var = provider_api_key_env_var(provider)
+    api_key = sanitize_model(env.get(key_var))
+    if key_var == "OPENROUTER_API_KEY" and not api_key:
+        api_key = sanitize_model(env.get("CERBERUS_OPENROUTER_API_KEY"))
+    return key_var, api_key
 
 
 def default_backoff_seconds(retry_attempt: int) -> int:
@@ -325,7 +351,7 @@ def main(argv: list[str]) -> int:
         eprint(str(exc))
         return 2
 
-    tools = profile.tools or ["read", "grep", "find", "ls", "write", "bash"]
+    tools = profile.tools or ["read", "grep", "find", "ls", "write", "edit"]
     extensions = resolve_resource_paths(cerberus_root, profile.extensions)
     skills = resolve_resource_paths(cerberus_root, profile.skills)
 
@@ -394,9 +420,9 @@ def main(argv: list[str]) -> int:
             if m:
                 models.append(m)
 
-    api_key = sanitize_model(os.environ.get("OPENROUTER_API_KEY") or os.environ.get("CERBERUS_OPENROUTER_API_KEY"))
+    provider_key_var, api_key = resolve_api_key_for_provider(profile_provider, os.environ)
     if not api_key:
-        eprint("missing OPENROUTER_API_KEY")
+        eprint(f"missing {provider_key_var}")
         return 2
 
     diff_file_raw = os.environ.get("GH_DIFF_FILE", "").strip()

@@ -72,6 +72,29 @@ def test_parse_positive_int_and_sanitize_model() -> None:
     assert _mod.sanitize_model('"openrouter/x/y"') == "openrouter/x/y"
 
 
+def test_provider_api_key_mapping_and_resolution() -> None:
+    assert _mod.provider_api_key_env_var("openai") == "OPENAI_API_KEY"
+    assert _mod.provider_api_key_env_var("groq") == "GROQ_API_KEY"
+    assert _mod.provider_api_key_env_var("unknown") == "OPENROUTER_API_KEY"
+
+    env = {
+        "OPENAI_API_KEY": "openai-key",
+        "OPENROUTER_API_KEY": "openrouter-key",
+        "CERBERUS_OPENROUTER_API_KEY": "alias-key",
+    }
+    key_var, key = _mod.resolve_api_key_for_provider("openai", env)
+    assert key_var == "OPENAI_API_KEY"
+    assert key == "openai-key"
+
+    key_var, key = _mod.resolve_api_key_for_provider("openrouter", env)
+    assert key_var == "OPENROUTER_API_KEY"
+    assert key == "openrouter-key"
+
+    key_var, key = _mod.resolve_api_key_for_provider("openrouter", {"CERBERUS_OPENROUTER_API_KEY": "alias-key"})
+    assert key_var == "OPENROUTER_API_KEY"
+    assert key == "alias-key"
+
+
 def test_maybe_sleep_handles_zero_and_positive(monkeypatch) -> None:
     calls: list[int] = []
 
