@@ -351,7 +351,7 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                     findings.append(
                         Finding(
                             "warning",
-                            f"{source}: job `{job_name}` uses `{uses}` without `with: api-key`. This is fine only if `CERBERUS_API_KEY`/`OPENROUTER_API_KEY` is set at job env.",
+                            f"{source}: job `{job_name}` uses `{uses}` without `with: api-key`. This is fine only if `CERBERUS_API_KEY`/`CERBERUS_OPENROUTER_API_KEY`/`OPENROUTER_API_KEY` is set at job env.",
                         )
                     )
 

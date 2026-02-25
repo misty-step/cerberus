@@ -69,19 +69,19 @@ function writeWorkflow(repoRoot, template) {
 
   if (!fs.existsSync(dest)) {
     fs.writeFileSync(dest, template);
-    return { changed: true, skipped: false, dest };
+    return { changed: true, skipped: false, dest, workflowContent: template };
   }
 
   const existing = fs.readFileSync(dest, 'utf8');
   if (existing.trim() === template.trim()) {
-    return { changed: false, skipped: false, dest };
+    return { changed: false, skipped: false, dest, workflowContent: existing };
   }
 
-  return { changed: false, skipped: true, dest };
+  return { changed: false, skipped: true, dest, workflowContent: existing };
 }
 
-function setSecret(repoRoot, keySource) {
-  const args = ['secret', 'set', 'CERBERUS_OPENROUTER_API_KEY'];
+function setSecret(repoRoot, keySource, secretName) {
+  const args = ['secret', 'set', secretName];
   const isEnv = keySource.kind === 'env';
   const options = {
     cwd: repoRoot,
@@ -100,7 +100,7 @@ function setSecret(repoRoot, keySource) {
       result.stderr && result.stderr.trim()
         ? result.stderr.trim()
         : 'gh secret set failed.';
-    fail(`Failed to set CERBERUS_OPENROUTER_API_KEY in repository secrets: ${message}`);
+    fail(`Failed to set ${secretName} in repository secrets: ${message}`);
   }
 }
 
@@ -111,9 +111,15 @@ async function initCommand() {
   const repoRoot = getRepoRoot();
   const keySource = await readApiKeySource();
   const template = await readTemplate();
-  const { changed, skipped, dest } = writeWorkflow(repoRoot, template);
+  const { changed, skipped, dest, workflowContent } = writeWorkflow(repoRoot, template);
 
-  setSecret(repoRoot, keySource);
+  setSecret(repoRoot, keySource, 'CERBERUS_OPENROUTER_API_KEY');
+
+  let mirroredLegacySecret = false;
+  if (skipped && /secrets\.OPENROUTER_API_KEY/.test(workflowContent)) {
+    setSecret(repoRoot, keySource, 'OPENROUTER_API_KEY');
+    mirroredLegacySecret = true;
+  }
 
   if (changed) {
     process.stdout.write(`Created ${path.relative(repoRoot, dest)}\n`);
@@ -124,6 +130,9 @@ async function initCommand() {
   }
 
   process.stdout.write('Configured CERBERUS_OPENROUTER_API_KEY as GitHub Actions secret.\n');
+  if (mirroredLegacySecret) {
+    process.stdout.write('Existing workflow references OPENROUTER_API_KEY; mirrored that legacy secret for compatibility.\n');
+  }
   if (changed) {
     process.stdout.write('Run: git add .github/workflows/cerberus.yml && git commit -m "Add Cerberus workflow"\n');
   } else {

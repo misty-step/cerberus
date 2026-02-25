@@ -18,6 +18,9 @@
 #   jobs:
 #     review:
 #       uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+#       permissions:
+#         contents: read
+#         pull-requests: write
 #       with:
 #         context: "Single-user personal finance app. Data bounded to ~500 tx/year."
 #         timeout: 900

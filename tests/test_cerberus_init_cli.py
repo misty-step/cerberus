@@ -32,9 +32,11 @@ def setup_fake_gh(bin_dir: Path, calls_file: Path) -> None:
             "  echo \"gh version test\"\n"
             "  exit 0\n"
             "fi\n"
-            "if [[ \"${1:-}\" == \"secret\" && \"${2:-}\" == \"set\" && \"${3:-}\" == \"CERBERUS_OPENROUTER_API_KEY\" ]]; then\n"
-            f"  printf '%s\\n' \"$*\" >> {str(calls_file)!r}\n"
-            "  exit 0\n"
+            "if [[ \"${1:-}\" == \"secret\" && \"${2:-}\" == \"set\" ]]; then\n"
+            "  if [[ \"${3:-}\" == \"CERBERUS_OPENROUTER_API_KEY\" || \"${3:-}\" == \"OPENROUTER_API_KEY\" ]]; then\n"
+            f"    printf '%s\\n' \"$*\" >> {str(calls_file)!r}\n"
+            "    exit 0\n"
+            "  fi\n"
             "fi\n"
             "echo \"unexpected gh args: $*\" >&2\n"
             "exit 1\n"
@@ -106,6 +108,32 @@ def test_init_creates_workflow_when_missing(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_accepts_legacy_openrouter_env_key(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_fake_gh(bin_dir, calls_file)
+
+    result = subprocess.run(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=build_env(bin_dir, {"OPENROUTER_API_KEY": "legacy-env-key"}),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stderr
+    gh_call = calls_file.read_text()
+    assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
+    assert "legacy-env-key" not in gh_call
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
 def test_init_preserves_custom_existing_workflow(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -137,6 +165,44 @@ def test_init_preserves_custom_existing_workflow(tmp_path: Path) -> None:
     assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
     assert "--body" not in gh_call
     assert "env-key" not in gh_call
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_mirrors_legacy_secret_for_custom_legacy_workflow(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    custom_workflow = repo / ".github" / "workflows" / "cerberus.yml"
+    custom_workflow.parent.mkdir(parents=True, exist_ok=True)
+    custom_workflow.write_text(
+        "name: Cerberus\n"
+        "jobs:\n"
+        "  review:\n"
+        "    uses: misty-step/cerberus/.github/workflows/cerberus.yml@master\n"
+        "    secrets:\n"
+        "      api-key: ${{ secrets.OPENROUTER_API_KEY }}\n"
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_fake_gh(bin_dir, calls_file)
+
+    result = subprocess.run(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=build_env(bin_dir, {"CERBERUS_OPENROUTER_API_KEY": "env-key"}),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stderr
+    gh_call = calls_file.read_text()
+    assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
+    assert "secret set OPENROUTER_API_KEY" in gh_call
+    assert "mirrored that legacy secret" in result.stdout
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")

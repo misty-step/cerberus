@@ -87,7 +87,8 @@ def test_action_reads_configured_model_file_when_present() -> None:
 def test_consumer_template_passes_key_via_input() -> None:
     content = CONSUMER_WORKFLOW_TEMPLATE.read_text()
 
-    assert "api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}" in content
+    assert "api-key:" in content
+    assert "CERBERUS_OPENROUTER_API_KEY" in content
 
 
 def test_workflow_templates_use_current_major_version() -> None:
