@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { createInterface } = require('node:readline/promises');
+const readline = require('node:readline');
 
 const TEMPLATE_PATH = path.join(__dirname, '../templates/consumer-workflow-reusable.yml');
 const DEST_PATH = path.join('.github', 'workflows', 'cerberus.yml');
@@ -60,14 +60,17 @@ function readApiKeySource() {
 }
 
 async function promptApiKeyOnce() {
-  const rl = createInterface({
+  const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: true,
   });
 
   try {
-    const value = await rl.question('Enter Cerberus OpenRouter API key: ');
+    const value = await new Promise((resolve) => {
+      rl.question('Enter Cerberus OpenRouter API key: ', resolve);
+    });
+
     if (!value || !value.trim()) {
       fail('No API key entered.');
     }

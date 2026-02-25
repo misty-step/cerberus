@@ -118,10 +118,13 @@ def test_init_accepts_legacy_openrouter_env_key(tmp_path: Path) -> None:
     calls_file = tmp_path / "gh-calls.txt"
     setup_fake_gh(bin_dir, calls_file)
 
+    env = build_env(bin_dir, {"OPENROUTER_API_KEY": "legacy-env-key"})
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
+
     result = subprocess.run(
         ["node", str(CLI), "init"],
         cwd=repo,
-        env=build_env(bin_dir, {"OPENROUTER_API_KEY": "legacy-env-key"}),
+        env=env,
         capture_output=True,
         text=True,
         timeout=20,
