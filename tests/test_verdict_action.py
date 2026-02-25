@@ -68,6 +68,7 @@ def test_action_pins_pi_install_version() -> None:
     assert "default: '0.55.0'" in pi_match.group(0)
     assert "default: ''" in legacy_match.group(0)
     assert "Invalid pi-version format" in content
+    assert "Both 'pi-version' and deprecated 'opencode-version' were provided; using 'pi-version'." in content
     assert 'npm i -g "@mariozechner/pi-coding-agent@${resolved_version}"' in content
     assert "pip install pyyaml" in content
 

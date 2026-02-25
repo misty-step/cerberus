@@ -78,6 +78,37 @@ perspectives:
         assert merged.max_steps == 25
         assert merged.timeout == 600
 
+    def test_preserves_base_provider_when_override_omits_provider(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            """
+version: 1
+base:
+  provider: custom-provider
+perspectives:
+  security:
+    model: minimax/minimax-m2.5
+""",
+        )
+
+        cfg = load_reviewer_profiles(path)
+        merged = cfg.merged_for_perspective("security")
+        assert merged.provider == "custom-provider"
+
+    def test_invalid_perspective_profile_type_raises(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            """
+version: 1
+base: {}
+perspectives:
+  security: []
+""",
+        )
+
+        with pytest.raises(ReviewerProfilesError, match=r"config\.perspectives\[security\]: expected mapping"):
+            load_reviewer_profiles(path)
+
     def test_unknown_perspective_returns_base(self, tmp_path: Path) -> None:
         path = write_config(
             tmp_path,
@@ -102,7 +133,7 @@ base: {}
 perspectives: {}
 """,
         )
-        with pytest.raises(ReviewerProfilesError, match="config.version"):
+        with pytest.raises(ReviewerProfilesError, match=r"config\.version"):
             load_reviewer_profiles(path)
 
     def test_missing_perspectives_raises(self, tmp_path: Path) -> None:
@@ -113,7 +144,7 @@ version: 1
 base: {}
 """,
         )
-        with pytest.raises(ReviewerProfilesError, match="config.perspectives"):
+        with pytest.raises(ReviewerProfilesError, match=r"config\.perspectives"):
             load_reviewer_profiles(path)
 
     def test_invalid_positive_int_raises(self, tmp_path: Path) -> None:
@@ -182,7 +213,7 @@ perspectives:
   security: {}
 """,
         )
-        with pytest.raises(ReviewerProfilesError, match="config.version: must be > 0"):
+        with pytest.raises(ReviewerProfilesError, match=r"config\.version: must be > 0"):
             load_reviewer_profiles(path)
 
     def test_empty_perspective_key_rejected(self, tmp_path: Path) -> None:

@@ -5,8 +5,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).parent.parent
 RUN_REVIEWER = REPO_ROOT / "scripts" / "run-reviewer.sh"
 
@@ -60,58 +58,38 @@ def write_fake_cerberus_root(root: Path, *, config_yml: str, perspective: str = 
     (root / ".opencode" / "agents" / f"{perspective}.md").write_text("AGENT BODY\n")
 
 
-def make_env(bin_dir: Path, diff_file: Path, cerberus_root: Path) -> dict[str, str]:
+def make_env(
+    bin_dir: Path,
+    diff_file: Path,
+    cerberus_root: Path,
+    artifacts_dir: Path,
+) -> dict[str, str]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
     env["CERBERUS_ROOT"] = str(cerberus_root)
-    env["CERBERUS_TMP"] = "/tmp"
+    env["CERBERUS_TMP"] = str(artifacts_dir)
     env["GH_DIFF_FILE"] = str(diff_file)
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "5"
     env["CERBERUS_TEST_NO_SLEEP"] = "1"
+    env["CERBERUS_ALLOW_MISSING_REVIEWER_PROFILES"] = "1"
     return env
 
 
-@pytest.fixture(autouse=True)
-def cleanup_tmp_outputs() -> None:
-    for suffix in (
-        "parse-input",
-        "output.txt",
-        "stderr.log",
-        "exitcode",
-        "review.md",
-        "timeout-marker.txt",
-        "fast-path-prompt.md",
-        "fast-path-output.txt",
-        "fast-path-stderr.log",
-        "model-used",
-        "primary-model",
-        "configured-model",
-        "reviewer-name",
-    ):
-        Path(f"/tmp/security-{suffix}").unlink(missing_ok=True)
-    yield
-    for suffix in (
-        "parse-input",
-        "output.txt",
-        "stderr.log",
-        "exitcode",
-        "review.md",
-        "timeout-marker.txt",
-        "fast-path-prompt.md",
-        "fast-path-output.txt",
-        "fast-path-stderr.log",
-        "model-used",
-        "primary-model",
-        "configured-model",
-        "reviewer-name",
-    ):
-        Path(f"/tmp/security-{suffix}").unlink(missing_ok=True)
+def artifact(artifacts_dir: Path, name: str) -> Path:
+    return artifacts_dir / f"security-{name}"
 
 
 class TestModelPoolSelection:
-    def _run(self, tmp_path: Path, config: str, env_extra: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def _run(
+        self,
+        tmp_path: Path,
+        config: str,
+        env_extra: dict[str, str] | None = None,
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         write_stub_pi(bin_dir / "pi")
@@ -122,17 +100,19 @@ class TestModelPoolSelection:
         diff_file = tmp_path / "test.diff"
         write_simple_diff(diff_file)
 
-        env = make_env(bin_dir, diff_file, cerberus_root)
+        artifacts_dir = tmp_path / "artifacts"
+        env = make_env(bin_dir, diff_file, cerberus_root, artifacts_dir)
         if env_extra:
             env.update(env_extra)
 
-        return subprocess.run(
+        result = subprocess.run(
             [str(RUN_REVIEWER), "security"],
             env=env,
             capture_output=True,
             text=True,
             timeout=30,
         )
+        return result, artifacts_dir
 
     def test_requested_tier_pool_is_used(self, tmp_path: Path) -> None:
         config = '''
@@ -153,9 +133,9 @@ reviewers:
     perspective: security
     model: pool
 '''
-        result = self._run(tmp_path, config, {"MODEL_TIER": "flash"})
+        result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "flash"})
         assert result.returncode == 0
-        model = Path("/tmp/security-primary-model").read_text().strip()
+        model = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert model in {"openrouter/flash-a", "openrouter/flash-b"}
 
     def test_missing_requested_tier_falls_back_to_standard(self, tmp_path: Path) -> None:
@@ -174,9 +154,9 @@ reviewers:
     perspective: security
     model: pool
 '''
-        result = self._run(tmp_path, config, {"MODEL_TIER": "pro"})
+        result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "pro"})
         assert result.returncode == 0
-        model = Path("/tmp/security-primary-model").read_text().strip()
+        model = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert model in {"openrouter/standard-a", "openrouter/standard-b"}
 
     def test_missing_requested_and_standard_falls_back_to_unscoped_pool(self, tmp_path: Path) -> None:
@@ -195,9 +175,9 @@ reviewers:
     perspective: security
     model: pool
 '''
-        result = self._run(tmp_path, config, {"MODEL_TIER": "pro"})
+        result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "pro"})
         assert result.returncode == 0
-        model = Path("/tmp/security-primary-model").read_text().strip()
+        model = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert model in {"openrouter/legacy-a", "openrouter/legacy-b"}
 
     def test_pool_with_no_models_falls_back_to_default(self, tmp_path: Path) -> None:
@@ -210,10 +190,10 @@ reviewers:
     perspective: security
     model: pool
 '''
-        result = self._run(tmp_path, config)
+        result, artifacts_dir = self._run(tmp_path, config)
         assert result.returncode == 0
-        configured = Path("/tmp/security-configured-model").read_text().strip()
-        primary = Path("/tmp/security-primary-model").read_text().strip()
+        configured = artifact(artifacts_dir, "configured-model").read_text().strip()
+        primary = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert configured == "openrouter/default"
         assert primary == "openrouter/default"
 
@@ -230,14 +210,19 @@ reviewers:
     perspective: security
     model: pool
 '''
-        result = self._run(tmp_path, config, {"MODEL_TIER": "FlAsH"})
+        result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "FlAsH"})
         assert result.returncode == 0
-        model = Path("/tmp/security-primary-model").read_text().strip()
+        model = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert model == "openrouter/flash-a"
 
 
 class TestModelPrecedence:
-    def _run(self, tmp_path: Path, config: str, env_extra: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def _run(
+        self,
+        tmp_path: Path,
+        config: str,
+        env_extra: dict[str, str] | None = None,
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         write_stub_pi(bin_dir / "pi")
@@ -248,17 +233,19 @@ class TestModelPrecedence:
         diff_file = tmp_path / "test.diff"
         write_simple_diff(diff_file)
 
-        env = make_env(bin_dir, diff_file, cerberus_root)
+        artifacts_dir = tmp_path / "artifacts"
+        env = make_env(bin_dir, diff_file, cerberus_root, artifacts_dir)
         if env_extra:
             env.update(env_extra)
 
-        return subprocess.run(
+        result = subprocess.run(
             [str(RUN_REVIEWER), "security"],
             env=env,
             capture_output=True,
             text=True,
             timeout=30,
         )
+        return result, artifacts_dir
 
     def test_reviewer_model_overrides_default_model(self, tmp_path: Path) -> None:
         config = '''
@@ -270,10 +257,10 @@ reviewers:
     perspective: security
     model: "openrouter/reviewer-model"
 '''
-        result = self._run(tmp_path, config)
+        result, artifacts_dir = self._run(tmp_path, config)
         assert result.returncode == 0
-        assert Path("/tmp/security-configured-model").read_text().strip() == "openrouter/reviewer-model"
-        assert Path("/tmp/security-primary-model").read_text().strip() == "openrouter/reviewer-model"
+        assert artifact(artifacts_dir, "configured-model").read_text().strip() == "openrouter/reviewer-model"
+        assert artifact(artifacts_dir, "primary-model").read_text().strip() == "openrouter/reviewer-model"
 
     def test_input_model_override_has_highest_precedence(self, tmp_path: Path) -> None:
         config = '''
@@ -285,10 +272,10 @@ reviewers:
     perspective: security
     model: "openrouter/reviewer-model"
 '''
-        result = self._run(tmp_path, config, {"OPENCODE_MODEL": "openrouter/input-model"})
+        result, artifacts_dir = self._run(tmp_path, config, {"OPENCODE_MODEL": "openrouter/input-model"})
         assert result.returncode == 0
-        assert Path("/tmp/security-configured-model").read_text().strip() == "openrouter/reviewer-model"
-        assert Path("/tmp/security-primary-model").read_text().strip() == "openrouter/input-model"
+        assert artifact(artifacts_dir, "configured-model").read_text().strip() == "openrouter/reviewer-model"
+        assert artifact(artifacts_dir, "primary-model").read_text().strip() == "openrouter/input-model"
 
     def test_default_model_used_when_reviewer_model_missing(self, tmp_path: Path) -> None:
         config = '''
@@ -299,7 +286,7 @@ reviewers:
   - name: SENTINEL
     perspective: security
 '''
-        result = self._run(tmp_path, config)
+        result, artifacts_dir = self._run(tmp_path, config)
         assert result.returncode == 0
-        assert Path("/tmp/security-configured-model").read_text().strip() == "openrouter/default-model"
-        assert Path("/tmp/security-primary-model").read_text().strip() == "openrouter/default-model"
+        assert artifact(artifacts_dir, "configured-model").read_text().strip() == "openrouter/default-model"
+        assert artifact(artifacts_dir, "primary-model").read_text().strip() == "openrouter/default-model"

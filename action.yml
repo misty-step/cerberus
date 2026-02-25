@@ -130,11 +130,16 @@ runs:
         PI_VERSION: ${{ inputs.pi-version }}
         LEGACY_OPENCODE_VERSION: ${{ inputs.opencode-version }}
       run: |
+        default_pi_version='0.55.0'
         resolved_version="$PI_VERSION"
-        if [[ -z "$resolved_version" && -n "$LEGACY_OPENCODE_VERSION" ]]; then
+
+        if [[ -n "$LEGACY_OPENCODE_VERSION" && ( -z "$PI_VERSION" || "$PI_VERSION" == "$default_pi_version" ) ]]; then
           echo "::warning::Input 'opencode-version' is deprecated. Use 'pi-version'."
           resolved_version="$LEGACY_OPENCODE_VERSION"
+        elif [[ -n "$LEGACY_OPENCODE_VERSION" && "$PI_VERSION" != "$LEGACY_OPENCODE_VERSION" ]]; then
+          echo "::warning::Both 'pi-version' and deprecated 'opencode-version' were provided; using 'pi-version'."
         fi
+
         if [[ ! "$resolved_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "::error::Invalid pi-version format: $resolved_version"
           exit 1

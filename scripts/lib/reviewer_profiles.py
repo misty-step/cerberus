@@ -23,7 +23,7 @@ class ReviewerProfilesError(RuntimeError):
 
 @dataclass(frozen=True)
 class RuntimeProfile:
-    provider: str = "openrouter"
+    provider: str | None = "openrouter"
     model: str | None = None
     thinking_level: str | None = None
     tools: list[str] = field(default_factory=list)
@@ -56,7 +56,11 @@ class ReviewerProfilesConfig:
         skills = _merge_unique(self.base.skills, override.skills)
 
         return RuntimeProfile(
-            provider=override.provider or self.base.provider,
+            provider=(
+                override.provider
+                if override.provider is not None
+                else self.base.provider
+            ),
             model=override.model if override.model is not None else self.base.model,
             thinking_level=(
                 override.thinking_level
@@ -142,10 +146,20 @@ def _load_yaml(path: Path) -> Any:
         raise ReviewerProfilesError(f"invalid YAML in {path}: {e}") from e
 
 
-def _parse_profile(raw: Any, ctx: str) -> RuntimeProfile:
-    data = _require_mapping(raw or {}, ctx)
+def _parse_profile(
+    raw: Any,
+    ctx: str,
+    *,
+    default_provider: str | None,
+) -> RuntimeProfile:
+    if raw is None:
+        data: dict[str, Any] = {}
+    else:
+        data = _require_mapping(raw, ctx)
 
-    provider = _optional_str(data.get("provider"), f"{ctx}.provider") or "openrouter"
+    provider = _optional_str(data.get("provider"), f"{ctx}.provider")
+    if provider is None:
+        provider = default_provider
     model = _optional_str(data.get("model"), f"{ctx}.model")
     thinking_level = _optional_str(data.get("thinking_level"), f"{ctx}.thinking_level")
     tools = _optional_str_list(data.get("tools"), f"{ctx}.tools")
@@ -176,7 +190,11 @@ def load_reviewer_profiles(path: Path) -> ReviewerProfilesConfig:
     if version <= 0:
         raise ReviewerProfilesError("config.version: must be > 0")
 
-    base = _parse_profile(cfg.get("base", {}), "config.base")
+    base = _parse_profile(
+        cfg.get("base"),
+        "config.base",
+        default_provider="openrouter",
+    )
 
     perspectives_raw = cfg.get("perspectives")
     if perspectives_raw is None:
@@ -189,6 +207,7 @@ def load_reviewer_profiles(path: Path) -> ReviewerProfilesConfig:
         perspectives[perspective] = _parse_profile(
             profile,
             f"config.perspectives[{perspective}]",
+            default_provider=None,
         )
 
     return ReviewerProfilesConfig(

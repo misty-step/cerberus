@@ -52,6 +52,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Run extension tests
+        run: npx -y tsx --test tests/extensions/*.test.ts
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

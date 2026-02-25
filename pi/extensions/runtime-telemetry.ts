@@ -2,9 +2,15 @@ import fs from "node:fs";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const telemetryFile = process.env.CERBERUS_RUNTIME_TELEMETRY_FILE || "/tmp/cerberus-pi-runtime.ndjson";
+export function resolveTelemetryFile(): string {
+	return process.env.CERBERUS_RUNTIME_TELEMETRY_FILE || "/tmp/cerberus-pi-runtime.ndjson";
+}
 
-function emit(eventType: string, payload: Record<string, unknown>) {
+export function emitTelemetry(
+	telemetryFile: string,
+	eventType: string,
+	payload: Record<string, unknown>,
+): void {
 	const record = {
 		ts: new Date().toISOString(),
 		event: eventType,
@@ -18,20 +24,21 @@ function emit(eventType: string, payload: Record<string, unknown>) {
 }
 
 export default function runtimeTelemetryExtension(pi: ExtensionAPI) {
-	emit("session_start", { cwd: process.cwd(), telemetryFile });
+	const telemetryFile = resolveTelemetryFile();
+	emitTelemetry(telemetryFile, "session_start", { cwd: process.cwd(), telemetryFile });
 
 	pi.on("agent_start", async () => {
-		emit("agent_start", {});
+		emitTelemetry(telemetryFile, "agent_start", {});
 	});
 
 	pi.on("agent_end", async (event) => {
-		emit("agent_end", {
+		emitTelemetry(telemetryFile, "agent_end", {
 			messageCount: event.messages.length,
 		});
 	});
 
 	pi.on("turn_end", async (event) => {
-		emit("turn_end", {
+		emitTelemetry(telemetryFile, "turn_end", {
 			turnIndex: event.turnIndex,
 			toolResults: event.toolResults.length,
 			stopReason:
@@ -42,7 +49,7 @@ export default function runtimeTelemetryExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_execution_end", async (event) => {
-		emit("tool_execution_end", {
+		emitTelemetry(telemetryFile, "tool_execution_end", {
 			toolName: event.toolName,
 			isError: event.isError,
 		});
@@ -50,7 +57,7 @@ export default function runtimeTelemetryExtension(pi: ExtensionAPI) {
 
 	pi.on("message_end", async (event) => {
 		if (event.message.role !== "assistant") return;
-		emit("assistant_message_end", {
+		emitTelemetry(telemetryFile, "assistant_message_end", {
 			stopReason: event.message.stopReason ?? null,
 			hasErrorMessage: !!event.message.errorMessage,
 		});

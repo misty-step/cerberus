@@ -127,8 +127,10 @@ def strip_frontmatter(text: str) -> str:
 def resolve_profile(cerberus_root: Path, perspective: str) -> RuntimeProfile:
     profiles_path = cerberus_root / "defaults" / "reviewer-profiles.yml"
     if not profiles_path.exists():
-        # Backward-compatible fallback for tests/fixtures that don't include profiles yet.
-        return RuntimeProfile()
+        if os.environ.get("CERBERUS_ALLOW_MISSING_REVIEWER_PROFILES", "") == "1":
+            # Explicit test-only compatibility path.
+            return RuntimeProfile()
+        raise RuntimeError(f"missing reviewer profiles: {profiles_path}")
 
     try:
         cfg = load_reviewer_profiles(profiles_path)
@@ -199,6 +201,18 @@ def classify_api_error_text(text: str) -> str:
     return "API_ERROR"
 
 
+def redact_runtime_error(text: str) -> str:
+    redacted = text
+    patterns = [
+        (r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+", r"\1<redacted>"),
+        (r"(?i)((?:api|access|secret|auth)[_-]?key\s*[:=]\s*)[^\s,;]+", r"\1<redacted>"),
+        (r"(?i)(token\s*[:=]\s*)[^\s,;]+", r"\1<redacted>"),
+    ]
+    for pattern, replacement in patterns:
+        redacted = re.sub(pattern, replacement, redacted)
+    return redacted
+
+
 def write_api_error_marker(
     *,
     stdout_file: Path,
@@ -206,12 +220,13 @@ def write_api_error_marker(
     models: list[str],
 ) -> None:
     error_msg = f"{read_text(stdout_file) if stdout_file.exists() else ''}\n{read_text(stderr_file) if stderr_file.exists() else ''}"
-    error_type = classify_api_error_text(error_msg)
+    sanitized_error = redact_runtime_error(error_msg)
+    error_type = classify_api_error_text(sanitized_error)
     models_tried = " ".join(models)
     marker = (
         f"API Error: {error_type}\n\n"
         "The API provider returned an error that prevents the review from completing:\n\n"
-        f"{error_msg.strip()}\n\n"
+        f"{sanitized_error.strip()}\n\n"
         f"Models tried: {models_tried}\n"
         "Please check your API key and quota settings.\n"
     )
@@ -727,11 +742,12 @@ def main(argv: list[str]) -> int:
                 parse_input = timeout_marker
 
             if parse_input == timeout_marker:
+                diff_files_text = "\n".join(diff_files) if diff_files else "(none)"
                 marker = (
                     f"Review Timeout: timeout after {review_timeout}s\n"
                     f"{reviewer_name} ({perspective}) exceeded the configured timeout.\n"
                     f"Fast-path: {fast_path_attempted}\n"
-                    f"Files in diff: {'\n'.join(diff_files)}\n"
+                    f"Files in diff:\n{diff_files_text}\n"
                     "Next steps: Increase timeout, reduce diff size, or check model provider status.\n"
                 )
                 write_text(timeout_marker, marker)

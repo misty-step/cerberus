@@ -26,6 +26,14 @@ def _write_fake_root(
         config_yml = "- name: SENTINEL\n  perspective: security\n"
 
     (root / "defaults" / "config.yml").write_text(config_yml)
+    (root / "defaults" / "reviewer-profiles.yml").write_text(
+        """
+version: 1
+base: {}
+perspectives:
+  security: {}
+"""
+    )
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
     (root / ".opencode" / "agents" / "security.md").write_text(agent_content)
     return root
@@ -110,9 +118,34 @@ def test_resolve_profile_wraps_profile_errors(tmp_path: Path) -> None:
         _mod.resolve_profile(root, "security")
 
 
+def test_resolve_profile_requires_profiles_unless_allow_flag(tmp_path: Path, monkeypatch) -> None:
+    root = _write_fake_root(tmp_path)
+    (root / "defaults" / "reviewer-profiles.yml").unlink()
+
+    with pytest.raises(RuntimeError, match="missing reviewer profiles"):
+        _mod.resolve_profile(root, "security")
+
+    monkeypatch.setenv("CERBERUS_ALLOW_MISSING_REVIEWER_PROFILES", "1")
+    profile = _mod.resolve_profile(root, "security")
+    assert profile.provider == "openrouter"
+
+
 def test_classify_api_error_text_branches() -> None:
     assert _mod.classify_api_error_text("insufficient_quota") == "API_CREDITS_DEPLETED"
     assert _mod.classify_api_error_text("random error") == "API_ERROR"
+
+
+def test_redact_runtime_error_removes_tokens() -> None:
+    raw = (
+        "Authorization: Bearer secret-token\n"
+        "api_key=abc123\n"
+        "token: xyz789\n"
+    )
+    redacted = _mod.redact_runtime_error(raw)
+    assert "secret-token" not in redacted
+    assert "abc123" not in redacted
+    assert "xyz789" not in redacted
+    assert redacted.count("<redacted>") >= 3
 
 
 def test_print_tail_missing_file(capsys, tmp_path: Path) -> None:

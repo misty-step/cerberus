@@ -33,6 +33,7 @@ def make_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "5"
     env["CERBERUS_TEST_NO_SLEEP"] = "1"
+    env["CERBERUS_ALLOW_MISSING_REVIEWER_PROFILES"] = "1"
     return env
 
 

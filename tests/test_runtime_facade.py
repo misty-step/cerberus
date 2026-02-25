@@ -53,6 +53,11 @@ class TestBuildPiCommand:
         assert "pi/skills/base/SKILL.md" in cmd
         assert "--print" in cmd
 
+    def test_does_not_pass_api_key_in_cli_args(self, tmp_path: Path) -> None:
+        req = make_request(tmp_path)
+        cmd = build_pi_command(req)
+        assert "--api-key" not in cmd
+
 
 class TestClassifyRuntimeError:
     def test_success(self) -> None:
@@ -188,6 +193,76 @@ class TestRunPiAttempt:
         assert captured_env["CERBERUS_TRUSTED_SYSTEM_PROMPT_FILE"] == str(trusted)
         assert captured_env["CERBERUS_RUNTIME_TELEMETRY_FILE"] == str(telemetry)
         assert captured_env["CERBERUS_PROMPT_CAPTURE_PATH"] == "/tmp/capture.md"
+        assert captured_env["OPENROUTER_API_KEY"] == "test-key"
+        assert captured_env["CERBERUS_OPENROUTER_API_KEY"] == "test-key"
+
+    def test_provider_specific_api_key_env_is_used(self, monkeypatch, tmp_path: Path) -> None:
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("hello")
+
+        captured_env: dict[str, str] = {}
+
+        class Proc:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+
+        def fake_run(cmd, input, capture_output, text, timeout, env):
+            captured_env.update(env)
+            return Proc()
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        req = RuntimeAttemptRequest(
+            perspective="security",
+            provider="openai",
+            model="openai/gpt-5",
+            prompt_file=prompt_file,
+            system_prompt_file=tmp_path / "system.md",
+            timeout_seconds=30,
+            tools=["read"],
+            extensions=[],
+            skills=[],
+            thinking_level=None,
+            api_key="test-key",
+            agent_dir=tmp_path / "pi-agent",
+            isolated_home=tmp_path / "home",
+        )
+
+        result = run_pi_attempt(req)
+        assert result.exit_code == 0
+        assert captured_env["OPENAI_API_KEY"] == "test-key"
+        assert "CERBERUS_OPENROUTER_API_KEY" not in captured_env
+
+    def test_spawn_failure_returns_structured_result(self, monkeypatch, tmp_path: Path) -> None:
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("hello")
+
+        def fake_run(*args, **kwargs):
+            raise OSError("pi not found")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        req = RuntimeAttemptRequest(
+            perspective="security",
+            provider="openrouter",
+            model="openrouter/moonshotai/kimi-k2.5",
+            prompt_file=prompt_file,
+            system_prompt_file=tmp_path / "system.md",
+            timeout_seconds=30,
+            tools=["read"],
+            extensions=[],
+            skills=[],
+            thinking_level=None,
+            api_key="test-key",
+            agent_dir=tmp_path / "pi-agent",
+            isolated_home=tmp_path / "home",
+        )
+
+        result = run_pi_attempt(req)
+        assert result.exit_code == 1
+        assert result.timed_out is False
+        assert "unable to execute pi runtime" in result.stderr
 
     def test_timeout_decodes_bytes_output(self, monkeypatch, tmp_path: Path) -> None:
         prompt_file = tmp_path / "prompt.md"

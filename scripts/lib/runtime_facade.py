@@ -116,8 +116,6 @@ def build_pi_command(req: RuntimeAttemptRequest) -> list[str]:
         req.provider,
         "--model",
         model_id,
-        "--api-key",
-        req.api_key,
         "--no-session",
         "--tools",
         ",".join(req.tools),
@@ -140,6 +138,27 @@ def build_pi_command(req: RuntimeAttemptRequest) -> list[str]:
         cmd.extend(["--skill", skill])
 
     return cmd
+
+
+def _provider_api_key_env_var(provider: str) -> str:
+    mapping = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "azure": "AZURE_OPENAI_API_KEY",
+        "azure-openai": "AZURE_OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "google": "GEMINI_API_KEY",
+        "xai": "XAI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
+    }
+    normalized = provider.strip().lower()
+    if normalized in mapping:
+        return mapping[normalized]
+    fallback = normalized.replace("-", "_").upper()
+    return f"{fallback}_API_KEY" if fallback else "OPENROUTER_API_KEY"
 
 
 def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
@@ -167,6 +186,8 @@ def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
             retry_after_seconds=retry_after,
         )
 
+    provider_api_key_var = _provider_api_key_env_var(req.provider)
+
     env: dict[str, str] = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": str(req.isolated_home),
@@ -175,10 +196,12 @@ def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
         "TMPDIR": str(req.isolated_home / "tmp"),
         "PI_CODING_AGENT_DIR": str(req.agent_dir),
         "PI_SKIP_VERSION_CHECK": "1",
-        # Kept for compatibility with scripts/extensions expecting these names.
-        "OPENROUTER_API_KEY": req.api_key,
-        "CERBERUS_OPENROUTER_API_KEY": req.api_key,
+        provider_api_key_var: req.api_key,
     }
+
+    # Preserve legacy OpenRouter aliases for scripts/extensions that reference them.
+    if provider_api_key_var == "OPENROUTER_API_KEY":
+        env["CERBERUS_OPENROUTER_API_KEY"] = req.api_key
 
     if os.environ.get("LANG"):
         env["LANG"] = os.environ["LANG"]
@@ -213,6 +236,23 @@ def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
             timed_out=False,
             stdout=proc.stdout,
             stderr=proc.stderr,
+            error_type=error_type,
+            error_class=error_class,
+            retry_after_seconds=retry_after,
+        )
+    except OSError as exc:
+        stdout = ""
+        stderr = f"unable to execute pi runtime: {exc}"
+        error_type, error_class, retry_after = classify_runtime_error(
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=1,
+        )
+        return RuntimeAttemptResult(
+            exit_code=1,
+            timed_out=False,
+            stdout=stdout,
+            stderr=stderr,
             error_type=error_type,
             error_class=error_class,
             retry_after_seconds=retry_after,
