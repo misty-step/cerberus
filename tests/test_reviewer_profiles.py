@@ -150,3 +150,69 @@ perspectives:
         assert p.tools == []
         assert p.extensions == []
         assert p.skills == []
+
+    def test_missing_file_raises(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.yml"
+        with pytest.raises(ReviewerProfilesError, match="missing config file"):
+            load_reviewer_profiles(missing)
+
+    def test_invalid_yaml_raises(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            "version: [\n",
+        )
+        with pytest.raises(ReviewerProfilesError, match="invalid YAML"):
+            load_reviewer_profiles(path)
+
+    def test_root_must_be_mapping(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            "- not-a-mapping\n",
+        )
+        with pytest.raises(ReviewerProfilesError, match="config: expected mapping"):
+            load_reviewer_profiles(path)
+
+    def test_version_must_be_positive(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            """
+version: 0
+base: {}
+perspectives:
+  security: {}
+""",
+        )
+        with pytest.raises(ReviewerProfilesError, match="config.version: must be > 0"):
+            load_reviewer_profiles(path)
+
+    def test_empty_perspective_key_rejected(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            """
+version: 1
+base: {}
+perspectives:
+  "": {}
+""",
+        )
+        with pytest.raises(ReviewerProfilesError, match="must be non-empty"):
+            load_reviewer_profiles(path)
+
+    def test_dedup_merge_for_extensions_and_skills(self, tmp_path: Path) -> None:
+        path = write_config(
+            tmp_path,
+            """
+version: 1
+base:
+  extensions: [a, b]
+  skills: [s1, s2]
+perspectives:
+  security:
+    extensions: [b, c]
+    skills: [s2, s3]
+""",
+        )
+        cfg = load_reviewer_profiles(path)
+        merged = cfg.merged_for_perspective("security")
+        assert merged.extensions == ["a", "b", "c"]
+        assert merged.skills == ["s1", "s2", "s3"]
