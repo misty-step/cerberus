@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createInterface } = require('node:readline/promises');
 
 const TEMPLATE_PATH = path.join(__dirname, '../templates/consumer-workflow-reusable.yml');
 const DEST_PATH = path.join('.github', 'workflows', 'cerberus.yml');
@@ -58,6 +59,24 @@ function readApiKeySource() {
   return { kind: 'prompt' };
 }
 
+async function promptApiKeyOnce() {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+  });
+
+  try {
+    const value = await rl.question('Enter Cerberus OpenRouter API key: ');
+    if (!value || !value.trim()) {
+      fail('No API key entered.');
+    }
+    return value.trim();
+  } finally {
+    rl.close();
+  }
+}
+
 async function readTemplate() {
   return fs.promises.readFile(TEMPLATE_PATH, 'utf8');
 }
@@ -109,7 +128,11 @@ async function initCommand() {
   requireBinary('gh');
 
   const repoRoot = getRepoRoot();
-  const keySource = await readApiKeySource();
+  const initialKeySource = await readApiKeySource();
+  const keySource =
+    initialKeySource.kind === 'prompt'
+      ? { kind: 'env', value: await promptApiKeyOnce() }
+      : initialKeySource;
   const template = await readTemplate();
   const { changed, skipped, dest, workflowContent } = writeWorkflow(repoRoot, template);
 
