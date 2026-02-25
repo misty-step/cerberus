@@ -11,7 +11,7 @@ flowchart TD
   REVIEW_FANOUT -->|N parallel jobs| REVIEW[action.yml\nuses: cerberus@v2\n(single perspective)]
 
   REVIEW --> CTX[Fetch PR diff + context\n(gh pr diff/view)]
-  CTX --> LLM[Run reviewer\n(opencode run --agent <perspective>)]
+  CTX --> LLM[Run reviewer\n(pi --print --system-prompt <perspective>)]
   LLM --> PARSE[Parse reviewer output -> verdict.json\nscripts/parse-review.py]
 
   PARSE -->|uploads| ART[(Artifacts\ncerberus-verdict-<perspective>)]

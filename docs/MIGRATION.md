@@ -12,7 +12,7 @@ v1 is EOL — no further patches or features. v2 ships:
 - **Preflight gate** — detects forks, drafts, and missing API keys before spending tokens, with optional PR comment explaining the skip
 - **Richer verdict** — inline PR comments anchored to diff lines, override support (`/cerberus override`), and skip/fail separation
 - **Model diversity** — per-reviewer model assignment, a randomized pool, and a fallback chain for resilience
-- **Reliability hardening** — empty-output retries, timeout fast-path fallback, staged OpenCode config, isolated HOME, parse-failure recovery
+- **Reliability hardening** — empty-output retries, timeout fast-path fallback, isolated HOME, parse-failure recovery, runtime telemetry
 
 ---
 
@@ -20,7 +20,7 @@ v1 is EOL — no further patches or features. v2 ships:
 
 | Area | v1 | v2 |
 |------|----|----|
-| CLI runtime | KimiCode CLI | OpenCode CLI |
+| CLI runtime | KimiCode CLI | Pi CLI |
 | Required secret | `MOONSHOT_API_KEY` | `CERBERUS_OPENROUTER_API_KEY` |
 | Action input | `kimi-api-key` | `api-key` |
 | Skip-condition gate | `draft-check` | `preflight` (fork + draft + missing key) |

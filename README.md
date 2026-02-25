@@ -70,7 +70,7 @@ Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
-2. OpenCode CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
+2. Pi CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
 3. Reviewer runtime retries transient provider failures (429, 5xx, network) up to 3 times with 2s/4s/8s backoff and honors `Retry-After` when present
 4. Each reviewer uploads a structured verdict artifact (optionally posts a per-reviewer PR comment)
 5. The verdict job aggregates all reviews, posts a verdict comment, and posts a PR review with inline comments (up to 30) anchored to diff lines
@@ -119,7 +119,8 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `fallback-models` | no | `openrouter/google/gemini-3-flash-preview,...` | Comma-separated fallback models, tried on transient failure |
 | `max-steps` | no | `25` | Max agentic steps |
 | `timeout` | no | `600` | Review timeout in seconds (per reviewer job) |
-| `opencode-version` | no | `1.1.49` | OpenCode CLI version |
+| `pi-version` | no | `0.55.0` | Pi CLI version |
+| `opencode-version` | no | `''` | Deprecated alias for `pi-version` (used only when `pi-version` is empty) |
 | `comment-policy` | no | `never` | When to post comment: `never`, `non-pass` (WARN/FAIL), or `always` |
 | `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
 | `fail-on-verdict` | no | `false` | Exit 1 if review verdict is FAIL |

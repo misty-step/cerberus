@@ -14,12 +14,14 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 RUN_REVIEWER = SCRIPTS_DIR / "run-reviewer.sh"
+RUN_REVIEWER_PY = SCRIPTS_DIR / "run-reviewer.py"
+RUNTIME_FACADE = SCRIPTS_DIR / "lib" / "runtime_facade.py"
 
 
 @pytest.fixture()
-def stub_opencode(tmp_path):
-    """Create a stub opencode binary that emits valid review JSON."""
-    stub = tmp_path / "opencode"
+def stub_pi(tmp_path):
+    """Create a stub pi binary that emits valid review JSON."""
+    stub = tmp_path / "pi"
     stub.write_text(
         "#!/usr/bin/env bash\n"
         "cat <<'REVIEW'\n"
@@ -50,16 +52,17 @@ def large_diff(tmp_path):
 
 
 @pytest.fixture()
-def reviewer_env(tmp_path, stub_opencode, large_diff):
-    """Set up environment for run-reviewer.sh with stub opencode."""
+def reviewer_env(tmp_path, stub_pi, large_diff):
+    """Set up environment for run-reviewer.sh with stub pi."""
     env = os.environ.copy()
-    env["PATH"] = str(stub_opencode.parent) + ":" + env.get("PATH", "")
+    env["PATH"] = str(stub_pi.parent) + ":" + env.get("PATH", "")
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
     env["CERBERUS_TMP"] = "/tmp"
     env["GH_DIFF_FILE"] = str(large_diff)
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "30"
+    env["CERBERUS_TEST_NO_SLEEP"] = "1"
     return env
 
 
@@ -116,18 +119,14 @@ class TestLargeDiffStdin:
 
 
 class TestNoCommandSubstitution:
-    """Static checks: prompt handling in run-reviewer.sh."""
+    """Static checks: prompt handling in run-reviewer.py."""
 
-    def test_opencode_run_present(self):
-        """run-reviewer.sh must invoke opencode run."""
-        source = RUN_REVIEWER.read_text()
-        assert "opencode run" in source, (
-            "run-reviewer.sh does not invoke opencode run"
-        )
+    def test_pi_invocation_present(self):
+        """runtime facade must invoke the pi binary."""
+        source = RUNTIME_FACADE.read_text()
+        assert "pi" in source and "subprocess.run" in source
 
     def test_review_prompt_referenced(self):
-        """run-reviewer.sh should reference the review prompt file."""
-        source = RUN_REVIEWER.read_text()
-        assert "review-prompt.md" in source, (
-            "Expected reference to review-prompt.md"
-        )
+        """run-reviewer.py should reference the review prompt file."""
+        source = RUN_REVIEWER_PY.read_text()
+        assert "review-prompt.md" in source

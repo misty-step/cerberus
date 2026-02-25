@@ -37,15 +37,15 @@ def _build_diff_hunk(path: str, added_line: str) -> str:
 
 
 @pytest.fixture()
-def stub_opencode(tmp_path: Path) -> tuple[Path, Path]:
-    """Stub opencode and capture stdin prompt for assertions."""
-    stub = tmp_path / "opencode"
+def stub_pi(tmp_path: Path) -> tuple[Path, Path]:
+    """Stub pi and capture stdin prompt for assertions."""
+    stub = tmp_path / "pi"
     prompt_capture = tmp_path / "captured-prompt.md"
     _make_executable(
         stub,
         (
             "#!/usr/bin/env bash\n"
-            "cat > \"${OPENCODE_CAPTURE_PATH}\"\n"
+            "cat > \"${CERBERUS_PROMPT_CAPTURE_PATH}\"\n"
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"correctness","verdict":"PASS",'
@@ -60,16 +60,16 @@ def stub_opencode(tmp_path: Path) -> tuple[Path, Path]:
 
 
 @pytest.fixture()
-def reviewer_env(stub_opencode: tuple[Path, Path]) -> dict[str, str]:
+def reviewer_env(stub_pi: tuple[Path, Path]) -> dict[str, str]:
     """Shared environment for run-reviewer.sh execution."""
-    stub, prompt_capture = stub_opencode
+    stub, prompt_capture = stub_pi
     env = os.environ.copy()
     env["PATH"] = f"{stub.parent}:{env.get('PATH', '')}"
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "30"
-    env["OPENCODE_CAPTURE_PATH"] = str(prompt_capture)
+    env["CERBERUS_PROMPT_CAPTURE_PATH"] = str(prompt_capture)
     return env
 
 
@@ -94,8 +94,8 @@ def _run_reviewer(
         f"stderr: {result.stderr}"
     )
 
-    prompt_capture = Path(env["OPENCODE_CAPTURE_PATH"])
-    assert prompt_capture.exists(), "Stub opencode did not capture prompt input"
+    prompt_capture = Path(env["CERBERUS_PROMPT_CAPTURE_PATH"])
+    assert prompt_capture.exists(), "Stub pi did not capture prompt input"
     prompt_text = prompt_capture.read_text()
     return result, prompt_text, diff_file
 
@@ -114,7 +114,7 @@ def test_prompt_references_diff_file_path(
 def test_prompt_does_not_contain_inline_diff(
     tmp_path: Path, reviewer_env: dict[str, str]
 ) -> None:
-    """The prompt piped to opencode should NOT contain raw diff content."""
+    """The prompt piped to pi should NOT contain raw diff content."""
     diff_text = _build_diff_hunk("src/app.py", "print('app')")
     _, prompt_text, _ = _run_reviewer(diff_text, tmp_path, reviewer_env)
 

@@ -1,0 +1,73 @@
+# Cerberus reviewer runtime profiles (Pi-native)
+#
+# These profiles define runtime behavior per perspective while keeping
+# downstream parser/verdict contracts stable.
+#
+# Model assignments are intentionally conservative for the initial Pi migration.
+# Cost/quality cascading strategy is tracked in issue #285.
+
+version: 1
+
+base:
+  provider: openrouter
+  tools:
+    - read
+    - grep
+    - find
+    - ls
+    - write
+    - edit
+    - bash
+  # Extensions are loaded explicitly by runtime orchestration (no ambient discovery).
+  extensions:
+    - pi/extensions/reviewer-guard.ts
+    - pi/extensions/runtime-telemetry.ts
+  # Skills are loaded explicitly by runtime orchestration (no ambient discovery).
+  skills:
+    - pi/skills/base-review/SKILL.md
+  thinking_level: medium
+  max_steps: 25
+  timeout: 600
+
+perspectives:
+  correctness:
+    model: moonshotai/kimi-k2.5
+    thinking_level: high
+    skills:
+      - pi/skills/correctness-review/SKILL.md
+
+  architecture:
+    model: z-ai/glm-5
+    skills:
+      - pi/skills/architecture-review/SKILL.md
+
+  security:
+    model: minimax/minimax-m2.5
+    thinking_level: high
+    skills:
+      - pi/skills/security-review/SKILL.md
+
+  performance:
+    model: moonshotai/kimi-k2.5
+    skills:
+      - pi/skills/performance-review/SKILL.md
+
+  maintainability:
+    model: moonshotai/kimi-k2.5
+    skills:
+      - pi/skills/maintainability-review/SKILL.md
+
+  testing:
+    model: google/gemini-3-flash-preview
+    skills:
+      - pi/skills/testing-review/SKILL.md
+
+  resilience:
+    model: z-ai/glm-5
+    skills:
+      - pi/skills/resilience-review/SKILL.md
+
+  compatibility:
+    model: minimax/minimax-m2.5
+    skills:
+      - pi/skills/compatibility-review/SKILL.md

@@ -1,7 +1,7 @@
 """Verify the reviewer runtime sanitizes its environment.
 
-The opencode process must NOT see secrets that aren't explicitly
-allowlisted (OPENROUTER_API_KEY).  This test uses a stub opencode
+The pi process must NOT see secrets that aren't explicitly
+allowlisted (OPENROUTER_API_KEY).  This test uses a stub pi
 binary that fails if it detects any leaked variable.
 """
 
@@ -15,7 +15,7 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent.parent
 RUN_REVIEWER = REPO_ROOT / "scripts" / "run-reviewer.sh"
 
-# Variables that MUST NOT leak into the opencode process.
+# Variables that MUST NOT leak into the pi process.
 DANGEROUS_VARS = [
     "GITHUB_TOKEN",
     "GH_TOKEN",
@@ -45,8 +45,8 @@ def _make_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     return env
 
 
-def _write_env_checking_opencode(path: Path) -> None:
-    """Stub opencode that fails if any dangerous var is visible."""
+def _write_env_checking_pi(path: Path) -> None:
+    """Stub pi that fails if any dangerous var is visible."""
     checks = "\n".join(
         f'if [ -n "${{{v}:-}}" ]; then echo "LEAK:{v}" >&2; exit 99; fi'
         for v in DANGEROUS_VARS
@@ -66,10 +66,10 @@ def _write_env_checking_opencode(path: Path) -> None:
     )
 
 
-def test_dangerous_vars_not_leaked_to_opencode(tmp_path: Path) -> None:
+def test_dangerous_vars_not_leaked_to_pi(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _write_env_checking_opencode(bin_dir / "opencode")
+    _write_env_checking_pi(bin_dir / "pi")
 
     diff_file = tmp_path / "diff.patch"
     diff_file.write_text("diff --git a/f.py b/f.py\n+pass\n")
@@ -83,7 +83,7 @@ def test_dangerous_vars_not_leaked_to_opencode(tmp_path: Path) -> None:
     )
     # If any LEAK:<var> appeared, the stub exited 99 and the review fails.
     for var in DANGEROUS_VARS:
-        assert f"LEAK:{var}" not in result.stderr, f"{var} leaked into opencode env"
+        assert f"LEAK:{var}" not in result.stderr, f"{var} leaked into pi env"
     assert result.returncode == 0
 
 
@@ -92,7 +92,7 @@ def test_openrouter_api_key_is_forwarded(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _make_executable(
-        bin_dir / "opencode",
+        bin_dir / "pi",
         "#!/usr/bin/env bash\n"
         'if [ -z "${OPENROUTER_API_KEY:-}" ]; then\n'
         "  echo 'MISSING_KEY' >&2; exit 99\n"

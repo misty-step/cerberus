@@ -35,7 +35,7 @@ def test_all_reviewers_fail_end_to_end(tmp_path: Path) -> None:
     bin_dir.mkdir()
 
     make_executable(
-        bin_dir / "opencode",
+        bin_dir / "pi",
         (
             "#!/usr/bin/env bash\n"
             "cat <<'REVIEW'\n"
