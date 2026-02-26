@@ -63,7 +63,7 @@ jobs:
     outputs:
       should_run: ${{ steps.preflight.outputs.should_run }}
     steps:
-      - uses: misty-step/cerberus/preflight@master
+      - uses: ./preflight
         id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO" > /tmp/pr.diff
-      - uses: misty-step/cerberus/router@master
+      - uses: ./router
         id: router
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
           diff-file: /tmp/pr.diff
           reviewers: ${{ inputs.reviewers }}
       - id: matrix_wave1
-        uses: misty-step/cerberus/matrix@master
+        uses: ./matrix
         with:
           panel: ${{ steps.router.outputs.panel }}
           model-tier: ${{ steps.router.outputs.model-tier }}
@@ -113,7 +113,7 @@ jobs:
       matrix: ${{ fromJson(needs.route.outputs.matrix-wave1) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@master
+      - uses: ./
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -148,14 +148,14 @@ jobs:
           merge-multiple: true
       - name: Evaluate wave1 gate
         id: gate
-        uses: misty-step/cerberus/wave-gate@master
+        uses: ./wave-gate
         with:
           verdict-dir: ./wave-verdicts
           wave: wave1
           model-tier: ${{ needs.route.outputs.model-tier }}
       - id: matrix_wave2
         if: steps.gate.outputs.escalate == 'true'
-        uses: misty-step/cerberus/matrix@master
+        uses: ./matrix
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
@@ -181,7 +181,7 @@ jobs:
       matrix: ${{ fromJson(needs.gate-wave1.outputs.matrix-wave2) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@master
+      - uses: ./
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -218,14 +218,14 @@ jobs:
           merge-multiple: true
       - name: Evaluate wave2 gate
         id: gate
-        uses: misty-step/cerberus/wave-gate@master
+        uses: ./wave-gate
         with:
           verdict-dir: ./wave-verdicts
           wave: wave2
           model-tier: ${{ needs.route.outputs.model-tier }}
       - id: matrix_wave3
         if: steps.gate.outputs.escalate == 'true'
-        uses: misty-step/cerberus/matrix@master
+        uses: ./matrix
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
@@ -251,7 +251,7 @@ jobs:
       matrix: ${{ fromJson(needs.gate-wave2.outputs.matrix-wave3) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@master
+      - uses: ./
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -285,7 +285,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: misty-step/cerberus/verdict@master
+      - uses: ./verdict
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           fail-on-verdict: ${{ inputs.fail-on-verdict }}
