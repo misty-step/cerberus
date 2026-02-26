@@ -55,7 +55,7 @@ concurrency:
 
 jobs:
   review:
-    uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+    uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
     permissions:
       contents: read
       pull-requests: write

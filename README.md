@@ -17,12 +17,13 @@ permissions:
   pull-requests: write
 jobs:
   review:
-    uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+    uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
     secrets:
       api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 ```
 
 Then set one repository secret: `CERBERUS_OPENROUTER_API_KEY`.
+Leave `with:` unset to run the full default Cerberus configuration.
 
 Prefer scaffolding? Run `npx cerberus init` to install the same reusable template and prompt for the secret.
 
@@ -64,7 +65,7 @@ Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups
 - Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
 
 ## Workflow Architecture
-- **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@v2`
+- **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@master`
 - **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`
 - **Optional:** add `templates/triage-workflow.yml` for automated failure triage
 
@@ -80,7 +81,7 @@ Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups
 
 ## Auto-Triage (v1.1)
 Cerberus ships a separate triage module for verdict failures:
-- Action: `misty-step/cerberus/triage@v2`
+- Action: `misty-step/cerberus/triage@master`
 - Modes: `off`, `diagnose`, `fix`
 - Loop protection:
   - skips if head commit message contains `[triage]`
@@ -109,7 +110,7 @@ Full Cerberus review runs with full access to the `CERBERUS_OPENROUTER_API_KEY` 
 This prevents confusing failures when secret-dependent operations can't access their credentials.
 
 ## Inputs
-### Review Action (`misty-step/cerberus@v2`)
+### Review Action (`misty-step/cerberus@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `perspective` | yes | - | Review perspective |
@@ -127,14 +128,14 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
 | `fail-on-verdict` | no | `false` | Exit 1 if review verdict is FAIL |
 
-### Verdict Action (`misty-step/cerberus/verdict@v2`)
+### Verdict Action (`misty-step/cerberus/verdict@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | - | GitHub token for PR comments |
 | `fail-on-verdict` | no | `true` | Exit 1 if Cerberus verdict is FAIL |
 | `fail-on-skip` | no | `false` | Exit 1 if Cerberus verdict is SKIP (all reviews skipped) |
 
-### Validate Action (`misty-step/cerberus/validate@v2`)
+### Validate Action (`misty-step/cerberus/validate@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `workflow` | no | `.github/workflows/cerberus.yml` | Workflow file to validate |
@@ -183,7 +184,7 @@ matrix:
 
 ### Non-blocking reviews
 ```yaml
-- uses: misty-step/cerberus/verdict@v2
+- uses: misty-step/cerberus/verdict@master
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-verdict: 'false'
@@ -222,7 +223,7 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
 
 ### Fail when no review happened (SKIP)
 ```yaml
-- uses: misty-step/cerberus/verdict@v2
+- uses: misty-step/cerberus/verdict@master
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-skip: 'true'
