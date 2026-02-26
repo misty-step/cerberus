@@ -154,7 +154,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    name: Cerberus · wave2 reviewer
+    name: "Cerberus · wave2 · ${{ matrix.reviewer_label }}"
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.gate-wave1.outputs.matrix-wave2) }}
@@ -214,7 +214,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    name: Cerberus · wave3 reviewer
+    name: "Cerberus · wave3 · ${{ matrix.reviewer_label }}"
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.gate-wave2.outputs.matrix-wave3) }}
