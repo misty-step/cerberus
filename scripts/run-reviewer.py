@@ -292,11 +292,9 @@ def main(argv: list[str]) -> int:
         return 2
     cerberus_root = Path(cerberus_root_raw).resolve()
 
-    tmp_owned = False
     cerberus_tmp_raw = os.environ.get("CERBERUS_TMP", "").strip()
     if not cerberus_tmp_raw:
         cerberus_tmp = Path(tempfile.mkdtemp(prefix="cerberus."))
-        tmp_owned = True
         os.environ["CERBERUS_TMP"] = str(cerberus_tmp)
     else:
         cerberus_tmp = Path(cerberus_tmp_raw)
@@ -668,13 +666,13 @@ def main(argv: list[str]) -> int:
     write_text(cerberus_tmp / f"{perspective}-model-used", model_used)
 
     if exit_code != 0:
-        error_type, error_class, _ = classify_runtime_error(
+        error_type, _error_class, _ = classify_runtime_error(
             stdout=read_text(stdout_file) if stdout_file.exists() else "",
             stderr=read_text(stderr_file) if stderr_file.exists() else "",
             exit_code=exit_code,
         )
         if error_type in {"permanent", "transient"}:
-            print("Permanent API error detected. Writing error verdict.")
+            print(f"{error_type.capitalize()} API/runtime error detected. Writing error verdict.")
             write_api_error_marker(stdout_file=stdout_file, stderr_file=stderr_file, models=models)
             exit_code = 0
 

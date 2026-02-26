@@ -36,8 +36,12 @@ test("isTmpPath allows regular /tmp path", () => {
 	assert.equal(isTmpPath("/tmp/cerberus-safe-file.txt", process.cwd()), true);
 });
 
-test("isTmpPath blocks symlink escape from /tmp", () => {
-	const outsideRoot = fs.mkdtempSync(path.join(process.cwd(), ".guard-outside-"));
+test("isTmpPath blocks symlink escape from /tmp", (t) => {
+	const cwdReal = fs.realpathSync(process.cwd());
+	if (cwdReal === "/tmp" || cwdReal.startsWith("/tmp/")) {
+		t.skip("requires workspace outside /tmp");
+	}
+	const outsideRoot = fs.mkdtempSync(path.join(cwdReal, ".guard-outside-"));
 	const linkPath = path.join(
 		"/tmp",
 		`cerberus-guard-link-${Date.now()}-${Math.random().toString(36).slice(2)}`,
