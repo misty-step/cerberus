@@ -114,8 +114,8 @@ def evaluate_gate(*, cfg: DefaultsConfig, verdict_dir: Path, wave: str, tier: st
     gate = cfg.waves.gate
     if malformed_count > 0:
         blocking_reasons.append("malformed_artifacts")
-    if parsed_count == 0 and len(verdict_files) > 0:
-        blocking_reasons.append("no_valid_verdicts")
+    if parsed_count == 0:
+        blocking_reasons.append("no_verdicts" if len(verdict_files) == 0 else "no_valid_verdicts")
     if gate.block_on_critical and critical_total > 0:
         blocking_reasons.append("critical_findings")
     if gate.block_on_major and major_total > 0:

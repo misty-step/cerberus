@@ -220,16 +220,18 @@ def test_evaluate_gate_blocks_on_malformed_and_no_valid_verdicts(tmp_path: Path)
     assert "no_valid_verdicts" in result["reason"]
 
 
-def test_evaluate_gate_allows_empty_wave_to_escalate(tmp_path: Path) -> None:
+def test_evaluate_gate_blocks_on_empty_verdict_dir(tmp_path: Path) -> None:
+    # An empty verdict dir means wave1 produced no signal (e.g. artifact name mismatch).
+    # Escalating vacuously would promote to wave2 on zero evidence — wrong.
     config = _write_config(tmp_path)
     verdict_dir = tmp_path / "verdicts"
     verdict_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = mod.load_defaults_config(config)
     result = mod.evaluate_gate(cfg=cfg, verdict_dir=verdict_dir, wave="wave1", tier="standard")
-    assert result["blocking"] is False
-    assert result["escalate"] is True
-    assert result["reason"] == "passed_gate"
+    assert result["escalate"] is False
+    assert result["blocking"] is True
+    assert result["reason"] == "no_verdicts"
 
 
 def test_main_errors_on_empty_wave(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
