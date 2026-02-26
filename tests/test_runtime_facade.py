@@ -7,6 +7,7 @@ from lib.runtime_facade import (
     RuntimeAttemptRequest,
     build_pi_command,
     classify_runtime_error,
+    provider_api_key_env_var,
     run_pi_attempt,
 )
 
@@ -57,6 +58,14 @@ class TestBuildPiCommand:
         req = make_request(tmp_path)
         cmd = build_pi_command(req)
         assert "--api-key" not in cmd
+
+
+class TestProviderApiKeyEnvVar:
+    def test_known_provider_uses_specific_env_var(self) -> None:
+        assert provider_api_key_env_var("openai") == "OPENAI_API_KEY"
+
+    def test_unknown_provider_falls_back_to_openrouter(self) -> None:
+        assert provider_api_key_env_var("unknown-provider") == "OPENROUTER_API_KEY"
 
 
 class TestClassifyRuntimeError:

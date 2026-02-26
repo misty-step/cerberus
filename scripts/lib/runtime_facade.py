@@ -140,7 +140,7 @@ def build_pi_command(req: RuntimeAttemptRequest) -> list[str]:
     return cmd
 
 
-def _provider_api_key_env_var(provider: str) -> str:
+def provider_api_key_env_var(provider: str) -> str:
     mapping = {
         "openrouter": "OPENROUTER_API_KEY",
         "openai": "OPENAI_API_KEY",
@@ -155,10 +155,7 @@ def _provider_api_key_env_var(provider: str) -> str:
         "cerebras": "CEREBRAS_API_KEY",
     }
     normalized = provider.strip().lower()
-    if normalized in mapping:
-        return mapping[normalized]
-    fallback = normalized.replace("-", "_").upper()
-    return f"{fallback}_API_KEY" if fallback else "OPENROUTER_API_KEY"
+    return mapping.get(normalized, "OPENROUTER_API_KEY")
 
 
 def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
@@ -186,7 +183,7 @@ def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
             retry_after_seconds=retry_after,
         )
 
-    provider_api_key_var = _provider_api_key_env_var(req.provider)
+    provider_api_key_var = provider_api_key_env_var(req.provider)
 
     env: dict[str, str] = {
         "PATH": os.environ.get("PATH", ""),

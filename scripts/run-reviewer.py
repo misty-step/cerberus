@@ -24,7 +24,12 @@ from lib.reviewer_profiles import (
     RuntimeProfile,
     load_reviewer_profiles,
 )
-from lib.runtime_facade import RuntimeAttemptRequest, classify_runtime_error, run_pi_attempt
+from lib.runtime_facade import (
+    RuntimeAttemptRequest,
+    classify_runtime_error,
+    provider_api_key_env_var,
+    run_pi_attempt,
+)
 
 BASE_DEFAULT_MODEL = "openrouter/moonshotai/kimi-k2.5"
 MAX_RETRIES = 3
@@ -65,23 +70,6 @@ def sanitize_model(value: str | None) -> str:
 def normalize_tier(value: str | None) -> str:
     tier = (value or "standard").strip().lower()
     return tier or "standard"
-
-
-def provider_api_key_env_var(provider: str) -> str:
-    mapping = {
-        "openrouter": "OPENROUTER_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "azure": "AZURE_OPENAI_API_KEY",
-        "azure-openai": "AZURE_OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-        "google": "GEMINI_API_KEY",
-        "xai": "XAI_API_KEY",
-        "mistral": "MISTRAL_API_KEY",
-        "cerebras": "CEREBRAS_API_KEY",
-    }
-    return mapping.get(provider.strip().lower(), "OPENROUTER_API_KEY")
 
 
 def resolve_api_key_for_provider(provider: str, env: Mapping[str, str]) -> tuple[str, str]:
