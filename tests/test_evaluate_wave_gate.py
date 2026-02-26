@@ -202,6 +202,18 @@ def test_evaluate_gate_blocks_on_malformed_and_no_valid_verdicts(tmp_path: Path)
     assert "no_valid_verdicts" in result["reason"]
 
 
+def test_evaluate_gate_allows_empty_wave_to_escalate(tmp_path: Path) -> None:
+    config = _write_config(tmp_path)
+    verdict_dir = tmp_path / "verdicts"
+    verdict_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg = mod.load_defaults_config(config)
+    result = mod.evaluate_gate(cfg=cfg, verdict_dir=verdict_dir, wave="wave1", tier="standard")
+    assert result["blocking"] is False
+    assert result["escalate"] is True
+    assert result["reason"] == "passed_gate"
+
+
 def test_main_errors_on_empty_wave(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config = _write_config(tmp_path)
     verdict_dir = tmp_path / "verdicts"

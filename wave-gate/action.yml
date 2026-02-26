@@ -52,18 +52,18 @@ runs:
         INPUT_MODEL_TIER: ${{ inputs.model-tier }}
       run: |
         telemetry_json="${RUNNER_TEMP}/cerberus-${INPUT_WAVE}-gate.json"
-        gate_output="$(python3 "$CERBERUS_ROOT/scripts/evaluate-wave-gate.py" \
+        python3 "$CERBERUS_ROOT/scripts/evaluate-wave-gate.py" \
           --config "$CERBERUS_ROOT/defaults/config.yml" \
           --verdict-dir "$INPUT_VERDICT_DIR" \
           --wave "$INPUT_WAVE" \
           --tier "$INPUT_MODEL_TIER" \
-          --output-json "$telemetry_json")"
-        echo "$gate_output"
+          --output-json "$telemetry_json"
+        cat "$telemetry_json"
 
-        escalate="$(printf '%s\n' "$gate_output" | awk -F= '$1=="escalate"{print $2}' | tail -n1)"
-        blocking="$(printf '%s\n' "$gate_output" | awk -F= '$1=="blocking"{print $2}' | tail -n1)"
-        next_wave="$(printf '%s\n' "$gate_output" | awk -F= '$1=="next_wave"{print $2}' | tail -n1)"
-        reason="$(printf '%s\n' "$gate_output" | awk -F= '$1=="reason"{print $2}' | tail -n1)"
+        escalate="$(jq -r '.escalate | tostring' "$telemetry_json")"
+        blocking="$(jq -r '.blocking | tostring' "$telemetry_json")"
+        next_wave="$(jq -r '.next_wave' "$telemetry_json")"
+        reason="$(jq -r '.reason' "$telemetry_json")"
 
         echo "escalate=${escalate:-false}" >> "$GITHUB_OUTPUT"
         echo "blocking=${blocking:-false}" >> "$GITHUB_OUTPUT"

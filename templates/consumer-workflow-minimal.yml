@@ -124,16 +124,18 @@ jobs:
   # Gate wave 1 before escalating
   gate-wave1:
     needs: [review-wave1, route, preflight]
-    if: always() && needs.preflight.outputs.should_run == 'true' && needs.review-wave1.result != 'skipped'
+    if: always() && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       escalate: ${{ steps.gate.outputs.escalate }}
     steps:
+      - run: mkdir -p ./wave-verdicts/
       - uses: actions/download-artifact@v4
         with:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave1
           merge-multiple: true
+          if-no-files-found: ignore
       - id: gate
         uses: misty-step/cerberus/wave-gate@v2
         with:
@@ -185,16 +187,18 @@ jobs:
   # Gate wave 2 before escalating
   gate-wave2:
     needs: [review-wave2, route, preflight, gate-wave1]
-    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true' && needs.review-wave2.result != 'skipped'
+    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
     runs-on: ubuntu-latest
     outputs:
       escalate: ${{ steps.gate.outputs.escalate }}
     steps:
+      - run: mkdir -p ./wave-verdicts/
       - uses: actions/download-artifact@v4
         with:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave2
           merge-multiple: true
+          if-no-files-found: ignore
       - id: gate
         uses: misty-step/cerberus/wave-gate@v2
         with:
@@ -247,7 +251,7 @@ jobs:
   verdict:
     name: "Verdict"
     needs: [review-wave1, review-wave2, review-wave3, preflight]
-    if: always() && needs.review-wave1.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
+    if: always() && needs.preflight.outputs.should_run == 'true'
     permissions:
       contents: read
       pull-requests: write
