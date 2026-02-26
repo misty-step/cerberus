@@ -20,6 +20,7 @@ jobs:
           python3 -m py_compile scripts/aggregate-verdict.py
           python3 -m py_compile scripts/run-reviewer.py
           python3 -m py_compile scripts/triage.py
+          python3 -m py_compile scripts/validate-perspective.py
           python3 -m py_compile scripts/validate-consumer-workflow.py
           python3 -m py_compile scripts/read-reviewer-profile.py
           python3 -m py_compile scripts/lib/consumer_workflow_validator.py

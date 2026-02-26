@@ -8,7 +8,7 @@ branding:
 
 inputs:
   perspective:
-    description: 'Review perspective (correctness, architecture, security, performance, maintainability, testing, documentation, resilience, compatibility, dependencies, data-integrity, observability)'
+    description: 'Review perspective (must match defaults/config.yml reviewer perspectives)'
     required: true
   github-token:
     description: 'GitHub token for PR comments'
@@ -85,17 +85,6 @@ runs:
           exit 1
         fi
 
-    - name: Validate perspective
-      shell: bash
-      env:
-        PERSPECTIVE: ${{ inputs.perspective }}
-      run: |
-        VALID="correctness architecture security performance maintainability testing documentation resilience compatibility dependencies data-integrity observability"
-        if [[ ! " $VALID " =~ " $PERSPECTIVE " ]]; then
-          echo "::error::Invalid perspective: $PERSPECTIVE. Must be one of: $VALID"
-          exit 1
-        fi
-
     - name: Resolve API key
       shell: bash
       env:
@@ -117,6 +106,16 @@ runs:
     - name: Install Python deps
       shell: bash
       run: pip install pyyaml --quiet
+
+    - name: Validate perspective
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        PERSPECTIVE: ${{ inputs.perspective }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/validate-perspective.py" \
+          --config "$CERBERUS_ROOT/defaults/config.yml" \
+          --perspective "$PERSPECTIVE"
 
     - name: Setup Node.js
       uses: actions/setup-node@v5

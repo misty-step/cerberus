@@ -58,6 +58,14 @@ def test_action_uses_api_key_fallback_validator() -> None:
     assert "required: false" in match.group(0)
 
 
+def test_action_validates_perspective_from_defaults_config() -> None:
+    content = ACTION_FILE.read_text()
+
+    assert "scripts/validate-perspective.py" in content
+    assert "--config \"$CERBERUS_ROOT/defaults/config.yml\"" in content
+    assert "--perspective \"$PERSPECTIVE\"" in content
+
+
 def test_action_pins_pi_install_version() -> None:
     content = ACTION_FILE.read_text()
 
