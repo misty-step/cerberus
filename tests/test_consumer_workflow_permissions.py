@@ -67,18 +67,25 @@ def _read_decomposed():
     return DECOMPOSED_CONSUMER.read_text()
 
 
+def _decomposed_review_wave_blocks(content: str):
+    return list(
+        re.finditer(
+            r"^  review-wave\d+:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
+        )
+    )
+
+
 def test_decomposed_review_job_has_read_only_permissions():
     content = _read_decomposed()
-    review_block = re.search(
-        r"^  review:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
-    )
-    assert review_block is not None, "review job not found in consumer-workflow-minimal.yml"
-    block = review_block.group(0)
+    review_blocks = _decomposed_review_wave_blocks(content)
+    assert review_blocks, "review-wave jobs not found in consumer-workflow-minimal.yml"
 
-    assert re.search(r"contents:\s*read", block), "review job must have contents: read"
-    assert not re.search(r"pull-requests:\s*write", block), (
-        "review job must not have pull-requests: write"
-    )
+    for review_block in review_blocks:
+        block = review_block.group(0)
+        assert re.search(r"contents:\s*read", block), "review-wave job must have contents: read"
+        assert not re.search(r"pull-requests:\s*write", block), (
+            "review-wave job must not have pull-requests: write"
+        )
 
 
 def test_decomposed_verdict_job_has_write_permissions():
@@ -96,16 +103,15 @@ def test_decomposed_verdict_job_has_write_permissions():
 
 def test_decomposed_review_job_disables_post_comment():
     content = _read_decomposed()
-    review_block = re.search(
-        r"^  review:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
-    )
-    assert review_block is not None, "review job not found in consumer-workflow-minimal.yml"
-    block = review_block.group(0)
+    review_blocks = _decomposed_review_wave_blocks(content)
+    assert review_blocks, "review-wave jobs not found in consumer-workflow-minimal.yml"
 
-    # Either old post-comment: 'false' or new comment-policy: 'never' is acceptable
-    has_old_style = re.search(r"post-comment:\s*['\"]?false['\"]?", block)
-    has_new_style = re.search(r"comment-policy:\s*['\"]?never['\"]?", block)
-    assert has_old_style or has_new_style, (
-        "review job must set comment-policy: 'never' (or legacy post-comment: 'false') — "
-        "only the verdict job should post PR comments"
-    )
+    for review_block in review_blocks:
+        block = review_block.group(0)
+        # Either old post-comment: 'false' or new comment-policy: 'never' is acceptable
+        has_old_style = re.search(r"post-comment:\s*['\"]?false['\"]?", block)
+        has_new_style = re.search(r"comment-policy:\s*['\"]?never['\"]?", block)
+        assert has_old_style or has_new_style, (
+            "review-wave job must set comment-policy: 'never' "
+            "(or legacy post-comment: 'false') — only verdict should post PR comments"
+        )
