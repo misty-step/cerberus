@@ -144,7 +144,7 @@ def test_all_agents_have_test_only_rule() -> None:
         "correctness.md": "no correctness concerns",
         "architecture.md": "no architecture concerns",
         "security.md": "no security concerns",
-        "performance.md": "no performance concerns",
+        "resilience.md": "no resilience concerns",
         "maintainability.md": "no maintainability concerns",
     }
 

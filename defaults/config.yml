@@ -71,7 +71,7 @@ waves:
     - wave2
     - wave3
   max_for_tier:
-    flash: 2
+    flash: 2      # docs-only PRs stop at wave2
     standard: 3
     pro: 3
   gate:
@@ -79,28 +79,26 @@ waves:
     block_on_major: true
     block_on_skip: true
   definitions:
-    wave1:
+    wave1:                            # "Does it work and is it safe?" — flash models
       reviewers:
         - trace
         - guard
         - proof
-        - craft
-    wave2:
+    wave2:                            # "Is it well-designed?" — standard models
       reviewers:
         - atlas
-        - flux
         - fuse
-        - pact
-    wave3:
+        - craft
+    wave3:                            # "Deep audit of highest stakes" — pro models
       reviewers:
         - trace
         - guard
         - atlas
 
 routing:
-  enabled: true
+  enabled: false  # waves have fixed reviewer assignments; LLM routing not needed
   model: "openrouter/google/gemini-3-flash-preview"
-  panel_size: 5
+  panel_size: 3
   always_include:
     - trace      # correctness always runs
   include_if_code_changed:
@@ -109,8 +107,6 @@ routing:
     - trace
     - atlas
     - guard
-    - craft
-    - proof
 
 override:
   enabled: true
@@ -155,14 +151,6 @@ reviewers:
     tools:
       shell: false
 
-  - name: flux
-    perspective: performance
-    model: pool
-    description: "Performance — Think at runtime"
-    override: pr_author
-    tools:
-      shell: false
-
   - name: craft
     perspective: maintainability
     model: pool
@@ -187,10 +175,3 @@ reviewers:
     tools:
       shell: false
 
-  - name: pact
-    perspective: compatibility
-    model: pool
-    description: "Compatibility — Trace the client impact"
-    override: pr_author
-    tools:
-      shell: false

@@ -32,28 +32,35 @@ Cerberus routes each PR to the most relevant panel (default size: 5):
 
 - `trace` (correctness) always runs
 - `guard` (security) is required when non-doc/non-test code changes
-- Remaining slots are selected for relevance (architecture, maintainability, testing, performance, etc.)
-
-This keeps signal high and cost/latency lower while retaining broad bench coverage.
-
 ## Reviewers
+
+Six reviewers in three fixed waves — escalating model strength:
+
+| Wave | Models | Reviewers | Question |
+|------|--------|-----------|----------|
+| wave1 | flash | trace · guard · proof | Does it work and is it safe? |
+| wave2 | standard | atlas · fuse · craft | Is it well-designed? |
+| wave3 | pro | trace · guard · atlas | Deep audit of highest stakes |
+
 | Codename | Perspective | Focus |
 |----------|-------------|-------|
 | trace | Correctness | Logic bugs, edge cases, type mismatches |
-| atlas | Architecture | Design patterns, module boundaries, coupling |
 | guard | Security | Injection, auth flaws, data exposure |
-| flux | Performance | Runtime efficiency, N+1 queries, scalability |
-| craft | Maintainability | Readability, naming, future maintenance cost |
 | proof | Testing | Test coverage gaps, regression risk |
+| atlas | Architecture | Design patterns, module boundaries, coupling |
 | fuse | Resilience | Failure handling, retries, graceful degradation |
-| pact | Compatibility | Contract safety, version skew, rollback |
+| craft | Maintainability | Readability, naming, future maintenance cost |
+
+The gate between waves is a hard check: wave2 only runs when wave1 passes cleanly (no critical or major findings). Wave3 only runs when wave2 passes. This keeps cost proportional to signal.
 
 ## Cost Snapshot
-Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups.
+Three waves with flash → standard → pro model escalation.
 
-- Cerberus: 8-perspective bench, usually routed to 5 reviewers per PR
+- Wave1 (flash, 3 reviewers) runs on every PR — lowest cost
+- Wave2 (standard, 3 reviewers) only on clean wave1 exit
+- Wave3 (pro, 3 reviewers) only on clean wave2 exit; flash-tier PRs (docs-only) stop at wave2
 - Practical monthly spend is typically below a single CodeRabbit seat for small/medium teams
-- Exact spend depends on PR volume, diff size, and configured model tiers
+- Exact spend depends on PR volume, diff size, and escalation rate
 
 ## Docs
 

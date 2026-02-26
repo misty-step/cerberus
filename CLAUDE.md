@@ -51,18 +51,22 @@ The consumer defines the reviewer matrix in its own workflow. This repository pr
 
 Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `.opencode/agents/`, `templates/`, `defaults/`).
 
-### The Eight Reviewers
+### The Six Reviewers (3 per wave)
+
+| Wave | Models | Reviewers |
+|------|--------|-----------|
+| wave1 | flash | trace · guard · proof |
+| wave2 | standard | atlas · fuse · craft |
+| wave3 | pro | trace · guard · atlas |
 
 | Codename | Perspective | Focus |
 |----------|-------------|-------|
 | trace | correctness | Logic bugs, edge cases, type mismatches |
-| atlas | architecture | Design patterns, module boundaries, coupling |
 | guard | security | Threat model, injection, auth flaws |
-| flux | performance | Runtime efficiency, scalability |
-| craft | maintainability | DX, readability, future maintenance cost |
 | proof | testing | Test coverage gaps, regression risk |
+| atlas | architecture | Design patterns, module boundaries, coupling |
 | fuse | resilience | Failure handling, retries, graceful degradation |
-| pact | compatibility | Contract safety, version skew, rollback |
+| craft | maintainability | DX, readability, future maintenance cost |
 
 Shell/bash access is denied per agent via `permission` in the agent markdown frontmatter.
 

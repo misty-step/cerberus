@@ -103,6 +103,7 @@ jobs:
           api-key: ${{ secrets.api-key }}
           diff-file: /tmp/pr.diff
           reviewers: ${{ inputs.reviewers }}
+          routing: disabled
       - id: matrix_wave1_local
         if: github.repository == 'misty-step/cerberus'
         uses: ./__cerberus/matrix
