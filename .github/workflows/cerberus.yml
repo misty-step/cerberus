@@ -55,6 +55,7 @@ on:
 
 jobs:
   preflight:
+    name: Cerberus · preflight
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,12 +70,14 @@ jobs:
           api-key: ${{ secrets.api-key }}
 
   route:
+    name: Cerberus · route + wave1 matrix
     needs: preflight
     if: needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       panel: ${{ steps.router.outputs.panel }}
       model-tier: ${{ steps.router.outputs.model-tier }}
+      matrix-wave1: ${{ steps.matrix_wave1.outputs.matrix }}
     steps:
       - name: Fetch PR diff
         # gh is pre-installed on GitHub-hosted runners; no checkout needed.
@@ -91,31 +94,23 @@ jobs:
           api-key: ${{ secrets.api-key }}
           diff-file: /tmp/pr.diff
           reviewers: ${{ inputs.reviewers }}
-
-  matrix-wave1:
-    needs: [route, preflight]
-    if: needs.preflight.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    steps:
-      - id: generate
+      - id: matrix_wave1
         uses: misty-step/cerberus/matrix@v2
         with:
-          panel: ${{ needs.route.outputs.panel }}
-          model-tier: ${{ needs.route.outputs.model-tier }}
+          panel: ${{ steps.router.outputs.panel }}
+          model-tier: ${{ steps.router.outputs.model-tier }}
           wave: wave1
 
   review-wave1:
-    needs: [matrix-wave1, preflight]
+    needs: [route, preflight]
     if: needs.preflight.outputs.should_run == 'true'
-    name: "wave1 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: "Cerberus · wave1 · ${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     strategy:
-      matrix: ${{ fromJson(needs.matrix-wave1.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.route.outputs.matrix-wave1) }}
       fail-fast: false
     steps:
       - uses: misty-step/cerberus@v2
@@ -131,19 +126,23 @@ jobs:
           context: ${{ inputs.context }}
 
   gate-wave1:
+    name: Cerberus · gate wave1
     needs: [review-wave1, preflight, route]
-    if: always() && needs.preflight.outputs.should_run == 'true' && needs.review-wave1.result != 'skipped'
+    if: always() && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       escalate: ${{ steps.gate.outputs.escalate }}
       next-wave: ${{ steps.gate.outputs.next-wave }}
       reason: ${{ steps.gate.outputs.reason }}
+      matrix-wave2: ${{ steps.matrix_wave2.outputs.matrix }}
     steps:
+      - run: mkdir -p ./wave-verdicts/
       - uses: actions/download-artifact@v4
         with:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave1
           merge-multiple: true
+          if-no-files-found: ignore
       - name: Evaluate wave1 gate
         id: gate
         uses: misty-step/cerberus/wave-gate@v2
@@ -151,6 +150,13 @@ jobs:
           verdict-dir: ./wave-verdicts
           wave: wave1
           model-tier: ${{ needs.route.outputs.model-tier }}
+      - id: matrix_wave2
+        if: steps.gate.outputs.escalate == 'true'
+        uses: misty-step/cerberus/matrix@v2
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave2
       - name: Upload wave1 gate telemetry
         if: always()
         uses: actions/upload-artifact@v4
@@ -160,30 +166,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  matrix-wave2:
-    needs: [gate-wave1, route, preflight]
-    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    steps:
-      - id: generate
-        uses: misty-step/cerberus/matrix@v2
-        with:
-          panel: ${{ needs.route.outputs.panel }}
-          model-tier: ${{ needs.route.outputs.model-tier }}
-          wave: wave2
-
   review-wave2:
-    needs: [matrix-wave2, preflight, gate-wave1]
+    needs: [preflight, gate-wave1]
     if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
-    name: "wave2 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: "Cerberus · wave2 · ${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     strategy:
-      matrix: ${{ fromJson(needs.matrix-wave2.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.gate-wave1.outputs.matrix-wave2) }}
       fail-fast: false
     steps:
       - uses: misty-step/cerberus@v2
@@ -199,19 +191,23 @@ jobs:
           context: ${{ inputs.context }}
 
   gate-wave2:
+    name: Cerberus · gate wave2
     needs: [review-wave2, preflight, route, gate-wave1]
-    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true' && needs.review-wave2.result != 'skipped'
+    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
     runs-on: ubuntu-latest
     outputs:
       escalate: ${{ steps.gate.outputs.escalate }}
       next-wave: ${{ steps.gate.outputs.next-wave }}
       reason: ${{ steps.gate.outputs.reason }}
+      matrix-wave3: ${{ steps.matrix_wave3.outputs.matrix }}
     steps:
+      - run: mkdir -p ./wave-verdicts/
       - uses: actions/download-artifact@v4
         with:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave2
           merge-multiple: true
+          if-no-files-found: ignore
       - name: Evaluate wave2 gate
         id: gate
         uses: misty-step/cerberus/wave-gate@v2
@@ -219,6 +215,13 @@ jobs:
           verdict-dir: ./wave-verdicts
           wave: wave2
           model-tier: ${{ needs.route.outputs.model-tier }}
+      - id: matrix_wave3
+        if: steps.gate.outputs.escalate == 'true'
+        uses: misty-step/cerberus/matrix@v2
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave3
       - name: Upload wave2 gate telemetry
         if: always()
         uses: actions/upload-artifact@v4
@@ -228,30 +231,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  matrix-wave3:
-    needs: [gate-wave2, route, preflight]
-    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    steps:
-      - id: generate
-        uses: misty-step/cerberus/matrix@v2
-        with:
-          panel: ${{ needs.route.outputs.panel }}
-          model-tier: ${{ needs.route.outputs.model-tier }}
-          wave: wave3
-
   review-wave3:
-    needs: [matrix-wave3, preflight, gate-wave2]
+    needs: [preflight, gate-wave2]
     if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
-    name: "wave3 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: "Cerberus · wave3 · ${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     strategy:
-      matrix: ${{ fromJson(needs.matrix-wave3.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.gate-wave2.outputs.matrix-wave3) }}
       fail-fast: false
     steps:
       - uses: misty-step/cerberus@v2
@@ -267,9 +256,9 @@ jobs:
           context: ${{ inputs.context }}
 
   verdict:
-    name: "Verdict"
+    name: Cerberus
     needs: [review-wave1, review-wave2, review-wave3, preflight]
-    if: always() && needs.review-wave1.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
+    if: always() && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

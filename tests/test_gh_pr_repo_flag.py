@@ -18,13 +18,10 @@ def test_reusable_workflow_route_fetches_diff_with_repo_flag() -> None:
     )
 
 
-def test_self_review_workflow_route_fetches_diff_with_repo_flag() -> None:
+def test_self_review_workflow_delegates_to_reusable_workflow() -> None:
     content = SELF_REVIEW_WORKFLOW.read_text()
-    assert 'REPO: ${{ github.repository }}' in content, (
-        "Self-review workflow route job must define REPO env var"
-    )
-    assert 'gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO"' in content, (
-        "Self-review workflow route job must pass --repo to gh pr diff"
+    assert "uses: ./.github/workflows/cerberus.yml" in content, (
+        "Self-review workflow should delegate to the reusable Cerberus workflow"
     )
 
 

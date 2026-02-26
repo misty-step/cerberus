@@ -76,6 +76,41 @@ def reviewer_name(reviewer: dict) -> str:
     return str(name or "unknown")
 
 
+def normalize_wave(value: object) -> str:
+    """Normalize wave identifiers for display and grouping."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return "unscoped"
+    normalized = text.replace("_", "").replace("-", "")
+    if normalized.startswith("wave") and normalized[4:].isdigit():
+        return f"wave{int(normalized[4:])}"
+    return text
+
+
+def wave_label(value: object) -> str:
+    """Human-friendly wave label."""
+    wave = normalize_wave(value)
+    if wave.startswith("wave") and wave[4:].isdigit():
+        return f"Wave {int(wave[4:])}"
+    if wave == "unscoped":
+        return "Unscoped"
+    return wave
+
+
+def reviewer_wave(reviewer: dict) -> str:
+    """Resolve reviewer wave from verdict metadata."""
+    return normalize_wave(reviewer.get("model_wave") or reviewer.get("wave"))
+
+
+def wave_sort_key(wave: str) -> tuple[int, int | str]:
+    """Stable display order for wave summaries."""
+    if wave.startswith("wave") and wave[4:].isdigit():
+        return (0, int(wave[4:]))
+    if wave == "unscoped":
+        return (2, 0)
+    return (1, wave)
+
+
 def perspective_name(reviewer: dict) -> str:
     """Perspective name."""
     perspective = reviewer.get("perspective")
@@ -445,11 +480,13 @@ def format_reviewer_overview_lines(reviewers: list[dict]) -> list[str]:
         confidence = format_confidence(reviewer.get("confidence"))
         model_label = format_model(reviewer)
         finding_count = len(findings_for(reviewer))
+        wave = wave_label(reviewer_wave(reviewer))
 
         parts = [
             f"{icon} {title}",
             f"`{verdict}`",
             f"{finding_count} findings",
+            f"wave `{wave}`",
             f"conf `{confidence}`",
             f"runtime `{runtime}`",
         ]
@@ -457,6 +494,35 @@ def format_reviewer_overview_lines(reviewers: list[dict]) -> list[str]:
             parts.append(f"model {model_label}")
         lines.append("- " + " | ".join(parts))
 
+    return lines
+
+
+def format_wave_summary_lines(reviewers: list[dict]) -> list[str]:
+    """Format wave-level verdict summary lines."""
+    if not reviewers:
+        return []
+
+    by_wave: dict[str, dict[str, int]] = {}
+    for reviewer in reviewers:
+        wave = reviewer_wave(reviewer)
+        verdict = normalize_verdict(reviewer.get("verdict"))
+        entry = by_wave.setdefault(
+            wave,
+            {"total": 0, "pass": 0, "warn": 0, "fail": 0, "skip": 0, "findings": 0},
+        )
+        entry["total"] += 1
+        entry[verdict.lower()] = entry.get(verdict.lower(), 0) + 1
+        entry["findings"] += len(findings_for(reviewer))
+
+    lines: list[str] = []
+    for wave in sorted(by_wave.keys(), key=wave_sort_key):
+        stats = by_wave[wave]
+        lines.append(
+            "- "
+            f"**{wave_label(wave)}**: {stats['total']} reviewers | "
+            f"{stats['pass']} pass | {stats['warn']} warn | {stats['fail']} fail | "
+            f"{stats['skip']} skip | {stats['findings']} findings"
+        )
     return lines
 
 
@@ -663,6 +729,7 @@ def format_reviewer_details_block(reviewers: list[dict], *, max_findings: int) -
         lines.append(f"#### {icon} {header} — {verdict}")
         lines.append("")
         lines.append(f"- Confidence: `{confidence}`")
+        lines.append(f"- Wave: `{wave_label(reviewer_wave(reviewer))}`")
         if model_label:
             lines.append(f"- Model: {model_label}")
         lines.append(f"- Runtime: `{runtime}`")
@@ -769,6 +836,11 @@ def _build_comment(
 
     if skip_diagnostics_table:
         lines.extend(["", *skip_diagnostics_table])
+
+    wave_summary_lines = format_wave_summary_lines(reviewers)
+    if wave_summary_lines:
+        lines.extend(["", "### Wave Summary"])
+        lines.extend(wave_summary_lines)
 
     # Progressive disclosure: collapse details on PASS, show key findings on WARN/FAIL
     is_fail_or_warn = verdict in ("FAIL", "WARN")

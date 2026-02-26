@@ -11,10 +11,7 @@ def _read_workflow() -> str:
 def test_self_hosted_workflow_uses_preflight_action() -> None:
     content = _read_workflow()
 
-    assert "preflight:" in content
-    assert "uses: ./preflight" in content
-    assert "should_run" in content
-    assert "skip_reason" in content
+    assert "uses: ./.github/workflows/cerberus.yml" in content
 
 
 def test_self_hosted_workflow_wires_api_key() -> None:
@@ -40,5 +37,5 @@ def test_self_hosted_workflow_removes_bespoke_fork_guard() -> None:
 def test_self_hosted_workflow_gates_on_should_run() -> None:
     content = _read_workflow()
 
-    assert "needs.preflight.outputs.should_run == 'true'" in content
+    assert "uses: ./.github/workflows/cerberus.yml" in content
     assert "needs.draft-check.outputs.is_draft" not in content
