@@ -1997,6 +1997,7 @@ _is_explicit_noncritical_fail = aggregate_verdict.is_explicit_noncritical_fail
 _is_timeout_skip = aggregate_verdict.is_timeout_skip
 _has_critical_finding = aggregate_verdict.has_critical_finding
 _generate_quality_report = aggregate_verdict.generate_quality_report
+_to_int = aggregate_verdict._to_int
 
 
 # --- read_json error paths (lines 37-42) ---
@@ -2013,6 +2014,12 @@ class TestReadJsonUnit:
         with pytest.raises(SystemExit) as exc:
             _read_json(path)
         assert exc.value.code == 2
+
+
+class TestToIntUnit:
+    def test_invalid_values_return_zero(self):
+        assert _to_int("nan") == 0
+        assert _to_int(None) == 0
 
     def test_missing_file_exits(self, tmp_path):
         path = tmp_path / "nonexistent.json"

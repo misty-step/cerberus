@@ -281,6 +281,82 @@ reviewers:
         with pytest.raises(ConfigError, match="references unknown reviewer"):
             load_defaults_config(path)
 
+    def test_waves_enabled_must_be_boolean(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  enabled: "true"
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.enabled: expected boolean"):
+            load_defaults_config(path)
+
+    def test_waves_max_for_tier_must_be_integer(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  max_for_tier:
+    flash: "2"
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.max_for_tier\\[flash\\]: expected integer"):
+            load_defaults_config(path)
+
+    def test_waves_max_for_tier_must_be_positive(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  max_for_tier:
+    flash: 0
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.max_for_tier\\[flash\\]: must be >= 1"):
+            load_defaults_config(path)
+
+    def test_waves_order_rejects_duplicates(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  order: [wave1, wave1]
+  definitions:
+    wave1:
+      reviewers: [A]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="duplicate wave names are not allowed"):
+            load_defaults_config(path)
+
+    def test_waves_order_references_defined_waves_only(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  order: [wave1, wave2]
+  definitions:
+    wave1:
+      reviewers: [A]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="references undefined wave 'wave2'"):
+            load_defaults_config(path)
+
+    def test_waves_definition_reviewer_list_must_be_non_empty(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  definitions:
+    wave1:
+      reviewers: []
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.definitions\\[wave1\\]\\.reviewers: must be non-empty"):
+            load_defaults_config(path)
+
     def test_optional_str_non_string(self, tmp_path):
         path = write_config(tmp_path, """
 reviewers:

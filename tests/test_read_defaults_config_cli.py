@@ -197,6 +197,47 @@ reviewers:
         out = capsys.readouterr()
         assert out.out.strip() == "1"
 
+    def test_wave_reviewers_empty_wave_is_error(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+waves:
+  definitions:
+    wave1:
+      reviewers: [A]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        assert main(["wave-reviewers", "--config", cfg, "--wave", ""]) == 2
+        out = capsys.readouterr()
+        assert "--wave must be non-empty" in out.err
+
+    def test_wave_reviewers_unknown_wave_prints_nothing(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+waves:
+  definitions:
+    wave1:
+      reviewers: [A]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        assert main(["wave-reviewers", "--config", cfg, "--wave", "wave9"]) == 0
+        out = capsys.readouterr()
+        assert out.out.strip() == ""
+
+    def test_wave_max_for_tier_empty_tier_is_error(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+waves:
+  max_for_tier:
+    flash: 1
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        assert main(["wave-max-for-tier", "--config", cfg, "--tier", ""]) == 2
+        out = capsys.readouterr()
+        assert "--tier must be non-empty" in out.err
+
 
 class TestConfigError:
     def test_bad_config_file(self, tmp_path, capsys):
