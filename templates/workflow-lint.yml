@@ -23,7 +23,6 @@ jobs:
   cerberus-workflow:
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/validate@v2
+      - uses: misty-step/cerberus/validate@master
         with:
           workflow: .github/workflows/cerberus.yml
-

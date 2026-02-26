@@ -3,6 +3,7 @@
 #
 # Drop this file into .github/workflows/cerberus.yml in your repository.
 # Set CERBERUS_OPENROUTER_API_KEY in your repository secrets and you're done.
+# Keep this file as-is (no `with:` block) to run Cerberus with full defaults.
 #
 # Optional inputs:
 #   timeout:     Max seconds per reviewer (default: 600)
@@ -17,7 +18,7 @@
 # Example with options:
 #   jobs:
 #     review:
-#       uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+#       uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
 #       permissions:
 #         contents: read
 #         pull-requests: write
@@ -41,7 +42,7 @@ concurrency:
 
 jobs:
   review:
-    uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+    uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
     permissions:
       contents: read
       pull-requests: write

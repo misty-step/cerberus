@@ -310,6 +310,7 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
         PRIMARY_MODEL: ${{ inputs.model }}
+        ARTIFACT_SUFFIX: ${{ inputs.artifact-suffix || inputs.perspective }}
         GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
         MODEL_WAVE: ${{ inputs.model-wave }}
       run: |
@@ -403,7 +404,8 @@ runs:
           exit 1
         fi
         # Copy verdict JSON to RUNNER_TEMP so the output path survives CERBERUS_TMP cleanup.
-        stable_json="${RUNNER_TEMP}/cerberus-${PERSPECTIVE}-verdict.json"
+        artifact_suffix_safe="$(printf '%s' "$ARTIFACT_SUFFIX" | tr -c 'A-Za-z0-9._-' '_')"
+        stable_json="${RUNNER_TEMP}/cerberus-${PERSPECTIVE}-${artifact_suffix_safe}-verdict.json"
         cp "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" "$stable_json"
         echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
         echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"
@@ -448,14 +450,14 @@ runs:
         fi
 
         chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
-        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
+        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "${{ steps.parse.outputs.verdict-json }}"
 
     - name: Upload verdict artifact
       if: steps.parse.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: cerberus-verdict-${{ inputs.artifact-suffix || inputs.perspective }}
-        path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-verdict.json
+        path: ${{ steps.parse.outputs.verdict-json }}
         retention-days: 1
 
     - name: Upload review document

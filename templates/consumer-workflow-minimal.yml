@@ -29,7 +29,7 @@ jobs:
       should_run: ${{ steps.preflight.outputs.should_run }}
       skip_reason: ${{ steps.preflight.outputs.skip_reason }}
     steps:
-      - uses: misty-step/cerberus/preflight@v2
+      - uses: misty-step/cerberus/preflight@master
         id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -43,7 +43,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: misty-step/cerberus/validate@v2
+      - uses: misty-step/cerberus/validate@master
 
   # Route: select the most relevant reviewers for this PR
   route:
@@ -66,7 +66,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO" > /tmp/pr.diff
-      - uses: misty-step/cerberus/router@v2
+      - uses: misty-step/cerberus/router@master
         id: router
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -75,7 +75,7 @@ jobs:
           # routing: 'disabled'         # uncomment to skip LLM routing and use all reviewers
           # reviewers: 'trace,guard'    # uncomment to force specific reviewers (bypasses routing)
       - id: matrix_wave1
-        uses: misty-step/cerberus/matrix@v2
+        uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ steps.router.outputs.panel }}
           model-tier: ${{ steps.router.outputs.model-tier }}
@@ -95,7 +95,7 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v2
+      - uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -117,7 +117,11 @@ jobs:
   # Gate wave 1 before escalating
   gate-wave1:
     needs: [review-wave1, route, preflight]
-    if: always() && needs.preflight.outputs.should_run == 'true'
+    if: >-
+      always() &&
+      needs.preflight.outputs.should_run == 'true' &&
+      needs.route.result == 'success' &&
+      (needs.review-wave1.result == 'success' || needs.review-wave1.result == 'skipped')
     runs-on: ubuntu-latest
     outputs:
       escalate: ${{ steps.gate.outputs.escalate }}
@@ -129,16 +133,15 @@ jobs:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave1
           merge-multiple: true
-          if-no-files-found: ignore
       - id: gate
-        uses: misty-step/cerberus/wave-gate@v2
+        uses: misty-step/cerberus/wave-gate@master
         with:
           verdict-dir: ./wave-verdicts
           wave: wave1
           model-tier: ${{ needs.route.outputs.model-tier }}
       - id: matrix_wave2
         if: steps.gate.outputs.escalate == 'true'
-        uses: misty-step/cerberus/matrix@v2
+        uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
@@ -158,7 +161,7 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v2
+      - uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -172,7 +175,13 @@ jobs:
   # Gate wave 2 before escalating
   gate-wave2:
     needs: [review-wave2, route, preflight, gate-wave1]
-    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
+    if: >-
+      always() &&
+      needs.preflight.outputs.should_run == 'true' &&
+      needs.route.result == 'success' &&
+      needs.gate-wave1.result == 'success' &&
+      needs.gate-wave1.outputs.escalate == 'true' &&
+      (needs.review-wave2.result == 'success' || needs.review-wave2.result == 'skipped')
     runs-on: ubuntu-latest
     outputs:
       escalate: ${{ steps.gate.outputs.escalate }}
@@ -184,16 +193,15 @@ jobs:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave2
           merge-multiple: true
-          if-no-files-found: ignore
       - id: gate
-        uses: misty-step/cerberus/wave-gate@v2
+        uses: misty-step/cerberus/wave-gate@master
         with:
           verdict-dir: ./wave-verdicts
           wave: wave2
           model-tier: ${{ needs.route.outputs.model-tier }}
       - id: matrix_wave3
         if: steps.gate.outputs.escalate == 'true'
-        uses: misty-step/cerberus/matrix@v2
+        uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
@@ -213,7 +221,7 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v2
+      - uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -227,14 +235,27 @@ jobs:
   # Aggregate all executed wave results into one verdict
   verdict:
     name: "Cerberus"
-    needs: [review-wave1, review-wave2, review-wave3, preflight]
-    if: always() && needs.preflight.outputs.should_run == 'true'
+    needs: [review-wave1, review-wave2, review-wave3, preflight, route, gate-wave1, gate-wave2]
+    if: >-
+      always() &&
+      needs.preflight.outputs.should_run == 'true' &&
+      needs.route.result == 'success' &&
+      needs.gate-wave1.result != 'failure' &&
+      needs.gate-wave1.result != 'cancelled' &&
+      needs.gate-wave2.result != 'failure' &&
+      needs.gate-wave2.result != 'cancelled' &&
+      needs.review-wave1.result != 'failure' &&
+      needs.review-wave1.result != 'cancelled' &&
+      needs.review-wave2.result != 'failure' &&
+      needs.review-wave2.result != 'cancelled' &&
+      needs.review-wave3.result != 'failure' &&
+      needs.review-wave3.result != 'cancelled'
     permissions:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/verdict@v2
+      - uses: misty-step/cerberus/verdict@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # fail-on-skip: 'true' # optional: fail if Cerberus verdict is SKIP (no review happened)

@@ -47,16 +47,24 @@ def generate_matrix(config_path):
 
     review_wave = os.getenv("REVIEW_WAVE", "").strip().lower()
     if review_wave:
-        wave_reviewers = []
         waves = config.get("waves") if isinstance(config, dict) else {}
+        definitions = {}
         if isinstance(waves, dict):
-            definitions = waves.get("definitions")
-            if isinstance(definitions, dict):
-                wave_cfg = definitions.get(review_wave)
-                if isinstance(wave_cfg, dict):
-                    raw_reviewers = wave_cfg.get("reviewers")
-                    if isinstance(raw_reviewers, list):
-                        wave_reviewers = [str(item).strip() for item in raw_reviewers if str(item).strip()]
+            raw_definitions = waves.get("definitions")
+            if isinstance(raw_definitions, dict):
+                definitions = raw_definitions
+
+        if review_wave not in definitions:
+            print(f"Unknown review wave '{review_wave}'", file=sys.stderr)
+            sys.exit(1)
+
+        wave_reviewers = []
+        wave_cfg = definitions.get(review_wave)
+        if isinstance(wave_cfg, dict):
+            raw_reviewers = wave_cfg.get("reviewers")
+            if isinstance(raw_reviewers, list):
+                wave_reviewers = [str(item).strip() for item in raw_reviewers if str(item).strip()]
+
         if wave_reviewers:
             reviewers_by_name = {}
             for reviewer in reviewers:

@@ -371,7 +371,7 @@ def generate_quality_report(
         if is_fallback_verdict(v):
             ws["parse_failures"] += 1
 
-    for wave, ws in wave_stats.items():
+    for ws in wave_stats.values():
         count = ws["count"]
         runtimes = ws.pop("runtimes")
         runtime_count = len(runtimes)
