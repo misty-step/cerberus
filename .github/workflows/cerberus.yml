@@ -172,7 +172,7 @@ jobs:
   review-wave2:
     needs: [preflight, gate-wave1]
     if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
-    name: "Cerberus · wave2 · ${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: Cerberus · wave2 reviewer
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -242,7 +242,7 @@ jobs:
   review-wave3:
     needs: [preflight, gate-wave2]
     if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
-    name: "Cerberus · wave3 · ${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: Cerberus · wave3 reviewer
     runs-on: ubuntu-latest
     permissions:
       contents: read
