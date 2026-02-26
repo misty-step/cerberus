@@ -29,6 +29,7 @@ def make_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"
     env["REVIEW_TIMEOUT"] = "30"
+    env["CERBERUS_TEST_NO_SLEEP"] = "1"
     return env
 
 
@@ -69,9 +70,9 @@ class TestParseFailureRecovery:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
 
-        # opencode that produces valid JSON
+        # pi that produces valid JSON
         make_executable(
-            bin_dir / "opencode",
+            bin_dir / "pi",
             (
                 "#!/usr/bin/env bash\n"
                 "cat <<'REVIEW'\n"
@@ -106,10 +107,10 @@ class TestParseFailureRecovery:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
 
-        # opencode that produces invalid output (no JSON)
-        opencode_script = tmp_path / "opencode_script.sh"
+        # pi that produces invalid output (no JSON)
+        pi_script = tmp_path / "pi_script.sh"
         make_executable(
-            opencode_script,
+            pi_script,
             (
                 "#!/usr/bin/env bash\n"
                 'COUNT_FILE="' + str(tmp_path / 'count') + '"\n'
@@ -133,7 +134,7 @@ class TestParseFailureRecovery:
         )
 
         # Create wrapper that uses the script
-        make_executable(bin_dir / "opencode", f"#!/usr/bin/env bash\nexec '{opencode_script}'\n")
+        make_executable(bin_dir / "pi", f"#!/usr/bin/env bash\nexec '{pi_script}'\n")
 
         diff_file = tmp_path / "diff.patch"
         write_simple_diff(diff_file)
@@ -156,9 +157,9 @@ class TestParseFailureRecovery:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
 
-        # opencode that always produces invalid output
+        # pi that always produces invalid output
         make_executable(
-            bin_dir / "opencode",
+            bin_dir / "pi",
             (
                 "#!/usr/bin/env bash\n"
                 "echo 'Invalid output without JSON block'\n"
@@ -293,9 +294,9 @@ class TestHasValidJsonBlock:
         bin_dir.mkdir()
 
         # First call: invalid, second call: valid JSON
-        opencode_script = tmp_path / "opencode.sh"
+        pi_script = tmp_path / "pi.sh"
         make_executable(
-            opencode_script,
+            pi_script,
             (
                 "#!/usr/bin/env bash\n"
                 'COUNT_FILE="' + str(tmp_path / 'count') + '"\n'
@@ -312,7 +313,7 @@ class TestHasValidJsonBlock:
                 "fi\n"
             ),
         )
-        make_executable(bin_dir / "opencode", f"#!/usr/bin/env bash\nexec bash '{opencode_script}'\n")
+        make_executable(bin_dir / "pi", f"#!/usr/bin/env bash\nexec bash '{pi_script}'\n")
 
         diff_file = tmp_path / "diff.patch"
         write_simple_diff(diff_file)

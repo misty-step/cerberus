@@ -96,7 +96,7 @@ python scripts/render-verdict-comment.py \
   --output /tmp/verdict-comment.md
 ```
 
-Run one real reviewer locally (requires credentials and OpenCode CLI):
+Run one real reviewer locally (requires credentials and Pi CLI):
 
 ```bash
 export CERBERUS_ROOT="$PWD"
@@ -108,7 +108,8 @@ gh pr diff <pr-number> --repo "$GITHUB_REPOSITORY" > /tmp/pr.diff
 gh pr view <pr-number> --repo "$GITHUB_REPOSITORY" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
 export GH_DIFF_FILE=/tmp/pr.diff
 export GH_PR_CONTEXT=/tmp/pr-context.json
-export OPENCODE_MODEL="openrouter/moonshotai/kimi-k2.5"
+export PI_MODEL="openrouter/moonshotai/kimi-k2.5"
+export OPENCODE_MODEL="$PI_MODEL"  # optional legacy alias
 export OPENCODE_MAX_STEPS=1
 export REVIEW_TIMEOUT=60
 scripts/run-reviewer.sh security

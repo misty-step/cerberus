@@ -8,7 +8,7 @@ branding:
 
 inputs:
   perspective:
-    description: 'Review perspective (correctness, architecture, security, performance, maintainability, testing, documentation, resilience, compatibility, dependencies, data-integrity, observability)'
+    description: 'Review perspective (must match defaults/config.yml reviewer perspectives)'
     required: true
   github-token:
     description: 'GitHub token for PR comments'
@@ -34,9 +34,12 @@ inputs:
   timeout:
     description: 'Review timeout in seconds'
     default: '600'
+  pi-version:
+    description: 'Pi CLI version to install'
+    default: '0.55.0'
   opencode-version:
-    description: 'OpenCode CLI version to install'
-    default: '1.1.49'
+    description: 'Deprecated alias for pi-version (only used when pi-version is empty)'
+    default: ''
   comment-policy:
     description: 'When to post reviewer comment to PR: never, non-pass (WARN/FAIL/SKIP), or always'
     default: ''
@@ -82,17 +85,6 @@ runs:
           exit 1
         fi
 
-    - name: Validate perspective
-      shell: bash
-      env:
-        PERSPECTIVE: ${{ inputs.perspective }}
-      run: |
-        VALID="correctness architecture security performance maintainability testing documentation resilience compatibility dependencies data-integrity observability"
-        if [[ ! " $VALID " =~ " $PERSPECTIVE " ]]; then
-          echo "::error::Invalid perspective: $PERSPECTIVE. Must be one of: $VALID"
-          exit 1
-        fi
-
     - name: Resolve API key
       shell: bash
       env:
@@ -115,22 +107,45 @@ runs:
       shell: bash
       run: pip install pyyaml --quiet
 
+    - name: Validate perspective
+      shell: bash
+      env:
+        CERBERUS_ROOT: ${{ github.action_path }}
+        PERSPECTIVE: ${{ inputs.perspective }}
+      run: |
+        python3 "$CERBERUS_ROOT/scripts/validate-perspective.py" \
+          --config "$CERBERUS_ROOT/defaults/config.yml" \
+          --perspective "$PERSPECTIVE"
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
         node-version: '22'
         package-manager-cache: false
 
-    - name: Install OpenCode CLI
+    - name: Install Pi CLI
       shell: bash
       env:
-        OPENCODE_VERSION: ${{ inputs.opencode-version }}
+        PI_VERSION: ${{ inputs.pi-version }}
+        LEGACY_OPENCODE_VERSION: ${{ inputs.opencode-version }}
       run: |
-        if [[ ! "$OPENCODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid opencode-version format: $OPENCODE_VERSION"
+        # Must match inputs.pi-version.default above.
+        default_pi_version='0.55.0'
+        resolved_version="$PI_VERSION"
+
+        if [[ -n "$LEGACY_OPENCODE_VERSION" && ( -z "$PI_VERSION" || "$PI_VERSION" == "$default_pi_version" ) ]]; then
+          echo "::warning::Input 'opencode-version' is deprecated. Use 'pi-version'."
+          resolved_version="$LEGACY_OPENCODE_VERSION"
+        elif [[ -n "$LEGACY_OPENCODE_VERSION" && "$PI_VERSION" != "$LEGACY_OPENCODE_VERSION" ]]; then
+          echo "::warning::Both 'pi-version' and deprecated 'opencode-version' were provided; using 'pi-version'."
+        fi
+
+        if [[ ! "$resolved_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid pi-version format: $resolved_version"
           exit 1
         fi
-        npm i -g "opencode-ai@${OPENCODE_VERSION}"
+        npm i -g "@mariozechner/pi-coding-agent@${resolved_version}"
+        pi --version
 
     - name: Fetch PR context
       id: pr
@@ -260,6 +275,7 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}
         PERSPECTIVE: ${{ inputs.perspective }}
         OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
+        PI_MODEL: ${{ inputs.model }}
         OPENCODE_MODEL: ${{ inputs.model }}
         MODEL_TIER: ${{ inputs.model-tier }}
         CERBERUS_CONTEXT: ${{ inputs.context }}
@@ -440,6 +456,15 @@ runs:
       with:
         name: cerberus-review-${{ inputs.perspective }}
         path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-review.md
+        if-no-files-found: ignore
+        retention-days: 3
+
+    - name: Upload runtime telemetry
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cerberus-runtime-telemetry-${{ inputs.perspective }}
+        path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-runtime-telemetry.ndjson
         if-no-files-found: ignore
         retention-days: 3
 

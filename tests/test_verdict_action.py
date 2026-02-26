@@ -58,14 +58,26 @@ def test_action_uses_api_key_fallback_validator() -> None:
     assert "required: false" in match.group(0)
 
 
-def test_action_pins_opencode_install_version() -> None:
+def test_action_validates_perspective_from_defaults_config() -> None:
     content = ACTION_FILE.read_text()
 
-    match = re.search(r"opencode-version:\n(?:\s+.+\n)+", content)
-    assert match is not None
-    assert "default: '1.1.49'" in match.group(0)
-    assert "Invalid opencode-version format" in content
-    assert 'npm i -g "opencode-ai@${OPENCODE_VERSION}"' in content
+    assert "scripts/validate-perspective.py" in content
+    assert "--config \"$CERBERUS_ROOT/defaults/config.yml\"" in content
+    assert "--perspective \"$PERSPECTIVE\"" in content
+
+
+def test_action_pins_pi_install_version() -> None:
+    content = ACTION_FILE.read_text()
+
+    pi_match = re.search(r"pi-version:\n(?:\s+.+\n)+", content)
+    legacy_match = re.search(r"opencode-version:\n(?:\s+.+\n)+", content)
+    assert pi_match is not None
+    assert legacy_match is not None
+    assert "default: '0.55.0'" in pi_match.group(0)
+    assert "default: ''" in legacy_match.group(0)
+    assert "Invalid pi-version format" in content
+    assert "Both 'pi-version' and deprecated 'opencode-version' were provided; using 'pi-version'." in content
+    assert 'npm i -g "@mariozechner/pi-coding-agent@${resolved_version}"' in content
     assert "pip install pyyaml" in content
 
 
@@ -185,7 +197,7 @@ def test_fail_on_verdict_is_wired_in_review_action() -> None:
 
 def test_review_prompt_references_diff_file_placeholder() -> None:
     prompt_content = REVIEW_PROMPT_TEMPLATE.read_text()
-    run_reviewer_content = RUN_REVIEWER_SCRIPT.read_text()
+    render_prompt_content = (ROOT / "scripts" / "render-review-prompt.py").read_text()
 
     assert "{{DIFF_FILE}}" in prompt_content
-    assert "DIFF_FILE" in run_reviewer_content
+    assert "DIFF_FILE" in render_prompt_content

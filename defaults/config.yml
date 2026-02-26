@@ -39,7 +39,7 @@ model:
       - "openrouter/z-ai/glm-5"
       - "openrouter/xiaomi/mimo-v2-flash"
       - "openrouter/mistralai/devstral-2512"
-  cli: opencode
+  cli: pi
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
   timeout: 600                        # Seconds per reviewer

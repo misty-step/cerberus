@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel OpenCode CLI reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a verdict action aggregates their verdicts into a single merge-gating check.
+Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel Pi-runtime reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a verdict action aggregates their verdicts into a single merge-gating check.
 
 Repo scope: this repository is the OSS BYOK GitHub Actions distribution. Cerberus Cloud (managed GitHub App) is planned as a separate repo/product (see `docs/adr/002-oss-core-and-cerberus-cloud.md`).
 
@@ -26,7 +26,7 @@ consumer workflow (.github/workflows/cerberus.yml)
     ├── matrix job × N reviewers (if: should_run, parallel, fail-fast: false)
     │   └── uses: misty-step/cerberus@v2  (action.yml)
     │       ├── fetch PR diff/context
-    │       ├── run-reviewer.sh   (prompt + opencode invocation)
+    │       ├── run-reviewer.sh   (prompt + Pi runtime invocation)
     │       ├── parse-review.py   (extract + validate JSON verdict)
     │       ├── post-comment.sh   (optional per-reviewer PR comment)
     │       └── upload verdict artifact
@@ -74,12 +74,12 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `triage/action.yml` - triage composite action entrypoint
 - `validate/action.yml` - consumer workflow validator (misconfig guardrail)
 - `defaults/config.yml` - verdict settings, reviewer list, verdict thresholds, override rules
-- `.opencode/agents/<perspective>.md` - OpenCode agent config (YAML frontmatter) + system prompt (body)
-- `opencode.json` - OpenCode CLI config (provider, model, permissions)
+- `.opencode/agents/<perspective>.md` - perspective system prompts (YAML frontmatter + body)
+- `defaults/reviewer-profiles.yml` - Pi runtime profile settings (provider/model/tools/extensions/skills)
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
 - `templates/consumer-workflow-reusable.yml` - recommended workflow for downstream repositories
 - `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
-- `scripts/run-reviewer.sh` - orchestrates one reviewer: builds prompt, invokes `opencode run`
+- `scripts/run-reviewer.sh` - orchestrates one reviewer via `scripts/run-reviewer.py` and Pi runtime
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
 - `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes aggregated verdict
@@ -108,14 +108,14 @@ Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
 - `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Stored in fallback/partial verdicts for debugging via workflow logs/artifacts (not rendered in PR comments).
 
-## OpenCode CLI
+## Pi Runtime
 
-- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool` each run.
+- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool`/`model.tiers` each run.
 - Env vars: `CERBERUS_OPENROUTER_API_KEY` (preferred), `OPENROUTER_API_KEY` (legacy)
-- Agent config: `.opencode/agents/<perspective>.md` (YAML frontmatter + system prompt body)
-- CLI config: `opencode.json` at repo root (auto-discovered)
-- Invocation: `opencode run -m <model> --agent <perspective> "<prompt>"`
-- No TOML config, no agent YAML rewriting needed
+- Perspective prompt: `.opencode/agents/<perspective>.md` (frontmatter ignored, body used as trusted system prompt)
+- Runtime profile config: `defaults/reviewer-profiles.yml`
+- Invocation path: `scripts/run-reviewer.sh` -> `scripts/run-reviewer.py` -> `scripts/lib/runtime_facade.py` (Pi CLI `--print` mode)
+- Runtime executes in isolated HOME and emits telemetry to `${CERBERUS_TMP}/<perspective>-runtime-telemetry.ndjson`
 
 ## Testing Locally
 
@@ -149,7 +149,7 @@ End-to-end testing requires pushing to a branch and having a target repo use `mi
 - When testing workflow `--jq` snippets in YAML, assert key field usage (e.g. `.user.login`) without exact full-string matching to avoid whitespace-only test failures
 - `pull-requests: write` permission is required for posting PR comments
 - Secrets are snapshotted per workflow run - push a new commit to pick up secret changes
-- `set -e` in steps means any command failure stops the step; `run-reviewer.sh` uses `set +e` around opencode invocation deliberately
+- `set -e` in steps means any command failure stops the step; review step uses `set +e` around `run-reviewer.sh` deliberately
 
 ## Deployment
 
