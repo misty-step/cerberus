@@ -246,7 +246,9 @@ class TestActionTempLifecycle:
         """verdict-json output must point to RUNNER_TEMP so it survives CERBERUS_TMP cleanup."""
         content = ACTION_FILE.read_text()
         assert 'RUNNER_TEMP' in content
-        assert 'cerberus-${PERSPECTIVE}-verdict.json' in content
+        assert 'artifact_suffix_safe' in content
+        assert 'cerberus-${PERSPECTIVE}-' in content
+        assert '-verdict.json' in content
         stable_output_line = 'echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"'
         assert stable_output_line in content
         cerberus_tmp_output_line = 'echo "verdict-json=${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" >> "$GITHUB_OUTPUT"'

@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 REUSABLE_CONSUMER = ROOT / "templates" / "consumer-workflow-reusable.yml"
 DECOMPOSED_CONSUMER = ROOT / "templates" / "consumer-workflow-minimal.yml"
+JOB_BOUNDARY = r"(?=^  [A-Za-z0-9_-]+:|\Z)"
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ def test_no_workflow_level_pull_requests_write():
 def test_reusable_consumer_review_job_has_required_permissions():
     content = REUSABLE_CONSUMER.read_text()
     review_block = re.search(
-        r"^  review:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
+        rf"^  review:\n(.*?){JOB_BOUNDARY}", content, re.MULTILINE | re.DOTALL
     )
     assert review_block is not None, "review job not found in consumer-workflow-reusable.yml"
     block = review_block.group(0)
@@ -70,7 +71,7 @@ def _read_decomposed():
 def _decomposed_review_wave_blocks(content: str):
     return list(
         re.finditer(
-            r"^  review-wave\d+:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
+            rf"^  review-wave\d+:\n(.*?){JOB_BOUNDARY}", content, re.MULTILINE | re.DOTALL
         )
     )
 
@@ -91,7 +92,7 @@ def test_decomposed_review_job_has_read_only_permissions():
 def test_decomposed_verdict_job_has_write_permissions():
     content = _read_decomposed()
     verdict_block = re.search(
-        r"^  verdict:\n(.*?)(?=^  \w+:|\Z)", content, re.MULTILINE | re.DOTALL
+        rf"^  verdict:\n(.*?){JOB_BOUNDARY}", content, re.MULTILINE | re.DOTALL
     )
     assert verdict_block is not None, "verdict job not found in consumer-workflow-minimal.yml"
     block = verdict_block.group(0)

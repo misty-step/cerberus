@@ -121,3 +121,11 @@ def test_generate_matrix_fails_when_wave_filter_produces_empty_matrix(
     with pytest.raises(SystemExit) as exc:
         mod.generate_matrix(str(config))
     assert exc.value.code == 1
+
+
+def test_generate_matrix_fails_on_unknown_wave(tmp_path: Path, monkeypatch) -> None:
+    config = _write_wave_config(tmp_path)
+    monkeypatch.setenv("REVIEW_WAVE", "wave9")
+    with pytest.raises(SystemExit) as exc:
+        mod.generate_matrix(str(config))
+    assert exc.value.code == 1

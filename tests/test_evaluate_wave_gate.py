@@ -18,7 +18,13 @@ assert spec.loader is not None
 spec.loader.exec_module(mod)
 
 
-def _write_config(tmp_path: Path) -> Path:
+def _write_config(
+    tmp_path: Path,
+    *,
+    block_on_critical: bool = True,
+    block_on_major: bool = True,
+    block_on_skip: bool = True,
+) -> Path:
     config = tmp_path / "config.yml"
     config.write_text(
         "\n".join(
@@ -30,9 +36,9 @@ def _write_config(tmp_path: Path) -> Path:
                 "    flash: 2",
                 "    standard: 3",
                 "  gate:",
-                "    block_on_critical: true",
-                "    block_on_major: true",
-                "    block_on_skip: true",
+                f"    block_on_critical: {'true' if block_on_critical else 'false'}",
+                f"    block_on_major: {'true' if block_on_major else 'false'}",
+                f"    block_on_skip: {'true' if block_on_skip else 'false'}",
                 "  definitions:",
                 "    wave1:",
                 "      reviewers: [trace]",
@@ -127,6 +133,18 @@ def test_blocks_escalation_on_skip_when_configured(tmp_path: Path) -> None:
     assert result["escalate"] is False
     assert result["blocking"] is True
     assert "skip_verdicts" in result["reason"]
+
+
+def test_major_and_critical_do_not_block_when_gate_flags_disabled(tmp_path: Path) -> None:
+    config = _write_config(tmp_path, block_on_major=False, block_on_critical=False)
+    verdict_dir = tmp_path / "verdicts"
+    _write_verdict(verdict_dir, verdict="WARN", major=2, critical=1)
+
+    cfg = mod.load_defaults_config(config)
+    result = mod.evaluate_gate(cfg=cfg, verdict_dir=verdict_dir, wave="wave1", tier="standard")
+    assert result["blocking"] is False
+    assert result["escalate"] is True
+    assert result["reason"] == "passed_gate"
 
 
 def test_count_findings_handles_non_list_and_case_insensitive_matches() -> None:
