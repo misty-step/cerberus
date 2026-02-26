@@ -63,7 +63,7 @@ jobs:
     outputs:
       should_run: ${{ steps.preflight.outputs.should_run }}
     steps:
-      - uses: ./preflight
+      - uses: misty-step/cerberus/preflight@master
         id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO" > /tmp/pr.diff
-      - uses: ./router
+      - uses: misty-step/cerberus/router@master
         id: router
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
           diff-file: /tmp/pr.diff
           reviewers: ${{ inputs.reviewers }}
       - id: matrix_wave1
-        uses: ./matrix
+        uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ steps.router.outputs.panel }}
           model-tier: ${{ steps.router.outputs.model-tier }}
@@ -113,7 +113,7 @@ jobs:
       matrix: ${{ fromJson(needs.route.outputs.matrix-wave1) }}
       fail-fast: false
     steps:
-      - uses: ./
+      - uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -146,16 +146,23 @@ jobs:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave1
           merge-multiple: true
+      - name: Checkout gate action source
+        # Ensure gate action is available on self-PR runs even before master contains it.
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.repository == 'misty-step/cerberus' && github.event.pull_request.head.sha || 'master' }}
+          path: __cerberus
       - name: Evaluate wave1 gate
         id: gate
-        uses: ./wave-gate
+        uses: ./__cerberus/wave-gate
         with:
           verdict-dir: ./wave-verdicts
           wave: wave1
           model-tier: ${{ needs.route.outputs.model-tier }}
       - id: matrix_wave2
         if: steps.gate.outputs.escalate == 'true'
-        uses: ./matrix
+        uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
@@ -181,7 +188,7 @@ jobs:
       matrix: ${{ fromJson(needs.gate-wave1.outputs.matrix-wave2) }}
       fail-fast: false
     steps:
-      - uses: ./
+      - uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -216,16 +223,22 @@ jobs:
           path: ./wave-verdicts/
           pattern: cerberus-verdict-*-wave2
           merge-multiple: true
+      - name: Checkout gate action source
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.repository == 'misty-step/cerberus' && github.event.pull_request.head.sha || 'master' }}
+          path: __cerberus
       - name: Evaluate wave2 gate
         id: gate
-        uses: ./wave-gate
+        uses: ./__cerberus/wave-gate
         with:
           verdict-dir: ./wave-verdicts
           wave: wave2
           model-tier: ${{ needs.route.outputs.model-tier }}
       - id: matrix_wave3
         if: steps.gate.outputs.escalate == 'true'
-        uses: ./matrix
+        uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
@@ -251,7 +264,7 @@ jobs:
       matrix: ${{ fromJson(needs.gate-wave2.outputs.matrix-wave3) }}
       fail-fast: false
     steps:
-      - uses: ./
+      - uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -285,7 +298,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: ./verdict
+      - uses: misty-step/cerberus/verdict@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           fail-on-verdict: ${{ inputs.fail-on-verdict }}
