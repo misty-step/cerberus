@@ -188,7 +188,26 @@ jobs:
       matrix: ${{ fromJson(needs.gate-wave1.outputs.matrix-wave2) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@master
+      - if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+      - if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -264,7 +283,26 @@ jobs:
       matrix: ${{ fromJson(needs.gate-wave2.outputs.matrix-wave3) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@master
+      - if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+      - if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
