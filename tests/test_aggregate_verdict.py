@@ -591,6 +591,7 @@ def test_propagates_model_metadata(tmp_path):
                 "summary": "ok",
                 "model_used": "openrouter/moonshotai/kimi-k2.5",
                 "primary_model": "openrouter/moonshotai/kimi-k2.5",
+                "model_wave": "wave1",
                 "fallback_used": False,
             }
         )
@@ -602,6 +603,7 @@ def test_propagates_model_metadata(tmp_path):
     reviewer = data["reviewers"][0]
     assert reviewer["model_used"] == "openrouter/moonshotai/kimi-k2.5"
     assert reviewer["primary_model"] == "openrouter/moonshotai/kimi-k2.5"
+    assert reviewer["model_wave"] == "wave1"
     assert reviewer["fallback_used"] is False
 
 

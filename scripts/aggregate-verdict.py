@@ -129,6 +129,13 @@ def has_critical_finding(verdict: dict) -> bool:
     return False
 
 
+def _to_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def is_explicit_noncritical_fail(verdict: dict) -> bool:
     """Return True if the FAIL verdict has no critical findings and provides explicit evidence."""
     if verdict.get("verdict") != "FAIL":
@@ -288,6 +295,7 @@ def generate_quality_report(
             "runtime_seconds": v.get("runtime_seconds"),
             "model_used": v.get("model_used"),
             "primary_model": v.get("primary_model"),
+            "model_wave": v.get("model_wave"),
             "fallback_used": v.get("fallback_used", False),
             "parse_failed": is_fallback_verdict(v),
             "timed_out": is_timeout_skip(v),
@@ -331,6 +339,49 @@ def generate_quality_report(
         stats["parse_failure_rate"] = stats["parse_failures"] / count if count > 0 else 0
         stats["fallback_rate"] = stats["fallback_count"] / count if count > 0 else 0
 
+    # Per-wave aggregation
+    wave_stats: dict[str, dict] = {}
+    for v in verdicts:
+        wave = v.get("model_wave") or "unscoped"
+        if wave not in wave_stats:
+            wave_stats[wave] = {
+                "count": 0,
+                "verdicts": {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0},
+                "major_findings": 0,
+                "critical_findings": 0,
+                "total_runtime_seconds": 0,
+                "runtimes": [],
+                "fallback_count": 0,
+                "parse_failures": 0,
+            }
+        ws = wave_stats[wave]
+        ws["count"] += 1
+        vd = v["verdict"]
+        if vd in ws["verdicts"]:
+            ws["verdicts"][vd] += 1
+        stats = v.get("stats")
+        if isinstance(stats, dict):
+            ws["major_findings"] += _to_int(stats.get("major"))
+            ws["critical_findings"] += _to_int(stats.get("critical"))
+        if v.get("runtime_seconds") is not None:
+            ws["total_runtime_seconds"] += v["runtime_seconds"]
+            ws["runtimes"].append(v["runtime_seconds"])
+        if v.get("fallback_used"):
+            ws["fallback_count"] += 1
+        if is_fallback_verdict(v):
+            ws["parse_failures"] += 1
+
+    for wave, ws in wave_stats.items():
+        count = ws["count"]
+        runtimes = ws.pop("runtimes")
+        runtime_count = len(runtimes)
+        ws["runtime_count"] = runtime_count
+        ws["avg_runtime_seconds"] = ws["total_runtime_seconds"] / runtime_count if runtime_count > 0 else 0
+        ws["median_runtime_seconds"] = statistics.median(runtimes) if runtimes else 0
+        ws["skip_rate"] = ws["verdicts"]["SKIP"] / count if count > 0 else 0
+        ws["parse_failure_rate"] = ws["parse_failures"] / count if count > 0 else 0
+        ws["fallback_rate"] = ws["fallback_count"] / count if count > 0 else 0
+
     # Verdict distribution
     verdict_distribution = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
     for v in verdicts:
@@ -358,6 +409,7 @@ def generate_quality_report(
         },
         "reviewers": reviewer_details,
         "models": model_stats,
+        "waves": wave_stats,
     }
 
     if skipped_artifacts:
@@ -398,6 +450,7 @@ def main() -> None:
             "runtime_seconds": data.get("runtime_seconds"),
             "model_used": data.get("model_used"),
             "primary_model": data.get("primary_model"),
+            "model_wave": data.get("model_wave"),
             "fallback_used": data.get("fallback_used"),
         }
         verdicts.append(entry)

@@ -34,6 +34,29 @@ def _write_config(tmp_path: Path) -> Path:
     return config
 
 
+def _write_wave_config(tmp_path: Path) -> Path:
+    config = tmp_path / "wave-config.yml"
+    config.write_text(
+        "\n".join(
+            [
+                "waves:",
+                "  definitions:",
+                "    wave1:",
+                "      reviewers: [TRACE]",
+                "    wave2:",
+                "      reviewers: [guard]",
+                "reviewers:",
+                "  - name: TRACE",
+                "    perspective: correctness",
+                "  - name: guard",
+                "    perspective: security",
+                "",
+            ]
+        )
+    )
+    return config
+
+
 def _load_matrix_output() -> dict:
     return json.loads(Path("/tmp/matrix-output.json").read_text())
 
@@ -54,3 +77,16 @@ def test_generate_matrix_omits_model_tier_when_env_unset(tmp_path: Path, monkeyp
     payload = _load_matrix_output()
     assert "model_tier" not in payload["include"][0]
     assert "model_tier" not in payload["include"][1]
+
+
+def test_generate_matrix_filters_by_wave_and_sets_model_wave(tmp_path: Path, monkeypatch) -> None:
+    config = _write_wave_config(tmp_path)
+    monkeypatch.setenv("REVIEW_WAVE", "wave2")
+    monkeypatch.setenv("MODEL_TIER", "standard")
+    mod.generate_matrix(str(config))
+    payload = _load_matrix_output()
+    assert len(payload["include"]) == 1
+    entry = payload["include"][0]
+    assert entry["reviewer"] == "guard"
+    assert entry["model_wave"] == "wave2"
+    assert entry["wave"] == "wave2"

@@ -138,6 +138,32 @@ reviewers:
         model = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert model in {"openrouter/flash-a", "openrouter/flash-b"}
 
+    def test_requested_wave_pool_is_used_before_tier(self, tmp_path: Path) -> None:
+        config = '''
+version: 1
+model:
+  default: "openrouter/default"
+  wave_pools:
+    wave2:
+      - "openrouter/wave2-a"
+      - "openrouter/wave2-b"
+  tiers:
+    flash:
+      - "openrouter/flash-a"
+reviewers:
+  - name: SENTINEL
+    perspective: security
+    model: pool
+'''
+        result, artifacts_dir = self._run(
+            tmp_path,
+            config,
+            {"MODEL_WAVE": "wave2", "MODEL_TIER": "flash"},
+        )
+        assert result.returncode == 0
+        model = artifact(artifacts_dir, "primary-model").read_text().strip()
+        assert model in {"openrouter/wave2-a", "openrouter/wave2-b"}
+
     def test_missing_requested_tier_falls_back_to_standard(self, tmp_path: Path) -> None:
         config = '''
 version: 1

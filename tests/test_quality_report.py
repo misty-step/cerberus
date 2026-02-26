@@ -62,6 +62,7 @@ class TestQualityReportStructure:
         assert "summary" in report
         assert "reviewers" in report
         assert "models" in report
+        assert "waves" in report
 
     def test_meta_contains_repo(self):
         report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
@@ -117,6 +118,10 @@ class TestQualityReportModels:
         assert report["models"]["kimi"]["runtime_count"] == 1
         # SENTINEL has runtime 600 (timeout) — still counted as runtime data
         assert report["models"]["minimax"]["runtime_count"] == 1
+
+    def test_wave_aggregation_defaults_to_unscoped(self):
+        report = generate_quality_report(_sample_verdicts(), _sample_verdict(), [], "misty-step/test", "123", "abc123")
+        assert report["waves"]["unscoped"]["count"] == 3
 
 
 class TestQualityReportEdgeCases:

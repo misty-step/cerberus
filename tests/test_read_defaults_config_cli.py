@@ -138,6 +138,66 @@ reviewers:
         assert "--tier must be non-empty" in captured.err
 
 
+class TestModelPoolForWave:
+    def test_prints_wave_pool(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+model:
+  wave_pools:
+    wave1:
+      - openrouter/cheap-a
+      - openrouter/cheap-b
+reviewers:
+  - name: A
+    perspective: b
+""")
+        code = main(["model-pool-for-wave", "--config", cfg, "--wave", "wave1"])
+        assert code == 0
+        captured = capsys.readouterr()
+        assert captured.out.strip().splitlines() == ["openrouter/cheap-a", "openrouter/cheap-b"]
+
+    def test_empty_wave_is_error(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+reviewers:
+  - name: A
+    perspective: b
+""")
+        code = main(["model-pool-for-wave", "--config", cfg, "--wave", ""])
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "--wave must be non-empty" in captured.err
+
+
+class TestWaveHelpers:
+    def test_wave_order_reviewers_and_max(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+waves:
+  order: [wave1, wave2]
+  max_for_tier:
+    flash: 1
+  definitions:
+    wave1:
+      reviewers: [A]
+    wave2:
+      reviewers: [B]
+reviewers:
+  - name: A
+    perspective: correctness
+  - name: B
+    perspective: security
+""")
+        assert main(["wave-order", "--config", cfg]) == 0
+        out = capsys.readouterr()
+        assert out.out.strip().splitlines() == ["wave1", "wave2"]
+
+        assert main(["wave-reviewers", "--config", cfg, "--wave", "wave2"]) == 0
+        out = capsys.readouterr()
+        assert out.out.strip().splitlines() == ["B"]
+
+        assert main(["wave-max-for-tier", "--config", cfg, "--tier", "flash"]) == 0
+        out = capsys.readouterr()
+        assert out.out.strip() == "1"
+
+
 class TestConfigError:
     def test_bad_config_file(self, tmp_path, capsys):
         code = main(["model-default", "--config", str(tmp_path / "missing.yml")])

@@ -72,6 +72,11 @@ def normalize_tier(value: str | None) -> str:
     return tier or "standard"
 
 
+def normalize_wave(value: str | None) -> str:
+    wave = (value or "").strip().lower()
+    return wave
+
+
 def resolve_api_key_for_provider(provider: str, env: Mapping[str, str]) -> tuple[str, str]:
     key_var = provider_api_key_env_var(provider)
     api_key = sanitize_model(env.get(key_var))
@@ -166,10 +171,21 @@ def resolve_resource_paths(base: Path, values: list[str]) -> list[str]:
 def select_pool_model(
     *,
     reviewer_name: str,
+    requested_wave: str,
     requested_tier: str,
+    model_wave_pools: dict[str, list[str]],
     model_tiers: dict[str, list[str]],
     model_pool: list[str],
 ) -> str:
+    if requested_wave:
+        wave_pool = model_wave_pools.get(requested_wave, [])
+        if wave_pool:
+            selected = random.choice(wave_pool)
+            print(
+                f"::notice::Selected random model from {requested_wave} wave pool for {reviewer_name}: {selected}"
+            )
+            return selected
+
     candidate_tiers = [requested_tier]
     if requested_tier != "standard":
         candidate_tiers.append("standard")
@@ -345,6 +361,7 @@ def main(argv: list[str]) -> int:
     profile_model = sanitize_model(profile.model)
 
     requested_tier = normalize_tier(os.environ.get("MODEL_TIER"))
+    requested_wave = normalize_wave(os.environ.get("MODEL_WAVE"))
 
     reviewer_model_raw = sanitize_model(reviewer.model)
     config_default_model = sanitize_model(defaults_cfg.model.default)
@@ -353,7 +370,9 @@ def main(argv: list[str]) -> int:
         if profile_model == "pool":
             selected = select_pool_model(
                 reviewer_name=reviewer_name,
+                requested_wave=requested_wave,
                 requested_tier=requested_tier,
+                model_wave_pools=defaults_cfg.model.wave_pools,
                 model_tiers=defaults_cfg.model.tiers,
                 model_pool=defaults_cfg.model.pool,
             )
@@ -362,7 +381,9 @@ def main(argv: list[str]) -> int:
     elif reviewer_model_raw == "pool":
         selected = select_pool_model(
             reviewer_name=reviewer_name,
+            requested_wave=requested_wave,
             requested_tier=requested_tier,
+            model_wave_pools=defaults_cfg.model.wave_pools,
             model_tiers=defaults_cfg.model.tiers,
             model_pool=defaults_cfg.model.pool,
         )

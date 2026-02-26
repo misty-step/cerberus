@@ -25,6 +25,12 @@ inputs:
   model-tier:
     description: 'Model complexity tier propagated from router output (flash, standard, pro).'
     default: 'standard'
+  model-wave:
+    description: 'Optional wave name for wave-specific model pools (wave1, wave2, wave3).'
+    default: ''
+  artifact-suffix:
+    description: 'Optional suffix used for uploaded artifact names. Defaults to perspective.'
+    default: ''
   fallback-models:
     description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
     default: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
@@ -278,6 +284,7 @@ runs:
         PI_MODEL: ${{ inputs.model }}
         OPENCODE_MODEL: ${{ inputs.model }}
         MODEL_TIER: ${{ inputs.model-tier }}
+        MODEL_WAVE: ${{ inputs.model-wave }}
         CERBERUS_CONTEXT: ${{ inputs.context }}
         CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
@@ -304,6 +311,7 @@ runs:
         PERSPECTIVE: ${{ inputs.perspective }}
         PRIMARY_MODEL: ${{ inputs.model }}
         GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
+        MODEL_WAVE: ${{ inputs.model-wave }}
       run: |
         # Resolve reviewer name written by run-reviewer.sh (e.g. APOLLO).
         # Falls back to uppercased perspective if the file is missing.
@@ -375,8 +383,8 @@ runs:
             fallback_used="true"
           fi
           tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.model.json"
-          jq --arg mu "$model_used" --arg pm "$primary_model" --arg cm "$configured_model" --argjson fb "$fallback_used" \
-            '.model_used = $mu | .primary_model = $pm | .configured_model = $cm | .fallback_used = $fb' \
+          jq --arg mu "$model_used" --arg pm "$primary_model" --arg cm "$configured_model" --arg mw "$MODEL_WAVE" --argjson fb "$fallback_used" \
+            '.model_used = $mu | .primary_model = $pm | .configured_model = $cm | .fallback_used = $fb | .model_wave = $mw' \
             "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
           mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
         fi
@@ -446,7 +454,7 @@ runs:
       if: steps.parse.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: cerberus-verdict-${{ inputs.perspective }}
+        name: cerberus-verdict-${{ inputs.artifact-suffix || inputs.perspective }}
         path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-verdict.json
         retention-days: 1
 
@@ -454,7 +462,7 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: cerberus-review-${{ inputs.perspective }}
+        name: cerberus-review-${{ inputs.artifact-suffix || inputs.perspective }}
         path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-review.md
         if-no-files-found: ignore
         retention-days: 3
@@ -463,7 +471,7 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: cerberus-runtime-telemetry-${{ inputs.perspective }}
+        name: cerberus-runtime-telemetry-${{ inputs.artifact-suffix || inputs.perspective }}
         path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-runtime-telemetry.ndjson
         if-no-files-found: ignore
         retention-days: 3

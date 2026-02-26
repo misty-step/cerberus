@@ -192,7 +192,16 @@ matrix:
 ### Model diversity
 By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
-Router now emits a `model_tier` (`flash`, `standard`, `pro`) based on diff complexity and route heuristics. The matrix passes that tier into each reviewer so pool-based reviewers draw from `model.tiers.<tier>` before falling back.
+Cerberus now runs cascading review waves:
+- `wave1`: cheap/high-throughput pool
+- `wave2`: mid-tier depth pool
+- `wave3`: premium final pool
+
+Escalation is deterministic. Cerberus advances to the next wave only when the current wave has no blocking findings under `waves.gate` in `defaults/config.yml`.
+
+Router still emits `model_tier` (`flash`, `standard`, `pro`) from diff complexity. Wave policy uses that tier to cap maximum wave depth via `waves.max_for_tier`.
+
+Within a wave, pool-based reviewers draw models from `model.wave_pools.<wave>`. If a wave pool is missing, Cerberus falls back to `model.tiers.<tier>`, then `model.pool`.
 
 Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow-minimal.yml` for a full decomposed example.
 

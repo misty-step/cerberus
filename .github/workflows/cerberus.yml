@@ -92,8 +92,8 @@ jobs:
           diff-file: /tmp/pr.diff
           reviewers: ${{ inputs.reviewers }}
 
-  matrix:
-    needs: route
+  matrix-wave1:
+    needs: [route, preflight]
     if: needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
@@ -104,17 +104,18 @@ jobs:
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave1
 
-  review:
-    needs: [matrix, preflight]
+  review-wave1:
+    needs: [matrix-wave1, preflight]
     if: needs.preflight.outputs.should_run == 'true'
-    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: "wave1 • ${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     strategy:
-      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.matrix-wave1.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: misty-step/cerberus@v2
@@ -125,12 +126,150 @@ jobs:
           timeout: ${{ inputs.timeout }}
           model: ${{ inputs.model }}
           model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+
+  gate-wave1:
+    needs: [review-wave1, preflight, route]
+    if: always() && needs.preflight.outputs.should_run == 'true' && needs.review-wave1.result != 'skipped'
+    runs-on: ubuntu-latest
+    outputs:
+      escalate: ${{ steps.gate.outputs.escalate }}
+      next-wave: ${{ steps.gate.outputs.next-wave }}
+      reason: ${{ steps.gate.outputs.reason }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./wave-verdicts/
+          pattern: cerberus-verdict-*-wave1
+          merge-multiple: true
+      - name: Evaluate wave1 gate
+        id: gate
+        uses: misty-step/cerberus/wave-gate@v2
+        with:
+          verdict-dir: ./wave-verdicts
+          wave: wave1
+          model-tier: ${{ needs.route.outputs.model-tier }}
+      - name: Upload wave1 gate telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-wave-gate-wave1
+          path: ${{ steps.gate.outputs.telemetry-json }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  matrix-wave2:
+    needs: [gate-wave1, route, preflight]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - id: generate
+        uses: misty-step/cerberus/matrix@v2
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave2
+
+  review-wave2:
+    needs: [matrix-wave2, preflight, gate-wave1]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
+    name: "wave2 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      matrix: ${{ fromJson(needs.matrix-wave2.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+
+  gate-wave2:
+    needs: [review-wave2, preflight, route, gate-wave1]
+    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true' && needs.review-wave2.result != 'skipped'
+    runs-on: ubuntu-latest
+    outputs:
+      escalate: ${{ steps.gate.outputs.escalate }}
+      next-wave: ${{ steps.gate.outputs.next-wave }}
+      reason: ${{ steps.gate.outputs.reason }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./wave-verdicts/
+          pattern: cerberus-verdict-*-wave2
+          merge-multiple: true
+      - name: Evaluate wave2 gate
+        id: gate
+        uses: misty-step/cerberus/wave-gate@v2
+        with:
+          verdict-dir: ./wave-verdicts
+          wave: wave2
+          model-tier: ${{ needs.route.outputs.model-tier }}
+      - name: Upload wave2 gate telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-wave-gate-wave2
+          path: ${{ steps.gate.outputs.telemetry-json }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  matrix-wave3:
+    needs: [gate-wave2, route, preflight]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - id: generate
+        uses: misty-step/cerberus/matrix@v2
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave3
+
+  review-wave3:
+    needs: [matrix-wave3, preflight, gate-wave2]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
+    name: "wave3 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      matrix: ${{ fromJson(needs.matrix-wave3.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
           context: ${{ inputs.context }}
 
   verdict:
     name: "Verdict"
-    needs: [review, preflight]
-    if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
+    needs: [review-wave1, review-wave2, review-wave3, preflight]
+    if: always() && needs.review-wave1.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

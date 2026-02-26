@@ -9,7 +9,8 @@ SCRIPT="matrix/generate-matrix.py"
 
 # --- Test 1: synthetic config ---
 test_config=$(mktemp)
-trap 'rm -f "$test_config"' EXIT
+wave_config=""
+trap 'rm -f "$test_config" "$wave_config"' EXIT
 cat > "$test_config" << 'EOF'
 version: 1
 council:
@@ -67,6 +68,52 @@ fi
 
 echo "PASS: Matrix includes propagated model_tier from env"
 
+# --- Test 1c: wave filtering + model_wave propagation ---
+wave_config=$(mktemp)
+cat > "$wave_config" << 'EOF'
+version: 1
+waves:
+  definitions:
+    wave1:
+      reviewers: [TEST1]
+    wave2:
+      reviewers: [TEST2]
+reviewers:
+  - name: TEST1
+    perspective: correctness
+  - name: TEST2
+    perspective: security
+EOF
+
+wave_output="$(REVIEW_WAVE=wave2 MODEL_TIER=standard python3 "$SCRIPT" "$wave_config")"
+wave_matrix=$(echo "$wave_output" | sed -n '1p')
+wave_count=$(echo "$wave_output" | sed -n '2p')
+
+if [[ "$wave_count" != "1" ]]; then
+    echo "FAIL: Expected wave2 matrix count 1, got $wave_count"
+    exit 1
+fi
+
+if ! python3 - "$wave_matrix" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+entry = payload["include"][0]
+if entry.get("reviewer") != "TEST2":
+    sys.exit(1)
+if entry.get("model_wave") != "wave2":
+    sys.exit(1)
+if entry.get("wave") != "wave2":
+    sys.exit(1)
+PY
+then
+    echo "FAIL: wave-filtered matrix missing expected reviewer/model_wave metadata"
+    exit 1
+fi
+
+echo "PASS: Wave filtering emits expected matrix metadata"
+
 # --- Test 2: actual defaults/config.yml ---
 result=$(python3 "$SCRIPT" "defaults/config.yml")
 count=$(echo "$result" | sed -n '2p')
@@ -87,6 +134,8 @@ if ! echo "$result" | grep -q "proof"; then
     echo "FAIL: proof not found in matrix"
     exit 1
 fi
+
+rm -f "$wave_config"
 
 echo "PASS: Matrix contains expected reviewers (trace, proof)"
 echo "All matrix tests passed!"

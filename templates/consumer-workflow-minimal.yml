@@ -73,8 +73,8 @@ jobs:
           # routing: 'disabled'         # uncomment to skip LLM routing and use all reviewers
           # reviewers: 'trace,guard'    # uncomment to force specific reviewers (bypasses routing)
 
-  # Generate the reviewer matrix, filtered by the router panel
-  matrix:
+  # Wave 1 matrix (cheap/high-throughput)
+  matrix-wave1:
     needs: route
     runs-on: ubuntu-latest
     outputs:
@@ -86,18 +86,19 @@ jobs:
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave1
 
-  # Run reviews in parallel using the routed matrix
-  review:
-    needs: [matrix, preflight]
+  # Wave 1 review
+  review-wave1:
+    needs: [matrix-wave1, preflight]
     if: needs.preflight.outputs.should_run == 'true'
     permissions:
       contents: read
       pull-requests: read
-    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: "wave1 • ${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.matrix-wave1.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +110,8 @@ jobs:
           comment-policy: 'never'
           timeout: '600'
           model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
           # Optional: project/domain context to calibrate reviewer severity. Do not include secrets.
           # context: |
           #   Moneta is a single-user personal finance and tax tool.
@@ -118,11 +121,133 @@ jobs:
           # fallback-models: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
           # fail-on-skip: 'true' # optional: fail reviewer job if it SKIPs (timeout/API error)
 
-  # Aggregate all review results into a single verdict comment
+  # Gate wave 1 before escalating
+  gate-wave1:
+    needs: [review-wave1, route, preflight]
+    if: always() && needs.preflight.outputs.should_run == 'true' && needs.review-wave1.result != 'skipped'
+    runs-on: ubuntu-latest
+    outputs:
+      escalate: ${{ steps.gate.outputs.escalate }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./wave-verdicts/
+          pattern: cerberus-verdict-*-wave1
+          merge-multiple: true
+      - id: gate
+        uses: misty-step/cerberus/wave-gate@v2
+        with:
+          verdict-dir: ./wave-verdicts
+          wave: wave1
+          model-tier: ${{ needs.route.outputs.model-tier }}
+
+  # Wave 2 matrix (mid-tier)
+  matrix-wave2:
+    needs: [gate-wave1, route, preflight]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      count: ${{ steps.generate.outputs.count }}
+    steps:
+      - id: generate
+        uses: misty-step/cerberus/matrix@v2
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave2
+
+  # Wave 2 review
+  review-wave2:
+    needs: [matrix-wave2, preflight, gate-wave1]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
+    permissions:
+      contents: read
+      pull-requests: read
+    name: "wave2 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.matrix-wave2.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
+          comment-policy: 'never'
+          timeout: '600'
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+
+  # Gate wave 2 before escalating
+  gate-wave2:
+    needs: [review-wave2, route, preflight, gate-wave1]
+    if: always() && needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true' && needs.review-wave2.result != 'skipped'
+    runs-on: ubuntu-latest
+    outputs:
+      escalate: ${{ steps.gate.outputs.escalate }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./wave-verdicts/
+          pattern: cerberus-verdict-*-wave2
+          merge-multiple: true
+      - id: gate
+        uses: misty-step/cerberus/wave-gate@v2
+        with:
+          verdict-dir: ./wave-verdicts
+          wave: wave2
+          model-tier: ${{ needs.route.outputs.model-tier }}
+
+  # Wave 3 matrix (premium final)
+  matrix-wave3:
+    needs: [gate-wave2, route, preflight]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      count: ${{ steps.generate.outputs.count }}
+    steps:
+      - id: generate
+        uses: misty-step/cerberus/matrix@v2
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave3
+
+  # Wave 3 review
+  review-wave3:
+    needs: [matrix-wave3, preflight, gate-wave2]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
+    permissions:
+      contents: read
+      pull-requests: read
+    name: "wave3 • ${{ matrix.reviewer_label || matrix.reviewer }}"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.matrix-wave3.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
+          comment-policy: 'never'
+          timeout: '600'
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+
+  # Aggregate all executed wave results into one verdict
   verdict:
     name: "Verdict"
-    needs: [review, preflight]
-    if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
+    needs: [review-wave1, review-wave2, review-wave3, preflight]
+    if: always() && needs.review-wave1.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
     permissions:
       contents: read
       pull-requests: write
