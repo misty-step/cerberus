@@ -113,7 +113,26 @@ jobs:
       matrix: ${{ fromJson(needs.route.outputs.matrix-wave1) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@master
+      - if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+      - if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus@master
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -160,13 +179,25 @@ jobs:
           verdict-dir: ./wave-verdicts
           wave: wave1
           model-tier: ${{ needs.route.outputs.model-tier }}
-      - id: matrix_wave2
-        if: steps.gate.outputs.escalate == 'true'
+      - id: matrix_wave2_local
+        if: steps.gate.outputs.escalate == 'true' && github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus/matrix
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave2
+      - id: matrix_wave2_remote
+        if: steps.gate.outputs.escalate == 'true' && github.repository != 'misty-step/cerberus'
         uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
           wave: wave2
+      - id: matrix_wave2
+        if: steps.gate.outputs.escalate == 'true'
+        shell: bash
+        run: |
+          echo "matrix=${{ steps.matrix_wave2_local.outputs.matrix || steps.matrix_wave2_remote.outputs.matrix }}" >> "$GITHUB_OUTPUT"
       - name: Upload wave1 gate telemetry
         if: always()
         uses: actions/upload-artifact@v4
@@ -255,13 +286,25 @@ jobs:
           verdict-dir: ./wave-verdicts
           wave: wave2
           model-tier: ${{ needs.route.outputs.model-tier }}
-      - id: matrix_wave3
-        if: steps.gate.outputs.escalate == 'true'
+      - id: matrix_wave3_local
+        if: steps.gate.outputs.escalate == 'true' && github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus/matrix
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave3
+      - id: matrix_wave3_remote
+        if: steps.gate.outputs.escalate == 'true' && github.repository != 'misty-step/cerberus'
         uses: misty-step/cerberus/matrix@master
         with:
           panel: ${{ needs.route.outputs.panel }}
           model-tier: ${{ needs.route.outputs.model-tier }}
           wave: wave3
+      - id: matrix_wave3
+        if: steps.gate.outputs.escalate == 'true'
+        shell: bash
+        run: |
+          echo "matrix=${{ steps.matrix_wave3_local.outputs.matrix || steps.matrix_wave3_remote.outputs.matrix }}" >> "$GITHUB_OUTPUT"
       - name: Upload wave2 gate telemetry
         if: always()
         uses: actions/upload-artifact@v4
