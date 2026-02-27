@@ -14,12 +14,13 @@ model:
     - "openrouter/z-ai/glm-5"
   wave_pools:
     wave1:
+      - "openrouter/moonshotai/kimi-k2.5"
       - "openrouter/x-ai/grok-4.1-fast"
       - "openrouter/minimax/minimax-m2.5"
       - "openrouter/x-ai/grok-code-fast-1"
       - "openrouter/google/gemini-3-flash-preview"
     wave2:
-      - "openrouter/moonshotai/kimi-k2-thinking"
+      - "openrouter/moonshotai/kimi-k2.5"
       - "openrouter/z-ai/glm-5"
       - "openrouter/anthropic/claude-haiku-4.5"
       - "openrouter/google/gemini-3-flash-preview"
@@ -29,11 +30,11 @@ model:
       - "openrouter/google/gemini-3.1-pro-preview"
       - "openrouter/anthropic/claude-sonnet-4.6"
   pool:
+    - "openrouter/moonshotai/kimi-k2.5"
     - "openrouter/x-ai/grok-4.1-fast"
     - "openrouter/minimax/minimax-m2.5"
     - "openrouter/google/gemini-3-flash-preview"
     - "openrouter/x-ai/grok-code-fast-1"
-    - "openrouter/moonshotai/kimi-k2-thinking"
     - "openrouter/anthropic/claude-haiku-4.5"
     - "openrouter/z-ai/glm-5"
     - "openrouter/openai/gpt-5.3-codex"
@@ -41,12 +42,13 @@ model:
     - "openrouter/anthropic/claude-sonnet-4.6"
   tiers:
     flash:
+      - "openrouter/moonshotai/kimi-k2.5"
       - "openrouter/x-ai/grok-4.1-fast"
       - "openrouter/google/gemini-3-flash-preview"
       - "openrouter/x-ai/grok-code-fast-1"
       - "openrouter/minimax/minimax-m2.5"
     standard:
-      - "openrouter/moonshotai/kimi-k2-thinking"
+      - "openrouter/moonshotai/kimi-k2.5"
       - "openrouter/z-ai/glm-5"
       - "openrouter/anthropic/claude-haiku-4.5"
       - "openrouter/minimax/minimax-m2.5"
@@ -55,7 +57,6 @@ model:
       - "openrouter/openai/gpt-5.3-codex"
       - "openrouter/google/gemini-3.1-pro-preview"
       - "openrouter/anthropic/claude-sonnet-4.6"
-      - "openrouter/moonshotai/kimi-k2-thinking"
       - "openrouter/z-ai/glm-5"
       - "openrouter/minimax/minimax-m2.5"
       - "openrouter/google/gemini-3-flash-preview"
