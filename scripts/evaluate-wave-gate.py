@@ -120,7 +120,8 @@ def evaluate_gate(*, cfg: DefaultsConfig, verdict_dir: Path, wave: str, tier: st
         blocking_reasons.append("critical_findings")
     if gate.block_on_major and major_total > 0:
         blocking_reasons.append("major_findings")
-    if gate.block_on_skip and skip_count > 0:
+    skip_tolerance = gate.skip_tolerance
+    if gate.block_on_skip and skip_count > skip_tolerance:
         blocking_reasons.append("skip_verdicts")
 
     blocking = len(blocking_reasons) > 0

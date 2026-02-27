@@ -24,6 +24,7 @@ def _write_config(
     block_on_critical: bool = True,
     block_on_major: bool = True,
     block_on_skip: bool = True,
+    skip_tolerance: int = 0,
 ) -> Path:
     config = tmp_path / "config.yml"
     config.write_text(
@@ -39,6 +40,7 @@ def _write_config(
                 f"    block_on_critical: {'true' if block_on_critical else 'false'}",
                 f"    block_on_major: {'true' if block_on_major else 'false'}",
                 f"    block_on_skip: {'true' if block_on_skip else 'false'}",
+                f"    skip_tolerance: {skip_tolerance}",
                 "  definitions:",
                 "    wave1:",
                 "      reviewers: [trace]",
@@ -321,3 +323,113 @@ def test_main_writes_output_json_and_prints_fields(
     data = json.loads(out_path.read_text())
     assert data["wave"] == "wave1"
     assert data["escalate"] is True
+
+
+# --- skip_tolerance tests ---
+
+
+def _write_multi_verdict(
+    verdict_dir: Path,
+    verdicts: list[str],
+) -> None:
+    """Write multiple verdict files for multi-reviewer wave tests."""
+    verdict_dir.mkdir(parents=True, exist_ok=True)
+    perspectives = ["trace", "guard", "proof"]
+    for i, v in enumerate(verdicts):
+        name = perspectives[i] if i < len(perspectives) else f"reviewer{i}"
+        payload = {
+            "reviewer": name,
+            "perspective": name,
+            "verdict": v,
+            "confidence": 0.9,
+            "summary": "ok",
+            "findings": [],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 0,
+                "critical": 0,
+                "major": 0,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+        (verdict_dir / f"{name}.json").write_text(json.dumps(payload))
+
+
+def test_skip_tolerance_zero_blocks_on_one_skip(tmp_path: Path) -> None:
+    """Default tolerance=0: any SKIP is blocking."""
+    config = _write_config(tmp_path, skip_tolerance=0)
+    verdict_dir = tmp_path / "verdicts"
+    _write_multi_verdict(verdict_dir, ["PASS", "PASS", "SKIP"])
+
+    cfg = mod.load_defaults_config(config)
+    result = mod.evaluate_gate(cfg=cfg, verdict_dir=verdict_dir, wave="wave1", tier="standard")
+    assert result["blocking"] is True
+    assert "skip_verdicts" in result["reason"]
+    assert result["escalate"] is False
+
+
+def test_skip_tolerance_one_allows_one_skip(tmp_path: Path) -> None:
+    """tolerance=1: 1 SKIP out of 3 reviewers escalates instead of blocking."""
+    config = _write_config(tmp_path, skip_tolerance=1)
+    verdict_dir = tmp_path / "verdicts"
+    _write_multi_verdict(verdict_dir, ["PASS", "PASS", "SKIP"])
+
+    cfg = mod.load_defaults_config(config)
+    result = mod.evaluate_gate(cfg=cfg, verdict_dir=verdict_dir, wave="wave1", tier="standard")
+    assert result["blocking"] is False
+    assert result["escalate"] is True
+    assert result["reason"] == "passed_gate"
+
+
+def test_skip_tolerance_one_blocks_on_two_skips(tmp_path: Path) -> None:
+    """tolerance=1: 2 SKIPs out of 3 reviewers is still blocking."""
+    config = _write_config(tmp_path, skip_tolerance=1)
+    verdict_dir = tmp_path / "verdicts"
+    _write_multi_verdict(verdict_dir, ["PASS", "SKIP", "SKIP"])
+
+    cfg = mod.load_defaults_config(config)
+    result = mod.evaluate_gate(cfg=cfg, verdict_dir=verdict_dir, wave="wave1", tier="standard")
+    assert result["blocking"] is True
+    assert "skip_verdicts" in result["reason"]
+    assert result["escalate"] is False
+
+
+def test_skip_tolerance_config_loaded_correctly(tmp_path: Path) -> None:
+    """Loader persists skip_tolerance into WaveGateConfig."""
+    config = _write_config(tmp_path, skip_tolerance=2)
+    cfg = mod.load_defaults_config(config)
+    assert cfg.waves.gate.skip_tolerance == 2
+
+
+def test_skip_tolerance_default_is_zero(tmp_path: Path) -> None:
+    """When skip_tolerance is absent from config, default is 0."""
+    config = tmp_path / "config-no-tol.yml"
+    config.write_text(
+        "\n".join([
+            "waves:",
+            "  enabled: true",
+            "  order: [wave1, wave2, wave3]",
+            "  max_for_tier:",
+            "    standard: 3",
+            "  gate:",
+            "    block_on_skip: true",
+            "  definitions:",
+            "    wave1:",
+            "      reviewers: [trace]",
+            "    wave2:",
+            "      reviewers: [atlas]",
+            "    wave3:",
+            "      reviewers: [guard]",
+            "reviewers:",
+            "  - name: trace",
+            "    perspective: correctness",
+            "  - name: atlas",
+            "    perspective: architecture",
+            "  - name: guard",
+            "    perspective: security",
+            "",
+        ])
+    )
+    cfg = mod.load_defaults_config(config)
+    assert cfg.waves.gate.skip_tolerance == 0

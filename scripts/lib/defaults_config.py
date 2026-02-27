@@ -41,6 +41,7 @@ class WaveGateConfig:
     block_on_critical: bool = True
     block_on_major: bool = True
     block_on_skip: bool = True
+    skip_tolerance: int = 0  # allow up to N skips before blocking (default: block on any)
 
 
 @dataclass(frozen=True)
@@ -226,6 +227,9 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
         gate_raw = waves_cfg.get("gate")
         if gate_raw is not None:
             gate_cfg = _require_mapping(gate_raw, "config.waves.gate")
+            raw_tol = gate_cfg.get("skip_tolerance", 0)
+            if isinstance(raw_tol, bool) or not isinstance(raw_tol, int) or raw_tol < 0:
+                raise ConfigError("config.waves.gate.skip_tolerance: expected non-negative integer")
             gate = WaveGateConfig(
                 block_on_critical=_require_bool(
                     gate_cfg.get("block_on_critical", True),
@@ -239,6 +243,7 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
                     gate_cfg.get("block_on_skip", True),
                     "config.waves.gate.block_on_skip",
                 ),
+                skip_tolerance=raw_tol,
             )
 
         definitions: dict[str, WaveDefinition] = {}
