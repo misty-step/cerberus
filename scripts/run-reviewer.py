@@ -7,10 +7,12 @@ migrating runtime execution from OpenCode to Pi.
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -70,6 +72,11 @@ def sanitize_model(value: str | None) -> str:
 def normalize_tier(value: str | None) -> str:
     tier = (value or "standard").strip().lower()
     return tier or "standard"
+
+
+def normalize_wave(value: str | None) -> str:
+    wave = (value or "").strip().lower()
+    return wave
 
 
 def resolve_api_key_for_provider(provider: str, env: Mapping[str, str]) -> tuple[str, str]:
@@ -166,10 +173,21 @@ def resolve_resource_paths(base: Path, values: list[str]) -> list[str]:
 def select_pool_model(
     *,
     reviewer_name: str,
+    requested_wave: str,
     requested_tier: str,
+    model_wave_pools: dict[str, list[str]],
     model_tiers: dict[str, list[str]],
     model_pool: list[str],
 ) -> str:
+    if requested_wave:
+        wave_pool = model_wave_pools.get(requested_wave, [])
+        if wave_pool:
+            selected = random.choice(wave_pool)
+            print(
+                f"::notice::Selected random model from {requested_wave} wave pool for {reviewer_name}: {selected}"
+            )
+            return selected
+
     candidate_tiers = [requested_tier]
     if requested_tier != "standard":
         candidate_tiers.append("standard")
@@ -276,6 +294,64 @@ def print_tail(path: Path, *, lines: int = 40) -> None:
     print("--- end output ---")
 
 
+def try_structured_extraction(
+    *,
+    cerberus_root: Path,
+    scratchpad: Path,
+    stdout_file: Path,
+    perspective: str,
+    model_used: str,
+    output_file: Path,
+) -> bool:
+    """Call extract-verdict.py to pull structured JSON from the scratchpad.
+
+    Returns True and writes to output_file on success; False otherwise.
+    Falls back to stdout_file if scratchpad is empty.
+    """
+    extract_script = cerberus_root / "scripts" / "extract-verdict.py"
+    if not extract_script.exists():
+        return False
+
+    source: Path | None = None
+    if scratchpad.exists() and scratchpad.stat().st_size > 0:
+        source = scratchpad
+    elif stdout_file.exists() and stdout_file.stat().st_size > 0:
+        source = stdout_file
+
+    if source is None:
+        return False
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(extract_script), str(source), perspective, model_used],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            env=os.environ.copy(),
+        )
+    except subprocess.TimeoutExpired:
+        print("Structured extraction timed out; falling back to fenced-block parsing.")
+        return False
+    except Exception as exc:
+        print(f"Structured extraction subprocess error: {exc}")
+        return False
+
+    if result.returncode != 0:
+        stderr_snippet = result.stderr.strip()[:300]
+        print(f"Structured extraction failed (exit {result.returncode}): {stderr_snippet}")
+        return False
+
+    try:
+        json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"Structured extraction: invalid JSON output: {exc}")
+        return False
+
+    write_text(output_file, result.stdout)
+    print("Structured extraction: success — using structured verdict.")
+    return True
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 1 or not argv[0].strip():
         eprint("usage: run-reviewer.sh <perspective>")
@@ -345,6 +421,7 @@ def main(argv: list[str]) -> int:
     profile_model = sanitize_model(profile.model)
 
     requested_tier = normalize_tier(os.environ.get("MODEL_TIER"))
+    requested_wave = normalize_wave(os.environ.get("MODEL_WAVE"))
 
     reviewer_model_raw = sanitize_model(reviewer.model)
     config_default_model = sanitize_model(defaults_cfg.model.default)
@@ -353,7 +430,9 @@ def main(argv: list[str]) -> int:
         if profile_model == "pool":
             selected = select_pool_model(
                 reviewer_name=reviewer_name,
+                requested_wave=requested_wave,
                 requested_tier=requested_tier,
+                model_wave_pools=defaults_cfg.model.wave_pools,
                 model_tiers=defaults_cfg.model.tiers,
                 model_pool=defaults_cfg.model.pool,
             )
@@ -362,7 +441,9 @@ def main(argv: list[str]) -> int:
     elif reviewer_model_raw == "pool":
         selected = select_pool_model(
             reviewer_name=reviewer_name,
+            requested_wave=requested_wave,
             requested_tier=requested_tier,
+            model_wave_pools=defaults_cfg.model.wave_pools,
             model_tiers=defaults_cfg.model.tiers,
             model_pool=defaults_cfg.model.pool,
         )
@@ -458,6 +539,7 @@ def main(argv: list[str]) -> int:
     stdout_file = cerberus_tmp / f"{perspective}-output.txt"
     stderr_file = cerberus_tmp / f"{perspective}-stderr.log"
     scratchpad = cerberus_tmp / f"{perspective}-review.md"
+    structured_verdict_file = cerberus_tmp / f"{perspective}-structured-verdict.json"
 
     def run_attempt(
         *,
@@ -608,10 +690,27 @@ def main(argv: list[str]) -> int:
 
         break
 
+    # Attempt structured extraction after successful Pi run.
+    # This replaces fragile regex-based JSON block parsing with schema-enforced structured output.
+    if exit_code == 0:
+        try_structured_extraction(
+            cerberus_root=cerberus_root,
+            scratchpad=scratchpad,
+            stdout_file=stdout_file,
+            perspective=perspective,
+            model_used=model_used,
+            output_file=structured_verdict_file,
+        )
+
     parse_failure_retries = 0
     parse_failure_models_attempted: list[str] = []
 
-    if exit_code == 0 and not has_valid_json_block(stdout_file) and not has_valid_json_block(scratchpad):
+    if (
+        exit_code == 0
+        and not structured_verdict_file.exists()
+        and not has_valid_json_block(stdout_file)
+        and not has_valid_json_block(scratchpad)
+    ):
         print("Parse failure detected: no valid JSON block in output. Attempting recovery retries...")
 
         for pf_model in models:
@@ -690,7 +789,10 @@ def main(argv: list[str]) -> int:
     if exit_code == 124:
         print(f"::warning::{reviewer_name} ({perspective}) timed out after {review_timeout}s")
 
-        if has_valid_json_block(scratchpad):
+        if structured_verdict_file.exists() and structured_verdict_file.stat().st_size > 0:
+            parse_input = structured_verdict_file
+            print("parse-input: structured verdict (timeout, extracted before deadline)")
+        elif has_valid_json_block(scratchpad):
             parse_input = scratchpad
             print("parse-input: scratchpad (timeout, but has JSON block)")
         elif has_valid_json_block(stdout_file):
@@ -768,7 +870,10 @@ def main(argv: list[str]) -> int:
         exit_code = 0
     else:
         parse_input = stdout_file
-        if has_valid_json_block(scratchpad):
+        if structured_verdict_file.exists() and structured_verdict_file.stat().st_size > 0:
+            parse_input = structured_verdict_file
+            print("parse-input: structured verdict (extracted from scratchpad)")
+        elif has_valid_json_block(scratchpad):
             parse_input = scratchpad
             print("parse-input: scratchpad (has JSON block)")
         elif has_valid_json_block(stdout_file):

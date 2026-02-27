@@ -12,7 +12,7 @@
 #     pull-requests: write
 #   jobs:
 #     review:
-#       uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+#       uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
 #       secrets:
 #         api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 #
@@ -55,6 +55,7 @@ on:
 
 jobs:
   preflight:
+    name: Cerberus · preflight
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -62,19 +63,21 @@ jobs:
     outputs:
       should_run: ${{ steps.preflight.outputs.should_run }}
     steps:
-      - uses: misty-step/cerberus/preflight@v2
+      - uses: misty-step/cerberus/preflight@master
         id: preflight
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.api-key }}
 
   route:
+    name: Cerberus · route + wave1 matrix
     needs: preflight
     if: needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       panel: ${{ steps.router.outputs.panel }}
       model-tier: ${{ steps.router.outputs.model-tier }}
+      matrix-wave1: ${{ steps.matrix_wave1.outputs.matrix }}
     steps:
       - name: Fetch PR diff
         # gh is pre-installed on GitHub-hosted runners; no checkout needed.
@@ -84,40 +87,65 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO" > /tmp/pr.diff
-      - uses: misty-step/cerberus/router@v2
+      - name: Checkout action source (self-PR only)
+        # On self-PR the wave input isn't recognized by matrix@master (added on this branch).
+        # Check out branch source so the local matrix action emits the wave field.
+        if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - uses: misty-step/cerberus/router@master
         id: router
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.api-key }}
           diff-file: /tmp/pr.diff
           reviewers: ${{ inputs.reviewers }}
-
-  matrix:
-    needs: route
-    if: needs.preflight.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    steps:
-      - id: generate
-        uses: misty-step/cerberus/matrix@v2
+          routing: disabled
+      - id: matrix_wave1_local
+        if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus/matrix
         with:
-          panel: ${{ needs.route.outputs.panel }}
-          model-tier: ${{ needs.route.outputs.model-tier }}
+          panel: ${{ steps.router.outputs.panel }}
+          model-tier: ${{ steps.router.outputs.model-tier }}
+          wave: wave1
+      - id: matrix_wave1_remote
+        if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus/matrix@master
+        with:
+          panel: ${{ steps.router.outputs.panel }}
+          model-tier: ${{ steps.router.outputs.model-tier }}
+          wave: wave1
+      - id: matrix_wave1
+        shell: bash
+        # Use env vars (not inline ${{ }}) so JSON double-quotes survive bash parsing.
+        env:
+          MATRIX_LOCAL: ${{ steps.matrix_wave1_local.outputs.matrix }}
+          MATRIX_REMOTE: ${{ steps.matrix_wave1_remote.outputs.matrix }}
+        run: echo "matrix=${MATRIX_LOCAL:-$MATRIX_REMOTE}" >> "$GITHUB_OUTPUT"
 
-  review:
-    needs: [matrix, preflight]
+  review-wave1:
+    needs: [route, preflight]
     if: needs.preflight.outputs.should_run == 'true'
-    name: "${{ matrix.reviewer_label || matrix.reviewer }}"
+    name: "Cerberus · wave1 · ${{ matrix.reviewer_label || matrix.reviewer }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     strategy:
-      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.route.outputs.matrix-wave1) }}
       fail-fast: false
     steps:
-      - uses: misty-step/cerberus@v2
+      - if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -125,18 +153,264 @@ jobs:
           timeout: ${{ inputs.timeout }}
           model: ${{ inputs.model }}
           model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+      - if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus@master
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+
+  gate-wave1:
+    name: Cerberus · gate wave1
+    needs: [review-wave1, preflight, route]
+    if: >-
+      always() &&
+      needs.preflight.outputs.should_run == 'true' &&
+      needs.route.result == 'success' &&
+      (needs.review-wave1.result == 'success' || needs.review-wave1.result == 'skipped')
+    runs-on: ubuntu-latest
+    outputs:
+      escalate: ${{ steps.gate.outputs.escalate }}
+      next-wave: ${{ steps.gate.outputs.next-wave }}
+      reason: ${{ steps.gate.outputs.reason }}
+      matrix-wave2: ${{ steps.matrix_wave2.outputs.matrix }}
+    steps:
+      - run: mkdir -p ./wave-verdicts/
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./wave-verdicts/
+          pattern: cerberus-verdict-*-wave1
+          merge-multiple: true
+      - name: Checkout gate action source
+        # Ensure gate action is available on self-PR runs even before master contains it.
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.repository == 'misty-step/cerberus' && github.event.pull_request.head.sha || 'master' }}
+          path: __cerberus
+      - name: Evaluate wave1 gate
+        id: gate
+        uses: ./__cerberus/wave-gate
+        with:
+          verdict-dir: ./wave-verdicts
+          wave: wave1
+          model-tier: ${{ needs.route.outputs.model-tier }}
+      - id: matrix_wave2_local
+        if: steps.gate.outputs.escalate == 'true' && github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus/matrix
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave2
+      - id: matrix_wave2_remote
+        if: steps.gate.outputs.escalate == 'true' && github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus/matrix@master
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave2
+      - id: matrix_wave2
+        if: steps.gate.outputs.escalate == 'true'
+        shell: bash
+        # Use env vars (not inline ${{ }}) so JSON double-quotes survive bash parsing.
+        env:
+          MATRIX_LOCAL: ${{ steps.matrix_wave2_local.outputs.matrix }}
+          MATRIX_REMOTE: ${{ steps.matrix_wave2_remote.outputs.matrix }}
+        run: echo "matrix=${MATRIX_LOCAL:-$MATRIX_REMOTE}" >> "$GITHUB_OUTPUT"
+      - name: Upload wave1 gate telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-wave-gate-wave1
+          path: ${{ steps.gate.outputs.telemetry-json }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  review-wave2:
+    needs: [preflight, gate-wave1]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave1.outputs.escalate == 'true'
+    name: "Cerberus · wave2 · ${{ matrix.reviewer_label }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      matrix: ${{ fromJson(needs.gate-wave1.outputs.matrix-wave2) }}
+      fail-fast: false
+    steps:
+      - if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+      - if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus@master
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+
+  gate-wave2:
+    name: Cerberus · gate wave2
+    needs: [review-wave2, preflight, route, gate-wave1]
+    if: >-
+      always() &&
+      needs.preflight.outputs.should_run == 'true' &&
+      needs.route.result == 'success' &&
+      needs.gate-wave1.result == 'success' &&
+      needs.gate-wave1.outputs.escalate == 'true' &&
+      (needs.review-wave2.result == 'success' || needs.review-wave2.result == 'skipped')
+    runs-on: ubuntu-latest
+    outputs:
+      escalate: ${{ steps.gate.outputs.escalate }}
+      next-wave: ${{ steps.gate.outputs.next-wave }}
+      reason: ${{ steps.gate.outputs.reason }}
+      matrix-wave3: ${{ steps.matrix_wave3.outputs.matrix }}
+    steps:
+      - run: mkdir -p ./wave-verdicts/
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./wave-verdicts/
+          pattern: cerberus-verdict-*-wave2
+          merge-multiple: true
+      - name: Checkout gate action source
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.repository == 'misty-step/cerberus' && github.event.pull_request.head.sha || 'master' }}
+          path: __cerberus
+      - name: Evaluate wave2 gate
+        id: gate
+        uses: ./__cerberus/wave-gate
+        with:
+          verdict-dir: ./wave-verdicts
+          wave: wave2
+          model-tier: ${{ needs.route.outputs.model-tier }}
+      - id: matrix_wave3_local
+        if: steps.gate.outputs.escalate == 'true' && github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus/matrix
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave3
+      - id: matrix_wave3_remote
+        if: steps.gate.outputs.escalate == 'true' && github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus/matrix@master
+        with:
+          panel: ${{ needs.route.outputs.panel }}
+          model-tier: ${{ needs.route.outputs.model-tier }}
+          wave: wave3
+      - id: matrix_wave3
+        if: steps.gate.outputs.escalate == 'true'
+        shell: bash
+        # Use env vars (not inline ${{ }}) so JSON double-quotes survive bash parsing.
+        env:
+          MATRIX_LOCAL: ${{ steps.matrix_wave3_local.outputs.matrix }}
+          MATRIX_REMOTE: ${{ steps.matrix_wave3_remote.outputs.matrix }}
+        run: echo "matrix=${MATRIX_LOCAL:-$MATRIX_REMOTE}" >> "$GITHUB_OUTPUT"
+      - name: Upload wave2 gate telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-wave-gate-wave2
+          path: ${{ steps.gate.outputs.telemetry-json }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  review-wave3:
+    needs: [preflight, gate-wave2]
+    if: needs.preflight.outputs.should_run == 'true' && needs.gate-wave2.outputs.escalate == 'true'
+    name: "Cerberus · wave3 · ${{ matrix.reviewer_label }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      matrix: ${{ fromJson(needs.gate-wave2.outputs.matrix-wave3) }}
+      fail-fast: false
+    steps:
+      - if: github.repository == 'misty-step/cerberus'
+        uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: __cerberus
+      - if: github.repository == 'misty-step/cerberus'
+        uses: ./__cerberus
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
+          context: ${{ inputs.context }}
+      - if: github.repository != 'misty-step/cerberus'
+        uses: misty-step/cerberus@master
+        with:
+          perspective: ${{ matrix.perspective }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.api-key }}
+          timeout: ${{ inputs.timeout }}
+          model: ${{ inputs.model }}
+          model-tier: ${{ matrix.model_tier }}
+          model-wave: ${{ matrix.model_wave }}
+          artifact-suffix: ${{ matrix.reviewer }}-${{ matrix.wave }}
           context: ${{ inputs.context }}
 
   verdict:
-    name: "Verdict"
-    needs: [review, preflight]
-    if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
+    name: Cerberus
+    needs: [review-wave1, review-wave2, review-wave3, preflight, route, gate-wave1, gate-wave2]
+    if: >-
+      always() &&
+      needs.preflight.outputs.should_run == 'true' &&
+      needs.route.result == 'success' &&
+      needs.gate-wave1.result != 'failure' &&
+      needs.gate-wave1.result != 'cancelled' &&
+      needs.gate-wave2.result != 'failure' &&
+      needs.gate-wave2.result != 'cancelled' &&
+      needs.review-wave1.result != 'failure' &&
+      needs.review-wave1.result != 'cancelled' &&
+      needs.review-wave2.result != 'failure' &&
+      needs.review-wave2.result != 'cancelled' &&
+      needs.review-wave3.result != 'failure' &&
+      needs.review-wave3.result != 'cancelled'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: misty-step/cerberus/verdict@v2
+      - uses: misty-step/cerberus/verdict@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           fail-on-verdict: ${{ inputs.fail-on-verdict }}

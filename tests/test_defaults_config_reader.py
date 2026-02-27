@@ -98,6 +98,36 @@ def test_model_pool_for_tier(tmp_path: Path) -> None:
     assert unknown.stdout.strip() == ""
 
 
+def test_model_pool_for_wave(tmp_path: Path) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "model:",
+                "  wave_pools:",
+                "    wave1:",
+                "      - openrouter/cheap-a",
+                "      - openrouter/cheap-b",
+                "reviewers:",
+                "  - name: SENTINEL",
+                "    perspective: security",
+                "",
+            ]
+        )
+    )
+
+    wave_pool = _run(
+        "model-pool-for-wave",
+        "--config",
+        str(config),
+        "--wave",
+        "wave1",
+    )
+    assert wave_pool.returncode == 0, wave_pool.stderr
+    assert wave_pool.stdout.strip().splitlines() == ["openrouter/cheap-a", "openrouter/cheap-b"]
+
+
 def test_model_pool_for_tier_empty_tier_is_error(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(

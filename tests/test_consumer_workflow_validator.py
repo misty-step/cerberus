@@ -210,7 +210,10 @@ def _has_skip_gate(wf: dict) -> bool:
     # Reusable-workflow callers: skip gate is inside the called workflow
     for job in jobs.values():
         uses = job.get("uses", "")
-        if "misty-step/cerberus/.github/workflows/cerberus.yml" in uses:
+        if (
+            "misty-step/cerberus/.github/workflows/cerberus.yml" in uses
+            or "./.github/workflows/cerberus.yml" in uses
+        ):
             return True
     return False
 

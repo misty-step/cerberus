@@ -619,7 +619,8 @@ def main() -> int:
         full_panel = cfg["perspectives"][:]
         if not full_panel:
             full_panel = DEFAULT_PANEL[:]
-        write_output(full_panel, False, "disabled", MODEL_TIER_STANDARD)
+        model_tier = classify_model_tier(summary)
+        write_output(full_panel, False, "disabled", model_tier)
         return 0
 
     if not api_key:

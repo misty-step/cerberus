@@ -283,6 +283,69 @@ def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
     assert "**Summary:** 0/2 reviewers passed. 1 warned (Architecture & Design). 1 skipped (Security & Threat Model)." in body
 
 
+def test_renders_wave_summary_and_reviewer_wave_labels(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "WARN",
+        "summary": "3 reviewers. 1 warning.",
+        "reviewers": [
+            {
+                "reviewer": "TRACE",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.9,
+                "summary": "ok",
+                "runtime_seconds": 11,
+                "model_wave": "wave1",
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            },
+            {
+                "reviewer": "ATLAS",
+                "perspective": "architecture",
+                "verdict": "WARN",
+                "confidence": 0.8,
+                "summary": "one issue",
+                "runtime_seconds": 19,
+                "model_wave": "wave2",
+                "findings": [
+                    {
+                        "severity": "major",
+                        "category": "architecture",
+                        "file": "src/a.py",
+                        "line": 9,
+                        "title": "Layer leak",
+                        "description": "internal details leak across module boundary",
+                        "suggestion": "narrow interface",
+                    }
+                ],
+                "stats": {"critical": 0, "major": 1, "minor": 0, "info": 0},
+            },
+            {
+                "reviewer": "GUARD",
+                "perspective": "security",
+                "verdict": "PASS",
+                "confidence": 0.87,
+                "summary": "ok",
+                "runtime_seconds": 14,
+                "model_wave": "wave3",
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            },
+        ],
+        "stats": {"total": 3, "pass": 2, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+    assert code == 0, err
+    assert "### Wave Summary" in body
+    assert "**Wave 1**: 1 reviewers | 1 pass | 0 warn | 0 fail | 0 skip | 0 findings" in body
+    assert "**Wave 2**: 1 reviewers | 0 pass | 1 warn | 0 fail | 0 skip | 1 findings" in body
+    assert "**Wave 3**: 1 reviewers | 1 pass | 0 warn | 0 fail | 0 skip | 0 findings" in body
+    assert "wave `Wave 2`" in body
+    assert "- Wave: `Wave 2`" in body
+
+
 def test_normalize_verdict_defaults_unknown() -> None:
     assert normalize_verdict("PASS") == "PASS"
     assert normalize_verdict("bad") == "WARN"

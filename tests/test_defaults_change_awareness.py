@@ -43,7 +43,7 @@ class TestReviewPromptDefaultsAwareness:
 
 
 class TestAgentDefaultsAwareness:
-    """APOLLO and VULCAN must reinforce defaults-change guidance
+    """Active reviewers must reinforce defaults-change guidance
     in their own perspective-specific terms."""
 
     def test_apollo_mentions_defaults_changes(self):
@@ -59,11 +59,3 @@ class TestAgentDefaultsAwareness:
         assert "Consumer/Producer Data-Flow" in text
         assert "Identify what fields/invariants the consumer REQUIRES" in text
         assert "Enumerate producers that WRITE the same data" in text
-
-    def test_vulcan_mentions_defaults_changes(self):
-        text = (AGENTS_DIR / "performance.md").read_text()
-        assert "defaults change" in text.lower()
-
-    def test_vulcan_instructs_checking_performance_at_scale(self):
-        text = (AGENTS_DIR / "performance.md").read_text()
-        assert "newly-defaulted path" in text

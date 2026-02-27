@@ -3,8 +3,7 @@
 # These profiles define runtime behavior per perspective while keeping
 # downstream parser/verdict contracts stable.
 #
-# Model assignments are intentionally conservative for the initial Pi migration.
-# Cost/quality cascading strategy is tracked in issue #285.
+# Models are selected from config model pools at runtime (wave-aware).
 
 version: 1
 
@@ -30,43 +29,44 @@ base:
 
 perspectives:
   correctness:
-    model: moonshotai/kimi-k2.5
+    model: pool
     thinking_level: high
     skills:
       - pi/skills/correctness-review/SKILL.md
 
   architecture:
-    model: z-ai/glm-5
+    model: pool
+    thinking_level: high
     skills:
       - pi/skills/architecture-review/SKILL.md
 
   security:
-    model: minimax/minimax-m2.5
+    model: pool
     thinking_level: high
     skills:
       - pi/skills/security-review/SKILL.md
 
   performance:
-    model: moonshotai/kimi-k2.5
+    model: pool
     skills:
       - pi/skills/performance-review/SKILL.md
 
   maintainability:
-    model: moonshotai/kimi-k2.5
+    model: pool
     skills:
       - pi/skills/maintainability-review/SKILL.md
 
   testing:
-    model: google/gemini-3-flash-preview
+    model: pool
     skills:
       - pi/skills/testing-review/SKILL.md
 
   resilience:
-    model: z-ai/glm-5
+    model: pool
     skills:
       - pi/skills/resilience-review/SKILL.md
 
   compatibility:
-    model: minimax/minimax-m2.5
+    model: pool
     skills:
       - pi/skills/compatibility-review/SKILL.md

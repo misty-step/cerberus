@@ -17,12 +17,13 @@ permissions:
   pull-requests: write
 jobs:
   review:
-    uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2
+    uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
     secrets:
       api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
 ```
 
 Then set one repository secret: `CERBERUS_OPENROUTER_API_KEY`.
+Leave `with:` unset to run the full default Cerberus configuration.
 
 Prefer scaffolding? Run `npx cerberus init` to install the same reusable template and prompt for the secret.
 
@@ -31,28 +32,35 @@ Cerberus routes each PR to the most relevant panel (default size: 5):
 
 - `trace` (correctness) always runs
 - `guard` (security) is required when non-doc/non-test code changes
-- Remaining slots are selected for relevance (architecture, maintainability, testing, performance, etc.)
-
-This keeps signal high and cost/latency lower while retaining broad bench coverage.
-
 ## Reviewers
+
+Six reviewers in three fixed waves — escalating model strength:
+
+| Wave | Models | Reviewers | Question |
+|------|--------|-----------|----------|
+| wave1 | flash | trace · guard · proof | Does it work and is it safe? |
+| wave2 | standard | atlas · fuse · craft | Is it well-designed? |
+| wave3 | pro | trace · guard · atlas | Deep audit of highest stakes |
+
 | Codename | Perspective | Focus |
 |----------|-------------|-------|
 | trace | Correctness | Logic bugs, edge cases, type mismatches |
-| atlas | Architecture | Design patterns, module boundaries, coupling |
 | guard | Security | Injection, auth flaws, data exposure |
-| flux | Performance | Runtime efficiency, N+1 queries, scalability |
-| craft | Maintainability | Readability, naming, future maintenance cost |
 | proof | Testing | Test coverage gaps, regression risk |
+| atlas | Architecture | Design patterns, module boundaries, coupling |
 | fuse | Resilience | Failure handling, retries, graceful degradation |
-| pact | Compatibility | Contract safety, version skew, rollback |
+| craft | Maintainability | Readability, naming, future maintenance cost |
+
+The gate between waves is a hard check: wave2 only runs when wave1 passes cleanly (no critical or major findings). Wave3 only runs when wave2 passes. This keeps cost proportional to signal.
 
 ## Cost Snapshot
-Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups.
+Three waves with flash → standard → pro model escalation.
 
-- Cerberus: 8-perspective bench, usually routed to 5 reviewers per PR
+- Wave1 (flash, 3 reviewers) runs on every PR — lowest cost
+- Wave2 (standard, 3 reviewers) only on clean wave1 exit
+- Wave3 (pro, 3 reviewers) only on clean wave2 exit; flash-tier PRs (docs-only) stop at wave2
 - Practical monthly spend is typically below a single CodeRabbit seat for small/medium teams
-- Exact spend depends on PR volume, diff size, and configured model tiers
+- Exact spend depends on PR volume, diff size, and escalation rate
 
 ## Docs
 
@@ -64,7 +72,7 @@ Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups
 - Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
 
 ## Workflow Architecture
-- **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@v2`
+- **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@master`
 - **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`
 - **Optional:** add `templates/triage-workflow.yml` for automated failure triage
 
@@ -80,7 +88,7 @@ Typical usage (routing enabled) runs fewer tokens than fixed all-reviewer setups
 
 ## Auto-Triage (v1.1)
 Cerberus ships a separate triage module for verdict failures:
-- Action: `misty-step/cerberus/triage@v2`
+- Action: `misty-step/cerberus/triage@master`
 - Modes: `off`, `diagnose`, `fix`
 - Loop protection:
   - skips if head commit message contains `[triage]`
@@ -109,7 +117,7 @@ Full Cerberus review runs with full access to the `CERBERUS_OPENROUTER_API_KEY` 
 This prevents confusing failures when secret-dependent operations can't access their credentials.
 
 ## Inputs
-### Review Action (`misty-step/cerberus@v2`)
+### Review Action (`misty-step/cerberus@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `perspective` | yes | - | Review perspective |
@@ -127,14 +135,14 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `fail-on-skip` | no | `false` | Exit 1 if review verdict is SKIP (timeout/API error) |
 | `fail-on-verdict` | no | `false` | Exit 1 if review verdict is FAIL |
 
-### Verdict Action (`misty-step/cerberus/verdict@v2`)
+### Verdict Action (`misty-step/cerberus/verdict@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | - | GitHub token for PR comments |
 | `fail-on-verdict` | no | `true` | Exit 1 if Cerberus verdict is FAIL |
 | `fail-on-skip` | no | `false` | Exit 1 if Cerberus verdict is SKIP (all reviews skipped) |
 
-### Validate Action (`misty-step/cerberus/validate@v2`)
+### Validate Action (`misty-step/cerberus/validate@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `workflow` | no | `.github/workflows/cerberus.yml` | Workflow file to validate |
@@ -183,7 +191,7 @@ matrix:
 
 ### Non-blocking reviews
 ```yaml
-- uses: misty-step/cerberus/verdict@v2
+- uses: misty-step/cerberus/verdict@master
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-verdict: 'false'
@@ -192,7 +200,16 @@ matrix:
 ### Model diversity
 By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
-Router now emits a `model_tier` (`flash`, `standard`, `pro`) based on diff complexity and route heuristics. The matrix passes that tier into each reviewer so pool-based reviewers draw from `model.tiers.<tier>` before falling back.
+Cerberus now runs cascading review waves:
+- `wave1`: cheap/high-throughput pool
+- `wave2`: mid-tier depth pool
+- `wave3`: premium final pool
+
+Escalation is deterministic. Cerberus advances to the next wave only when the current wave has no blocking findings under `waves.gate` in `defaults/config.yml`.
+
+Router still emits `model_tier` (`flash`, `standard`, `pro`) from diff complexity. Wave policy uses that tier to cap maximum wave depth via `waves.max_for_tier`.
+
+Within a wave, pool-based reviewers draw models from `model.wave_pools.<wave>`. If a wave pool is missing, Cerberus falls back to `model.tiers.<tier>`, then `model.pool`.
 
 Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow-minimal.yml` for a full decomposed example.
 
@@ -213,7 +230,7 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
 
 ### Fail when no review happened (SKIP)
 ```yaml
-- uses: misty-step/cerberus/verdict@v2
+- uses: misty-step/cerberus/verdict@master
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     fail-on-skip: 'true'

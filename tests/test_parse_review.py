@@ -2365,3 +2365,99 @@ class TestStatsValidation:
         code, out, err = run_parse(f"```json\n{review}\n```")
         assert code == 0
         assert "stats discrepancy" in err.lower()
+
+
+class TestDirectJsonInput:
+    """Tests for the structured-output extraction path.
+
+    When parse-review.py receives bare JSON (no ```json``` fences), it should
+    parse it directly — this is the structured-verdict path from extract-verdict.py.
+    """
+
+    def _make_verdict(self, **overrides) -> dict:
+        base = {
+            "reviewer": "trace",
+            "perspective": "correctness",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "Looks good.",
+            "findings": [],
+            "stats": {
+                "files_reviewed": 2,
+                "files_with_issues": 0,
+                "critical": 0,
+                "major": 0,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+        base.update(overrides)
+        return base
+
+    def test_bare_json_parsed_without_fences(self):
+        """Direct JSON (no ```json``` wrapper) is accepted on the structured-output path."""
+        verdict = self._make_verdict()
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["reviewer"] == "trace"
+
+    def test_bare_json_with_findings_passes_validation(self):
+        """Direct JSON with findings validates correctly and verdict consistency is enforced."""
+        # A single major finding → WARN (enforce_verdict_consistency recomputes from findings)
+        verdict = self._make_verdict(
+            verdict="WARN",
+            confidence=0.85,
+            findings=[{
+                "severity": "major",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "evidence": "for i in range(0, n+1):",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0, "major": 1, "minor": 0, "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 0
+        data = json.loads(out)
+        # enforce_verdict_consistency: 1 major → WARN
+        assert data["verdict"] == "WARN"
+        assert len(data["findings"]) == 1
+
+    def test_bare_json_with_leading_whitespace(self):
+        """Bare JSON with leading whitespace (e.g. pretty-printed) is still accepted."""
+        verdict = self._make_verdict()
+        indented = "\n  " + json.dumps(verdict, indent=2).replace("\n", "\n  ")
+        # Only works if starts with { after strip — JSON.dumps always starts with {
+        code, out, _ = run_parse(json.dumps(verdict, indent=2))
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+
+    def test_fenced_json_still_works(self):
+        """Existing fenced-block path is not broken by the new direct path."""
+        verdict = self._make_verdict(verdict="FAIL", confidence=0.95,
+                                     findings=[{
+                                         "severity": "critical",
+                                         "category": "correctness",
+                                         "file": "app.py",
+                                         "line": 1,
+                                         "title": "Null deref",
+                                         "description": "desc",
+                                         "suggestion": "fix",
+                                     }],
+                                     stats={"files_reviewed": 1, "files_with_issues": 1,
+                                            "critical": 1, "major": 0, "minor": 0, "info": 0})
+        wrapped = f"Some prose\n\n```json\n{json.dumps(verdict)}\n```\n"
+        code, out, _ = run_parse(wrapped)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "FAIL"

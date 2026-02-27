@@ -4,11 +4,11 @@
 
 ```mermaid
 flowchart TD
-  PR[GitHub PR event\nopened|synchronize|reopened] --> MATRIX[Matrix job\nuses: cerberus/matrix@v2\noutputs: strategy.matrix JSON]
+  PR[GitHub PR event\nopened|synchronize|reopened] --> MATRIX[Matrix job\nuses: cerberus/matrix@master\noutputs: strategy.matrix JSON]
 
   MATRIX --> REVIEW_FANOUT[Review job\nstrategy.matrix = JSON\nfail-fast: false]
 
-  REVIEW_FANOUT -->|N parallel jobs| REVIEW[action.yml\nuses: cerberus@v2\n(single perspective)]
+  REVIEW_FANOUT -->|N parallel jobs| REVIEW[action.yml\nuses: cerberus@master\n(single perspective)]
 
   REVIEW --> CTX[Fetch PR diff + context\n(gh pr diff/view)]
   CTX --> LLM[Run reviewer\n(pi --print --system-prompt <perspective>)]
@@ -17,7 +17,7 @@ flowchart TD
   PARSE -->|uploads| ART[(Artifacts\ncerberus-verdict-<perspective>)]
   PARSE -->|optional| RCOMMENT[PR issue comment\nmarker: cerberus:<perspective>]
 
-  ART --> VERDICT[Verdict job\nuses: cerberus/verdict@v2]
+  ART --> VERDICT[Verdict job\nuses: cerberus/verdict@master]
 
   OVERRIDE[/PR comment command\n/cerberus override sha=<sha>\n(reason required)/] --> VERDICT
 
@@ -102,4 +102,3 @@ sequenceDiagram
   WH->>Q: Enqueue Re-aggregate(head_sha)
   Q->>AGG: Update Check Run / verdict comment
 ```
-

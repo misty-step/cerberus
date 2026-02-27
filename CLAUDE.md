@@ -17,14 +17,14 @@ PR opened/synced
 consumer workflow (.github/workflows/cerberus.yml)
     │
     ├── preflight job (always runs first)
-    │   └── uses: misty-step/cerberus/preflight@v2  (preflight/action.yml)
+    │   └── uses: misty-step/cerberus/preflight@master  (preflight/action.yml)
     │       ├── check: fork PR? → skip (no secrets available)
     │       ├── check: draft PR? → skip + optional PR comment
     │       ├── check: missing API key? → skip + optional PR comment
     │       └── outputs: should_run (bool), skip_reason (enum)
     │
     ├── matrix job × N reviewers (if: should_run, parallel, fail-fast: false)
-    │   └── uses: misty-step/cerberus@v2  (action.yml)
+    │   └── uses: misty-step/cerberus@master  (action.yml)
     │       ├── fetch PR diff/context
     │       ├── run-reviewer.sh   (prompt + Pi runtime invocation)
     │       ├── parse-review.py   (extract + validate JSON verdict)
@@ -32,7 +32,7 @@ consumer workflow (.github/workflows/cerberus.yml)
     │       └── upload verdict artifact
     │
     ├── verdict job (needs: review, if: always() && should_run)
-    │   └── uses: misty-step/cerberus/verdict@v2  (verdict/action.yml)
+    │   └── uses: misty-step/cerberus/verdict@master  (verdict/action.yml)
     │       ├── download verdict artifacts
     │       ├── aggregate-verdict.py  (override handling + verdict decision)
     │       ├── post verdict comment
@@ -40,7 +40,7 @@ consumer workflow (.github/workflows/cerberus.yml)
     │       └── optional fail on FAIL
     │
     └── triage job (optional, separate workflow/job)
-        └── uses: misty-step/cerberus/triage@v2  (triage/action.yml)
+        └── uses: misty-step/cerberus/triage@master  (triage/action.yml)
             ├── read verdict/comment state
             ├── enforce loop guards (`[triage]`, per-SHA attempt cap)
             ├── post diagnosis
@@ -51,18 +51,22 @@ The consumer defines the reviewer matrix in its own workflow. This repository pr
 
 Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `.opencode/agents/`, `templates/`, `defaults/`).
 
-### The Eight Reviewers
+### The Six Reviewers (3 per wave)
+
+| Wave | Models | Reviewers |
+|------|--------|-----------|
+| wave1 | flash | trace · guard · proof |
+| wave2 | standard | atlas · fuse · craft |
+| wave3 | pro | trace · guard · atlas |
 
 | Codename | Perspective | Focus |
 |----------|-------------|-------|
 | trace | correctness | Logic bugs, edge cases, type mismatches |
-| atlas | architecture | Design patterns, module boundaries, coupling |
 | guard | security | Threat model, injection, auth flaws |
-| flux | performance | Runtime efficiency, scalability |
-| craft | maintainability | DX, readability, future maintenance cost |
 | proof | testing | Test coverage gaps, regression risk |
+| atlas | architecture | Design patterns, module boundaries, coupling |
 | fuse | resilience | Failure handling, retries, graceful degradation |
-| pact | compatibility | Contract safety, version skew, rollback |
+| craft | maintainability | DX, readability, future maintenance cost |
 
 Shell/bash access is denied per agent via `permission` in the agent markdown frontmatter.
 
@@ -155,4 +159,4 @@ End-to-end testing requires pushing to a branch and having a target repo use `mi
 
 Consumers reference this repo as a GitHub Action. See `templates/consumer-workflow-reusable.yml` for the recommended setup. The only required secret is `CERBERUS_OPENROUTER_API_KEY`.
 
-Tagged releases follow semver. Consumers pin to `@v2` for automatic patch updates.
+Tagged releases follow semver. Organization repos can track `@master` when they intentionally want latest defaults.

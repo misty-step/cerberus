@@ -81,6 +81,55 @@ reviewers:
         assert cfg.model.tiers["flash"] == ["openrouter/flash-a", "openrouter/flash-b"]
         assert cfg.model.tiers["standard"] == ["openrouter/std-a"]
 
+    def test_model_wave_pools_parsed(self, tmp_path):
+        path = write_config(tmp_path, """
+model:
+  wave_pools:
+    wave1:
+      - openrouter/cheap-a
+    wave3:
+      - openrouter/pro-a
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        cfg = load_defaults_config(path)
+        assert cfg.model.wave_pools == {
+            "wave1": ["openrouter/cheap-a"],
+            "wave3": ["openrouter/pro-a"],
+        }
+
+    def test_waves_config_parsed(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  enabled: true
+  order: [wave1, wave2]
+  max_for_tier:
+    flash: 1
+    standard: 2
+  gate:
+    block_on_critical: true
+    block_on_major: false
+    block_on_skip: true
+  definitions:
+    wave1:
+      reviewers: [A]
+    wave2:
+      reviewers: [B]
+reviewers:
+  - name: A
+    perspective: correctness
+  - name: B
+    perspective: security
+""")
+        cfg = load_defaults_config(path)
+        assert cfg.waves.enabled is True
+        assert cfg.waves.order == ["wave1", "wave2"]
+        assert cfg.waves.max_for_tier["flash"] == 1
+        assert cfg.waves.max_for_tier["standard"] == 2
+        assert cfg.waves.gate.block_on_major is False
+        assert cfg.waves.definitions["wave1"].reviewers == ["A"]
+
     def test_legacy_list_format(self, tmp_path):
         path = write_config(tmp_path, """
 - name: APOLLO
@@ -206,6 +255,106 @@ reviewers:
     perspective: b
 """)
         with pytest.raises(ConfigError, match="config.model.tiers\\[flash\\]\\[0\\]: expected string"):
+            load_defaults_config(path)
+
+    def test_model_wave_pools_not_a_mapping(self, tmp_path):
+        path = write_config(tmp_path, """
+model:
+  wave_pools: not_a_mapping
+reviewers:
+  - name: A
+    perspective: b
+""")
+        with pytest.raises(ConfigError, match="config.model.wave_pools: expected mapping"):
+            load_defaults_config(path)
+
+    def test_waves_definition_unknown_reviewer(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  definitions:
+    wave1:
+      reviewers: [MISSING]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="references unknown reviewer"):
+            load_defaults_config(path)
+
+    def test_waves_enabled_must_be_boolean(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  enabled: "true"
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.enabled: expected boolean"):
+            load_defaults_config(path)
+
+    def test_waves_max_for_tier_must_be_integer(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  max_for_tier:
+    flash: "2"
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.max_for_tier\\[flash\\]: expected integer"):
+            load_defaults_config(path)
+
+    def test_waves_max_for_tier_must_be_positive(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  max_for_tier:
+    flash: 0
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.max_for_tier\\[flash\\]: must be >= 1"):
+            load_defaults_config(path)
+
+    def test_waves_order_rejects_duplicates(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  order: [wave1, wave1]
+  definitions:
+    wave1:
+      reviewers: [A]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="duplicate wave names are not allowed"):
+            load_defaults_config(path)
+
+    def test_waves_order_references_defined_waves_only(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  order: [wave1, wave2]
+  definitions:
+    wave1:
+      reviewers: [A]
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="references undefined wave 'wave2'"):
+            load_defaults_config(path)
+
+    def test_waves_definition_reviewer_list_must_be_non_empty(self, tmp_path):
+        path = write_config(tmp_path, """
+waves:
+  definitions:
+    wave1:
+      reviewers: []
+reviewers:
+  - name: A
+    perspective: correctness
+""")
+        with pytest.raises(ConfigError, match="config.waves.definitions\\[wave1\\]\\.reviewers: must be non-empty"):
             load_defaults_config(path)
 
     def test_optional_str_non_string(self, tmp_path):

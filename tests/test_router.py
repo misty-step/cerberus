@@ -547,11 +547,12 @@ class TestMainIntegration:
             "ROUTING": "disabled",
             "OPENROUTER_API_KEY": "fake-key",
         })
-        # Should return all 8 perspectives
+        # Should return all 8 perspectives (SAMPLE_CONFIG has 8 reviewers)
         assert len(result["panel"]) == 8
         assert result["routing_used"] is False
         assert result["model"] == "disabled"
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        # Diff heuristic: src/auth.py contains 'auth' → security hint → pro tier
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     def test_missing_api_key_uses_fallback(self, cerberus_root: Path, diff_file: Path) -> None:
         result = self._run_main({
@@ -748,7 +749,8 @@ class TestMainIntegration:
         })
         # Disabled routing returns full bench, not panel_size-limited
         assert len(result["panel"]) == 8
-        assert result["model_tier"] == route.MODEL_TIER_STANDARD
+        # Diff heuristic: src/auth.py contains 'auth' → security hint → pro tier
+        assert result["model_tier"] == route.MODEL_TIER_PRO
 
     def test_config_load_failure_uses_hardcoded_fallback(self, tmp_path: Path, diff_file: Path) -> None:
         result = self._run_main({

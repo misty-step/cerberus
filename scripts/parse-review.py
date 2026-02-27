@@ -384,6 +384,18 @@ def extract_json_block(text: str) -> str | None:
     return matches[-1]
 
 
+def extract_json_from_output(text: str) -> str | None:
+    """Extract JSON from model output.
+
+    Tries direct JSON parse first (structured-output path), then fenced-block extraction.
+    This lets parse-review.py accept pre-extracted JSON without requiring ```json``` fences.
+    """
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        return stripped
+    return extract_json_block(text)
+
+
 def looks_like_api_error(text: str) -> tuple[bool, str, str]:
     """Check if text looks like an API error without explicit API Error: marker.
 
@@ -1005,7 +1017,7 @@ def main() -> None:
         sys.exit(0)
 
     try:
-        json_block = extract_json_block(raw)
+        json_block = extract_json_from_output(raw)
 
         # If no JSON block found, check if it looks like an API error
         if json_block is None:

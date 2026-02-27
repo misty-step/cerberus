@@ -8,7 +8,7 @@ def test_consumer_workflow_uses_reusable_workflow() -> None:
     """consumer-workflow-reusable.yml delegates to the Cerberus reusable workflow."""
     content = CONSUMER_WORKFLOW_FILE.read_text()
 
-    assert "uses: misty-step/cerberus/.github/workflows/cerberus.yml@v2" in content
+    assert "uses: misty-step/cerberus/.github/workflows/cerberus.yml@master" in content
     assert "api-key:" in content
 
 

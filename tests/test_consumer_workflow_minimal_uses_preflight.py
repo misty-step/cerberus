@@ -12,7 +12,7 @@ def test_minimal_template_uses_preflight_action() -> None:
     content = _read()
 
     assert "preflight:" in content
-    assert "uses: misty-step/cerberus/preflight@v2" in content
+    assert "uses: misty-step/cerberus/preflight@master" in content
     assert "should_run" in content
     assert "skip_reason" in content
 
@@ -27,7 +27,7 @@ def test_minimal_template_removes_draft_check_job() -> None:
     content = _read()
 
     assert "draft-check:" not in content
-    assert "uses: misty-step/cerberus/draft-check@v2" not in content
+    assert "uses: misty-step/cerberus/draft-check@master" not in content
     assert "is_draft" not in content
 
 

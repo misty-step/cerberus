@@ -15,83 +15,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  preflight:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    outputs:
-      should_run: ${{ steps.preflight.outputs.should_run }}
-      skip_reason: ${{ steps.preflight.outputs.skip_reason }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./preflight
-        id: preflight
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
-
-  route:
-    needs: preflight
-    if: needs.preflight.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      panel: ${{ steps.router.outputs.panel }}
-      model-tier: ${{ steps.router.outputs.model-tier }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch PR diff
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: gh pr diff ${{ github.event.pull_request.number }} --repo "$REPO" > /tmp/pr.diff
-      - uses: ./router
-        id: router
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
-          diff-file: /tmp/pr.diff
-
-  matrix:
-    needs: route
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-      count: ${{ steps.generate.outputs.count }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: generate
-        uses: ./matrix
-        with:
-          panel: ${{ needs.route.outputs.panel }}
-          model-tier: ${{ needs.route.outputs.model-tier }}
-
   review:
-    needs: [matrix, preflight]
-    if: needs.preflight.outputs.should_run == 'true'
-    name: "${{ matrix.reviewer }}"
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./
-        with:
-          perspective: ${{ matrix.perspective }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
-          timeout: '600'
-          model-tier: ${{ matrix.model_tier }}
-
-  verdict:
-    name: "Verdict"
-    needs: [review, preflight]
-    if: always() && needs.review.result != 'skipped' && needs.preflight.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./verdict
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+    uses: ./.github/workflows/cerberus.yml
+    with:
+      timeout: 600
+    secrets:
+      api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}

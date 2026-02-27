@@ -15,8 +15,8 @@ Also prints to stdout for test consumption:
     Line 3: comma-separated names
 """
 import json
-import sys
 import os
+import sys
 
 import yaml
 
@@ -45,6 +45,37 @@ def generate_matrix(config_path):
         print("No reviewers found in config", file=sys.stderr)
         sys.exit(1)
 
+    review_wave = os.getenv("REVIEW_WAVE", "").strip().lower()
+    if review_wave:
+        waves = config.get("waves") if isinstance(config, dict) else {}
+        definitions = {}
+        if isinstance(waves, dict):
+            raw_definitions = waves.get("definitions")
+            if isinstance(raw_definitions, dict):
+                definitions = raw_definitions
+
+        if review_wave not in definitions:
+            print(f"Unknown review wave '{review_wave}'", file=sys.stderr)
+            sys.exit(1)
+
+        wave_reviewers = []
+        wave_cfg = definitions.get(review_wave)
+        if isinstance(wave_cfg, dict):
+            raw_reviewers = wave_cfg.get("reviewers")
+            if isinstance(raw_reviewers, list):
+                wave_reviewers = [str(item).strip() for item in raw_reviewers if str(item).strip()]
+
+        if wave_reviewers:
+            reviewers_by_name = {}
+            for reviewer in reviewers:
+                name = reviewer.get("name")
+                if name:
+                    reviewers_by_name[str(name)] = reviewer
+            reviewers = [reviewers_by_name[name] for name in wave_reviewers if name in reviewers_by_name]
+        if not reviewers:
+            print(f"Wave '{review_wave}' produced an empty reviewer matrix", file=sys.stderr)
+            sys.exit(1)
+
     matrix = []
     names = []
     for r in reviewers:
@@ -65,6 +96,9 @@ def generate_matrix(config_path):
             model_tier = os.getenv("MODEL_TIER", "").strip().lower()
             if model_tier:
                 entry["model_tier"] = model_tier
+            if review_wave:
+                entry["wave"] = review_wave
+                entry["model_wave"] = review_wave
             if isinstance(desc, str) and desc.strip():
                 entry["reviewer_description"] = desc.strip()
             if tagline:
