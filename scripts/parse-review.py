@@ -469,10 +469,12 @@ def validate(obj: dict) -> None:
             "line",
             "title",
             "description",
-            "suggestion",
         ]:
             if fkey not in finding:
                 fail(f"finding {idx} missing field: {fkey}")
+        # suggestion is optional — backfill so downstream always has the key
+        if "suggestion" not in finding:
+            finding["suggestion"] = ""
         if finding["severity"] not in {"critical", "major", "minor", "info"}:
             fail(f"finding {idx} invalid severity")
         if not isinstance(finding["line"], int):

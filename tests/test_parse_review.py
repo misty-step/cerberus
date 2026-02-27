@@ -2461,3 +2461,105 @@ class TestDirectJsonInput:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "FAIL"
+
+
+class TestOptionalSuggestion:
+    """Regression: finding.suggestion is optional (issue #274).
+
+    parse-review.py previously required 'suggestion' on every finding.
+    This caused valid PASS reviews to become SKIP when the model omitted it.
+    """
+
+    def _make_pass_verdict(self, findings: list[dict]) -> str:
+        verdict = {
+            "reviewer": "atlas",
+            "perspective": "architecture",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "No architectural issues.",
+            "findings": findings,
+            "stats": {
+                "files_reviewed": 2,
+                "files_with_issues": len(findings),
+                "critical": 0,
+                "major": 0,
+                "minor": 0,
+                "info": len(findings),
+            },
+        }
+        return f"```json\n{json.dumps(verdict)}\n```"
+
+    def test_pass_verdict_without_suggestion_parses_to_pass(self):
+        """PASS review with finding that lacks 'suggestion' must parse as PASS, not SKIP."""
+        finding_no_suggestion = {
+            "severity": "info",
+            "category": "style",
+            "file": "main.py",
+            "line": 10,
+            "title": "Minor style note",
+            "description": "Consider renaming this variable.",
+            # 'suggestion' intentionally omitted
+        }
+        code, out, _ = run_parse(self._make_pass_verdict([finding_no_suggestion]))
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS", f"Expected PASS, got {data['verdict']}: {data.get('summary')}"
+
+    def test_backfills_empty_suggestion_string(self):
+        """Missing 'suggestion' is backfilled to '' so downstream consumers always have the key."""
+        finding_no_suggestion = {
+            "severity": "info",
+            "category": "style",
+            "file": "main.py",
+            "line": 10,
+            "title": "Minor style note",
+            "description": "Consider renaming.",
+        }
+        code, out, _ = run_parse(self._make_pass_verdict([finding_no_suggestion]))
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["suggestion"] == ""
+
+    def test_existing_suggestion_preserved(self):
+        """Findings that include 'suggestion' are unaffected."""
+        finding_with_suggestion = {
+            "severity": "info",
+            "category": "style",
+            "file": "main.py",
+            "line": 10,
+            "title": "Minor style note",
+            "description": "Consider renaming.",
+            "suggestion": "Use descriptive_name instead.",
+        }
+        code, out, _ = run_parse(self._make_pass_verdict([finding_with_suggestion]))
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["suggestion"] == "Use descriptive_name instead."
+
+    def test_mixed_findings_some_with_some_without_suggestion(self):
+        """Verdicts with mixed findings (some with, some without 'suggestion') parse correctly."""
+        findings = [
+            {
+                "severity": "info",
+                "category": "style",
+                "file": "a.py",
+                "line": 1,
+                "title": "No suggestion",
+                "description": "desc",
+            },
+            {
+                "severity": "info",
+                "category": "style",
+                "file": "b.py",
+                "line": 2,
+                "title": "Has suggestion",
+                "description": "desc",
+                "suggestion": "do this",
+            },
+        ]
+        code, out, _ = run_parse(self._make_pass_verdict(findings))
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["suggestion"] == ""
+        assert data["findings"][1]["suggestion"] == "do this"
