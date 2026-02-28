@@ -36,9 +36,15 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 DEFAULT_PRICING: tuple[float, float] = (0.50, 1.50)
 
 
+def _normalize_model_slug(model: str) -> str:
+    """Strip the 'openrouter/' provider prefix if present."""
+    return model[len("openrouter/"):] if model.startswith("openrouter/") else model
+
+
 def calculate_cost_usd(prompt_tokens: int, completion_tokens: int, model: str) -> float:
     """Return USD cost for a review given actual token counts and model."""
-    input_per_m, output_per_m = MODEL_PRICING.get(model, DEFAULT_PRICING)
+    normalized = _normalize_model_slug(model)
+    input_per_m, output_per_m = MODEL_PRICING.get(model, MODEL_PRICING.get(normalized, DEFAULT_PRICING))
     return (prompt_tokens / 1_000_000) * input_per_m + (completion_tokens / 1_000_000) * output_per_m
 
 # Maximum artifact file size in bytes (1 MB).
@@ -346,13 +352,10 @@ def generate_quality_report(
         }
         reviewer_details.append(detail)
 
-    # Per-model aggregation — build lookup from reviewer detail for cost/actionable.
-    reviewer_detail_by_reviewer: dict[str, dict] = {
-        d["reviewer"]: d for d in reviewer_details
-    }
-
+    # Per-model aggregation — zip with verdicts to avoid collapsing same reviewer
+    # across multiple waves (e.g. "trace" appears in wave1 and wave3).
     model_stats: dict[str, dict] = {}
-    for v in verdicts:
+    for detail, v in zip(reviewer_details, verdicts):
         model = v.get("model_used") or v.get("primary_model") or "unknown"
         if model not in model_stats:
             model_stats[model] = {
@@ -377,12 +380,11 @@ def generate_quality_report(
             model_stats[model]["fallback_count"] += 1
         if is_fallback_verdict(v):
             model_stats[model]["parse_failures"] += 1
-        rv_detail = reviewer_detail_by_reviewer.get(v["reviewer"], {})
-        rv_cost = rv_detail.get("cost_usd")
+        rv_cost = detail.get("cost_usd")
         if rv_cost is not None:
             model_stats[model]["_total_cost_usd"] += rv_cost
             model_stats[model]["_cost_reviewer_count"] += 1
-        model_stats[model]["actionable_findings_count"] += rv_detail.get("actionable_findings", 0)
+        model_stats[model]["actionable_findings_count"] += detail.get("actionable_findings", 0)
 
     # Compute averages and rates per model
     for model, stats in model_stats.items():
@@ -403,9 +405,9 @@ def generate_quality_report(
             round(raw_cost / actionable, 8) if cost_count > 0 and actionable > 0 else None
         )
 
-    # Per-wave aggregation
+    # Per-wave aggregation — same zip pattern to avoid multi-wave reviewer collision.
     wave_stats: dict[str, dict] = {}
-    for v in verdicts:
+    for detail, v in zip(reviewer_details, verdicts):
         wave = v.get("model_wave") or "unscoped"
         if wave not in wave_stats:
             wave_stats[wave] = {
@@ -436,8 +438,7 @@ def generate_quality_report(
             ws["fallback_count"] += 1
         if is_fallback_verdict(v):
             ws["parse_failures"] += 1
-        rv_detail = reviewer_detail_by_reviewer.get(v["reviewer"], {})
-        rv_cost = rv_detail.get("cost_usd")
+        rv_cost = detail.get("cost_usd")
         if rv_cost is not None:
             ws["_total_cost_usd"] += rv_cost
             ws["_cost_reviewer_count"] += 1
