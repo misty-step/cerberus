@@ -24,7 +24,6 @@ from lib.findings import (
     group_findings,
     normalize_severity,
     reviewer_label,
-    split_reviewer_description,
 )
 from lib.github import (
     CommentPermissionError,
@@ -312,7 +311,26 @@ def main() -> None:
             )
             notice(f"Posted Cerberus PR review for sha={head_sha[:12]} with {posted} inline comments.")
         except subprocess.CalledProcessError as exc:
-            warn(f"Review with inline comments failed; skipping PR review. ({exc.stderr or exc})")
+            # gh can emit "unexpected end of JSON input" when GitHub returns an empty/truncated
+            # response body — even when the review was actually created (transient gh parse failure).
+            # Re-check before giving up to avoid false negatives.
+            try:
+                latest_reviews = list_pr_reviews(args.repo, args.pr)
+                if find_review_id_by_marker(latest_reviews, marker) is not None:
+                    notice(
+                        f"PR review confirmed posted for sha={head_sha[:12]} "
+                        f"(gh response parse failed: {(exc.stderr or '').strip()})"
+                    )
+                    return
+            except Exception:
+                pass  # Re-check failed — fall through to warning
+
+            stderr = (exc.stderr or "").strip()
+            stdout = (exc.stdout or "").strip()
+            parts = [stderr or str(exc), f"{posted} inline comment(s) attempted"]
+            if stdout:
+                parts.append(f"api_response={stdout[:300]}")
+            warn(f"Review with inline comments failed; skipping PR review. ({'; '.join(parts)})")
 
     except CommentPermissionError as exc:
         warn(str(exc))
