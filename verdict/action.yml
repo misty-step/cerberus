@@ -15,10 +15,6 @@ inputs:
   parse-failure-policy:
     description: 'How to treat reviewer parse failures in verdict aggregation: fail (count as FAIL), warn (reclassify as SKIP with warning, default), skip (reclassify as SKIP silently)'
     default: 'warn'
-  openrouter-management-key:
-    description: 'OpenRouter management API key for account-level cost reconciliation (optional). Distinct from the reviewer API key.'
-    required: false
-    default: ''
 
 outputs:
   verdict:
@@ -173,16 +169,6 @@ runs:
           --head-sha "$GH_HEAD_SHA" \
           --verdict-json "${CERBERUS_TMP}/verdict.json" \
           --body-file "${CERBERUS_TMP}/verdict-comment.md"
-
-    - name: Enrich quality report with account activity
-      if: always() && steps.aggregate.outcome == 'success' && inputs.openrouter-management-key != ''
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}/..
-        CERBERUS_OPENROUTER_MANAGEMENT_KEY: ${{ inputs.openrouter-management-key }}
-      run: |
-        python3 "$CERBERUS_ROOT/scripts/openrouter-activity.py" \
-          --quality-report "${CERBERUS_TMP}/quality-report.json"
 
     - name: Upload quality report artifact
       if: always() && steps.aggregate.outcome == 'success'
