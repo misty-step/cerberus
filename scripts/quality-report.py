@@ -143,6 +143,9 @@ def aggregate_reports(reports: list[dict]) -> dict:
     total_reviewers = sum(r.get("summary", {}).get("total_reviewers", 0) for r in reports)
     total_skips = sum(r.get("summary", {}).get("skip_count", 0) for r in reports)
     total_parse_failures = sum(r.get("summary", {}).get("parse_failure_count", 0) for r in reports)
+    total_estimated_cost_usd = sum(
+        r.get("summary", {}).get("total_estimated_cost_usd", 0.0) for r in reports
+    )
 
     # Verdict distribution
     verdict_distribution: dict[str, int] = {}
@@ -220,6 +223,7 @@ def aggregate_reports(reports: list[dict]) -> dict:
             "overall_skip_rate": round(total_skips / total_reviewers, 4) if total_reviewers > 0 else 0,
             "overall_parse_failure_rate": round(total_parse_failures / total_reviewers, 4) if total_reviewers > 0 else 0,
             "cerberus_verdict_distribution": verdict_distribution,
+            "total_estimated_cost_usd": round(total_estimated_cost_usd, 8),
         },
         "model_rankings": model_summaries,
     }

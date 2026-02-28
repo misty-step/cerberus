@@ -2190,3 +2190,36 @@ def test_warns_count_mismatch_with_fallback_reviewers(tmp_path):
     assert code == 0
     assert "expected 3 reviewers" in err
     assert "fallback verdicts: SENTINEL" in err
+
+
+# --- _extraction_usage flows into quality report ---
+
+def test_extraction_usage_flows_into_quality_report(tmp_path):
+    """_extraction_usage in verdict file is used for cost calculation in quality report."""
+    verdict_data = {
+        "reviewer": "APOLLO",
+        "perspective": "correctness",
+        "verdict": "PASS",
+        "confidence": 0.9,
+        "summary": "ok",
+        "model_used": "moonshotai/kimi-k2.5",
+        "_extraction_usage": {"prompt_tokens": 2000, "completion_tokens": 800},
+    }
+    (tmp_path / "apollo.json").write_text(json.dumps(verdict_data))
+
+    code, _out, _err = run_aggregate(str(tmp_path))
+    assert code == 0
+
+    # Read quality report — should contain cost based on real token counts
+    quality_report_path = Path("/tmp/quality-report.json")
+    assert quality_report_path.exists()
+    qr = json.loads(quality_report_path.read_text())
+
+    reviewer = qr["reviewers"][0]
+    assert reviewer["estimated_prompt_tokens"] == 2000
+    assert reviewer["estimated_completion_tokens"] == 800
+    assert reviewer["cost_is_estimate"] is False
+    # kimi-k2.5: input=0.15/M, output=0.60/M
+    expected_cost = round((2000 / 1_000_000) * 0.15 + (800 / 1_000_000) * 0.60, 8)
+    assert reviewer["estimated_cost_usd"] == expected_cost
+    assert qr["summary"]["total_estimated_cost_usd"] == expected_cost
