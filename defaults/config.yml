@@ -9,54 +9,19 @@ cancel_in_progress: true            # Cancel stale runs on new push
 
 model:
   default: "openrouter/moonshotai/kimi-k2.5"
-  fallback:
-    - "openrouter/google/gemini-3-flash-preview"
-    - "openrouter/z-ai/glm-5"
   wave_pools:
     wave1:
       - "openrouter/moonshotai/kimi-k2.5"
       - "openrouter/x-ai/grok-4.1-fast"
       - "openrouter/minimax/minimax-m2.5"
-      - "openrouter/google/gemini-3-flash-preview"
     wave2:
-      - "openrouter/moonshotai/kimi-k2.5"
+      - "openrouter/google/gemini-3-flash-preview"
       - "openrouter/z-ai/glm-5"
       - "openrouter/anthropic/claude-haiku-4.5"
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/minimax/minimax-m2.5"
     wave3:
       - "openrouter/openai/gpt-5.3-codex"
       - "openrouter/google/gemini-3.1-pro-preview"
       - "openrouter/anthropic/claude-sonnet-4.6"
-  pool:
-    - "openrouter/moonshotai/kimi-k2.5"
-    - "openrouter/x-ai/grok-4.1-fast"
-    - "openrouter/minimax/minimax-m2.5"
-    - "openrouter/google/gemini-3-flash-preview"
-    - "openrouter/anthropic/claude-haiku-4.5"
-    - "openrouter/z-ai/glm-5"
-    - "openrouter/openai/gpt-5.3-codex"
-    - "openrouter/google/gemini-3.1-pro-preview"
-    - "openrouter/anthropic/claude-sonnet-4.6"
-  tiers:
-    flash:
-      - "openrouter/moonshotai/kimi-k2.5"
-      - "openrouter/x-ai/grok-4.1-fast"
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/minimax/minimax-m2.5"
-    standard:
-      - "openrouter/moonshotai/kimi-k2.5"
-      - "openrouter/z-ai/glm-5"
-      - "openrouter/anthropic/claude-haiku-4.5"
-      - "openrouter/minimax/minimax-m2.5"
-      - "openrouter/google/gemini-3-flash-preview"
-    pro:
-      - "openrouter/openai/gpt-5.3-codex"
-      - "openrouter/google/gemini-3.1-pro-preview"
-      - "openrouter/anthropic/claude-sonnet-4.6"
-      - "openrouter/z-ai/glm-5"
-      - "openrouter/minimax/minimax-m2.5"
-      - "openrouter/google/gemini-3-flash-preview"
   cli: pi
   thinking: true
   max_steps: 25                       # Max agentic steps per reviewer
