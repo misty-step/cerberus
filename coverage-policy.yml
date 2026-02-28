@@ -4,7 +4,7 @@
 #
 # See docs/coverage-policy.md for rationale and advancement procedure.
 
-global_floor: 70      # Currently active floor (line AND branch coverage)
+global_floor: 80      # Currently active floor (line AND branch coverage)
 patch_threshold: 90   # New/changed lines must be >= this % covered on PRs
 
 # Ratchet history — ascending archive of completed steps.
@@ -13,5 +13,5 @@ ratchet_steps: [30, 45, 60, 70, 80]
 # 30 ✓ initial
 # 45 ✓ completed
 # 60 ✓ completed
-# 70 ← current (active)
-# 80   next target
+# 70 ✓ completed
+# 80 ← current (active)

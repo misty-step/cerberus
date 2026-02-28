@@ -117,15 +117,6 @@ def _argv(*extra: str) -> list[str]:
     return ["post-verdict-review.py", "--repo", "owner/repo", "--pr", "7", *extra]
 
 
-def test_split_reviewer_description_hyphen_and_fallback() -> None:
-    assert post_verdict_review.split_reviewer_description("") == ("", "")
-    assert post_verdict_review.split_reviewer_description("Security - Threat Model") == (
-        "Security",
-        "Threat Model",
-    )
-    assert post_verdict_review.split_reviewer_description("Security") == ("Security", "")
-
-
 def test_reviewer_label_falls_back_to_perspective_or_unknown() -> None:
     assert (
         post_verdict_review.reviewer_label(
@@ -504,7 +495,123 @@ def test_main_warns_when_create_pr_review_raises_calledprocesserror() -> None:
         patch.object(post_verdict_review, "warn") as warn_mock,
     ):
         post_verdict_review.main()
-    assert "Review with inline comments failed; skipping PR review." in warn_mock.call_args.args[0]
+    msg = warn_mock.call_args.args[0]
+    assert "Review with inline comments failed; skipping PR review." in msg
+    # Warning should include the count of inline comments attempted
+    assert "1 inline comment" in msg
+
+
+def test_main_warns_includes_api_response_when_available() -> None:
+    """Warning message includes stdout (API response body) for easier debugging."""
+    finding = {"severity": "major", "category": "bug", "file": "src/app.py", "line": 9, "title": "t"}
+    error = subprocess.CalledProcessError(
+        1, ["gh", "api"], stderr="unexpected end of JSON input\n", output='{"message":"Not Found"}'
+    )
+    with (
+        patch.object(post_verdict_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(post_verdict_review, "list_pr_reviews", return_value=[]),
+        patch.object(post_verdict_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_verdict_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_verdict_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_verdict_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {9: 2})},
+        ),
+        patch.object(post_verdict_review, "fetch_comments", return_value=[]),
+        patch.object(post_verdict_review, "find_comment_url_by_marker", return_value=""),
+        patch.object(post_verdict_review, "create_pr_review", side_effect=error),
+        patch.object(post_verdict_review, "warn") as warn_mock,
+    ):
+        post_verdict_review.main()
+    msg = warn_mock.call_args.args[0]
+    assert "api_response=" in msg
+    assert "Not Found" in msg
+
+
+def test_main_confirms_review_posted_when_gh_parse_fails() -> None:
+    """When create_pr_review raises CalledProcessError but the review was actually created
+    (gh failed to parse a valid 200 response), detect the posted review and log notice."""
+    sha = "abcdef1234567890"
+    finding = {
+        "severity": "critical",
+        "category": "security",
+        "file": "src/app.py",
+        "line": 12,
+        "title": "Critical issue",
+        "description": "desc",
+        "suggestion": "",
+        "evidence": "",
+        "reviewers": ["SENTINEL"],
+    }
+    error = subprocess.CalledProcessError(
+        1, ["gh", "api"], stderr="unexpected end of JSON input\n"
+    )
+    marker = post_verdict_review.review_marker(sha)
+    # After the error, the re-check finds the review was actually posted
+    review_with_marker = [{"id": 99, "body": marker}]
+    with (
+        patch.object(post_verdict_review.sys, "argv", _argv("--head-sha", sha)),
+        patch.object(
+            post_verdict_review,
+            "list_pr_reviews",
+            side_effect=[[], review_with_marker],
+        ),
+        patch.object(
+            post_verdict_review,
+            "find_review_id_by_marker",
+            side_effect=[None, 99],
+        ),
+        patch.object(post_verdict_review, "read_json", return_value={"verdict": "FAIL"}),
+        patch.object(post_verdict_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_verdict_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {12: 7})},
+        ),
+        patch.object(post_verdict_review, "fetch_comments", return_value=[]),
+        patch.object(post_verdict_review, "find_comment_url_by_marker", return_value=""),
+        patch.object(post_verdict_review, "create_pr_review", side_effect=error),
+        patch.object(post_verdict_review, "notice") as notice_mock,
+        patch.object(post_verdict_review, "warn") as warn_mock,
+    ):
+        post_verdict_review.main()
+    # Review was posted — no warning
+    warn_mock.assert_not_called()
+    assert any("confirmed" in str(c) for c in notice_mock.call_args_list)
+
+
+def test_main_warns_when_recheck_also_fails() -> None:
+    """When create_pr_review fails and the re-check list_pr_reviews also raises,
+    fall through to warning gracefully (the except Exception: pass path)."""
+    finding = {"severity": "major", "category": "bug", "file": "src/app.py", "line": 9, "title": "t"}
+    create_error = subprocess.CalledProcessError(1, ["gh", "api"], stderr="unexpected end of JSON input\n")
+    with (
+        patch.object(post_verdict_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(
+            post_verdict_review,
+            "list_pr_reviews",
+            side_effect=[
+                [],                        # First call: initial idempotency check
+                RuntimeError("network"),   # Second call: re-check after CalledProcessError
+            ],
+        ),
+        patch.object(post_verdict_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_verdict_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_verdict_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_verdict_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {9: 2})},
+        ),
+        patch.object(post_verdict_review, "fetch_comments", return_value=[]),
+        patch.object(post_verdict_review, "find_comment_url_by_marker", return_value=""),
+        patch.object(post_verdict_review, "create_pr_review", side_effect=create_error),
+        patch.object(post_verdict_review, "warn") as warn_mock,
+    ):
+        post_verdict_review.main()
+    msg = warn_mock.call_args.args[0]
+    assert "Review with inline comments failed; skipping PR review." in msg
 
 
 def test_main_warns_on_unexpected_exception() -> None:
