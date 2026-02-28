@@ -322,8 +322,8 @@ def main() -> None:
                         f"(gh response parse failed: {(exc.stderr or '').strip()})"
                     )
                     return
-            except Exception:
-                pass  # Re-check failed — fall through to warning
+            except Exception as recheck_exc:
+                warn(f"Re-check for PR review failed, falling through to report original error: {recheck_exc}")
 
             stderr = (exc.stderr or "").strip()
             stdout = (exc.stdout or "").strip()
