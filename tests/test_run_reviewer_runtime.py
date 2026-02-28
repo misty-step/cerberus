@@ -476,9 +476,25 @@ def test_fallback_model_used_after_primary_transient_failure(tmp_path: Path) -> 
         ),
     )
 
+    # Use a fake root with no wave_pools so the only models are:
+    # [primary_model, CERBERUS_FALLBACK_MODELS]. After primary exhausts retries,
+    # the env fallback is reached.
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/primary-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
     diff_file = tmp_path / "diff.patch"
     write_simple_diff(diff_file)
-    env = make_env(bin_dir, diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
     env["CERBERUS_FALLBACK_MODELS"] = "openrouter/anthropic/claude-sonnet-4-5"
 
     result = subprocess.run(

@@ -170,58 +170,55 @@ def resolve_resource_paths(base: Path, values: list[str]) -> list[str]:
     return out
 
 
-def select_pool_model(
+def build_wave_models_list(
     *,
     reviewer_name: str,
     requested_wave: str,
     requested_tier: str,
     model_wave_pools: dict[str, list[str]],
-    model_tiers: dict[str, list[str]],
-    model_pool: list[str],
-) -> str:
+) -> list[str]:
+    """Return [primary] + shuffled remaining from the wave pool.
+
+    Resolution order:
+    1. requested_wave → wave_pools[requested_wave]
+    2. requested_tier → hardcoded tier→wave mapping → wave_pools[mapped_wave]
+    3. All wave pools flattened (deduped, insertion-ordered)
+    """
+    pool: list[str] = []
+    source_label = ""
+
     if requested_wave:
-        wave_pool = model_wave_pools.get(requested_wave, [])
-        if wave_pool:
-            selected = random.choice(wave_pool)
-            print(
-                f"::notice::Selected random model from {requested_wave} wave pool for {reviewer_name}: {selected}"
-            )
-            return selected
+        pool = list(model_wave_pools.get(requested_wave, []))
+        source_label = f"{requested_wave} wave pool"
 
-    candidate_tiers = [requested_tier]
-    if requested_tier != "standard":
-        candidate_tiers.append("standard")
-    candidate_tiers.append("")
+    if not pool:
+        tier_to_wave = {"flash": "wave1", "standard": "wave2", "pro": "wave3"}
+        wave_for_tier = tier_to_wave.get(requested_tier)
+        if wave_for_tier:
+            pool = list(model_wave_pools.get(wave_for_tier, []))
+            source_label = f"{requested_tier} tier (mapped to {wave_for_tier})"
 
-    selected_pool: list[str] = []
-    found_tier = ""
+    if not pool:
+        seen: set[str] = set()
+        for wave_models in model_wave_pools.values():
+            for m in wave_models:
+                if m not in seen:
+                    seen.add(m)
+                    pool.append(m)
+        source_label = "all waves (unscoped)"
 
-    for candidate in candidate_tiers:
-        pool = model_tiers.get(candidate, []) if candidate else model_pool
-        if pool:
-            selected_pool = pool
-            found_tier = candidate
-            break
+    if not pool:
+        return []
 
-    if found_tier:
-        if found_tier == requested_tier:
-            print(f"::notice::Selected random model from {found_tier} tier pool for {reviewer_name}.")
-        elif found_tier == "standard":
-            print(
-                "::notice::"
-                f"Tier '{requested_tier}' had no models; falling back to standard tier pool for {reviewer_name}."
-            )
-        else:
-            print(f"::notice::Selected random model from unscoped pool for {reviewer_name}.")
-    else:
-        print(f"::notice::Selected random model from unscoped pool for {reviewer_name}.")
+    primary = random.choice(pool)
+    remaining = [m for m in pool if m != primary]
+    random.shuffle(remaining)
 
-    if not selected_pool:
-        return ""
-
-    selected = random.choice(selected_pool)
-    print(f"::notice::Selected random model from pool: {selected}")
-    return selected
+    print(
+        f"::notice::Selected {primary} (primary) from {source_label} for {reviewer_name}; "
+        f"{len(remaining)} fallback(s) available in same pool."
+    )
+    return [primary] + remaining
 
 
 def classify_api_error_text(text: str) -> str:
@@ -426,32 +423,21 @@ def main(argv: list[str]) -> int:
     reviewer_model_raw = sanitize_model(reviewer.model)
     config_default_model = sanitize_model(defaults_cfg.model.default)
 
-    if profile_model:
-        if profile_model == "pool":
-            selected = select_pool_model(
-                reviewer_name=reviewer_name,
-                requested_wave=requested_wave,
-                requested_tier=requested_tier,
-                model_wave_pools=defaults_cfg.model.wave_pools,
-                model_tiers=defaults_cfg.model.tiers,
-                model_pool=defaults_cfg.model.pool,
-            )
-            profile_model = selected
-        reviewer_model_raw = profile_model or reviewer_model_raw
-    elif reviewer_model_raw == "pool":
-        selected = select_pool_model(
+    _pool_requested = (profile_model == "pool") or (not profile_model and reviewer_model_raw == "pool")
+    wave_models: list[str] = []
+
+    if _pool_requested:
+        wave_models = build_wave_models_list(
             reviewer_name=reviewer_name,
             requested_wave=requested_wave,
             requested_tier=requested_tier,
             model_wave_pools=defaults_cfg.model.wave_pools,
-            model_tiers=defaults_cfg.model.tiers,
-            model_pool=defaults_cfg.model.pool,
         )
-        if selected:
-            reviewer_model_raw = selected
-        else:
+        if not wave_models:
             print("::warning::Reviewer uses 'pool' but no pool defined. Falling back to default.")
-            reviewer_model_raw = ""
+        reviewer_model_raw = wave_models[0] if wave_models else ""
+    elif profile_model:
+        reviewer_model_raw = profile_model or reviewer_model_raw
 
     configured_model = BASE_DEFAULT_MODEL
     if config_default_model:
@@ -479,12 +465,19 @@ def main(argv: list[str]) -> int:
                 "Remove 'model' to stay auto-updated as Cerberus defaults evolve."
             )
 
-    models = [primary_model]
+    if _pool_requested and wave_models:
+        if input_model:
+            models = [input_model] + [m for m in wave_models if m != input_model]
+        else:
+            models = list(wave_models)
+    else:
+        models = [primary_model]
+
     fallback_models_raw = os.environ.get("CERBERUS_FALLBACK_MODELS", "")
     if fallback_models_raw:
         for item in fallback_models_raw.split(","):
             m = sanitize_model(item)
-            if m:
+            if m and m not in models:
                 models.append(m)
 
     provider_key_var, api_key = resolve_api_key_for_provider(profile_provider, os.environ)

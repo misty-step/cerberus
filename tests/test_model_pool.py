@@ -114,20 +114,17 @@ class TestModelPoolSelection:
         )
         return result, artifacts_dir
 
-    def test_requested_tier_pool_is_used(self, tmp_path: Path) -> None:
+    def test_tier_flash_maps_to_wave1_pool(self, tmp_path: Path) -> None:
         config = '''
 version: 1
 model:
   default: "openrouter/default"
-  pool:
-    - "openrouter/legacy-a"
-    - "openrouter/legacy-b"
-  tiers:
-    flash:
-      - "openrouter/flash-a"
-      - "openrouter/flash-b"
-    standard:
-      - "openrouter/standard-a"
+  wave_pools:
+    wave1:
+      - "openrouter/wave1-a"
+      - "openrouter/wave1-b"
+    wave2:
+      - "openrouter/wave2-a"
 reviewers:
   - name: SENTINEL
     perspective: security
@@ -136,7 +133,7 @@ reviewers:
         result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "flash"})
         assert result.returncode == 0
         model = artifact(artifacts_dir, "primary-model").read_text().strip()
-        assert model in {"openrouter/flash-a", "openrouter/flash-b"}
+        assert model in {"openrouter/wave1-a", "openrouter/wave1-b"}
 
     def test_requested_wave_pool_is_used_before_tier(self, tmp_path: Path) -> None:
         config = '''
@@ -144,12 +141,11 @@ version: 1
 model:
   default: "openrouter/default"
   wave_pools:
+    wave1:
+      - "openrouter/wave1-a"
     wave2:
       - "openrouter/wave2-a"
       - "openrouter/wave2-b"
-  tiers:
-    flash:
-      - "openrouter/flash-a"
 reviewers:
   - name: SENTINEL
     perspective: security
@@ -164,17 +160,17 @@ reviewers:
         model = artifact(artifacts_dir, "primary-model").read_text().strip()
         assert model in {"openrouter/wave2-a", "openrouter/wave2-b"}
 
-    def test_missing_requested_tier_falls_back_to_standard(self, tmp_path: Path) -> None:
+    def test_missing_wave_falls_back_to_all_waves_flattened(self, tmp_path: Path) -> None:
+        # MODEL_TIER=pro maps to wave3; wave3 not defined → all waves flattened
         config = '''
 version: 1
 model:
   default: "openrouter/default"
-  pool:
-    - "openrouter/legacy-a"
-  tiers:
-    standard:
-      - "openrouter/standard-a"
-      - "openrouter/standard-b"
+  wave_pools:
+    wave1:
+      - "openrouter/wave1-a"
+    wave2:
+      - "openrouter/wave2-a"
 reviewers:
   - name: SENTINEL
     perspective: security
@@ -183,28 +179,30 @@ reviewers:
         result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "pro"})
         assert result.returncode == 0
         model = artifact(artifacts_dir, "primary-model").read_text().strip()
-        assert model in {"openrouter/standard-a", "openrouter/standard-b"}
+        assert model in {"openrouter/wave1-a", "openrouter/wave2-a"}
 
-    def test_missing_requested_and_standard_falls_back_to_unscoped_pool(self, tmp_path: Path) -> None:
+    def test_wave_fallback_stays_in_same_pool(self, tmp_path: Path) -> None:
+        # Primary + remaining should all come from the same wave pool (wave2 here)
         config = '''
 version: 1
 model:
   default: "openrouter/default"
-  pool:
-    - "openrouter/legacy-a"
-    - "openrouter/legacy-b"
-  tiers:
-    flash:
-      - "openrouter/flash-a"
+  wave_pools:
+    wave1:
+      - "openrouter/wave1-only"
+    wave2:
+      - "openrouter/wave2-a"
+      - "openrouter/wave2-b"
+      - "openrouter/wave2-c"
 reviewers:
   - name: SENTINEL
     perspective: security
     model: pool
 '''
-        result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "pro"})
+        result, artifacts_dir = self._run(tmp_path, config, {"MODEL_WAVE": "wave2"})
         assert result.returncode == 0
         model = artifact(artifacts_dir, "primary-model").read_text().strip()
-        assert model in {"openrouter/legacy-a", "openrouter/legacy-b"}
+        assert model in {"openrouter/wave2-a", "openrouter/wave2-b", "openrouter/wave2-c"}
 
     def test_pool_with_no_models_falls_back_to_default(self, tmp_path: Path) -> None:
         config = '''
@@ -224,13 +222,14 @@ reviewers:
         assert primary == "openrouter/default"
 
     def test_case_insensitive_tier_input(self, tmp_path: Path) -> None:
+        # FlAsH → flash → wave1
         config = '''
 version: 1
 model:
   default: "openrouter/default"
-  tiers:
-    flash:
-      - "openrouter/flash-a"
+  wave_pools:
+    wave1:
+      - "openrouter/wave1-a"
 reviewers:
   - name: SENTINEL
     perspective: security
@@ -239,7 +238,7 @@ reviewers:
         result, artifacts_dir = self._run(tmp_path, config, {"MODEL_TIER": "FlAsH"})
         assert result.returncode == 0
         model = artifact(artifacts_dir, "primary-model").read_text().strip()
-        assert model == "openrouter/flash-a"
+        assert model == "openrouter/wave1-a"
 
 
 class TestModelPrecedence:
