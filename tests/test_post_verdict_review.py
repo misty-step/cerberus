@@ -581,6 +581,39 @@ def test_main_confirms_review_posted_when_gh_parse_fails() -> None:
     assert any("confirmed" in str(c) for c in notice_mock.call_args_list)
 
 
+def test_main_warns_when_recheck_also_fails() -> None:
+    """When create_pr_review fails and the re-check list_pr_reviews also raises,
+    fall through to warning gracefully (the except Exception: pass path)."""
+    finding = {"severity": "major", "category": "bug", "file": "src/app.py", "line": 9, "title": "t"}
+    create_error = subprocess.CalledProcessError(1, ["gh", "api"], stderr="unexpected end of JSON input\n")
+    with (
+        patch.object(post_verdict_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
+        patch.object(
+            post_verdict_review,
+            "list_pr_reviews",
+            side_effect=[
+                [],                        # First call: initial idempotency check
+                RuntimeError("network"),   # Second call: re-check after CalledProcessError
+            ],
+        ),
+        patch.object(post_verdict_review, "find_review_id_by_marker", return_value=None),
+        patch.object(post_verdict_review, "read_json", return_value={"verdict": "WARN"}),
+        patch.object(post_verdict_review, "collect_inline_findings", return_value=[finding]),
+        patch.object(
+            post_verdict_review,
+            "build_patch_index",
+            return_value={"src/app.py": ("src/app.py", {9: 2})},
+        ),
+        patch.object(post_verdict_review, "fetch_comments", return_value=[]),
+        patch.object(post_verdict_review, "find_comment_url_by_marker", return_value=""),
+        patch.object(post_verdict_review, "create_pr_review", side_effect=create_error),
+        patch.object(post_verdict_review, "warn") as warn_mock,
+    ):
+        post_verdict_review.main()
+    msg = warn_mock.call_args.args[0]
+    assert "Review with inline comments failed; skipping PR review." in msg
+
+
 def test_main_warns_on_unexpected_exception() -> None:
     with (
         patch.object(post_verdict_review.sys, "argv", _argv("--head-sha", "abcdef123456")),
