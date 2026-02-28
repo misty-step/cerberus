@@ -2216,10 +2216,9 @@ def test_extraction_usage_flows_into_quality_report(tmp_path):
     qr = json.loads(quality_report_path.read_text())
 
     reviewer = qr["reviewers"][0]
-    assert reviewer["estimated_prompt_tokens"] == 2000
-    assert reviewer["estimated_completion_tokens"] == 800
-    assert reviewer["cost_is_estimate"] is False
+    assert reviewer["prompt_tokens"] == 2000
+    assert reviewer["completion_tokens"] == 800
     # kimi-k2.5: input=0.15/M, output=0.60/M
     expected_cost = round((2000 / 1_000_000) * 0.15 + (800 / 1_000_000) * 0.60, 8)
-    assert reviewer["estimated_cost_usd"] == expected_cost
-    assert qr["summary"]["total_estimated_cost_usd"] == expected_cost
+    assert reviewer["cost_usd"] == expected_cost
+    assert qr["summary"]["total_cost_usd"] == expected_cost

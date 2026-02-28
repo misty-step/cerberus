@@ -189,56 +189,65 @@ def _verdict_with_extraction_usage(reviewer="APOLLO", perspective="correctness",
 
 
 class TestCostFieldsInQualityReport:
-    def test_cost_fields_present_in_per_reviewer_details(self):
+    def test_cost_null_without_extraction_usage(self):
+        # No _extraction_usage → cost fields are None, not fabricated estimates
         verdicts = [_verdict_with_runtime()]
         report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
         reviewer = report["reviewers"][0]
-        assert "estimated_cost_usd" in reviewer
-        assert "cost_is_estimate" in reviewer
-        assert "estimated_prompt_tokens" in reviewer
-        assert "estimated_completion_tokens" in reviewer
+        assert reviewer["cost_usd"] is None
+        assert reviewer["prompt_tokens"] is None
+        assert reviewer["completion_tokens"] is None
 
-    def test_cost_fields_present_in_model_stats(self):
-        verdicts = [_verdict_with_runtime()]
-        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
-        model_entry = list(report["models"].values())[0]
-        assert "estimated_total_cost_usd" in model_entry
-        assert "cost_per_finding" in model_entry
-
-    def test_cost_fields_present_in_wave_stats(self):
-        v = _verdict_with_runtime()
-        v["model_wave"] = "wave1"
-        report = generate_quality_report([v], {"verdict": "PASS"}, [])
-        assert "estimated_total_cost_usd" in report["waves"]["wave1"]
-
-    def test_total_estimated_cost_in_summary(self):
-        verdicts = [_verdict_with_runtime()]
-        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
-        assert "total_estimated_cost_usd" in report["summary"]
-        assert isinstance(report["summary"]["total_estimated_cost_usd"], float)
-
-    def test_extraction_usage_used_for_cost_when_present(self):
+    def test_cost_computed_from_real_tokens(self):
         # kimi-k2.5: (0.15, 0.60) per million tokens
-        # 1000 prompt + 500 completion = (0.15/1e6)*1000 + (0.60/1e6)*500 = 0.00015 + 0.0003 = 0.00045
+        # 1000 prompt + 500 completion = 0.00015 + 0.0003 = 0.00045
         v = _verdict_with_extraction_usage(
             model="moonshotai/kimi-k2.5", prompt_tokens=1000, completion_tokens=500
         )
         report = generate_quality_report([v], {"verdict": "PASS"}, [])
         reviewer = report["reviewers"][0]
         expected = round((1000 / 1_000_000) * 0.15 + (500 / 1_000_000) * 0.60, 8)
-        assert reviewer["estimated_cost_usd"] == expected
-        assert reviewer["estimated_prompt_tokens"] == 1000
-        assert reviewer["estimated_completion_tokens"] == 500
+        assert reviewer["cost_usd"] == expected
+        assert reviewer["prompt_tokens"] == 1000
+        assert reviewer["completion_tokens"] == 500
 
-    def test_cost_is_estimate_false_when_extraction_usage_present(self):
+    def test_model_total_cost_null_without_real_tokens(self):
+        verdicts = [_verdict_with_runtime()]
+        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
+        model_entry = list(report["models"].values())[0]
+        assert model_entry["total_cost_usd"] is None
+
+    def test_model_total_cost_set_from_real_tokens(self):
+        v = _verdict_with_extraction_usage(
+            model="moonshotai/kimi-k2.5", prompt_tokens=1000, completion_tokens=500
+        )
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        model_entry = report["models"]["moonshotai/kimi-k2.5"]
+        assert model_entry["total_cost_usd"] is not None
+        assert model_entry["total_cost_usd"] > 0
+
+    def test_wave_total_cost_null_without_real_tokens(self):
+        v = _verdict_with_runtime()
+        v["model_wave"] = "wave1"
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        assert report["waves"]["wave1"]["total_cost_usd"] is None
+
+    def test_wave_total_cost_set_from_real_tokens(self):
+        v = _verdict_with_extraction_usage(prompt_tokens=1000, completion_tokens=500)
+        v["model_wave"] = "wave1"
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        assert report["waves"]["wave1"]["total_cost_usd"] is not None
+
+    def test_summary_total_cost_null_without_real_tokens(self):
+        verdicts = [_verdict_with_runtime()]
+        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
+        assert report["summary"]["total_cost_usd"] is None
+
+    def test_summary_total_cost_set_from_real_tokens(self):
         v = _verdict_with_extraction_usage(prompt_tokens=1000, completion_tokens=500)
         report = generate_quality_report([v], {"verdict": "PASS"}, [])
-        assert report["reviewers"][0]["cost_is_estimate"] is False
-
-    def test_cost_is_estimate_true_when_only_runtime_available(self):
-        v = _verdict_with_runtime(runtime=60)
-        report = generate_quality_report([v], {"verdict": "PASS"}, [])
-        assert report["reviewers"][0]["cost_is_estimate"] is True
+        assert report["summary"]["total_cost_usd"] is not None
+        assert isinstance(report["summary"]["total_cost_usd"], float)
 
     def test_actionable_findings_count(self):
         findings = [
@@ -254,7 +263,7 @@ class TestCostFieldsInQualityReport:
         assert report["reviewers"][0]["actionable_findings"] == 2  # major + minor, not info
 
     def test_cost_per_finding_none_when_no_actionable_findings(self):
-        v = _verdict_with_runtime()  # no findings
+        v = _verdict_with_extraction_usage(prompt_tokens=1000, completion_tokens=500)
         report = generate_quality_report([v], {"verdict": "PASS"}, [])
         model_entry = list(report["models"].values())[0]
         assert model_entry["cost_per_finding"] is None
