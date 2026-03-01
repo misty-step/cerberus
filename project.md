@@ -23,7 +23,7 @@ Agentic code review platform — multi-perspective review, auto-triage, and obse
 | Reviewer | One agentic LLM-powered code reviewer. Emits a JSON verdict block. Six per full run (trace, guard, proof, atlas, fuse, craft) |
 | Finding | A specific code issue identified by a reviewer. Has: severity, category, file, line, title, description, suggestion |
 | SKIP | A reviewer that failed to produce a verdict (timeout, parse failure, etc.) |
-| [unverified] | Pipeline-added tag indicating a finding lacked an `evidence` field (exact code quote). Currently causes severity demotion — fixing this is #305 |
+| [stale-knowledge] | Pipeline-added tag indicating a finding may assert stale training-data knowledge (version claims, release dates). Severity preserved — human judges |
 | Override | A `/cerberus override sha=<sha>` comment from an authorized actor, suppressing a FAIL verdict |
 | OSS action | The GitHub Action distribution (BYOK — bring your own key). This repo |
 | Cerberus Cloud | Managed GitHub App (separate repo). Handles billing, quota, org controls |

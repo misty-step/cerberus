@@ -836,10 +836,11 @@ class TestStaleKnowledgeAnnotation:
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "critical"
+        assert "[stale-knowledge]" in data["findings"][0]["title"]
         assert data["verdict"] == "FAIL"
 
-    def test_annotates_latest_stable_is(self):
-        """Finding asserting 'latest stable is X' is tagged [stale-knowledge] but keeps severity."""
+    def test_annotates_has_not_been_released(self):
+        """Finding with 'has not been released' pattern is tagged [stale-knowledge] but keeps severity."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Invalid Node version",
@@ -859,6 +860,7 @@ class TestStaleKnowledgeAnnotation:
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "critical"
+        assert "[stale-knowledge]" in data["findings"][0]["title"]
         assert data["verdict"] == "FAIL"
 
     def test_preserves_real_version_conflict_with_invalid_version_text(self):
