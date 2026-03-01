@@ -789,6 +789,25 @@ class TestEvidenceNormalization:
         assert "y = 2" in evidence
         assert "z = 3" in evidence
 
+    def test_non_string_evidence_ignored(self):
+        """Non-string evidence (int, null) is left unchanged — not crashed on."""
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Numeric evidence",
+                "description": "desc",
+                "evidence": 42,
+                "suggestion": "fix",
+            }
+        )
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["evidence"] == 42
+
     def test_fenced_code_block_unwrapped(self):
         """Fenced code blocks in evidence are unwrapped to bare content."""
         review = self._review(

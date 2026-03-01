@@ -590,7 +590,6 @@ def enforce_verdict_consistency(obj: dict) -> None:
 
 def _has_version_reference(text: str) -> bool:
     """Check if text contains a numeric version pattern (e.g., 1.25, v3, 24.x)."""
-    import re
     return bool(re.search(r'\d+\.\d+|\bv\d+\b|\d+\.x\b', text))
 
 
@@ -660,13 +659,10 @@ def annotate_stale_knowledge_findings(obj: dict) -> None:
             and has_version_num
         )
 
-        has_invalid_version_claim = "invalid version" in text
-        is_version_conflict = _is_version_category(category)
-
         should_flag = (
             has_does_not_exist_claim
             or has_release_claim
-            or (has_invalid_version_claim and not is_version_conflict)
+            or ("invalid version" in text and not _is_version_category(category))
         )
         if not should_flag:
             continue
@@ -683,8 +679,6 @@ def _unwrap_fenced_code_block(text: str) -> str:
         return stripped
     lines = stripped.splitlines()
     if len(lines) < 2:
-        return stripped
-    if not lines[0].startswith("```"):
         return stripped
     if lines[-1].strip() != "```":
         return stripped
@@ -722,9 +716,6 @@ def normalize_evidence_fields(obj: dict) -> None:
             continue
         evidence_raw = finding.get("evidence")
         if not isinstance(evidence_raw, str):
-            continue
-        if not evidence_raw.strip():
-            finding.pop("evidence", None)
             continue
         evidence = _normalize_evidence(evidence_raw)
         if evidence:
