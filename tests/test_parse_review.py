@@ -789,6 +789,28 @@ class TestEvidenceNormalization:
         assert "y = 2" in evidence
         assert "z = 3" in evidence
 
+    def test_fenced_code_block_unwrapped(self):
+        """Fenced code blocks in evidence are unwrapped to bare content."""
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Fenced evidence",
+                "description": "desc",
+                "evidence": "```python\nx = 1\ny = 2\n```",
+                "suggestion": "fix",
+            }
+        )
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        evidence = data["findings"][0]["evidence"]
+        assert "```" not in evidence
+        assert "x = 1" in evidence
+        assert "y = 2" in evidence
+
 
 class TestStaleKnowledgeAnnotation:
     def test_annotates_version_does_not_exist(self):
