@@ -625,50 +625,8 @@ _RELEASE_CLAIM_PATTERNS = [
     "is not released",
     "has not been released",
     "not yet released",
-    "latest stable is",
-    "latest version is",
     "no such version",
 ]
-
-
-def downgrade_speculative_suggestions(obj: dict) -> None:
-    """Downgrade findings whose suggestion was explicitly marked unverified.
-
-    Reviewers may set ``suggestion_verified: false`` on a finding to indicate
-    the suggested fix was not traced through the codebase.  Such findings are
-    demoted to ``info`` severity so they remain visible without inflating the
-    verdict.
-    """
-    findings = obj.get("findings", [])
-    if not isinstance(findings, list) or not findings:
-        return
-
-    downgraded = 0
-    for finding in findings:
-        if not isinstance(finding, dict):
-            continue
-
-        # Only act on an *explicit* False — absent field preserves backward compat.
-        if finding.get("suggestion_verified") is not False:
-            continue
-
-        severity = finding.get("severity")
-        if severity not in {"critical", "major", "minor"}:
-            continue
-
-        finding["severity"] = "info"
-        finding["_speculative_downgraded"] = True
-        _prefix_title(finding, "[speculative] ")
-        downgraded += 1
-
-    if downgraded > 0:
-        stats = obj.get("stats")
-        if isinstance(stats, dict):
-            for sev in ("critical", "major", "minor", "info"):
-                stats[sev] = sum(
-                    1 for f in findings
-                    if isinstance(f, dict) and f.get("severity") == sev
-                )
 
 
 def downgrade_stale_knowledge_findings(obj: dict) -> None:
@@ -737,6 +695,14 @@ def _prefix_title(finding: dict, prefix: str) -> None:
     if title.startswith(prefix):
         return
     finding["title"] = f"{prefix}{title}"
+
+
+def _annotate_unverified(finding: dict) -> None:
+    """Append an unverified notice to the finding description (once)."""
+    note = "(Note: evidence could not be verified against the current codebase.)"
+    desc = str(finding.get("description", ""))
+    if note not in desc:
+        finding["description"] = f"{desc} {note}".strip() if desc else note
 
 
 def _unwrap_fenced_code_block(text: str) -> str:
@@ -905,39 +871,41 @@ def downgrade_unverified_findings(obj: dict) -> None:
         scope = str(finding.get("scope", "")).strip().lower()
 
         # Out-of-scope (relative to diff) unless explicitly justified.
+        # Severity is preserved — the finding may still be valid; scope ambiguity
+        # is annotated for the reviewer to evaluate, not silenced.
         if changed_files and file_norm and file_norm not in changed_files and scope != "defaults-change":
-            finding["severity"] = "info"
             finding["_evidence_unverified"] = True
             finding["_evidence_reason"] = "out-of-scope"
             _prefix_title(finding, "[out-of-scope] ")
+            _annotate_unverified(finding)
             downgraded += 1
             continue
 
         evidence_raw = finding.get("evidence")
         if not isinstance(evidence_raw, str) or not evidence_raw.strip():
-            finding["severity"] = "info"
             finding["_evidence_unverified"] = True
             finding["_evidence_reason"] = "missing-evidence"
             _prefix_title(finding, "[unverified] ")
+            _annotate_unverified(finding)
             downgraded += 1
             continue
 
         evidence = _normalize_evidence(evidence_raw)
         if not evidence:
-            finding["severity"] = "info"
             finding["_evidence_unverified"] = True
             finding["_evidence_reason"] = "empty-evidence"
             _prefix_title(finding, "[unverified] ")
+            _annotate_unverified(finding)
             downgraded += 1
             continue
         finding["evidence"] = _truncate_evidence_for_output(evidence)
 
         resolved = _safe_resolve_repo_path(repo_root, file_norm)
         if resolved is None or not resolved.is_file():
-            finding["severity"] = "info"
             finding["_evidence_unverified"] = True
             finding["_evidence_reason"] = "file-not-found"
             _prefix_title(finding, "[unverified] ")
+            _annotate_unverified(finding)
             downgraded += 1
             continue
 
@@ -947,26 +915,19 @@ def downgrade_unverified_findings(obj: dict) -> None:
             line = 0
 
         if not _evidence_matches_file(resolved, line, evidence):
-            finding["severity"] = "info"
             finding["_evidence_unverified"] = True
             finding["_evidence_reason"] = "evidence-mismatch"
             _prefix_title(finding, "[unverified] ")
+            _annotate_unverified(finding)
             downgraded += 1
             continue
 
         finding["_evidence_verified"] = True
 
     if downgraded > 0:
-        stats = obj.get("stats")
-        if isinstance(stats, dict):
-            for sev in ("critical", "major", "minor", "info"):
-                stats[sev] = sum(
-                    1 for f in findings
-                    if isinstance(f, dict) and f.get("severity") == sev
-                )
         summary = obj.get("summary")
         if isinstance(summary, str) and summary:
-            marker = f" [unverified->info: {downgraded}]"
+            marker = f" [unverified: {downgraded}]"
             if marker not in summary:
                 obj["summary"] = summary + marker
 
@@ -1115,7 +1076,6 @@ def main() -> None:
         validate(obj)
         validate_and_correct_stats(obj)
         downgrade_unverified_findings(obj)
-        downgrade_speculative_suggestions(obj)
         downgrade_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:

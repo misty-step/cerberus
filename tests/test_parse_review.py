@@ -719,7 +719,8 @@ class TestEvidenceDowngrade:
             "stats": stats,
         }
 
-    def test_missing_evidence_downgrades_to_info(self, tmp_path):
+    def test_missing_evidence_annotated_not_demoted(self, tmp_path):
+        """Findings without evidence are annotated [unverified] but keep their severity."""
         (tmp_path / "app.py").write_text("x = 1\n")
         diff = self._write_diff(tmp_path, ["app.py"])
 
@@ -743,14 +744,19 @@ class TestEvidenceDowngrade:
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["stats"]["major"] == 0
-        assert data["stats"]["info"] == 1
-        assert data["findings"][0]["severity"] == "info"
+        # Severity is NOT lowered — the finding still counts toward thresholds
+        assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["title"].startswith("[unverified] ")
-        assert "[unverified->info: 1]" in data["summary"]
+        assert data["findings"][0]["_evidence_unverified"] is True
+        assert data["findings"][0]["_evidence_reason"] == "missing-evidence"
+        assert "could not be verified" in data["findings"][0]["description"]
+        assert "[unverified: 1]" in data["summary"]
+        # 1 major → WARN (enforce_verdict_consistency)
+        assert data["verdict"] == "WARN"
+        assert data["stats"]["major"] == 1
 
-    def test_evidence_mismatch_downgrades_to_info(self, tmp_path):
+    def test_evidence_mismatch_annotated_not_demoted(self, tmp_path):
+        """Findings with mismatched evidence are annotated but keep their severity."""
         (tmp_path / "app.py").write_text("x = 1\n")
         diff = self._write_diff(tmp_path, ["app.py"])
 
@@ -775,10 +781,11 @@ class TestEvidenceDowngrade:
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["title"].startswith("[unverified] ")
         assert data["findings"][0]["_evidence_reason"] == "evidence-mismatch"
+        # 1 major → WARN
+        assert data["verdict"] == "WARN"
 
     def test_evidence_match_keeps_severity(self, tmp_path):
         (tmp_path / "app.py").write_text("x = 1\n")
@@ -808,7 +815,8 @@ class TestEvidenceDowngrade:
         assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["_evidence_verified"] is True
 
-    def test_out_of_scope_file_downgrades(self, tmp_path):
+    def test_out_of_scope_file_annotated_not_demoted(self, tmp_path):
+        """Out-of-scope findings are annotated [out-of-scope] but keep their severity."""
         (tmp_path / "app.py").write_text("x = 1\n")
         (tmp_path / "other.py").write_text("y = 2\n")
         diff = self._write_diff(tmp_path, ["app.py"])
@@ -834,10 +842,11 @@ class TestEvidenceDowngrade:
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["title"].startswith("[out-of-scope] ")
         assert data["findings"][0]["_evidence_reason"] == "out-of-scope"
+        # Severity is preserved → finding still counts toward verdict
+        assert data["verdict"] == "WARN"
 
     def test_defaults_change_scope_allows_out_of_diff(self, tmp_path):
         (tmp_path / "app.py").write_text("x = 1\n")
@@ -869,7 +878,8 @@ class TestEvidenceDowngrade:
         assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["_evidence_verified"] is True
 
-    def test_empty_evidence_after_normalization_downgrades(self, tmp_path):
+    def test_empty_evidence_after_normalization_annotated_not_demoted(self, tmp_path):
+        """Findings with empty evidence after normalization are annotated but keep severity."""
         (tmp_path / "app.py").write_text("x = 1\n")
         diff = self._write_diff(tmp_path, ["app.py"])
 
@@ -893,11 +903,12 @@ class TestEvidenceDowngrade:
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["_evidence_reason"] == "empty-evidence"
+        assert data["verdict"] == "WARN"
 
-    def test_file_not_found_downgrades(self, tmp_path):
+    def test_file_not_found_annotated_not_demoted(self, tmp_path):
+        """Findings referencing non-existent files are annotated but keep their severity."""
         diff = self._write_diff(tmp_path, ["missing.py"])
 
         review = self._review(
@@ -921,9 +932,9 @@ class TestEvidenceDowngrade:
         )
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["severity"] == "major"
         assert data["findings"][0]["_evidence_reason"] == "file-not-found"
+        assert data["verdict"] == "WARN"
 
     def test_truncation_does_not_break_verification(self, tmp_path):
         long_val = "a" * 2100
@@ -2044,10 +2055,10 @@ class TestExtractReviewSummaryDirect:
 
 
 class TestSpeculativeSuggestionDowngrade:
-    """Tests for downgrading findings with unverified suggestions."""
+    """Tests for suggestion_verified field (no longer affects severity)."""
 
-    def test_suggestion_verified_false_downgrades_to_info(self):
-        """Finding with suggestion_verified=false is downgraded to info."""
+    def test_suggestion_verified_false_keeps_severity(self):
+        """Finding with suggestion_verified=false keeps its original severity."""
         review = json.dumps({
             "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Performance concern",
@@ -2067,10 +2078,12 @@ class TestSpeculativeSuggestionDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["title"].startswith("[speculative] ")
-        assert data["findings"][0].get("_speculative_downgraded") is True
-        assert data["verdict"] == "PASS"
+        # suggestion_verified=false no longer demotes severity
+        assert data["findings"][0]["severity"] == "major"
+        assert not data["findings"][0]["title"].startswith("[speculative] ")
+        assert "_speculative_downgraded" not in data["findings"][0]
+        # 1 major → WARN
+        assert data["verdict"] == "WARN"
 
     def test_suggestion_verified_true_keeps_severity(self):
         """Finding with suggestion_verified=true keeps original severity."""
@@ -2120,8 +2133,8 @@ class TestSpeculativeSuggestionDowngrade:
         assert data["findings"][0]["severity"] == "major"
         assert data["verdict"] == "WARN"
 
-    def test_stats_recomputed_after_speculative_downgrade(self):
-        """Stats object is updated to reflect downgraded severities."""
+    def test_two_majors_one_speculative_both_count(self):
+        """Both findings count regardless of suggestion_verified; 2 majors → FAIL."""
         review = json.dumps({
             "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Two major issues",
@@ -2153,13 +2166,14 @@ class TestSpeculativeSuggestionDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["stats"]["major"] == 1
-        assert data["stats"]["info"] == 1
-        # One speculative downgrade means only 1 major remains → WARN not FAIL
-        assert data["verdict"] == "WARN"
+        # Both majors count — suggestion_verified no longer demotes
+        assert data["stats"]["major"] == 2
+        assert data["stats"]["info"] == 0
+        # 2 majors → FAIL
+        assert data["verdict"] == "FAIL"
 
-    def test_speculative_critical_downgraded(self):
-        """Even critical findings are downgraded if suggestion is unverified."""
+    def test_speculative_critical_keeps_severity(self):
+        """Critical findings keep severity even if suggestion is unverified."""
         review = json.dumps({
             "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Critical perf issue",
@@ -2179,10 +2193,10 @@ class TestSpeculativeSuggestionDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["stats"]["critical"] == 0
-        assert data["stats"]["info"] == 1
-        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "critical"
+        assert data["stats"]["critical"] == 1
+        assert data["stats"]["info"] == 0
+        assert data["verdict"] == "FAIL"
 
     def test_info_severity_not_downgraded(self):
         """Info findings with suggestion_verified=false are not re-downgraded."""
