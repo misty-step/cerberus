@@ -22,6 +22,31 @@ from lib.overrides import (
 # parse-review.py appends ": <error detail>" after this prefix.
 PARSE_FAILURE_PREFIX = "Review output could not be parsed"
 
+# OpenRouter pricing: (input_usd_per_million, output_usd_per_million)
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "google/gemini-3-flash-preview": (0.075, 0.30),
+    "moonshotai/kimi-k2.5": (0.15, 0.60),
+    "openrouter/moonshotai/kimi-k2.5": (0.15, 0.60),
+    "z-ai/glm-5": (0.07, 0.28),
+    "anthropic/claude-haiku-4.5": (0.80, 4.00),
+    "minimax/minimax-m2.5": (0.30, 1.10),
+    "openai/gpt-5.3-codex": (3.00, 15.00),
+    "google/gemini-3.1-pro-preview": (1.25, 5.00),
+}
+DEFAULT_PRICING: tuple[float, float] = (0.50, 1.50)
+
+
+def _normalize_model_slug(model: str) -> str:
+    """Strip the 'openrouter/' provider prefix if present."""
+    return model[len("openrouter/"):] if model.startswith("openrouter/") else model
+
+
+def calculate_cost_usd(prompt_tokens: int, completion_tokens: int, model: str) -> float:
+    """Return USD cost for a review given actual token counts and model."""
+    normalized = _normalize_model_slug(model)
+    input_per_m, output_per_m = MODEL_PRICING.get(model, MODEL_PRICING.get(normalized, DEFAULT_PRICING))
+    return (prompt_tokens / 1_000_000) * input_per_m + (completion_tokens / 1_000_000) * output_per_m
+
 # Maximum artifact file size in bytes (1 MB).
 MAX_ARTIFACT_SIZE = 1_048_576
 
@@ -287,24 +312,50 @@ def generate_quality_report(
     # Per-reviewer details
     reviewer_details = []
     for v in verdicts:
+        model = v.get("model_used") or v.get("primary_model") or "unknown"
+        runtime = v.get("runtime_seconds")
+        extraction_usage = v.get("_extraction_usage") or {}
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        cost_usd: float | None = None
+        if (
+            extraction_usage
+            and "prompt_tokens" in extraction_usage
+            and "completion_tokens" in extraction_usage
+        ):
+            prompt_tokens = int(extraction_usage["prompt_tokens"])
+            completion_tokens = int(extraction_usage["completion_tokens"])
+            cost_usd = round(calculate_cost_usd(prompt_tokens, completion_tokens, model), 8)
+
+        findings = v.get("findings") or []
+        actionable = sum(
+            1 for f in findings
+            if isinstance(f, dict) and f.get("severity") != "info"
+        )
+
         detail = {
             "reviewer": v["reviewer"],
             "perspective": v["perspective"],
             "verdict": v["verdict"],
             "confidence": v.get("confidence"),
-            "runtime_seconds": v.get("runtime_seconds"),
+            "runtime_seconds": runtime,
             "model_used": v.get("model_used"),
             "primary_model": v.get("primary_model"),
             "model_wave": v.get("model_wave"),
             "fallback_used": v.get("fallback_used", False),
             "parse_failed": is_fallback_verdict(v),
             "timed_out": is_timeout_skip(v),
+            "cost_usd": cost_usd,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "actionable_findings": actionable,
         }
         reviewer_details.append(detail)
 
-    # Per-model aggregation
+    # Per-model aggregation — zip with verdicts to avoid collapsing same reviewer
+    # across multiple waves (e.g. "trace" appears in wave1 and wave3).
     model_stats: dict[str, dict] = {}
-    for v in verdicts:
+    for detail, v in zip(reviewer_details, verdicts):
         model = v.get("model_used") or v.get("primary_model") or "unknown"
         if model not in model_stats:
             model_stats[model] = {
@@ -314,6 +365,9 @@ def generate_quality_report(
                 "runtimes": [],
                 "fallback_count": 0,
                 "parse_failures": 0,
+                "_total_cost_usd": 0.0,
+                "_cost_reviewer_count": 0,
+                "actionable_findings_count": 0,
             }
         model_stats[model]["count"] += 1
         vd = v["verdict"]
@@ -326,6 +380,11 @@ def generate_quality_report(
             model_stats[model]["fallback_count"] += 1
         if is_fallback_verdict(v):
             model_stats[model]["parse_failures"] += 1
+        rv_cost = detail.get("cost_usd")
+        if rv_cost is not None:
+            model_stats[model]["_total_cost_usd"] += rv_cost
+            model_stats[model]["_cost_reviewer_count"] += 1
+        model_stats[model]["actionable_findings_count"] += detail.get("actionable_findings", 0)
 
     # Compute averages and rates per model
     for model, stats in model_stats.items():
@@ -338,10 +397,17 @@ def generate_quality_report(
         stats["skip_rate"] = stats["verdicts"]["SKIP"] / count if count > 0 else 0
         stats["parse_failure_rate"] = stats["parse_failures"] / count if count > 0 else 0
         stats["fallback_rate"] = stats["fallback_count"] / count if count > 0 else 0
+        cost_count = stats.pop("_cost_reviewer_count")
+        raw_cost = stats.pop("_total_cost_usd")
+        stats["total_cost_usd"] = round(raw_cost, 8) if cost_count > 0 else None
+        actionable = stats["actionable_findings_count"]
+        stats["cost_per_finding"] = (
+            round(raw_cost / actionable, 8) if cost_count > 0 and actionable > 0 else None
+        )
 
-    # Per-wave aggregation
+    # Per-wave aggregation — same zip pattern to avoid multi-wave reviewer collision.
     wave_stats: dict[str, dict] = {}
-    for v in verdicts:
+    for detail, v in zip(reviewer_details, verdicts):
         wave = v.get("model_wave") or "unscoped"
         if wave not in wave_stats:
             wave_stats[wave] = {
@@ -353,16 +419,18 @@ def generate_quality_report(
                 "runtimes": [],
                 "fallback_count": 0,
                 "parse_failures": 0,
+                "_total_cost_usd": 0.0,
+                "_cost_reviewer_count": 0,
             }
         ws = wave_stats[wave]
         ws["count"] += 1
         vd = v["verdict"]
         if vd in ws["verdicts"]:
             ws["verdicts"][vd] += 1
-        stats = v.get("stats")
-        if isinstance(stats, dict):
-            ws["major_findings"] += _to_int(stats.get("major"))
-            ws["critical_findings"] += _to_int(stats.get("critical"))
+        v_stats = v.get("stats")
+        if isinstance(v_stats, dict):
+            ws["major_findings"] += _to_int(v_stats.get("major"))
+            ws["critical_findings"] += _to_int(v_stats.get("critical"))
         if v.get("runtime_seconds") is not None:
             ws["total_runtime_seconds"] += v["runtime_seconds"]
             ws["runtimes"].append(v["runtime_seconds"])
@@ -370,6 +438,10 @@ def generate_quality_report(
             ws["fallback_count"] += 1
         if is_fallback_verdict(v):
             ws["parse_failures"] += 1
+        rv_cost = detail.get("cost_usd")
+        if rv_cost is not None:
+            ws["_total_cost_usd"] += rv_cost
+            ws["_cost_reviewer_count"] += 1
 
     for ws in wave_stats.values():
         count = ws["count"]
@@ -381,6 +453,9 @@ def generate_quality_report(
         ws["skip_rate"] = ws["verdicts"]["SKIP"] / count if count > 0 else 0
         ws["parse_failure_rate"] = ws["parse_failures"] / count if count > 0 else 0
         ws["fallback_rate"] = ws["fallback_count"] / count if count > 0 else 0
+        cost_count = ws.pop("_cost_reviewer_count")
+        raw_cost = ws.pop("_total_cost_usd")
+        ws["total_cost_usd"] = round(raw_cost, 8) if cost_count > 0 else None
 
     # Verdict distribution
     verdict_distribution = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
@@ -406,6 +481,11 @@ def generate_quality_report(
             "parse_failure_rate": round(parse_failure_rate, 4),
             "cerberus_verdict": aggregated.get("verdict", "UNKNOWN"),
             "verdict_distribution": verdict_distribution,
+            "total_cost_usd": (
+                round(sum(d["cost_usd"] for d in reviewer_details if d["cost_usd"] is not None), 8)
+                if any(d["cost_usd"] is not None for d in reviewer_details)
+                else None
+            ),
         },
         "reviewers": reviewer_details,
         "models": model_stats,
@@ -452,6 +532,7 @@ def main() -> None:
             "primary_model": data.get("primary_model"),
             "model_wave": data.get("model_wave"),
             "fallback_used": data.get("fallback_used"),
+            "_extraction_usage": data.get("_extraction_usage"),
         }
         verdicts.append(entry)
 

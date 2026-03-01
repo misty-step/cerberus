@@ -157,6 +157,132 @@ class TestQualityReportEdgeCases:
         assert report["models"]["test-model"]["median_runtime_seconds"] == 0
 
 
+# --- Tests for cost fields in quality report ---
+
+def _verdict_with_runtime(reviewer="APOLLO", perspective="correctness", verdict="PASS",
+                           model="moonshotai/kimi-k2.5", runtime=45, findings=None):
+    return {
+        "reviewer": reviewer,
+        "perspective": perspective,
+        "verdict": verdict,
+        "confidence": 0.9,
+        "runtime_seconds": runtime,
+        "model_used": model,
+        "primary_model": model,
+        "fallback_used": False,
+        "summary": "ok",
+        "findings": findings or [],
+        "stats": {
+            "files_reviewed": 2, "files_with_issues": 0,
+            "critical": 0, "major": 0, "minor": 0, "info": 0,
+        },
+    }
+
+
+def _verdict_with_extraction_usage(reviewer="APOLLO", perspective="correctness",
+                                    verdict="PASS", model="moonshotai/kimi-k2.5",
+                                    prompt_tokens=1000, completion_tokens=500):
+    v = _verdict_with_runtime(reviewer=reviewer, perspective=perspective,
+                               verdict=verdict, model=model, runtime=None)
+    v["_extraction_usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens}
+    return v
+
+
+class TestCostFieldsInQualityReport:
+    def test_cost_null_without_extraction_usage(self):
+        # No _extraction_usage → cost fields are None, not fabricated estimates
+        verdicts = [_verdict_with_runtime()]
+        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
+        reviewer = report["reviewers"][0]
+        assert reviewer["cost_usd"] is None
+        assert reviewer["prompt_tokens"] is None
+        assert reviewer["completion_tokens"] is None
+
+    def test_cost_computed_from_real_tokens(self):
+        # kimi-k2.5: (0.15, 0.60) per million tokens
+        # 1000 prompt + 500 completion = 0.00015 + 0.0003 = 0.00045
+        v = _verdict_with_extraction_usage(
+            model="moonshotai/kimi-k2.5", prompt_tokens=1000, completion_tokens=500
+        )
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        reviewer = report["reviewers"][0]
+        expected = round((1000 / 1_000_000) * 0.15 + (500 / 1_000_000) * 0.60, 8)
+        assert reviewer["cost_usd"] == expected
+        assert reviewer["prompt_tokens"] == 1000
+        assert reviewer["completion_tokens"] == 500
+
+    def test_model_total_cost_null_without_real_tokens(self):
+        verdicts = [_verdict_with_runtime()]
+        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
+        model_entry = list(report["models"].values())[0]
+        assert model_entry["total_cost_usd"] is None
+
+    def test_model_total_cost_set_from_real_tokens(self):
+        v = _verdict_with_extraction_usage(
+            model="moonshotai/kimi-k2.5", prompt_tokens=1000, completion_tokens=500
+        )
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        model_entry = report["models"]["moonshotai/kimi-k2.5"]
+        assert model_entry["total_cost_usd"] is not None
+        assert model_entry["total_cost_usd"] > 0
+
+    def test_wave_total_cost_null_without_real_tokens(self):
+        v = _verdict_with_runtime()
+        v["model_wave"] = "wave1"
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        assert report["waves"]["wave1"]["total_cost_usd"] is None
+
+    def test_wave_total_cost_set_from_real_tokens(self):
+        v = _verdict_with_extraction_usage(prompt_tokens=1000, completion_tokens=500)
+        v["model_wave"] = "wave1"
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        assert report["waves"]["wave1"]["total_cost_usd"] is not None
+
+    def test_summary_total_cost_null_without_real_tokens(self):
+        verdicts = [_verdict_with_runtime()]
+        report = generate_quality_report(verdicts, {"verdict": "PASS"}, [])
+        assert report["summary"]["total_cost_usd"] is None
+
+    def test_summary_total_cost_set_from_real_tokens(self):
+        v = _verdict_with_extraction_usage(prompt_tokens=1000, completion_tokens=500)
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        assert report["summary"]["total_cost_usd"] is not None
+        assert isinstance(report["summary"]["total_cost_usd"], float)
+
+    def test_actionable_findings_count(self):
+        findings = [
+            {"severity": "major", "category": "bug", "file": "a.py", "line": 1,
+             "title": "bug", "description": "bad", "suggestion": ""},
+            {"severity": "info", "category": "style", "file": "b.py", "line": 2,
+             "title": "note", "description": "ok", "suggestion": ""},
+            {"severity": "minor", "category": "style", "file": "c.py", "line": 3,
+             "title": "style", "description": "meh", "suggestion": ""},
+        ]
+        v = _verdict_with_runtime(findings=findings)
+        report = generate_quality_report([v], {"verdict": "WARN"}, [])
+        assert report["reviewers"][0]["actionable_findings"] == 2  # major + minor, not info
+
+    def test_cost_per_finding_none_when_no_actionable_findings(self):
+        v = _verdict_with_extraction_usage(prompt_tokens=1000, completion_tokens=500)
+        report = generate_quality_report([v], {"verdict": "PASS"}, [])
+        model_entry = list(report["models"].values())[0]
+        assert model_entry["cost_per_finding"] is None
+
+    def test_cost_per_finding_computed_when_actionable_findings_present(self):
+        findings = [
+            {"severity": "major", "category": "bug", "file": "a.py", "line": 1,
+             "title": "t", "description": "d", "suggestion": ""},
+        ]
+        v = _verdict_with_extraction_usage(
+            model="moonshotai/kimi-k2.5", prompt_tokens=1000, completion_tokens=500
+        )
+        v["findings"] = findings
+        report = generate_quality_report([v], {"verdict": "WARN"}, [])
+        model_entry = list(report["models"].values())[0]
+        assert model_entry["cost_per_finding"] is not None
+        assert model_entry["cost_per_finding"] > 0
+
+
 # --- Tests for quality-report.py aggregate_reports ---
 
 def _sample_quality_report(cerberus_verdict="PASS", model="kimi", runtime=45, runtime_count=1):

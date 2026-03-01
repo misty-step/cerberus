@@ -2190,3 +2190,93 @@ def test_warns_count_mismatch_with_fallback_reviewers(tmp_path):
     assert code == 0
     assert "expected 3 reviewers" in err
     assert "fallback verdicts: SENTINEL" in err
+
+
+# --- _extraction_usage flows into quality report ---
+
+def test_extraction_usage_flows_into_quality_report(tmp_path):
+    """_extraction_usage in verdict file is used for cost calculation in quality report."""
+    verdicts_dir = tmp_path / "verdicts"
+    verdicts_dir.mkdir()
+    cerberus_tmp = tmp_path / "cerberus_tmp"
+    cerberus_tmp.mkdir()
+
+    verdict_data = {
+        "reviewer": "APOLLO",
+        "perspective": "correctness",
+        "verdict": "PASS",
+        "confidence": 0.9,
+        "summary": "ok",
+        "model_used": "moonshotai/kimi-k2.5",
+        "_extraction_usage": {"prompt_tokens": 2000, "completion_tokens": 800},
+    }
+    (verdicts_dir / "apollo.json").write_text(json.dumps(verdict_data))
+
+    code, _out, _err = run_aggregate(str(verdicts_dir), env_extra={"CERBERUS_TMP": str(cerberus_tmp)})
+    assert code == 0
+
+    quality_report_path = cerberus_tmp / "quality-report.json"
+    assert quality_report_path.exists()
+    qr = json.loads(quality_report_path.read_text())
+
+    reviewer = qr["reviewers"][0]
+    assert reviewer["prompt_tokens"] == 2000
+    assert reviewer["completion_tokens"] == 800
+    # kimi-k2.5: input=0.15/M, output=0.60/M
+    expected_cost = round((2000 / 1_000_000) * 0.15 + (800 / 1_000_000) * 0.60, 8)
+    assert reviewer["cost_usd"] == expected_cost
+    assert qr["summary"]["total_cost_usd"] == expected_cost
+
+
+def test_multi_wave_reviewer_costs_not_collapsed(tmp_path):
+    """Same reviewer name in multiple waves must not collapse cost attribution."""
+    verdicts_dir = tmp_path / "verdicts"
+    verdicts_dir.mkdir()
+    cerberus_tmp = tmp_path / "cerberus_tmp"
+    cerberus_tmp.mkdir()
+
+    # "trace" appears in wave1 AND wave3 — both have different costs.
+    wave1_trace = {
+        "reviewer": "trace", "perspective": "correctness", "verdict": "PASS",
+        "confidence": 0.9, "summary": "ok", "model_used": "google/gemini-3-flash-preview",
+        "model_wave": "wave1",
+        "_extraction_usage": {"prompt_tokens": 1000, "completion_tokens": 200},
+    }
+    wave3_trace = {
+        "reviewer": "trace", "perspective": "correctness", "verdict": "PASS",
+        "confidence": 0.85, "summary": "ok", "model_used": "openai/gpt-5.3-codex",
+        "model_wave": "wave3",
+        "_extraction_usage": {"prompt_tokens": 5000, "completion_tokens": 1000},
+    }
+    (verdicts_dir / "trace-wave1.json").write_text(json.dumps(wave1_trace))
+    (verdicts_dir / "trace-wave3.json").write_text(json.dumps(wave3_trace))
+
+    code, _out, _err = run_aggregate(str(verdicts_dir), env_extra={"CERBERUS_TMP": str(cerberus_tmp)})
+    assert code == 0
+
+    qr = json.loads((cerberus_tmp / "quality-report.json").read_text())
+
+    # wave1: gemini-flash (0.075/M in, 0.30/M out) × (1000 prompt, 200 completion)
+    wave1_cost = round((1000 / 1e6) * 0.075 + (200 / 1e6) * 0.30, 8)
+    # wave3: gpt-5.3-codex (3.00/M in, 15.00/M out) × (5000 prompt, 1000 completion)
+    wave3_cost = round((5000 / 1e6) * 3.00 + (1000 / 1e6) * 15.00, 8)
+
+    # Both waves should have distinct (non-zero, non-collapsed) costs.
+    assert qr["waves"]["wave1"]["total_cost_usd"] == pytest.approx(wave1_cost)
+    assert qr["waves"]["wave3"]["total_cost_usd"] == pytest.approx(wave3_cost)
+    assert qr["summary"]["total_cost_usd"] == pytest.approx(wave1_cost + wave3_cost)
+
+
+def test_normalize_model_slug_strips_openrouter_prefix():
+    """openrouter/ prefix is stripped before pricing lookup."""
+    # openrouter/moonshotai/kimi-k2.5 should resolve same price as moonshotai/kimi-k2.5.
+    cost_prefixed = aggregate_verdict.calculate_cost_usd(1_000_000, 1_000_000, "openrouter/moonshotai/kimi-k2.5")
+    cost_bare = aggregate_verdict.calculate_cost_usd(1_000_000, 1_000_000, "moonshotai/kimi-k2.5")
+    assert cost_prefixed == cost_bare
+
+
+def test_normalize_model_slug_unknown_model_uses_default():
+    """Unknown model falls back to DEFAULT_PRICING."""
+    cost = aggregate_verdict.calculate_cost_usd(1_000_000, 0, "unknown/model-xyz")
+    input_per_m, _ = aggregate_verdict.DEFAULT_PRICING
+    assert cost == pytest.approx(input_per_m)

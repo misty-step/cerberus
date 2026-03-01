@@ -41,11 +41,12 @@ def _minimal_verdict() -> dict:
     }
 
 
-def _mock_response(verdict: dict) -> MagicMock:
+def _mock_response(verdict: dict, usage: dict | None = None) -> MagicMock:
     """Build a mock urllib response wrapping a verdict JSON."""
-    body = json.dumps({
-        "choices": [{"message": {"content": json.dumps(verdict)}}]
-    }).encode("utf-8")
+    body_dict: dict = {"choices": [{"message": {"content": json.dumps(verdict)}}]}
+    if usage is not None:
+        body_dict["usage"] = usage
+    body = json.dumps(body_dict).encode("utf-8")
     mock = MagicMock()
     mock.__enter__ = lambda s: s
     mock.__exit__ = MagicMock(return_value=False)
@@ -103,6 +104,44 @@ class TestMain:
         parsed = json.loads(captured.out)
         assert parsed["verdict"] == "PASS"
         assert parsed["confidence"] == 0.9
+
+    def test_usage_included_in_output_when_present(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        f = tmp_path / "scratch.md"
+        f.write_text("## Review Notes\nThe code is correct.")
+        verdict = _minimal_verdict()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+
+        env = {**os.environ, "CERBERUS_OPENROUTER_API_KEY": "test-key"}
+        with patch.dict(os.environ, env):
+            with patch("urllib.request.urlopen", return_value=_mock_response(verdict, usage=usage)):
+                code = mod.main([str(f), "correctness"])
+
+        assert code == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert "_extraction_usage" in parsed
+        assert parsed["_extraction_usage"]["prompt_tokens"] == 100
+        assert parsed["_extraction_usage"]["completion_tokens"] == 50
+
+    def test_usage_not_included_when_empty(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        f = tmp_path / "scratch.md"
+        f.write_text("## Review Notes\nThe code is correct.")
+        verdict = _minimal_verdict()
+
+        env = {**os.environ, "CERBERUS_OPENROUTER_API_KEY": "test-key"}
+        with patch.dict(os.environ, env):
+            # No usage in response (default _mock_response behavior)
+            with patch("urllib.request.urlopen", return_value=_mock_response(verdict)):
+                code = mod.main([str(f), "correctness"])
+
+        assert code == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert "_extraction_usage" not in parsed
 
     def test_http_error_returns_1(self, tmp_path: Path) -> None:
         f = tmp_path / "scratch.md"
@@ -185,12 +224,33 @@ class TestExtractVerdictFunction:
         verdict = _minimal_verdict()
 
         with patch("urllib.request.urlopen", return_value=_mock_response(verdict)):
-            result = mod.extract_verdict(
+            result, usage = mod.extract_verdict(
                 "## Review\nAll good.", "correctness", "kimi-k2.5", "test-key"
             )
 
         assert result["verdict"] == "PASS"
         assert result["stats"]["files_reviewed"] == 3
+
+    def test_returns_usage_when_present(self) -> None:
+        verdict = _minimal_verdict()
+        usage = {"prompt_tokens": 200, "completion_tokens": 80}
+
+        with patch("urllib.request.urlopen", return_value=_mock_response(verdict, usage=usage)):
+            result, returned_usage = mod.extract_verdict(
+                "## Review\nAll good.", "correctness", "kimi-k2.5", "test-key"
+            )
+
+        assert returned_usage == {"prompt_tokens": 200, "completion_tokens": 80}
+
+    def test_returns_empty_usage_when_absent(self) -> None:
+        verdict = _minimal_verdict()
+
+        with patch("urllib.request.urlopen", return_value=_mock_response(verdict)):
+            result, returned_usage = mod.extract_verdict(
+                "## Review\nAll good.", "correctness", "kimi-k2.5", "test-key"
+            )
+
+        assert returned_usage == {}
 
     def test_http_error_raises(self) -> None:
         http_err = urllib.error.HTTPError(

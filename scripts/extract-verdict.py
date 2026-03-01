@@ -160,7 +160,8 @@ def extract_verdict(
 
     try:
         content_str = body["choices"][0]["message"]["content"]
-        return json.loads(content_str)
+        usage = body.get("usage", {})
+        return json.loads(content_str), usage
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"unexpected response shape: {exc}") from exc
 
@@ -198,10 +199,13 @@ def main(argv: list[str]) -> int:
         model = EXTRACTION_MODEL
 
     try:
-        verdict = extract_verdict(content, perspective, model, api_key)
+        verdict, usage = extract_verdict(content, perspective, model, api_key)
     except RuntimeError as exc:
         print(f"extract-verdict: {exc}", file=sys.stderr)
         return 1
+
+    if usage:
+        verdict["_extraction_usage"] = usage
 
     print(json.dumps(verdict, indent=2, sort_keys=False))
     return 0
