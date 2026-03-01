@@ -623,12 +623,18 @@ _RELEASE_CLAIM_PATTERNS = [
 
 
 def downgrade_stale_knowledge_findings(obj: dict) -> None:
-    """Downgrade stale knowledge findings."""
+    """Annotate findings that appear to assert stale training-data knowledge.
+
+    Findings are tagged with [stale-knowledge] and _stale_knowledge_downgraded
+    for transparency, but their severity is preserved — a potentially-hallucinated
+    version claim is still a finding that a human should see and judge.
+    Demoting to info was burying real issues when the model happened to mention
+    a version number alongside a legitimate finding.
+    """
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
         return
 
-    downgraded = 0
     for finding in findings:
         if not isinstance(finding, dict):
             continue
@@ -657,30 +663,18 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
         has_invalid_version_claim = "invalid version" in text
         is_version_conflict = _is_version_category(category)
 
-        should_downgrade = (
+        should_flag = (
             has_does_not_exist_claim
             or has_release_claim
             or (has_invalid_version_claim and not is_version_conflict)
         )
-        if not should_downgrade:
+        if not should_flag:
             continue
 
-        finding["severity"] = "info"
         finding["_stale_knowledge_downgraded"] = True
         title = str(finding.get("title", ""))
         if not title.startswith("[stale-knowledge] "):
             finding["title"] = f"[stale-knowledge] {title}"
-        downgraded += 1
-
-    # Recompute stats to stay consistent with modified severities
-    if downgraded > 0:
-        stats = obj.get("stats")
-        if isinstance(stats, dict):
-            for sev in ("critical", "major", "minor", "info"):
-                stats[sev] = sum(
-                    1 for f in findings
-                    if isinstance(f, dict) and f.get("severity") == sev
-                )
 
 
 def _unwrap_fenced_code_block(text: str) -> str:
