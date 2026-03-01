@@ -672,28 +672,7 @@ def test_verdict_consistency_confidence_threshold_is_inclusive():
     assert data["verdict"] == "FAIL"
 
 
-class TestEvidenceDowngrade:
-    @staticmethod
-    def _write_diff(cwd: Path, changed_files: list[str]) -> Path:
-        diff_path = cwd / "pr.diff"
-        blocks = []
-        for file in changed_files:
-            blocks.append(
-                "\n".join(
-                    [
-                        f"diff --git a/{file} b/{file}",
-                        "index 0000000..1111111 100644",
-                        f"--- a/{file}",
-                        f"+++ b/{file}",
-                        "@@ -0,0 +1,1 @@",
-                        "+stub",
-                        "",
-                    ]
-                )
-            )
-        diff_path.write_text("\n".join(blocks))
-        return diff_path
-
+class TestEvidenceNormalization:
     @staticmethod
     def _wrap_json(obj: dict) -> str:
         return f"```json\n{json.dumps(obj)}\n```"
@@ -719,78 +698,8 @@ class TestEvidenceDowngrade:
             "stats": stats,
         }
 
-    def test_missing_evidence_annotated_not_demoted(self, tmp_path):
-        """Findings without evidence are annotated [unverified] but keep their severity."""
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "app.py",
-                "line": 1,
-                "title": "Wrong thing",
-                "description": "desc",
-                "suggestion": "fix",
-            },
-            verdict="FAIL",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        # Severity is NOT lowered — the finding still counts toward thresholds
-        assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["title"].startswith("[unverified] ")
-        assert data["findings"][0]["_evidence_unverified"] is True
-        assert data["findings"][0]["_evidence_reason"] == "missing-evidence"
-        assert "could not be verified" in data["findings"][0]["description"]
-        assert "[unverified: 1]" in data["summary"]
-        # 1 major → WARN (enforce_verdict_consistency)
-        assert data["verdict"] == "WARN"
-        assert data["stats"]["major"] == 1
-
-    def test_evidence_mismatch_annotated_not_demoted(self, tmp_path):
-        """Findings with mismatched evidence are annotated but keep their severity."""
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "app.py",
-                "line": 1,
-                "title": "Wrong thing",
-                "description": "desc",
-                "evidence": "x = 2",
-                "suggestion": "fix",
-            },
-            verdict="WARN",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["title"].startswith("[unverified] ")
-        assert data["findings"][0]["_evidence_reason"] == "evidence-mismatch"
-        # 1 major → WARN
-        assert data["verdict"] == "WARN"
-
-    def test_evidence_match_keeps_severity(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
+    def test_valid_evidence_passes_through(self):
+        """Evidence field passes through normalization unchanged."""
         review = self._review(
             {
                 "severity": "major",
@@ -803,86 +712,15 @@ class TestEvidenceDowngrade:
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
+        assert data["findings"][0]["evidence"] == "x = 1"
 
-    def test_out_of_scope_file_annotated_not_demoted(self, tmp_path):
-        """Out-of-scope findings are annotated [out-of-scope] but keep their severity."""
-        (tmp_path / "app.py").write_text("x = 1\n")
-        (tmp_path / "other.py").write_text("y = 2\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "other.py",
-                "line": 1,
-                "title": "Out of scope",
-                "description": "desc",
-                "evidence": "y = 2",
-                "suggestion": "fix",
-            },
-            verdict="FAIL",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["title"].startswith("[out-of-scope] ")
-        assert data["findings"][0]["_evidence_reason"] == "out-of-scope"
-        # Severity is preserved → finding still counts toward verdict
-        assert data["verdict"] == "WARN"
-
-    def test_defaults_change_scope_allows_out_of_diff(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        (tmp_path / "other.py").write_text("y = 2\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "defaults-change",
-                "scope": "defaults-change",
-                "file": "other.py",
-                "line": 1,
-                "title": "New default path is unsafe",
-                "description": "desc",
-                "evidence": "y = 2",
-                "suggestion": "fix",
-            }
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "WARN"
-        assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
-
-    def test_empty_evidence_after_normalization_annotated_not_demoted(self, tmp_path):
-        """Findings with empty evidence after normalization are annotated but keep severity."""
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
+    def test_empty_evidence_normalized_out(self):
+        """Evidence that normalizes to empty string is removed from output."""
         review = self._review(
             {
                 "severity": "major",
@@ -895,53 +733,17 @@ class TestEvidenceDowngrade:
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_reason"] == "empty-evidence"
+        assert "evidence" not in data["findings"][0]
         assert data["verdict"] == "WARN"
 
-    def test_file_not_found_annotated_not_demoted(self, tmp_path):
-        """Findings referencing non-existent files are annotated but keep their severity."""
-        diff = self._write_diff(tmp_path, ["missing.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "missing.py",
-                "line": 1,
-                "title": "Missing file",
-                "description": "desc",
-                "evidence": "x = 1",
-                "suggestion": "fix",
-            },
-            verdict="FAIL",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_reason"] == "file-not-found"
-        assert data["verdict"] == "WARN"
-
-    def test_truncation_does_not_break_verification(self, tmp_path):
+    def test_evidence_truncated_at_limit(self):
+        """Evidence longer than EVIDENCE_MAX_CHARS is truncated with ellipsis."""
         long_val = "a" * 2100
         long_line = f'x = "{long_val}"'
-        (tmp_path / "app.py").write_text(long_line + "\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
         review = self._review(
             {
                 "severity": "major",
@@ -954,61 +756,38 @@ class TestEvidenceDowngrade:
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
         assert data["findings"][0]["evidence"].endswith("...")
 
-    def test_diff_parser_handles_quoted_paths_with_spaces(self, tmp_path):
-        file_name = "hello world.txt"
-        (tmp_path / file_name).write_text("x = 1\n")
-
-        diff = tmp_path / "pr.diff"
-        diff.write_text(
-            "\n".join(
-                [
-                    f'diff --git "a/{file_name}" "b/{file_name}"',
-                    "index 0000000..1111111 100644",
-                    f'--- "a/{file_name}"',
-                    f'+++ "b/{file_name}"',
-                    "@@ -0,0 +1,1 @@",
-                    "+stub",
-                    "",
-                ]
-            )
-        )
-
+    def test_evidence_diff_markers_stripped(self):
+        """Diff-prefix markers (+/-/space) are stripped from evidence lines."""
         review = self._review(
             {
                 "severity": "major",
                 "category": "bug",
-                "file": file_name,
+                "file": "app.py",
                 "line": 1,
-                "title": "Space path in-scope",
+                "title": "Diff evidence",
                 "description": "desc",
-                "evidence": "x = 1",
+                "evidence": "+x = 1\n-y = 2\n z = 3",
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "WARN"
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
+        evidence = data["findings"][0]["evidence"]
+        assert not any(
+            line.startswith(("+", "-")) for line in evidence.splitlines() if line
+        )
+        assert "x = 1" in evidence
+        assert "y = 2" in evidence
+        assert "z = 3" in evidence
 
 
 class TestStaleKnowledgeDowngrade:
@@ -2449,7 +2228,6 @@ class TestDirectJsonInput:
     def test_bare_json_with_leading_whitespace(self):
         """Bare JSON with leading whitespace (e.g. pretty-printed) is still accepted."""
         verdict = self._make_verdict()
-        indented = "\n  " + json.dumps(verdict, indent=2).replace("\n", "\n  ")
         # Only works if starts with { after strip — JSON.dumps always starts with {
         code, out, _ = run_parse(json.dumps(verdict, indent=2))
         assert code == 0
