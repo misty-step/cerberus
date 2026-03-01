@@ -43,7 +43,7 @@ Findings must be attributable to THIS PR's changes, not the codebase's history.
 - Every finding MUST include an `evidence` field containing an exact code quote (1-6 lines) from the repository at the cited `file:line`.
 - Evidence must be copied verbatim from the current code. No paraphrase, no “approximate” snippets.
 - Do not include diff markers (`+`/`-`). Quote code as it appears in the file.
-- If you cannot provide exact evidence, omit the finding. Do NOT lower severity to `info` as a workaround — the pipeline annotates unverifiable findings itself.
+- If you cannot provide exact evidence, omit the finding. Do NOT lower severity to `info` as a workaround — omitting is the correct response to uncertain evidence.
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: \"defaults-change\"` on that finding.
 
 ## Suggestion Validation

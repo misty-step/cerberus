@@ -790,7 +790,7 @@ class TestEvidenceNormalization:
         assert "z = 3" in evidence
 
 
-class TestStaleKnowledgeDowngrade:
+class TestStaleKnowledgeAnnotation:
     def test_annotates_version_does_not_exist(self):
         """Finding claiming a version 'does not exist' is tagged [stale-knowledge] but keeps severity."""
         review = json.dumps({
@@ -908,8 +908,8 @@ class TestStaleKnowledgeDowngrade:
         assert data["findings"][0]["severity"] == "critical"
         assert data["verdict"] == "FAIL"
 
-    def test_downgrade_marker_is_set(self):
-        """Downgraded findings have _stale_knowledge_downgraded flag."""
+    def test_annotation_marker_is_set(self):
+        """Annotated findings have _stale_knowledge_annotated flag."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Bad version",
@@ -928,7 +928,7 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+        assert data["findings"][0].get("_stale_knowledge_annotated") is True
 
     def test_stats_unchanged_after_annotation(self):
         """Stats reflect original severity — annotation does not change the severity counts."""
@@ -1060,7 +1060,7 @@ class TestStaleKnowledgeDowngrade:
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+        assert data["findings"][0].get("_stale_knowledge_annotated") is True
 
     def test_normalized_category_variants_all_protect(self):
         """All separator variants of version-conflict category protect findings."""

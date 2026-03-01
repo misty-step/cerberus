@@ -622,10 +622,10 @@ _RELEASE_CLAIM_PATTERNS = [
 ]
 
 
-def downgrade_stale_knowledge_findings(obj: dict) -> None:
+def annotate_stale_knowledge_findings(obj: dict) -> None:
     """Annotate findings that appear to assert stale training-data knowledge.
 
-    Findings are tagged with [stale-knowledge] and _stale_knowledge_downgraded
+    Findings are tagged with [stale-knowledge] and _stale_knowledge_annotated
     for transparency, but their severity is preserved — a potentially-hallucinated
     version claim is still a finding that a human should see and judge.
     Demoting to info was burying real issues when the model happened to mention
@@ -671,7 +671,7 @@ def downgrade_stale_knowledge_findings(obj: dict) -> None:
         if not should_flag:
             continue
 
-        finding["_stale_knowledge_downgraded"] = True
+        finding["_stale_knowledge_annotated"] = True
         title = str(finding.get("title", ""))
         if not title.startswith("[stale-knowledge] "):
             finding["title"] = f"[stale-knowledge] {title}"
@@ -721,7 +721,10 @@ def normalize_evidence_fields(obj: dict) -> None:
         if not isinstance(finding, dict):
             continue
         evidence_raw = finding.get("evidence")
-        if not isinstance(evidence_raw, str) or not evidence_raw.strip():
+        if not isinstance(evidence_raw, str):
+            continue
+        if not evidence_raw.strip():
+            finding.pop("evidence", None)
             continue
         evidence = _normalize_evidence(evidence_raw)
         if evidence:
@@ -874,7 +877,7 @@ def main() -> None:
         validate(obj)
         validate_and_correct_stats(obj)
         normalize_evidence_fields(obj)
-        downgrade_stale_knowledge_findings(obj)
+        annotate_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:
         fail(f"unexpected error: {exc}")
