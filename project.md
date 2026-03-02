@@ -58,7 +58,9 @@ if exit_code == 124:  # timeout
 elif exit_code == 0:
     error_class = "success"
 else:
-    error_class = "unknown"  # bug: unknown doesn't retry enough — see #293
+    # fix: unknown error types now retry at least once (2 attempts total)
+    # also classified "Request was aborted" as transient network error
+    error_class = "unknown"
 ```
 
 ### Verdict comment idempotency pattern (post-comment.sh)
