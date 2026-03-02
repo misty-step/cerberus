@@ -1,0 +1,341 @@
+{
+  "version": 1,
+  "cwd": "/Users/phaedrus/Development/cerberus-mono/cerberus",
+  "updatedAt": "2026-03-02T15:46:32.073Z",
+  "sessionStartedAt": "2026-03-02T15:25:15.803Z",
+  "activeRun": true,
+  "gitBranch": "master",
+  "lastUserInput": "/ship-branch",
+  "pendingTools": [],
+  "recentTools": [
+    {
+      "id": "bash_1772466390955_94",
+      "tool": "bash",
+      "summary": "git show 9e97f9d --name-only",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:46:31.658Z",
+      "finishedAt": "2026-03-02T15:46:31.672Z"
+    },
+    {
+      "id": "bash_1772466385344_93",
+      "tool": "bash",
+      "summary": "git status -sb -uall",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:46:26.146Z",
+      "finishedAt": "2026-03-02T15:46:26.188Z"
+    },
+    {
+      "id": "bash_1772466379884_92",
+      "tool": "bash",
+      "summary": "git status --short --branch --all",
+      "status": "error",
+      "startedAt": "2026-03-02T15:46:20.861Z",
+      "finishedAt": "2026-03-02T15:46:20.876Z"
+    },
+    {
+      "id": "bash_1772466377083_91",
+      "tool": "bash",
+      "summary": "git commit -m \"docs: update AGENTS.md with Cerberus persona (Sentinel of the Gate)\" AGENTS.md",
+      "status": "error",
+      "startedAt": "2026-03-02T15:46:17.729Z",
+      "finishedAt": "2026-03-02T15:46:17.885Z"
+    },
+    {
+      "id": "bash_1772466374432_90",
+      "tool": "bash",
+      "summary": "git commit -m \"fix(evals): extract transform logic to transform.js to fix CI syntax error This fixes the 'Unexpected token try' error in the smoke-eval workflow by moving the comp…",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:46:15.014Z",
+      "finishedAt": "2026-03-02T15:46:15.329Z"
+    },
+    {
+      "id": "bash_1772466369918_89",
+      "tool": "bash",
+      "summary": "git log -n 5 --oneline --decorate --all",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:46:10.567Z",
+      "finishedAt": "2026-03-02T15:46:10.641Z"
+    },
+    {
+      "id": "bash_1772466366915_88",
+      "tool": "bash",
+      "summary": "git add evals/transform.js evals/promptfooconfig.yaml git add AGENTS.md git add project.md git status --short --branch",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:46:07.843Z",
+      "finishedAt": "2026-03-02T15:46:07.900Z"
+    },
+    {
+      "id": "bash_1772466361773_87",
+      "tool": "bash",
+      "summary": "cd ../cerberus-cloud && git status --short --branch && cd ../cerberus",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:46:02.454Z",
+      "finishedAt": "2026-03-02T15:46:02.829Z"
+    },
+    {
+      "id": "bash_1772466353467_86",
+      "tool": "bash",
+      "summary": "ls -a ..",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:45:54.208Z",
+      "finishedAt": "2026-03-02T15:45:54.216Z"
+    },
+    {
+      "id": "bash_1772466348647_85",
+      "tool": "bash",
+      "summary": "find .. -name \".git\" -maxdepth 2",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:45:48.956Z",
+      "finishedAt": "2026-03-02T15:45:48.972Z"
+    },
+    {
+      "id": "bash_1772466344027_84",
+      "tool": "bash",
+      "summary": "ls -F .. && ls -a ../cerberus-cloud/ | grep .git && ls -a ../cerberus-web/ | grep .git",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:45:44.570Z",
+      "finishedAt": "2026-03-02T15:45:44.586Z"
+    },
+    {
+      "id": "bash_1772466340560_83",
+      "tool": "bash",
+      "summary": "ls -a .. | grep .git",
+      "status": "error",
+      "startedAt": "2026-03-02T15:45:41.122Z",
+      "finishedAt": "2026-03-02T15:45:41.135Z"
+    },
+    {
+      "id": "bash_1772466337815_82",
+      "tool": "bash",
+      "summary": "cd .. && git status --short --branch && cd cerberus",
+      "status": "error",
+      "startedAt": "2026-03-02T15:45:38.367Z",
+      "finishedAt": "2026-03-02T15:45:38.384Z"
+    },
+    {
+      "id": "bash_1772466334424_81",
+      "tool": "bash",
+      "summary": "git status --short --branch",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:45:34.785Z",
+      "finishedAt": "2026-03-02T15:45:34.800Z"
+    },
+    {
+      "id": "bash_1772466259174_80",
+      "tool": "bash",
+      "summary": "node --check evals/transform.js",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:44:20.222Z",
+      "finishedAt": "2026-03-02T15:44:20.256Z"
+    },
+    {
+      "id": "read_1772466253512_79",
+      "tool": "read",
+      "summary": ".github/workflows/ci.yml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:44:14.102Z",
+      "finishedAt": "2026-03-02T15:44:14.107Z"
+    },
+    {
+      "id": "edit_1772466248951_78",
+      "tool": "edit",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:44:09.686Z",
+      "finishedAt": "2026-03-02T15:44:09.695Z"
+    },
+    {
+      "id": "edit_1772466243799_77",
+      "tool": "edit",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:44:04.427Z",
+      "finishedAt": "2026-03-02T15:44:04.445Z"
+    },
+    {
+      "id": "web_search_1772466237320_76",
+      "tool": "web_search",
+      "summary": "{\"query\":\"promptfoo transform file path example module exports\"}",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:58.102Z",
+      "finishedAt": "2026-03-02T15:43:58.918Z"
+    },
+    {
+      "id": "web_search_1772466230474_75",
+      "tool": "web_search",
+      "summary": "{\"query\":\"promptfoo transform file path syntax yaml\"}",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:51.422Z",
+      "finishedAt": "2026-03-02T15:43:52.485Z"
+    },
+    {
+      "id": "read_1772466223785_74",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:44.224Z",
+      "finishedAt": "2026-03-02T15:43:44.227Z"
+    },
+    {
+      "id": "write_1772466219715_73",
+      "tool": "write",
+      "summary": "evals/transform.js",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:40.616Z",
+      "finishedAt": "2026-03-02T15:43:40.624Z"
+    },
+    {
+      "id": "read_1772466204118_72",
+      "tool": "read",
+      "summary": ".github/workflows/smoke-eval.yml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:24.670Z",
+      "finishedAt": "2026-03-02T15:43:24.676Z"
+    },
+    {
+      "id": "read_1772466201833_71",
+      "tool": "read",
+      "summary": "evals/README.md",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:22.264Z",
+      "finishedAt": "2026-03-02T15:43:22.269Z"
+    },
+    {
+      "id": "read_1772466196850_70",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:17.459Z",
+      "finishedAt": "2026-03-02T15:43:17.464Z"
+    },
+    {
+      "id": "edit_1772466194051_69",
+      "tool": "edit",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:14.898Z",
+      "finishedAt": "2026-03-02T15:43:14.917Z"
+    },
+    {
+      "id": "read_1772466185309_68",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:43:05.960Z",
+      "finishedAt": "2026-03-02T15:43:05.966Z"
+    },
+    {
+      "id": "bash_1772466164562_67",
+      "tool": "bash",
+      "summary": "ls -F evals/",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:42:45.489Z",
+      "finishedAt": "2026-03-02T15:42:45.503Z"
+    },
+    {
+      "id": "web_search_1772466148142_66",
+      "tool": "web_search",
+      "summary": "{\"query\":\"promptfoo transform function string syntax example\"}",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:42:28.760Z",
+      "finishedAt": "2026-03-02T15:42:29.520Z"
+    },
+    {
+      "id": "web_search_1772466144451_65",
+      "tool": "web_search",
+      "summary": "{\"query\":\"promptfoo transform syntax inline function body or expression\"}",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:42:25.315Z",
+      "finishedAt": "2026-03-02T15:42:26.374Z"
+    },
+    {
+      "id": "read_1772466139623_64",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:42:20.050Z",
+      "finishedAt": "2026-03-02T15:42:20.055Z"
+    },
+    {
+      "id": "bash_1772466132251_63",
+      "tool": "bash",
+      "summary": "grep -n \"transform\" evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:42:13.019Z",
+      "finishedAt": "2026-03-02T15:42:13.024Z"
+    },
+    {
+      "id": "bash_1772466125716_62",
+      "tool": "bash",
+      "summary": "grep -n \"try\" evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:42:06.723Z",
+      "finishedAt": "2026-03-02T15:42:06.737Z"
+    },
+    {
+      "id": "bash_1772466116326_61",
+      "tool": "bash",
+      "summary": "promptfoo --version",
+      "status": "error",
+      "startedAt": "2026-03-02T15:41:57.075Z",
+      "finishedAt": "2026-03-02T15:41:57.080Z"
+    },
+    {
+      "id": "read_1772466111011_60",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:41:51.726Z",
+      "finishedAt": "2026-03-02T15:41:51.730Z"
+    },
+    {
+      "id": "read_1772466105619_59",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:41:46.167Z",
+      "finishedAt": "2026-03-02T15:41:46.171Z"
+    },
+    {
+      "id": "read_1772466102495_58",
+      "tool": "read",
+      "summary": "evals/promptfooconfig.yaml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:41:42.697Z",
+      "finishedAt": "2026-03-02T15:41:42.702Z"
+    },
+    {
+      "id": "read_1772466098374_57",
+      "tool": "read",
+      "summary": "CI-FAILURE-SUMMARY.md",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:41:38.381Z",
+      "finishedAt": "2026-03-02T15:41:38.385Z"
+    },
+    {
+      "id": "bash_1772466096886_56",
+      "tool": "bash",
+      "summary": "ls -F CI-FAILURE-SUMMARY.md .github/workflows/*.yml",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:41:36.893Z",
+      "finishedAt": "2026-03-02T15:41:36.906Z"
+    },
+    {
+      "id": "bash_1772465841670_55",
+      "tool": "bash",
+      "summary": "git add project.md git commit -m \"docs: update project.md to reflect fix for issue #293\" git push",
+      "status": "ok",
+      "startedAt": "2026-03-02T15:37:22.099Z",
+      "finishedAt": "2026-03-02T15:37:23.393Z"
+    }
+  ],
+  "notes": [
+    "2026-03-02T15:45:26.673Z input: /ship-branch",
+    "2026-03-02T15:41:33.654Z input: /fix-ci",
+    "2026-03-02T15:35:32.742Z input: Please modify the autopilot prompt template so that we skip this go‑no‑go checkpoint. The autopilot prompt template should spur you to do the entire thing—from selecting the highest‑priority item, executing it, r…",
+    "2026-03-02T15:31:04.666Z input: /autopilot",
+    "2026-03-02T15:29:22.953Z input: No one's Pluto?",
+    "2026-03-02T15:25:57.959Z input: is your persona defined in agents.md, as it should be? (check our scry and chrondle projects and our updated bootstrap workflow in pi-agent-config)",
+    "2026-03-02T15:25:19.475Z input: who are you"
+  ]
+}
