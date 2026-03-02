@@ -584,3 +584,122 @@ def test_empty_output_on_exit_zero_triggers_retry(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert retry_counter.read_text() == "2"
     assert "pi exited 0 but produced no output" in result.stdout
+
+
+def test_unknown_error_retries_once(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{retry_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{retry_counter}'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  exit 1\n"  # exit 1 without specific error message -> class=unknown
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+              '"confidence":0.95,"summary":"Second attempt succeeded",'
+              '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+              '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert retry_counter.read_text() == "2"
+    assert "Retrying unknown error type" in result.stdout
+
+
+def test_request_was_aborted_is_transient(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{retry_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{retry_counter}'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  echo 'Request was aborted' >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+              '"confidence":0.95,"summary":"Second attempt succeeded",'
+              '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+              '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert retry_counter.read_text() == "2"
+    assert "Retrying after transient error (class=network)" in result.stdout
+
+
+def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        "#!/usr/bin/env bash\n"
+        f"count=$(cat '{retry_counter}')\n"
+        "count=$((count + 1))\n"
+        f"printf '%s' \"$count\" > '{retry_counter}'\n"
+        "exit 1\n",
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    # Logic for unknown: attempt 1 (retry_count=0), then if retry_count < 1, retry once.
+    # So attempt 2 (retry_count=1). Then retry_count is not < 1, so it breaks.
+    assert retry_counter.read_text() == "2"
+    assert "Retrying unknown error type" in result.stdout
+    assert "Unknown error type (exit=1). Trying next model if available..." in result.stdout
+    # Verify that it wrote the error verdict (SKIP)
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
+    parse_file = Path(parse_input_ref.read_text().strip())
+    assert "API Error: UNKNOWN_ERROR" in parse_file.read_text()
