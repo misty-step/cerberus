@@ -672,28 +672,7 @@ def test_verdict_consistency_confidence_threshold_is_inclusive():
     assert data["verdict"] == "FAIL"
 
 
-class TestEvidenceDowngrade:
-    @staticmethod
-    def _write_diff(cwd: Path, changed_files: list[str]) -> Path:
-        diff_path = cwd / "pr.diff"
-        blocks = []
-        for file in changed_files:
-            blocks.append(
-                "\n".join(
-                    [
-                        f"diff --git a/{file} b/{file}",
-                        "index 0000000..1111111 100644",
-                        f"--- a/{file}",
-                        f"+++ b/{file}",
-                        "@@ -0,0 +1,1 @@",
-                        "+stub",
-                        "",
-                    ]
-                )
-            )
-        diff_path.write_text("\n".join(blocks))
-        return diff_path
-
+class TestEvidenceNormalization:
     @staticmethod
     def _wrap_json(obj: dict) -> str:
         return f"```json\n{json.dumps(obj)}\n```"
@@ -719,71 +698,8 @@ class TestEvidenceDowngrade:
             "stats": stats,
         }
 
-    def test_missing_evidence_downgrades_to_info(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "app.py",
-                "line": 1,
-                "title": "Wrong thing",
-                "description": "desc",
-                "suggestion": "fix",
-            },
-            verdict="FAIL",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["stats"]["major"] == 0
-        assert data["stats"]["info"] == 1
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["title"].startswith("[unverified] ")
-        assert "[unverified->info: 1]" in data["summary"]
-
-    def test_evidence_mismatch_downgrades_to_info(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "app.py",
-                "line": 1,
-                "title": "Wrong thing",
-                "description": "desc",
-                "evidence": "x = 2",
-                "suggestion": "fix",
-            },
-            verdict="WARN",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["title"].startswith("[unverified] ")
-        assert data["findings"][0]["_evidence_reason"] == "evidence-mismatch"
-
-    def test_evidence_match_keeps_severity(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
+    def test_valid_evidence_passes_through(self):
+        """Evidence field passes through normalization unchanged."""
         review = self._review(
             {
                 "severity": "major",
@@ -796,83 +712,15 @@ class TestEvidenceDowngrade:
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
+        assert data["findings"][0]["evidence"] == "x = 1"
 
-    def test_out_of_scope_file_downgrades(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        (tmp_path / "other.py").write_text("y = 2\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "other.py",
-                "line": 1,
-                "title": "Out of scope",
-                "description": "desc",
-                "evidence": "y = 2",
-                "suggestion": "fix",
-            },
-            verdict="FAIL",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["title"].startswith("[out-of-scope] ")
-        assert data["findings"][0]["_evidence_reason"] == "out-of-scope"
-
-    def test_defaults_change_scope_allows_out_of_diff(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        (tmp_path / "other.py").write_text("y = 2\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "defaults-change",
-                "scope": "defaults-change",
-                "file": "other.py",
-                "line": 1,
-                "title": "New default path is unsafe",
-                "description": "desc",
-                "evidence": "y = 2",
-                "suggestion": "fix",
-            }
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "WARN"
-        assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
-
-    def test_empty_evidence_after_normalization_downgrades(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
+    def test_empty_evidence_normalized_out(self):
+        """Evidence that normalizes to empty string is removed from output."""
         review = self._review(
             {
                 "severity": "major",
@@ -885,52 +733,17 @@ class TestEvidenceDowngrade:
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["_evidence_reason"] == "empty-evidence"
+        assert data["findings"][0]["severity"] == "major"
+        assert "evidence" not in data["findings"][0]
+        assert data["verdict"] == "WARN"
 
-    def test_file_not_found_downgrades(self, tmp_path):
-        diff = self._write_diff(tmp_path, ["missing.py"])
-
-        review = self._review(
-            {
-                "severity": "major",
-                "category": "bug",
-                "file": "missing.py",
-                "line": 1,
-                "title": "Missing file",
-                "description": "desc",
-                "evidence": "x = 1",
-                "suggestion": "fix",
-            },
-            verdict="FAIL",
-        )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "PASS"
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["_evidence_reason"] == "file-not-found"
-
-    def test_truncation_does_not_break_verification(self, tmp_path):
+    def test_evidence_truncated_at_limit(self):
+        """Evidence longer than EVIDENCE_MAX_CHARS is truncated with ellipsis."""
         long_val = "a" * 2100
         long_line = f'x = "{long_val}"'
-        (tmp_path / "app.py").write_text(long_line + "\n")
-        diff = self._write_diff(tmp_path, ["app.py"])
-
         review = self._review(
             {
                 "severity": "major",
@@ -943,66 +756,84 @@ class TestEvidenceDowngrade:
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
         assert data["findings"][0]["evidence"].endswith("...")
 
-    def test_diff_parser_handles_quoted_paths_with_spaces(self, tmp_path):
-        file_name = "hello world.txt"
-        (tmp_path / file_name).write_text("x = 1\n")
-
-        diff = tmp_path / "pr.diff"
-        diff.write_text(
-            "\n".join(
-                [
-                    f'diff --git "a/{file_name}" "b/{file_name}"',
-                    "index 0000000..1111111 100644",
-                    f'--- "a/{file_name}"',
-                    f'+++ "b/{file_name}"',
-                    "@@ -0,0 +1,1 @@",
-                    "+stub",
-                    "",
-                ]
-            )
-        )
-
+    def test_evidence_diff_markers_stripped(self):
+        """Diff-prefix markers (+/-/space) are stripped from evidence lines."""
         review = self._review(
             {
                 "severity": "major",
                 "category": "bug",
-                "file": file_name,
+                "file": "app.py",
                 "line": 1,
-                "title": "Space path in-scope",
+                "title": "Diff evidence",
                 "description": "desc",
-                "evidence": "x = 1",
+                "evidence": "+x = 1\n-y = 2\n z = 3",
                 "suggestion": "fix",
             }
         )
-
-        code, out, _ = run_parse_in_cwd(
-            self._wrap_json(review),
-            cwd=tmp_path,
-            env_extra={"GH_DIFF_FILE": str(diff)},
-        )
+        code, out, _ = run_parse(self._wrap_json(review))
         assert code == 0
         data = json.loads(out)
-        assert data["verdict"] == "WARN"
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0]["_evidence_verified"] is True
+        evidence = data["findings"][0]["evidence"]
+        assert not any(
+            line.startswith(("+", "-")) for line in evidence.splitlines() if line
+        )
+        assert "x = 1" in evidence
+        assert "y = 2" in evidence
+        assert "z = 3" in evidence
+
+    def test_non_string_evidence_ignored(self):
+        """Non-string evidence (int, null) is left unchanged — not crashed on."""
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Numeric evidence",
+                "description": "desc",
+                "evidence": 42,
+                "suggestion": "fix",
+            }
+        )
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["evidence"] == 42
+
+    def test_fenced_code_block_unwrapped(self):
+        """Fenced code blocks in evidence are unwrapped to bare content."""
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Fenced evidence",
+                "description": "desc",
+                "evidence": "```python\nx = 1\ny = 2\n```",
+                "suggestion": "fix",
+            }
+        )
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        evidence = data["findings"][0]["evidence"]
+        assert "```" not in evidence
+        assert "x = 1" in evidence
+        assert "y = 2" in evidence
 
 
-class TestStaleKnowledgeDowngrade:
-    def test_downgrades_version_does_not_exist(self):
-        """Finding claiming a version 'does not exist' is downgraded to info."""
+class TestStaleKnowledgeAnnotation:
+    def test_annotates_version_does_not_exist(self):
+        """Finding claiming a version 'does not exist' is tagged [stale-knowledge] but keeps severity."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Non-existent Go version",
@@ -1021,12 +852,12 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["severity"] == "critical"
         assert "[stale-knowledge]" in data["findings"][0]["title"]
-        assert data["verdict"] == "PASS"
+        assert data["verdict"] == "FAIL"
 
-    def test_downgrades_not_yet_released(self):
-        """Finding claiming something is 'not yet released' is downgraded."""
+    def test_annotates_not_yet_released(self):
+        """Finding claiming something is 'not yet released' is tagged but keeps severity."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Unreleased Python version",
@@ -1045,11 +876,12 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "critical"
+        assert "[stale-knowledge]" in data["findings"][0]["title"]
+        assert data["verdict"] == "FAIL"
 
-    def test_downgrades_latest_stable_is(self):
-        """Finding asserting 'latest stable is X' is downgraded."""
+    def test_annotates_has_not_been_released(self):
+        """Finding with 'has not been released' pattern is tagged [stale-knowledge] but keeps severity."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Invalid Node version",
@@ -1068,8 +900,9 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "critical"
+        assert "[stale-knowledge]" in data["findings"][0]["title"]
+        assert data["verdict"] == "FAIL"
 
     def test_preserves_real_version_conflict_with_invalid_version_text(self):
         """'invalid version' + version-conflict category is NOT downgraded."""
@@ -1118,8 +951,8 @@ class TestStaleKnowledgeDowngrade:
         assert data["findings"][0]["severity"] == "critical"
         assert data["verdict"] == "FAIL"
 
-    def test_downgrade_marker_is_set(self):
-        """Downgraded findings have _stale_knowledge_downgraded flag."""
+    def test_annotation_marker_is_set(self):
+        """Annotated findings have _stale_knowledge_annotated flag."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Bad version",
@@ -1138,10 +971,10 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+        assert data["findings"][0].get("_stale_knowledge_annotated") is True
 
-    def test_stats_recomputed_after_downgrade(self):
-        """Stats object is updated to reflect downgraded severities."""
+    def test_stats_unchanged_after_annotation(self):
+        """Stats reflect original severity — annotation does not change the severity counts."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Bad version",
@@ -1160,11 +993,11 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["stats"]["critical"] == 0
-        assert data["stats"]["info"] == 1
+        assert data["stats"]["critical"] == 1
+        assert data["stats"]["info"] == 0
 
     def test_mixed_stale_and_real_findings(self):
-        """Only stale finding is downgraded; real finding keeps verdict at FAIL."""
+        """Stale finding is annotated but keeps severity; both count toward verdict."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Mixed findings",
@@ -1194,10 +1027,11 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
+        assert data["findings"][0]["severity"] == "critical"
+        assert "[stale-knowledge]" in data["findings"][0]["title"]
         assert data["findings"][1]["severity"] == "critical"
-        assert data["stats"]["critical"] == 1
-        assert data["stats"]["info"] == 1
+        assert data["stats"]["critical"] == 2
+        assert data["stats"]["info"] == 0
         assert data["verdict"] == "FAIL"
 
     def test_short_context_term_requires_version_number(self):
@@ -1248,8 +1082,8 @@ class TestStaleKnowledgeDowngrade:
         assert data["findings"][0]["severity"] == "critical"
         assert data["verdict"] == "FAIL"
 
-    def test_invalid_version_without_conflict_category_is_downgraded(self):
-        """'invalid version' in text without version-conflict category IS downgraded."""
+    def test_invalid_version_without_conflict_category_is_annotated(self):
+        """'invalid version' without version-conflict category is annotated but keeps severity."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Invalid version claimed",
@@ -1268,8 +1102,8 @@ class TestStaleKnowledgeDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0].get("_stale_knowledge_downgraded") is True
+        assert data["findings"][0]["severity"] == "major"
+        assert data["findings"][0].get("_stale_knowledge_annotated") is True
 
     def test_normalized_category_variants_all_protect(self):
         """All separator variants of version-conflict category protect findings."""
@@ -2043,11 +1877,11 @@ class TestExtractReviewSummaryDirect:
         assert result == long_body[:500]
 
 
-class TestSpeculativeSuggestionDowngrade:
-    """Tests for downgrading findings with unverified suggestions."""
+class TestSuggestionVerifiedField:
+    """Tests for suggestion_verified field (no longer affects severity)."""
 
-    def test_suggestion_verified_false_downgrades_to_info(self):
-        """Finding with suggestion_verified=false is downgraded to info."""
+    def test_suggestion_verified_false_keeps_severity(self):
+        """Finding with suggestion_verified=false keeps its original severity."""
         review = json.dumps({
             "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Performance concern",
@@ -2067,10 +1901,12 @@ class TestSpeculativeSuggestionDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["findings"][0]["title"].startswith("[speculative] ")
-        assert data["findings"][0].get("_speculative_downgraded") is True
-        assert data["verdict"] == "PASS"
+        # suggestion_verified=false no longer demotes severity
+        assert data["findings"][0]["severity"] == "major"
+        assert not data["findings"][0]["title"].startswith("[speculative] ")
+        assert "_speculative_downgraded" not in data["findings"][0]
+        # 1 major → WARN
+        assert data["verdict"] == "WARN"
 
     def test_suggestion_verified_true_keeps_severity(self):
         """Finding with suggestion_verified=true keeps original severity."""
@@ -2120,8 +1956,8 @@ class TestSpeculativeSuggestionDowngrade:
         assert data["findings"][0]["severity"] == "major"
         assert data["verdict"] == "WARN"
 
-    def test_stats_recomputed_after_speculative_downgrade(self):
-        """Stats object is updated to reflect downgraded severities."""
+    def test_two_majors_one_speculative_both_count(self):
+        """Both findings count regardless of suggestion_verified; 2 majors → FAIL."""
         review = json.dumps({
             "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Two major issues",
@@ -2153,13 +1989,14 @@ class TestSpeculativeSuggestionDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["stats"]["major"] == 1
-        assert data["stats"]["info"] == 1
-        # One speculative downgrade means only 1 major remains → WARN not FAIL
-        assert data["verdict"] == "WARN"
+        # Both majors count — suggestion_verified no longer demotes
+        assert data["stats"]["major"] == 2
+        assert data["stats"]["info"] == 0
+        # 2 majors → FAIL
+        assert data["verdict"] == "FAIL"
 
-    def test_speculative_critical_downgraded(self):
-        """Even critical findings are downgraded if suggestion is unverified."""
+    def test_speculative_critical_keeps_severity(self):
+        """Critical findings keep severity even if suggestion is unverified."""
         review = json.dumps({
             "reviewer": "VULCAN", "perspective": "performance", "verdict": "FAIL",
             "confidence": 0.9, "summary": "Critical perf issue",
@@ -2179,10 +2016,10 @@ class TestSpeculativeSuggestionDowngrade:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0]["severity"] == "info"
-        assert data["stats"]["critical"] == 0
-        assert data["stats"]["info"] == 1
-        assert data["verdict"] == "PASS"
+        assert data["findings"][0]["severity"] == "critical"
+        assert data["stats"]["critical"] == 1
+        assert data["stats"]["info"] == 0
+        assert data["verdict"] == "FAIL"
 
     def test_info_severity_not_downgraded(self):
         """Info findings with suggestion_verified=false are not re-downgraded."""
@@ -2435,7 +2272,6 @@ class TestDirectJsonInput:
     def test_bare_json_with_leading_whitespace(self):
         """Bare JSON with leading whitespace (e.g. pretty-printed) is still accepted."""
         verdict = self._make_verdict()
-        indented = "\n  " + json.dumps(verdict, indent=2).replace("\n", "\n  ")
         # Only works if starts with { after strip — JSON.dumps always starts with {
         code, out, _ = run_parse(json.dumps(verdict, indent=2))
         assert code == 0
