@@ -613,11 +613,27 @@ def test_unknown_error_retries_once(tmp_path: Path) -> None:
         ),
     )
 
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/only-one-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
     diff_file = tmp_path / "diff.patch"
     write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("CERBERUS_FALLBACK_MODELS", None)
+
     result = subprocess.run(
         [str(RUN_REVIEWER), "security"],
-        env=make_env(bin_dir, diff_file),
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
@@ -647,7 +663,7 @@ def test_request_was_aborted_is_transient(tmp_path: Path) -> None:
             "cat <<'REVIEW'\n"
             "```json\n"
             '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
-              '"confidence":0.95,"summary":"Second attempt succeeded",'
+              '"confidence":0.95,"summary":"Recovered",'
               '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
               '"critical":0,"major":0,"minor":0,"info":0}}\n'
             "```\n"
@@ -655,11 +671,27 @@ def test_request_was_aborted_is_transient(tmp_path: Path) -> None:
         ),
     )
 
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/only-one-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
     diff_file = tmp_path / "diff.patch"
     write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("CERBERUS_FALLBACK_MODELS", None)
+
     result = subprocess.run(
         [str(RUN_REVIEWER), "security"],
-        env=make_env(bin_dir, diff_file),
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
@@ -684,17 +716,35 @@ def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
         "exit 1\n",
     )
 
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/only-one-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
     diff_file = tmp_path / "diff.patch"
     write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    # Ensure no fallbacks are added from env
+    env.pop("CERBERUS_FALLBACK_MODELS", None)
+
     result = subprocess.run(
         [str(RUN_REVIEWER), "security"],
-        env=make_env(bin_dir, diff_file),
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
     )
     # Logic for unknown: attempt 1 (retry_count=0), then if retry_count < 1, retry once.
     # So attempt 2 (retry_count=1). Then retry_count is not < 1, so it breaks.
+    # Total attempts should be 2 for this single model.
     assert retry_counter.read_text() == "2"
     assert "Retrying unknown error type" in result.stdout
     assert "Unknown error type (exit=1). Trying next model if available..." in result.stdout
@@ -702,4 +752,4 @@ def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
     parse_input_ref = Path("/tmp/security-parse-input")
     assert parse_input_ref.exists()
     parse_file = Path(parse_input_ref.read_text().strip())
-    assert "API Error: UNKNOWN_ERROR" in parse_file.read_text()
+    assert "API Error: API_ERROR" in parse_file.read_text()
