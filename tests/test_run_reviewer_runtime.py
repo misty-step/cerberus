@@ -235,7 +235,7 @@ def test_transient_server_error_retries_then_succeeds(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert retry_counter.read_text() == "2"
-    assert "Retrying after transient error (class=server_5xx)" in result.stdout
+    assert "Retrying transient error (class=server_5xx)" in result.stdout
 
 
 def test_rate_limit_retry_after_header_overrides_default_backoff(tmp_path: Path) -> None:
@@ -278,7 +278,7 @@ def test_rate_limit_retry_after_header_overrides_default_backoff(tmp_path: Path)
     )
     assert result.returncode == 0
     assert retry_counter.read_text() == "2"
-    assert "Retrying after transient error (class=rate_limit)" in result.stdout
+    assert "Retrying transient error (class=rate_limit)" in result.stdout
     assert "wait=9s" in result.stdout
 
 
@@ -640,7 +640,7 @@ def test_unknown_error_retries_once(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert retry_counter.read_text() == "2"
-    assert "Retrying unknown error type" in result.stdout
+    assert "Retrying unknown error" in result.stdout
 
 
 def test_request_was_aborted_is_transient(tmp_path: Path) -> None:
@@ -698,7 +698,7 @@ def test_request_was_aborted_is_transient(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert retry_counter.read_text() == "2"
-    assert "Retrying after transient error (class=network)" in result.stdout
+    assert "Retrying transient error (class=network)" in result.stdout
 
 
 def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
@@ -745,7 +745,7 @@ def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
     # Unknown with no output = infrastructure failure -> should NOT SKIP.
     # Still retries once (retry_count < 1), then exhausts.
     assert retry_counter.read_text() == "2"
-    assert "Retrying unknown error type" in result.stdout
+    assert "Retrying unknown error" in result.stdout
     assert "Unknown error type (exit=1). Trying next model if available..." in result.stdout
     # No SKIP verdict: exit non-zero surfaces the infrastructure failure.
     assert result.returncode != 0
@@ -795,7 +795,119 @@ def test_unknown_error_with_output_skips(tmp_path: Path) -> None:
     )
     # Unknown with output = unclassified API issue -> should SKIP.
     assert retry_counter.read_text() == "2"
-    assert "Retrying unknown error type" in result.stdout
+    assert "Retrying unknown error" in result.stdout
     assert result.returncode == 0
     # Verify SKIP verdict was written.
     assert "Unknown API/runtime error detected. Writing error verdict." in result.stdout
+
+
+def test_unknown_error_with_scratchpad_only_skips(tmp_path: Path) -> None:
+    """Unknown errors with scratchpad content but no stdout/stderr should SKIP."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    # Pi writes partial review to scratchpad file, produces no stdout/stderr, exits 1.
+    make_executable(
+        bin_dir / "pi",
+        "#!/usr/bin/env bash\n"
+        f"count=$(cat '{retry_counter}')\n"
+        "count=$((count + 1))\n"
+        f"printf '%s' \"$count\" > '{retry_counter}'\n"
+        "echo 'Partial review content before crash' > /tmp/security-review.md\n"
+        "exit 1\n",
+    )
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/only-one-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("CERBERUS_FALLBACK_MODELS", None)
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    # Scratchpad content = evidence of API interaction -> should SKIP.
+    assert result.returncode == 0
+    assert "Unknown API/runtime error detected. Writing error verdict." in result.stdout
+
+
+def test_unknown_error_fallback_model_succeeds(tmp_path: Path) -> None:
+    """Unknown error exhausts retries on primary, then fallback model succeeds."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    # Attempts 1-2: exit 1 with no specific error (unknown), no output.
+    # Attempt 3+: succeed on fallback model.
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{attempt_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{attempt_counter}'\n"
+            "if [[ \"$count\" -le 2 ]]; then\n"
+            "  exit 1\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+              '"confidence":0.95,"summary":"Fallback succeeded",'
+              '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+              '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/primary-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env["CERBERUS_FALLBACK_MODELS"] = "openrouter/fallback-model"
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=40,
+    )
+    # Primary model: attempt 1 (unknown) -> retry -> attempt 2 (unknown, exhausted) -> advance.
+    # Fallback model: attempt 3 -> success.
+    assert result.returncode == 0
+    assert attempt_counter.read_text() == "3"
+    assert "Retrying unknown error" in result.stdout
+    model_used = Path("/tmp/security-model-used").read_text().strip()
+    assert model_used == "openrouter/fallback-model"
