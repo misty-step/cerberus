@@ -11,6 +11,7 @@ coverage-html/
 .pi/logs/
 .pi/*.log
 .pi/bootstrap-report.md
+.pi/settings.json
 .pi/session-handoff.json
 .pi/session-handoff.ndjson
 

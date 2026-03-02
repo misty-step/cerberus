@@ -702,6 +702,7 @@ def test_request_was_aborted_is_transient(tmp_path: Path) -> None:
 
 
 def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
+    """Unknown errors with NO output (infrastructure failure) should fail the job."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     retry_counter = tmp_path / "retry-count"
@@ -732,7 +733,6 @@ def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
     diff_file = tmp_path / "diff.patch"
     write_simple_diff(diff_file)
     env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
-    # Ensure no fallbacks are added from env
     env.pop("CERBERUS_FALLBACK_MODELS", None)
 
     result = subprocess.run(
@@ -742,14 +742,60 @@ def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
         text=True,
         timeout=30,
     )
-    # Logic for unknown: attempt 1 (retry_count=0), then if retry_count < 1, retry once.
-    # So attempt 2 (retry_count=1). Then retry_count is not < 1, so it breaks.
-    # Total attempts should be 2 for this single model.
+    # Unknown with no output = infrastructure failure -> should NOT SKIP.
+    # Still retries once (retry_count < 1), then exhausts.
     assert retry_counter.read_text() == "2"
     assert "Retrying unknown error type" in result.stdout
     assert "Unknown error type (exit=1). Trying next model if available..." in result.stdout
-    # Verify that it wrote the error verdict (SKIP)
-    parse_input_ref = Path("/tmp/security-parse-input")
-    assert parse_input_ref.exists()
-    parse_file = Path(parse_input_ref.read_text().strip())
-    assert "API Error: API_ERROR" in parse_file.read_text()
+    # No SKIP verdict: exit non-zero surfaces the infrastructure failure.
+    assert result.returncode != 0
+
+
+def test_unknown_error_with_output_skips(tmp_path: Path) -> None:
+    """Unknown errors WITH output (unclassified API error) should SKIP gracefully."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    retry_counter = tmp_path / "retry-count"
+    retry_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        "#!/usr/bin/env bash\n"
+        f"count=$(cat '{retry_counter}')\n"
+        "count=$((count + 1))\n"
+        f"printf '%s' \"$count\" > '{retry_counter}'\n"
+        "echo 'Unrecognized API error: something went wrong' >&2\n"
+        "exit 1\n",
+    )
+
+    cerberus_root = tmp_path / "cerberus-root"
+    write_fake_cerberus_root(
+        cerberus_root,
+        config_yml=(
+            "version: 1\n"
+            "model:\n"
+            "  default: \"openrouter/only-one-model\"\n"
+            "reviewers:\n"
+            "  - name: SENTINEL\n"
+            "    perspective: security\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    env = make_env_with_cerberus_root(bin_dir, diff_file, cerberus_root)
+    env.pop("CERBERUS_FALLBACK_MODELS", None)
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    # Unknown with output = unclassified API issue -> should SKIP.
+    assert retry_counter.read_text() == "2"
+    assert "Retrying unknown error type" in result.stdout
+    assert result.returncode == 0
+    # Verify SKIP verdict was written.
+    assert "Unknown API/runtime error detected. Writing error verdict." in result.stdout

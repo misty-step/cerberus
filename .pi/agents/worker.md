@@ -10,7 +10,7 @@ Latitude: use engineering judgment, but keep diffs auditable and focused.
 Use `.pi/persona.md` as the base local persona contract.
 
 Success criteria:
-- uses local tooling (unknown) and quality scripts when relevant
+- uses local tooling and relevant quality scripts (e.g., `test`, `lint`)
 - no speculative refactors
 - clear changed-file summary and residual risk callout
 

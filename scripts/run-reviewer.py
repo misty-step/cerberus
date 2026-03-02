@@ -11,7 +11,6 @@ import json
 import os
 import random
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -672,7 +671,7 @@ def main(argv: list[str]) -> int:
             if detected_error_type == "unknown" and retry_count < 1:
                 retry_count += 1
                 wait_seconds = default_backoff_seconds(retry_count)
-                print(f"Retrying unknown error type (attempt {retry_count}/{MAX_RETRIES}); wait={wait_seconds}s")
+                print(f"Retrying unknown error type (attempt 2/2); wait={wait_seconds}s")
                 maybe_sleep(wait_seconds)
                 continue
 
@@ -770,7 +769,14 @@ def main(argv: list[str]) -> int:
             stderr=read_text(stderr_file) if stderr_file.exists() else "",
             exit_code=exit_code,
         )
-        if error_type in {"permanent", "transient", "unknown"}:
+        # Unknown errors only SKIP if there's evidence of API interaction (output exists).
+        # Empty output from unknown errors likely indicates infrastructure failure (e.g. missing
+        # binary) and should still fail the job to surface broken reviewer environments.
+        has_output = (
+            (stdout_file.exists() and stdout_file.stat().st_size > 0)
+            or (stderr_file.exists() and stderr_file.stat().st_size > 0)
+        )
+        if error_type in {"permanent", "transient"} or (error_type == "unknown" and has_output):
             print(f"{error_type.capitalize()} API/runtime error detected. Writing error verdict.")
             write_api_error_marker(stdout_file=stdout_file, stderr_file=stderr_file, models=models)
             exit_code = 0
@@ -891,7 +897,7 @@ def main(argv: list[str]) -> int:
     write_text(cerberus_tmp / f"{perspective}-exitcode", str(exit_code))
     return exit_code
 
-    
+
 if __name__ == "__main__":
     try:
         rc = main(sys.argv[1:])
