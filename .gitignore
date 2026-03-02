@@ -6,9 +6,13 @@ htmlcov/
 coverage-html/
 *.pyc
 
-# Healthcheck scratch outputs used during local validation
-healthy
-unhealthy
+# Pi runtime local state
+.pi/state/
+.pi/logs/
+.pi/*.log
+.pi/bootstrap-report.md
+.pi/session-handoff.json
+.pi/session-handoff.ndjson
 
 .flywheel/
 
