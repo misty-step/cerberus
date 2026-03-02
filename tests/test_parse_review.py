@@ -1877,7 +1877,7 @@ class TestExtractReviewSummaryDirect:
         assert result == long_body[:500]
 
 
-class TestSpeculativeSuggestionDowngrade:
+class TestSuggestionVerifiedField:
     """Tests for suggestion_verified field (no longer affects severity)."""
 
     def test_suggestion_verified_false_keeps_severity(self):
