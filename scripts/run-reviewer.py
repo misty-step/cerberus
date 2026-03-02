@@ -669,6 +669,13 @@ def main(argv: list[str]) -> int:
                 advance_to_next_model = True
                 break
 
+            if detected_error_type == "unknown" and retry_count < 1:
+                retry_count += 1
+                wait_seconds = default_backoff_seconds(retry_count)
+                print(f"Retrying unknown error type (attempt {retry_count}/{MAX_RETRIES}); wait={wait_seconds}s")
+                maybe_sleep(wait_seconds)
+                continue
+
             print(f"Unknown error type (exit={exit_code}). Trying next model if available...")
             advance_to_next_model = True
             break
@@ -763,7 +770,7 @@ def main(argv: list[str]) -> int:
             stderr=read_text(stderr_file) if stderr_file.exists() else "",
             exit_code=exit_code,
         )
-        if error_type in {"permanent", "transient"}:
+        if error_type in {"permanent", "transient", "unknown"}:
             print(f"{error_type.capitalize()} API/runtime error detected. Writing error verdict.")
             write_api_error_marker(stdout_file=stdout_file, stderr_file=stderr_file, models=models)
             exit_code = 0

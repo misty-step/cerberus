@@ -81,7 +81,7 @@ def classify_runtime_error(*, stdout: str, stderr: str, exit_code: int) -> tuple
     if re.search(
         r"network.*(error|timeout|unreachable)|timed out|timeout while|connection (reset|refused|aborted)|"
         r"temporary failure|tls handshake timeout|econn(reset|refused)|enotfound|broken pipe|"
-        r"remote end closed connection",
+        r"remote end closed connection|request was aborted",
         combined,
     ):
         return "transient", "network", None
