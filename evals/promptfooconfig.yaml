@@ -609,4 +609,4 @@ shareResults: false
 # Default test options
 defaultTest:
   options:
-    transform: file://evals/transform.js
+    transform: file://transform.js
