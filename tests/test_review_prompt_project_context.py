@@ -6,6 +6,7 @@ from lib.review_prompt import (
     PullRequestContext,
     require_env,
     _extract_linked_issue_number,
+    render_review_prompt_file,
     render_review_prompt_from_env,
     render_review_prompt_text,
 )
@@ -272,3 +273,83 @@ def test_extract_linked_issue_number_matches_closes_fixes_resolves() -> None:
     assert _extract_linked_issue_number("Fixes #42") == "42"
     assert _extract_linked_issue_number("Resolves #7") == "7"
     assert _extract_linked_issue_number("no issue") is None
+
+
+def test_acceptance_criteria_stops_at_next_heading_and_skips_blank_lines() -> None:
+    pr_context = PullRequestContext(
+        title="Title",
+        author="author",
+        head_branch="feat",
+        base_branch="master",
+        body=(
+            "## Acceptance Criteria\n"
+            "\n"
+            "- [ ] keep this item\n"
+            "## Non Goals\n"
+            "- [ ] do not include this\n"
+        ),
+    )
+
+    rendered = render_review_prompt_text(
+        template_text=TEMPLATE,
+        pr_context=pr_context,
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        current_date="2026-03-03",
+    )
+
+    assert "- keep this item" in rendered
+    assert "- do not include this" not in rendered
+
+
+def test_acceptance_criteria_truncates_after_limit() -> None:
+    items = "\n".join(f"- [ ] item {idx}" for idx in range(1, 24))
+    pr_context = PullRequestContext(
+        title="Title",
+        author="author",
+        head_branch="feat",
+        base_branch="master",
+        body=f"## Acceptance Criteria\n{items}\n",
+    )
+
+    rendered = render_review_prompt_text(
+        template_text=TEMPLATE,
+        pr_context=pr_context,
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        current_date="2026-03-03",
+    )
+
+    assert "- item 1" in rendered
+    assert "- item 20" in rendered
+    assert "- item 21" not in rendered
+    assert "additional AC(s) omitted" in rendered
+
+
+def test_render_review_prompt_file_reads_linked_issue_body_file(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    output_path = tmp_path / "prompt.md"
+    linked_issue_file = tmp_path / "linked-issue.md"
+    linked_issue_file.write_text(
+        "## Acceptance Criteria\n- [ ] from linked issue\n",
+        encoding="utf-8",
+    )
+    env = {
+        "GH_PR_TITLE": "Security fix",
+        "GH_PR_AUTHOR": "reviewer",
+        "GH_HEAD_BRANCH": "feature",
+        "GH_BASE_BRANCH": "main",
+        "GH_PR_BODY": "No inline AC",
+        "CERBERUS_LINKED_ISSUE_BODY_FILE": str(linked_issue_file),
+    }
+
+    render_review_prompt_file(
+        cerberus_root=root,
+        env=env,
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        output_path=output_path,
+    )
+
+    rendered = output_path.read_text(encoding="utf-8")
+    assert "- from linked issue" in rendered
