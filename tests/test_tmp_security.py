@@ -125,7 +125,7 @@ class TestParseReviewUsesCerberusTmp:
             check=False,
         )
 
-        assert result.returncode == 0
+        assert result.returncode == 3
         data = json.loads(result.stdout)
         # Verify the metadata was found and surfaced in the verdict summary.
         assert "model-a" in data["summary"] or "2" in data["summary"]

@@ -14,6 +14,10 @@ RAW_INPUT = ""
 VERDICT_CONFIDENCE_MIN = 0.7
 WARN_MINOR_THRESHOLD = 5
 WARN_SAME_CATEGORY_MINOR_THRESHOLD = 3
+EXIT_SUCCESS = 0
+EXIT_VALIDATION_FAILURE = 1  # JSON found but failed schema validation
+EXIT_USAGE_ERROR = 2  # bad args, file not found, etc.
+EXIT_NO_JSON_BLOCK = 3  # no ```json block found (transient — caller may retry)
 
 EVIDENCE_MAX_CHARS = 2000
 CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
@@ -177,7 +181,7 @@ def sanitize_raw_review(text: str) -> str:
 def write_fallback(
     reviewer: str, error: str, verdict: str = "FAIL", confidence: float = 0.0,
     summary: str | None = None, raw_review: str | None = None,
-    findings: list[dict] | None = None,
+    findings: list[dict] | None = None, exit_code: int = EXIT_SUCCESS,
 ) -> NoReturn:
     """Write fallback."""
     resolved_findings = findings if findings else []
@@ -203,10 +207,10 @@ def write_fallback(
         if sanitized_raw_review:
             fallback["raw_review"] = sanitized_raw_review[:50000]
     print(json.dumps(fallback, indent=2, sort_keys=False))
-    sys.exit(0)
+    sys.exit(exit_code)
 
 
-def fail(msg: str) -> NoReturn:
+def fail(msg: str, exit_code: int = EXIT_VALIDATION_FAILURE) -> NoReturn:
     """Fail."""
     print(f"parse-review: {msg}", file=sys.stderr)
     raw_text = RAW_INPUT.strip() if RAW_INPUT else None
@@ -225,14 +229,15 @@ def fail(msg: str) -> NoReturn:
                            "title": "Review analysis available but not machine-parseable",
                            "description": "Reviewer produced a scratchpad review without structured JSON output. Raw output is preserved in workflow logs/artifacts.",
                            "suggestion": "No action needed; see the workflow run for the preserved raw output.",
-                       }])
-    write_fallback(REVIEWER_NAME, msg, verdict="SKIP", raw_review=raw_text or None)
+                       }],
+                       exit_code=exit_code)
+    write_fallback(REVIEWER_NAME, msg, verdict="SKIP", raw_review=raw_text or None, exit_code=exit_code)
 
 
 def read_input(path: str | None) -> str:
     """Read input."""
     if path:
-        return Path(path).read_text()
+        return Path(path).read_text(encoding="utf-8", errors="replace")
     return sys.stdin.read()
 
 
@@ -734,24 +739,15 @@ def main() -> None:
         input_path, reviewer = parse_args(sys.argv[1:])
     except ValueError as exc:
         REVIEWER_NAME = resolve_reviewer(None)
-        fail(str(exc))
+        fail(str(exc), exit_code=EXIT_USAGE_ERROR)
 
     REVIEWER_NAME = resolve_reviewer(reviewer)
 
     try:
         raw = read_input(input_path)
     except Exception as exc:
-        # If we can't read the parse input file, this is almost always a prior-step failure
-        # (e.g., the reviewer never produced output). Treat as SKIP so we don't block the PR
-        # with a misleading maintainability/correctness failure.
         print(f"parse-review: unable to read input: {exc}", file=sys.stderr)
-        write_fallback(
-            REVIEWER_NAME,
-            f"unable to read input: {exc}",
-            verdict="SKIP",
-            confidence=0.0,
-            summary=f"{PARSE_FAILURE_PREFIX}unable to read input: {exc}",
-        )
+        sys.exit(EXIT_USAGE_ERROR)
 
     RAW_INPUT = raw
 
@@ -762,14 +758,14 @@ def main() -> None:
             REVIEWER_NAME, timeout_seconds, files_in_diff, fast_path_status,
         )
         print(json.dumps(timeout_verdict, indent=2, sort_keys=False))
-        sys.exit(0)
+        sys.exit(EXIT_SUCCESS)
 
     # Check for explicit API errors next (from run-reviewer.sh)
     is_api_error, error_type = detect_api_error(raw)
     if is_api_error:
         skip_verdict = generate_skip_verdict(error_type, raw)
         print(json.dumps(skip_verdict, indent=2, sort_keys=False))
-        sys.exit(0)
+        sys.exit(EXIT_SUCCESS)
 
     try:
         json_block = extract_json_from_output(raw)
@@ -780,7 +776,7 @@ def main() -> None:
             if is_err:
                 skip_verdict = generate_skip_verdict(err_type, raw)
                 print(json.dumps(skip_verdict, indent=2, sort_keys=False))
-                sys.exit(0)
+                sys.exit(EXIT_SUCCESS)
 
             print("parse-review: no ```json block found", file=sys.stderr)
 
@@ -804,7 +800,8 @@ def main() -> None:
                                    "title": "Review analysis available but not machine-parseable",
                                    "description": "Reviewer produced a scratchpad review without structured JSON output. Raw output is preserved in workflow logs/artifacts.",
                                    "suggestion": "No action needed; see the workflow run for the preserved raw output.",
-                               }])
+                               }],
+                               exit_code=EXIT_NO_JSON_BLOCK)
 
             # Substantive raw text exists — upgrade to WARN so the review is visible.
             if len(sanitized_text) > 500:
@@ -821,7 +818,8 @@ def main() -> None:
                                    "title": "Review analysis available but not machine-parseable",
                                    "description": "Reviewer produced substantive output without structured JSON. Raw output is preserved in workflow logs/artifacts.",
                                    "suggestion": "No action needed; see the workflow run for the preserved raw output.",
-                               }])
+                               }],
+                               exit_code=EXIT_NO_JSON_BLOCK)
 
             # Not a scratchpad and not substantive — SKIP (non-blocking).
             # Include parse-failure retry metadata if available.
@@ -855,6 +853,7 @@ def main() -> None:
                 summary=skip_summary,
                 raw_review=sanitized_text if sanitized_text else None,
                 findings=skip_findings,
+                exit_code=EXIT_NO_JSON_BLOCK,
             )
 
         try:
@@ -874,7 +873,7 @@ def main() -> None:
         fail(f"unexpected error: {exc}")
 
     print(json.dumps(obj, indent=2, sort_keys=False))
-    sys.exit(0)
+    sys.exit(EXIT_SUCCESS)
 
 
 if __name__ == "__main__":

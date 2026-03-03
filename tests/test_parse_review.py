@@ -124,9 +124,44 @@ class TestParseFail:
 
 
 class TestParseErrors:
+    def test_exit_code_no_json_block_is_3(self):
+        code, out, _ = run_parse("plain text only")
+        assert code == 3
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+
+    def test_exit_code_valid_json_block_is_0(self):
+        good = json.dumps({
+            "reviewer": "TEST",
+            "perspective": "test",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "ok",
+            "findings": [],
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 0,
+                "critical": 0,
+                "major": 0,
+                "minor": 0,
+                "info": 0,
+            },
+        })
+        code, out, _ = run_parse(f"```json\n{good}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+
+    def test_exit_code_invalid_schema_is_1(self):
+        bad = json.dumps({"reviewer": "TEST", "verdict": "PASS"})
+        code, out, _ = run_parse(f"```json\n{bad}\n```")
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+
     def test_no_json_block(self):
         code, out, err = run_parse("Just some text with no json block")
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Changed: missing JSON block is non-blocking
         assert data["confidence"] == 0.0
@@ -138,14 +173,14 @@ class TestParseErrors:
             "No json here",
             env_extra={"REVIEWER_NAME": "APOLLO", "PERSPECTIVE": "correctness"},
         )
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["reviewer"] == "APOLLO"
         assert data["perspective"] == "correctness"
 
     def test_invalid_json(self):
         code, out, err = run_parse("```json\n{invalid json}\n```")
-        assert code == 0
+        assert code == 1
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
@@ -154,7 +189,7 @@ class TestParseErrors:
     def test_missing_required_field(self):
         incomplete = json.dumps({"reviewer": "TEST", "verdict": "PASS"})
         code, out, err = run_parse(f"```json\n{incomplete}\n```")
-        assert code == 0
+        assert code == 1
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
@@ -166,7 +201,7 @@ class TestParseErrors:
             "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
         })
         code, out, err = run_parse(f"```json\n{bad}\n```")
-        assert code == 0
+        assert code == 1
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
@@ -178,7 +213,7 @@ class TestParseErrors:
             "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
         })
         code, out, err = run_parse(f"```json\n{bad}\n```")
-        assert code == 0
+        assert code == 1
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
@@ -260,7 +295,7 @@ class TestParseFailureMetadata:
             },
         )
 
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert data["confidence"] == 0.0
@@ -277,7 +312,7 @@ class TestParseRecoveryAndMalformedInput:
     def test_partial_json_fence_is_skip(self):
         """Partial JSON (starts a ```json fence but never closes) is non-blocking SKIP."""
         code, out, err = run_parse("```json\n{\"verdict\": \"PASS\",")
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert data["confidence"] == 0.0
@@ -293,7 +328,7 @@ class TestParseArgs:
             ["--reviewer", "APOLLO"],
             input_text="no json here",
         )
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["reviewer"] == "APOLLO"
 
@@ -303,14 +338,14 @@ class TestParseArgs:
             ["--reviewer=APOLLO"],
             input_text="no json here",
         )
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["reviewer"] == "APOLLO"
 
     def test_reviewer_flag_missing_value(self):
         """--reviewer with no value produces fallback."""
         code, out, err = run_parse_with_args(["--reviewer"])
-        assert code == 0
+        assert code == 2
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert "--reviewer requires" in err.lower()
@@ -318,7 +353,7 @@ class TestParseArgs:
     def test_unknown_flag(self):
         """Unknown flags produce fallback."""
         code, out, err = run_parse_with_args(["--bogus"])
-        assert code == 0
+        assert code == 2
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert "unknown argument" in err.lower()
@@ -330,16 +365,15 @@ class TestParseArgs:
         f1.write_text("x")
         f2.write_text("y")
         code, out, err = run_parse_with_args([str(f1), str(f2)])
-        assert code == 0
+        assert code == 2
         data = json.loads(out)
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
 
     def test_file_not_found(self):
         """Nonexistent file produces fallback."""
         code, out, err = run_parse_with_args(["/nonexistent/path.txt"])
-        assert code == 0
-        data = json.loads(out)
-        assert data["verdict"] == "SKIP"  # Changed: file read errors are non-blocking
+        assert code == 2
+        assert out.strip() == ""
         assert "unable to read" in err.lower()
 
     def test_reviewer_with_file(self, tmp_path):
@@ -349,7 +383,7 @@ class TestParseArgs:
         code, out, _ = run_parse_with_args(
             ["--reviewer", "SENTINEL", str(f)],
         )
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["reviewer"] == "SENTINEL"
 
@@ -1136,7 +1170,7 @@ def test_fallback_on_no_json_block():
         "Just some text with no json block",
         env_extra={"REVIEWER_NAME": "APOLLO"},
     )
-    assert code == 0
+    assert code == 3
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Changed: missing JSON block is non-blocking
     assert data["confidence"] == 0.0
@@ -1148,7 +1182,7 @@ def test_fallback_on_invalid_json():
         "```json\n{invalid json}\n```",
         env_extra={"REVIEWER_NAME": "APOLLO"},
     )
-    assert code == 0
+    assert code == 1
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
@@ -1157,7 +1191,7 @@ def test_fallback_on_invalid_json():
 
 def test_fallback_default_reviewer():
     code, out, _ = run_parse("No JSON at all")
-    assert code == 0
+    assert code == 3
     data = json.loads(out)
     assert data["reviewer"] == "UNKNOWN"
 
@@ -1194,7 +1228,7 @@ def test_non_numeric_line_produces_fallback():
                   "critical": 0, "major": 0, "minor": 0, "info": 1},
     })
     code, out, _ = run_parse(f"```json\n{review}\n```")
-    assert code == 0
+    assert code == 1
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
@@ -1213,7 +1247,7 @@ def test_invalid_finding_severity():
                   "critical": 0, "major": 0, "minor": 0, "info": 1},
     })
     code, out, _ = run_parse(f"```json\n{review}\n```")
-    assert code == 0
+    assert code == 1
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
@@ -1222,7 +1256,7 @@ def test_invalid_finding_severity():
 def test_root_not_object():
     """JSON array at root triggers fallback (note: regex only matches {}, so array is 'no block')."""
     code, out, _ = run_parse('```json\n[1, 2, 3]\n```')
-    assert code == 0
+    assert code == 3
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Changed: extract_json_block regex only matches objects, not arrays
     assert data["confidence"] == 0.0
@@ -1303,7 +1337,7 @@ class TestScratchpadInput:
             FIXTURES / "sample-scratchpad-partial.md",
             env_extra={"REVIEWER_NAME": "APOLLO"},
         )
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert data["reviewer"] == "APOLLO"
@@ -1314,7 +1348,7 @@ class TestScratchpadInput:
         # Write a scratchpad with investigation notes but no verdict header
         partial_text = "# Review\n\n## Investigation Notes\n- Checked files\n- Found nothing yet\n"
         code, out, _ = run_parse(partial_text, env_extra={"REVIEWER_NAME": "TEST"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
 
@@ -1669,7 +1703,7 @@ class TestRawReviewPreservation:
         ) * 10
         assert len(agentic.strip()) > 500  # precondition
         code, out, _ = run_parse(agentic, env_extra={"REVIEWER_NAME": "SENTINEL"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert "raw_review" not in data  # scrubbed to empty
@@ -1686,7 +1720,7 @@ class TestRawReviewPreservation:
             "No issues found.\n"
         )
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "SENTINEL"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert "raw_review" in data
@@ -1697,7 +1731,7 @@ class TestRawReviewPreservation:
         """Text >500 chars without JSON block upgrades to WARN and includes raw_review."""
         long_text = "This is a detailed review. " * 30  # ~810 chars
         code, out, _ = run_parse(long_text, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert data["confidence"] == 0.3
@@ -1708,7 +1742,7 @@ class TestRawReviewPreservation:
         """Text <=500 chars without JSON block stays SKIP but still includes raw_review."""
         short_text = "Brief review output."
         code, out, _ = run_parse(short_text, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert data.get("raw_review") == short_text
@@ -1716,7 +1750,7 @@ class TestRawReviewPreservation:
     def test_empty_text_has_no_raw_review(self):
         """Empty text does not include raw_review field."""
         code, out, _ = run_parse("", env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert "raw_review" not in data
 
@@ -1732,7 +1766,7 @@ class TestRawReviewPreservation:
             "No issues found.\n"
         )
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert "raw_review" in data
@@ -1742,7 +1776,7 @@ class TestRawReviewPreservation:
         """raw_review field is capped at 50,000 characters."""
         huge_text = "x" * 60000
         code, out, _ = run_parse(huge_text, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert "raw_review" in data
         assert len(data["raw_review"]) == 50000
@@ -1755,7 +1789,7 @@ class TestRawReviewPreservation:
         )
         assert len(text.strip()) > 500  # precondition
         code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert "unstructured" in data["summary"].lower()
@@ -1769,7 +1803,7 @@ class TestRawReviewPreservation:
         )
         assert len(text.strip()) > 500  # precondition
         code, out, _ = run_parse(text, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert "raw_review" in data
@@ -1778,7 +1812,7 @@ class TestRawReviewPreservation:
         """WARN fallback for substantive raw text includes a parse-failure info finding."""
         long_text = "This is a detailed review. " * 30  # ~810 chars
         code, out, _ = run_parse(long_text, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "WARN"
         assert len(data["findings"]) == 1
@@ -1799,7 +1833,7 @@ class TestRawReviewPreservation:
             "No issues found.\n"
         )
         code, out, _ = run_parse(scratchpad, env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert len(data["findings"]) == 1
@@ -1811,7 +1845,7 @@ class TestRawReviewPreservation:
     def test_skip_fallback_has_no_finding(self):
         """SKIP fallback for short non-parseable text has no findings."""
         code, out, _ = run_parse("Brief output.", env_extra={"REVIEWER_NAME": "APOLLO"})
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         assert len(data["findings"]) == 0
