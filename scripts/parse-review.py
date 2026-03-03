@@ -67,6 +67,34 @@ def get_parse_failure_metadata() -> dict[str, list[str] | int | None]:
     return result
 
 
+def get_timeout_context() -> dict:
+    """Read timeout context sidecar written by run-reviewer.py.
+
+    Returns dict with is_timeout (bool) and timeout_seconds (int | None),
+    or empty dict when the sidecar is absent.
+    """
+    perspective = os.environ.get("PERSPECTIVE", "unknown")
+    ctx_file = CERBERUS_TMP / f"{perspective}-timeout-context.json"
+    if not ctx_file.exists():
+        return {}
+    try:
+        data = json.loads(ctx_file.read_text())
+    except Exception as exc:
+        print(f"parse-review: warning: could not process timeout context {ctx_file}: {exc}", file=sys.stderr)
+        data = {}
+    finally:
+        # Consume the sidecar so stale timeout metadata cannot affect later runs.
+        if ctx_file.exists():
+            try:
+                ctx_file.unlink()
+            except OSError as exc:
+                print(
+                    f"parse-review: warning: could not delete timeout context file {ctx_file}: {exc}",
+                    file=sys.stderr,
+                )
+    return data if isinstance(data, dict) else {}
+
+
 def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
     """Parse args."""
     input_path = None
@@ -751,6 +779,11 @@ def main() -> None:
 
     RAW_INPUT = raw
 
+    # Read timeout context sidecar (written by run-reviewer.py on exit_code==124).
+    # Consumed here so partial-output timeout paths emit timeout-derived SKIPs
+    # rather than generic parse failures.
+    timeout_ctx = get_timeout_context()
+
     # Check for explicit timeout markers first (from run-reviewer.sh)
     is_timeout, timeout_seconds, files_in_diff, fast_path_status = detect_timeout(raw)
     if is_timeout:
@@ -772,6 +805,16 @@ def main() -> None:
 
         # If no JSON block found, check if it looks like an API error
         if json_block is None:
+            # Timeout-partial-output path: run-reviewer.py wrote a sidecar when
+            # exit_code==124 but there was partial output (no timeout marker in text).
+            if timeout_ctx.get("is_timeout"):
+                timeout_verdict = generate_timeout_skip_verdict(
+                    REVIEWER_NAME,
+                    timeout_ctx.get("timeout_seconds"),
+                )
+                print(json.dumps(timeout_verdict, indent=2, sort_keys=False))
+                sys.exit(EXIT_SUCCESS)
+
             is_err, err_type, err_msg = looks_like_api_error(raw)
             if is_err:
                 skip_verdict = generate_skip_verdict(err_type, raw)

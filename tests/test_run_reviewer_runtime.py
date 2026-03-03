@@ -76,6 +76,7 @@ def cleanup_tmp_outputs() -> None:
         "configured-model",
         "parse-failure-models.txt",
         "parse-failure-retries.txt",
+        "timeout-context.json",
         "runtime-telemetry.ndjson",
     )
     for perspective in PERSPECTIVES:
@@ -470,6 +471,18 @@ def test_timeout_with_partial_output_exits_zero(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "parse-input: stdout (timeout, partial review)" in result.stdout
+
+    # Timeout context sidecar must be written so parse-review.py can classify
+    # the SKIP reason as timeout-derived (not generic parse failure).
+    cerberus_tmp = Path(env["CERBERUS_TMP"])
+    ctx_file = cerberus_tmp / "security-timeout-context.json"
+    assert ctx_file.exists(), "timeout-context.json sidecar must be written on exit_code==124"
+    import json as _json
+    ctx = _json.loads(ctx_file.read_text())
+    assert ctx.get("is_timeout") is True
+    assert ctx.get("timeout_seconds") == 1
+    # Consume the sidecar to prevent pollution of other tests that use CERBERUS_TMP=/tmp.
+    ctx_file.unlink()
 
 
 def test_fast_path_fallback_runs_on_timeout_with_no_output(tmp_path: Path) -> None:
