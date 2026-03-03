@@ -1691,6 +1691,112 @@ Next steps: Increase timeout, reduce diff size, or check model provider status.
         assert "timeout" in finding["suggestion"].lower() or "model" in finding["suggestion"].lower()
 
 
+class TestTimeoutContextSidecar:
+    """Tests for timeout context sidecar written by run-reviewer.py.
+
+    Covers the partial-output timeout path where parse_input is the raw model
+    output (no timeout marker in the text) but the run was cut off by a timeout.
+    """
+
+    def test_partial_output_with_timeout_context_is_timeout_skip(self, tmp_path):
+        """When timeout context sidecar exists and no JSON block, emit timeout SKIP."""
+        perspective = f"tc_{uuid.uuid4().hex}"
+        ctx_file = tmp_path / f"{perspective}-timeout-context.json"
+        ctx_file.write_text(json.dumps({"is_timeout": True, "timeout_seconds": 600}))
+
+        partial_output = (
+            "## Investigation Notes\n"
+            "I started reviewing the diff and found some potential issues.\n"
+            "Still analysing error propagation paths...\n"
+        )
+        code, out, _ = run_parse(
+            partial_output,
+            env_extra={
+                "PERSPECTIVE": perspective,
+                "REVIEWER_NAME": "TRACE",
+                "CERBERUS_TMP": str(tmp_path),
+            },
+        )
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["reviewer"] == "TRACE"
+        # Summary must reference timeout, not parse failure
+        assert "timeout" in data["summary"].lower()
+        assert "parse" not in data["summary"].lower()
+        assert "600s" in data["summary"]
+        assert data["findings"][0]["category"] == "timeout"
+
+    def test_partial_output_without_timeout_context_is_parse_failure(self, tmp_path):
+        """Without timeout context sidecar, no-JSON output is a parse failure SKIP."""
+        perspective = f"tc_{uuid.uuid4().hex}"
+        # No sidecar written → generic parse-failure path.
+        partial_output = (
+            "## Investigation Notes\n"
+            "I started reviewing the diff and found some potential issues.\n"
+        )
+        code, out, _ = run_parse(
+            partial_output,
+            env_extra={
+                "PERSPECTIVE": perspective,
+                "REVIEWER_NAME": "TRACE",
+                "CERBERUS_TMP": str(tmp_path),
+            },
+        )
+        # Still SKIP (non-blocking) but classified as parse-failure, not timeout.
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        # Scratchpad path: summary should NOT mention timeout.
+        assert "timeout" not in data["summary"].lower()
+
+    def test_timeout_context_sidecar_consumed_after_read(self, tmp_path):
+        """The sidecar file is deleted after being read (consumed)."""
+        perspective = f"tc_{uuid.uuid4().hex}"
+        ctx_file = tmp_path / f"{perspective}-timeout-context.json"
+        ctx_file.write_text(json.dumps({"is_timeout": True, "timeout_seconds": 300}))
+
+        run_parse(
+            "Some partial output without JSON.",
+            env_extra={
+                "PERSPECTIVE": perspective,
+                "CERBERUS_TMP": str(tmp_path),
+            },
+        )
+        assert not ctx_file.exists(), "Sidecar should be consumed (deleted) after read"
+
+    def test_timeout_context_with_json_block_does_not_interfere(self, tmp_path):
+        """When timeout context exists but output HAS a JSON block, parse proceeds normally."""
+        perspective = f"tc_{uuid.uuid4().hex}"
+        ctx_file = tmp_path / f"{perspective}-timeout-context.json"
+        ctx_file.write_text(json.dumps({"is_timeout": True, "timeout_seconds": 600}))
+
+        good_verdict = json.dumps({
+            "reviewer": "TRACE",
+            "perspective": "correctness",
+            "verdict": "PASS",
+            "confidence": 0.9,
+            "summary": "All good.",
+            "findings": [],
+            "stats": {
+                "files_reviewed": 1, "files_with_issues": 0,
+                "critical": 0, "major": 0, "minor": 0, "info": 0,
+            },
+        })
+        output_with_block = f"Some preamble.\n\n```json\n{good_verdict}\n```\n"
+        code, out, _ = run_parse(
+            output_with_block,
+            env_extra={
+                "PERSPECTIVE": perspective,
+                "CERBERUS_TMP": str(tmp_path),
+            },
+        )
+        assert code == 0
+        data = json.loads(out)
+        # Timeout context must NOT override a successfully-parsed verdict.
+        assert data["verdict"] == "PASS"
+        assert data["summary"] == "All good."
+
+
 class TestRawReviewPreservation:
     """Tests for raw_review field in fallback verdicts."""
 

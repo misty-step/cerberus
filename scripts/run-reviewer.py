@@ -798,6 +798,14 @@ def main(argv: list[str]) -> int:
     parse_input: Path
 
     if exit_code == 124:
+        # Write timeout context sidecar so parse-review.py can classify the SKIP
+        # reason as timeout-derived rather than generic parse failure, even when
+        # partial model output is used as parse_input (no timeout marker present).
+        write_text(
+            cerberus_tmp / f"{perspective}-timeout-context.json",
+            json.dumps({"is_timeout": True, "timeout_seconds": review_timeout}),
+        )
+
         print(f"::warning::{reviewer_name} ({perspective}) timed out after {review_timeout}s")
 
         if structured_verdict_file.exists() and structured_verdict_file.stat().st_size > 0:
