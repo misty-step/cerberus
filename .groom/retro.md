@@ -10,3 +10,12 @@
 - **scope changes**: Added cross-boundary contract tests (not in original issue) and extended `detect_skip_banner` to cover parse-failure/rate_limit/service_unavailable (adjacent fix surfaced during implementation).
 - **blockers**: One test failure from word-boundary regex (`\bRATE_LIMIT\b` vs `RATE_LIMITED`). One always-true assertion caught in hindsight review pass.
 - **pattern**: Structured finding fields (`category`, `title`) from `parse-review.py` already carried all the needed signal — the fix was purely in the render layer. No changes needed to the parse layer. When implementing diagnostic features, check whether upstream already produces structured data before designing a new parsing approach.
+
+## 2026-03-03 — Issue #310: Spec-aware reviews inject AC context
+
+- **issue**: #310
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2.5 hours
+- **scope changes**: Added linked-issue AC bootstrap in `action.yml` plus AC parsing/dedup logic in prompt renderer; added focused prompt tests.
+- **blockers**: Initial YAML heredoc indentation broke action parsing; replaced with one-line python commands in run block.
+- **pattern**: Keep CI action shell blocks heredoc-free when possible; small parsing helpers in Python are safer than multiline embedded scripts for YAML stability.
