@@ -11,7 +11,6 @@ import json
 import os
 import random
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,6 +34,7 @@ from lib.runtime_facade import (
 
 BASE_DEFAULT_MODEL = "openrouter/moonshotai/kimi-k2.5"
 MAX_RETRIES = 3
+MAX_UNKNOWN_RETRIES = 1
 
 
 def eprint(msg: str) -> None:
@@ -644,14 +644,15 @@ def main(argv: list[str]) -> int:
                 run_completed = True
                 break
 
-            if detected_error_type == "transient" and retry_count < MAX_RETRIES:
+            max_for_type = MAX_RETRIES if detected_error_type == "transient" else MAX_UNKNOWN_RETRIES
+            if detected_error_type in {"transient", "unknown"} and retry_count < max_for_type:
                 retry_count += 1
                 wait_seconds = default_backoff_seconds(retry_count)
                 if detected_error_class == "rate_limit" and detected_retry_after and detected_retry_after > 0:
                     wait_seconds = detected_retry_after
                 print(
-                    "Retrying after transient error "
-                    f"(class={detected_error_class}) attempt {retry_count}/{MAX_RETRIES}; wait={wait_seconds}s"
+                    f"Retrying {detected_error_type} error "
+                    f"(class={detected_error_class}) attempt {retry_count}/{max_for_type}; wait={wait_seconds}s"
                 )
                 maybe_sleep(wait_seconds)
                 continue
@@ -763,7 +764,16 @@ def main(argv: list[str]) -> int:
             stderr=read_text(stderr_file) if stderr_file.exists() else "",
             exit_code=exit_code,
         )
-        if error_type in {"permanent", "transient"}:
+        # Unknown errors only SKIP if there's evidence of API interaction (output exists).
+        # Empty output from unknown errors likely indicates infrastructure failure (e.g. missing
+        # binary) and should still fail the job to surface broken reviewer environments.
+        # Note: any non-empty output (stdout, stderr, or scratchpad) implies the runtime started.
+        has_output = (
+            (stdout_file.exists() and stdout_file.stat().st_size > 0)
+            or (stderr_file.exists() and stderr_file.stat().st_size > 0)
+            or (scratchpad.exists() and scratchpad.stat().st_size > 0)
+        )
+        if error_type in {"permanent", "transient"} or (error_type == "unknown" and has_output):
             print(f"{error_type.capitalize()} API/runtime error detected. Writing error verdict.")
             write_api_error_marker(stdout_file=stdout_file, stderr_file=stderr_file, models=models)
             exit_code = 0
@@ -772,9 +782,6 @@ def main(argv: list[str]) -> int:
         eprint("--- stderr ---")
         if stderr_file.exists():
             eprint(read_text(stderr_file))
-        if (scratchpad.exists() and scratchpad.stat().st_size > 0) or (stdout_file.exists() and stdout_file.stat().st_size > 0):
-            print("Unknown error but output exists — delegating to parser.")
-            exit_code = 0
 
     timeout_marker = cerberus_tmp / f"{perspective}-timeout-marker.txt"
     parse_input: Path
@@ -884,7 +891,7 @@ def main(argv: list[str]) -> int:
     write_text(cerberus_tmp / f"{perspective}-exitcode", str(exit_code))
     return exit_code
 
-    
+
 if __name__ == "__main__":
     try:
         rc = main(sys.argv[1:])

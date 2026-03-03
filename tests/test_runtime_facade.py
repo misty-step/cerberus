@@ -109,6 +109,14 @@ class TestClassifyRuntimeError:
         )
         assert (t, c) == ("transient", "network")
 
+    def test_request_was_aborted_is_network(self) -> None:
+        t, c, _ = classify_runtime_error(
+            stdout="",
+            stderr="Request was aborted",
+            exit_code=1,
+        )
+        assert (t, c) == ("transient", "network")
+
     def test_client_4xx(self) -> None:
         t, c, _ = classify_runtime_error(
             stdout="",
