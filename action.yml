@@ -167,8 +167,6 @@ runs:
         fi
         echo "pr-context-error-kind=" >> "$GITHUB_OUTPUT"
         echo "pr-context-error-message=" >> "$GITHUB_OUTPUT"
-        echo "linked-issue-number=" >> "$GITHUB_OUTPUT"
-        echo "linked-issue-body-file=" >> "$GITHUB_OUTPUT"
 
         # Classify GitHub auth failures vs permission problems.
         classify_pr_view_error() {
@@ -274,18 +272,6 @@ runs:
           exit 1
         fi
 
-        pr_body="$(python3 -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); print((p.get("body") or ""), end="")' "$CERBERUS_TMP/pr-context.json" 2>/dev/null || true)"
-        linked_issue_number="$(python3 -c 'import re,sys; t=sys.argv[1] if len(sys.argv) > 1 else ""; m=re.search(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*(?:https?://github\.com/[^/\s]+/[^/\s]+/issues/)?#?(\d+)\b", t, flags=re.IGNORECASE); print(m.group(1) if m else "", end="")' "$pr_body")"
-        if [[ -n "$linked_issue_number" ]]; then
-          linked_issue_body_file="$CERBERUS_TMP/linked-issue-body.md"
-          if timeout 20s gh issue view "$linked_issue_number" --repo "$REPO" --json body --jq '.body // ""' > "$linked_issue_body_file"; then
-            echo "linked-issue-number=$linked_issue_number" >> "$GITHUB_OUTPUT"
-            echo "linked-issue-body-file=$linked_issue_body_file" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::Unable to fetch linked issue #$linked_issue_number body for AC extraction."
-          fi
-        fi
-
         echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
     - name: Run review
@@ -299,8 +285,10 @@ runs:
         OPENCODE_MODEL: ${{ inputs.model }}
         MODEL_TIER: ${{ inputs.model-tier }}
         MODEL_WAVE: ${{ inputs.model-wave }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        CERBERUS_REPO: ${{ github.repository }}
+        CERBERUS_PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
         CERBERUS_CONTEXT: ${{ inputs.context }}
-        CERBERUS_LINKED_ISSUE_BODY_FILE: ${{ steps.pr.outputs.linked-issue-body-file }}
         CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}

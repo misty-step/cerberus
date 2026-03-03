@@ -10,11 +10,12 @@ Produce one high-signal review with actionable findings and a final schema-valid
 
 ## Required Workflow
 1. Read the diff file path provided in the prompt.
-2. Investigate changed files plus required nearby context.
-3. Keep findings scoped to PR-introduced behavior (except defaults-change scope).
-4. For each finding, include exact code evidence from the cited file/line.
-5. Keep reviewer notes in `/tmp/<perspective>-review.md`.
-6. End with exactly one fenced `json` block and nothing after it.
+2. Use `github_read` to fetch linked issues and PR discussion context before final verdict.
+3. Investigate changed files plus required nearby context.
+4. Keep findings scoped to PR-introduced behavior (except defaults-change scope).
+5. For each finding, include exact code evidence from the cited file/line.
+6. Keep reviewer notes in `/tmp/<perspective>-review.md`.
+7. End with exactly one fenced `json` block and nothing after it.
 
 ## Output Contract
 - Use Cerberus severity set: `critical`, `major`, `minor`, `info`.
