@@ -228,7 +228,7 @@ class TestParseReviewMetadata:
                 perspective=perspective,
             )
 
-            assert code == 0
+            assert code == 3
             data = json.loads(out)
             assert data["verdict"] == "SKIP"
             assert data["reviewer"] == "SENTINEL"
@@ -250,7 +250,7 @@ class TestParseReviewMetadata:
             perspective=perspective,
         )
 
-        assert code == 0
+        assert code == 3
         data = json.loads(out)
         assert data["verdict"] == "SKIP"
         # Should not have retry info in summary
@@ -276,7 +276,7 @@ class TestParseReviewMetadata:
                 perspective=perspective,
             )
 
-            assert code == 0
+            assert code == 3
             data = json.loads(out)
             # Scratchpad without a JSON block is treated as SKIP (non-blocking) even if it has a verdict header.
             assert data["verdict"] == "SKIP"

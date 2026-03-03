@@ -305,6 +305,143 @@ def test_permanent_api_error_is_written_for_parser(tmp_path: Path) -> None:
     assert "API Error: API_KEY_INVALID" in parse_file.read_text()
 
 
+def test_parse_retry_exits3_routes_to_llm_retry_max_two(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{attempt_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{attempt_counter}'\n"
+            "echo 'no structured output here'\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert attempt_counter.read_text() == "3"  # initial + 2 parse retries
+    assert "parse-review exited 3 (no JSON block): LLM retry 1/2" in result.stdout
+    assert "parse-review exited 3 (no JSON block): LLM retry 2/2" in result.stdout
+
+
+def test_parse_retry_exhausted_writes_skip_metadata(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    make_executable(
+        bin_dir / "pi",
+        "#!/usr/bin/env bash\necho 'still no json block'\n",
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    retries_file = Path("/tmp/security-parse-failure-retries.txt")
+    models_file = Path("/tmp/security-parse-failure-models.txt")
+    assert retries_file.exists()
+    assert models_file.exists()
+    assert retries_file.read_text().strip() == "2"
+
+
+def test_parse_retry_first_retry_success_continues(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{attempt_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{attempt_counter}'\n"
+            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "  echo 'missing json on first attempt'\n"
+            "  exit 0\n"
+            "fi\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"PASS",'
+              '"confidence":0.95,"summary":"Recovered after parse retry",'
+              '"findings":[],"stats":{"files_reviewed":1,"files_with_issues":0,'
+              '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert attempt_counter.read_text() == "2"
+    assert "parse-review exited 3 (no JSON block): LLM retry 1/2" in result.stdout
+    assert "Parse recovery successful: valid JSON block found." in result.stdout
+
+
+def test_parse_retry_invalid_json_block_no_retry(tmp_path: Path) -> None:
+    """Output has a JSON block, so parse-recovery retry routing should not fire."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0")
+
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{attempt_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{attempt_counter}'\n"
+            "cat <<'REVIEW'\n"
+            "```json\n"
+            "{invalid json payload}\n"
+            "```\n"
+            "REVIEW\n"
+        ),
+    )
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert attempt_counter.read_text() == "1"
+    assert "parse-review exited 3 (no JSON block):" not in result.stdout
+
+
 def test_timeout_with_partial_output_exits_zero(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

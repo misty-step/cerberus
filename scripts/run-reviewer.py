@@ -35,6 +35,7 @@ from lib.runtime_facade import (
 BASE_DEFAULT_MODEL = "openrouter/moonshotai/kimi-k2.5"
 MAX_RETRIES = 3
 MAX_UNKNOWN_RETRIES = 1
+MAX_PARSE_RETRIES = 2
 
 
 def eprint(msg: str) -> None:
@@ -706,8 +707,12 @@ def main(argv: list[str]) -> int:
         and not has_valid_json_block(scratchpad)
     ):
         print("Parse failure detected: no valid JSON block in output. Attempting recovery retries...")
+        try:
+            current_model_index = models.index(model_used)
+        except ValueError:
+            current_model_index = 0
 
-        for pf_model in models:
+        while parse_failure_retries < MAX_PARSE_RETRIES:
             if has_valid_json_block(stdout_file) or has_valid_json_block(scratchpad):
                 print("Parse recovery: valid JSON found after retry.")
                 break
@@ -717,9 +722,15 @@ def main(argv: list[str]) -> int:
                 print("Parse recovery: timeout budget exhausted, skipping remaining models.")
                 break
 
-            parse_failure_models_attempted.append(pf_model)
             parse_failure_retries += 1
-            print(f"Parse recovery retry {parse_failure_retries}: model={pf_model}")
+            next_index = (current_model_index + parse_failure_retries) % len(models)
+            pf_model = models[next_index]
+            parse_failure_models_attempted.append(pf_model)
+            print(
+                f"parse-review exited 3 (no JSON block): LLM retry "
+                f"{parse_failure_retries}/{MAX_PARSE_RETRIES}"
+            )
+            print(f"Parse recovery retry {parse_failure_retries}/{MAX_PARSE_RETRIES}: model={pf_model}")
 
             pf_result = run_attempt(model=pf_model, timeout_seconds=remaining, attempt_prompt_file=prompt_file)
             pf_exit = pf_result.exit_code
