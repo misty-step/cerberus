@@ -191,6 +191,8 @@ runs:
           echo "pr-context-error-message=Missing pull request number for gh context fetch." >> "$GITHUB_OUTPUT"
           exit 1
         fi
+        # Deterministic bootstrap only: prompt scaffolding data.
+        # Semantic context (issues/comments/acceptance criteria) is fetched in-runtime via github_read.
         if ! gh pr diff "$PR_NUMBER" --repo "$REPO" > "$CERBERUS_TMP/pr.diff"; then
           echo "::error::Failed to fetch PR diff via gh pr diff."
           echo "pr-context-error-kind=other" >> "$GITHUB_OUTPUT"
@@ -285,6 +287,7 @@ runs:
         OPENCODE_MODEL: ${{ inputs.model }}
         MODEL_TIER: ${{ inputs.model-tier }}
         MODEL_WAVE: ${{ inputs.model-wave }}
+        # Read-only GitHub context/auth for the github_read extension inside isolated runtime.
         GH_TOKEN: ${{ inputs.github-token }}
         CERBERUS_REPO: ${{ github.repository }}
         CERBERUS_PR_NUMBER: ${{ steps.pr.outputs.pr-number }}

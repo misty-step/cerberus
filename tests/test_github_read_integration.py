@@ -25,3 +25,4 @@ def test_run_review_env_includes_github_auth_and_pr_context() -> None:
     assert "GH_TOKEN: ${{ inputs.github-token }}" in content
     assert "CERBERUS_REPO: ${{ github.repository }}" in content
     assert "CERBERUS_PR_NUMBER: ${{ steps.pr.outputs.pr-number }}" in content
+    assert "CERBERUS_LINKED_ISSUE_BODY_FILE" not in content

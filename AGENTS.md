@@ -67,6 +67,11 @@ Allowed deterministic code is narrow:
 
 If deterministic logic is still chosen for a semantic problem, document explicit justification and risk tradeoff in PR description before merge.
 
+Review context boundary:
+- Deterministic bootstrap may fetch diff + minimal PR metadata for prompt scaffolding.
+- Semantic context (acceptance criteria, issue intent, scope discussion) must be fetched by reviewer agents via `github_read`.
+- Do not add regex/keyword extraction stages for linked-issue inference in workflow glue code.
+
 ---
 
 ## Quality Gates

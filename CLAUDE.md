@@ -21,6 +21,19 @@ Deterministic logic is reserved for:
 
 If deterministic logic is used for semantics anyway, PR must include explicit rationale and quantified risk.
 
+### Review Context Boundary
+
+Deterministic bootstrap in workflow steps is limited to prompt scaffolding data:
+- PR diff
+- PR metadata (title/author/branches/body)
+
+Semantic review context must be retrieved by reviewer agents through the read-only `github_read` tool:
+- linked issues and acceptance criteria
+- PR discussion/comments
+- broader issue/backlog context
+
+Do not reintroduce regex/keyword linked-issue inference or acceptance-criteria injection in action glue code.
+
 ## Architecture
 
 ```text

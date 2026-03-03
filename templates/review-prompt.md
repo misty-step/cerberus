@@ -15,6 +15,7 @@ Review this pull request from your specialized perspective.
 - Use `github_read` to fetch linked issues, PR comments, and issue context before final verdict.
 - Treat GitHub issue/PR data as source of truth for acceptance criteria and scope intent.
 - Keep requests bounded (limit results) and prefer linked issues over guesswork.
+- Do not derive acceptance criteria from regex/keyword heuristics in prompt text.
 
 ## Diff
 The PR diff is at: `{{DIFF_FILE}}`

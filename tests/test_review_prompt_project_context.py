@@ -207,6 +207,7 @@ def test_prompt_instructs_external_context_retrieval() -> None:
     assert "## External Context Retrieval" in rendered
     assert "`github_read`" in rendered
     assert "linked issues" in rendered
+    assert "Do not derive acceptance criteria from regex/keyword heuristics" in rendered
 
 
 def test_prompt_has_no_acceptance_criteria_template_token() -> None:
