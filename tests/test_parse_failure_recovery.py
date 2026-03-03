@@ -50,7 +50,7 @@ def cleanup_tmp_outputs() -> None:
         "parse-input", "output.txt", "stderr.log", "exitcode", "review.md",
         "timeout-marker.txt", "fast-path-prompt.md", "fast-path-output.txt",
         "fast-path-stderr.log", "model-used", "primary-model", "configured-model",
-        "parse-failure-models.txt", "parse-failure-retries.txt",
+        "parse-failure-models.txt", "parse-failure-retries.txt", "timeout-context.json",
     )
     perspectives = ("correctness", "architecture", "security", "performance", "maintainability")
     for perspective in perspectives:

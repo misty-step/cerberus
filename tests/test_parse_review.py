@@ -1698,6 +1698,17 @@ class TestTimeoutContextSidecar:
     output (no timeout marker in the text) but the run was cut off by a timeout.
     """
 
+    @staticmethod
+    def _load_module():
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "parse_review_timeout_ctx", str(SCRIPT),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
     def test_partial_output_with_timeout_context_is_timeout_skip(self, tmp_path):
         """When timeout context sidecar exists and no JSON block, emit timeout SKIP."""
         perspective = f"tc_{uuid.uuid4().hex}"
@@ -1795,6 +1806,47 @@ class TestTimeoutContextSidecar:
         # Timeout context must NOT override a successfully-parsed verdict.
         assert data["verdict"] == "PASS"
         assert data["summary"] == "All good."
+
+    def test_timeout_context_invalid_json_is_consumed_and_warns(self, tmp_path, monkeypatch, capsys):
+        """Corrupt sidecar must be consumed and produce a warning."""
+        perspective = f"tc_{uuid.uuid4().hex}"
+        ctx_file = tmp_path / f"{perspective}-timeout-context.json"
+        ctx_file.write_text("{not json")
+
+        mod = self._load_module()
+        monkeypatch.setenv("PERSPECTIVE", perspective)
+        monkeypatch.setattr(mod, "CERBERUS_TMP", tmp_path)
+
+        data = mod.get_timeout_context()
+        captured = capsys.readouterr()
+
+        assert data == {}
+        assert not ctx_file.exists()
+        assert "could not process timeout context" in captured.err
+
+    def test_timeout_context_unlink_failure_warns(self, tmp_path, monkeypatch, capsys):
+        """When sidecar unlink fails, keep parsed data and emit warning."""
+        perspective = f"tc_{uuid.uuid4().hex}"
+        ctx_file = tmp_path / f"{perspective}-timeout-context.json"
+        ctx_file.write_text(json.dumps({"is_timeout": True, "timeout_seconds": 123}))
+
+        mod = self._load_module()
+        monkeypatch.setenv("PERSPECTIVE", perspective)
+        monkeypatch.setattr(mod, "CERBERUS_TMP", tmp_path)
+
+        orig_unlink = Path.unlink
+
+        def flaky_unlink(path_obj, *args, **kwargs):
+            if path_obj == ctx_file:
+                raise OSError("permission denied")
+            return orig_unlink(path_obj, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", flaky_unlink)
+        data = mod.get_timeout_context()
+        captured = capsys.readouterr()
+
+        assert data == {"is_timeout": True, "timeout_seconds": 123}
+        assert "could not delete timeout context file" in captured.err
 
 
 class TestRawReviewPreservation:

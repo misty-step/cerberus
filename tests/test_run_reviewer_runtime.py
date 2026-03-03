@@ -76,6 +76,7 @@ def cleanup_tmp_outputs() -> None:
         "configured-model",
         "parse-failure-models.txt",
         "parse-failure-retries.txt",
+        "timeout-context.json",
         "runtime-telemetry.ndjson",
     )
     for perspective in PERSPECTIVES:
