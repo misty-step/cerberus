@@ -5,6 +5,7 @@ from lib.review_prompt import (
     MAX_PROJECT_CONTEXT_CHARS,
     PullRequestContext,
     require_env,
+    _extract_linked_issue_number,
     render_review_prompt_from_env,
     render_review_prompt_text,
 )
@@ -193,3 +194,81 @@ def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
     assert '<pr_title trust="UNTRUSTED">Security fix</pr_title>' in rendered
     assert "<pr_description trust=\"UNTRUSTED\">" in rendered
     assert "The PR diff is at: `/tmp/pr.diff`" in rendered
+
+
+def test_acceptance_criteria_prefers_issue_body_and_deduplicates() -> None:
+    pr_context = PullRequestContext(
+        title="Title",
+        author="author",
+        head_branch="feat",
+        base_branch="master",
+        body=(
+            "## Acceptance Criteria\n"
+            "- [ ] issue one\n"
+            "- [ ] pr only\n"
+        ),
+    )
+    issue_body = (
+        "## Acceptance Criteria\n"
+        "- [ ] issue one\n"
+        "- [ ] issue two\n"
+    )
+
+    rendered = render_review_prompt_text(
+        template_text=TEMPLATE,
+        pr_context=pr_context,
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        current_date="2026-03-03",
+        linked_issue_body=issue_body,
+    )
+
+    assert "## Acceptance Criteria" in rendered
+    assert "- issue one" in rendered
+    assert "- issue two" in rendered
+    assert "- pr only" in rendered
+    assert rendered.count("- issue one") == 1
+
+
+def test_acceptance_criteria_falls_back_to_pr_body() -> None:
+    pr_context = PullRequestContext(
+        title="Title",
+        author="author",
+        head_branch="feat",
+        base_branch="master",
+        body=(
+            "## Acceptance Criteria\n"
+            "- [ ] from pr body\n"
+        ),
+    )
+
+    rendered = render_review_prompt_text(
+        template_text=TEMPLATE,
+        pr_context=pr_context,
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        current_date="2026-03-03",
+    )
+
+    assert "## Acceptance Criteria" in rendered
+    assert "- from pr body" in rendered
+
+
+def test_acceptance_criteria_omitted_when_absent() -> None:
+    rendered = render_review_prompt_text(
+        template_text=TEMPLATE,
+        pr_context=_base_pr_context(),
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        current_date="2026-03-03",
+    )
+
+    assert "{{ACCEPTANCE_CRITERIA_SECTION}}" not in rendered
+    assert "## Acceptance Criteria" not in rendered
+
+
+def test_extract_linked_issue_number_matches_closes_fixes_resolves() -> None:
+    assert _extract_linked_issue_number("Closes #310") == "310"
+    assert _extract_linked_issue_number("Fixes #42") == "42"
+    assert _extract_linked_issue_number("Resolves #7") == "7"
+    assert _extract_linked_issue_number("no issue") is None

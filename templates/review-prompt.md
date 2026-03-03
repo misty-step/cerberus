@@ -11,6 +11,8 @@ Review this pull request from your specialized perspective.
 {{PR_BODY}}
 </pr_description>
 
+{{ACCEPTANCE_CRITERIA_SECTION}}
+
 ## Diff
 The PR diff is at: `{{DIFF_FILE}}`
 

@@ -16,7 +16,18 @@ from typing import Mapping
 from .prompt_sanitize import escape_untrusted_xml
 
 MAX_PROJECT_CONTEXT_CHARS = 4000
+MAX_ACCEPTANCE_CRITERIA_ITEMS = 20
 TOKEN_RE = re.compile(r"\{\{[A-Z0-9_]+\}\}")
+LINKED_ISSUE_RE = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*"
+    r"(?:https?://github\.com/[^/\s]+/[^/\s]+/issues/)?#?(\d+)\b",
+    re.IGNORECASE,
+)
+AC_HEADING_RE = re.compile(r"^(#{1,6})\s*acceptance criteria\b", re.IGNORECASE)
+HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
+CHECKLIST_ITEM_RE = re.compile(r"^[-*]\s*\[[ xX]\]\s+(.+)$")
+UNORDERED_ITEM_RE = re.compile(r"^[-*]\s+(.+)$")
+ORDERED_ITEM_RE = re.compile(r"^\d+\.\s+(.+)$")
 
 
 def require_env(name: str, env: Mapping[str, str]) -> str:
@@ -122,6 +133,84 @@ def _render_project_context_section(project_context: str | None) -> str:
     )
 
 
+def _extract_linked_issue_number(pr_body: str) -> str | None:
+    match = LINKED_ISSUE_RE.search(pr_body or "")
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_acceptance_criteria_items(markdown: str) -> list[str]:
+    lines = markdown.splitlines()
+    start_index = None
+    section_level = None
+    for idx, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        match = AC_HEADING_RE.match(line)
+        if match:
+            start_index = idx + 1
+            section_level = len(match.group(1))
+            break
+    if start_index is None or section_level is None:
+        return []
+
+    section_lines: list[str] = []
+    for raw_line in lines[start_index:]:
+        stripped = raw_line.strip()
+        heading_match = HEADING_RE.match(stripped)
+        if heading_match and len(heading_match.group(1)) <= section_level:
+            break
+        section_lines.append(stripped)
+
+    items: list[str] = []
+    for line in section_lines:
+        if not line:
+            continue
+        for pattern in (CHECKLIST_ITEM_RE, UNORDERED_ITEM_RE, ORDERED_ITEM_RE):
+            item_match = pattern.match(line)
+            if item_match:
+                item = item_match.group(1).strip()
+                if item:
+                    items.append(item)
+                break
+    return items
+
+
+def _render_acceptance_criteria_section(
+    *,
+    pr_body: str,
+    linked_issue_body: str | None,
+) -> str:
+    issue_items = _extract_acceptance_criteria_items(linked_issue_body or "")
+    pr_items = _extract_acceptance_criteria_items(pr_body)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in issue_items + pr_items:
+        key = " ".join(item.split()).casefold()
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(item)
+
+    if not deduped:
+        return ""
+
+    trunc_note = ""
+    if len(deduped) > MAX_ACCEPTANCE_CRITERIA_ITEMS:
+        truncated_count = len(deduped) - MAX_ACCEPTANCE_CRITERIA_ITEMS
+        deduped = deduped[:MAX_ACCEPTANCE_CRITERIA_ITEMS]
+        trunc_note = f"\n(Note: {truncated_count} additional AC(s) omitted.)"
+
+    escaped_items = [f"- {escape_untrusted_xml(item)}" for item in deduped]
+    return (
+        "## Acceptance Criteria\n"
+        '<acceptance_criteria trust="SEMI_TRUSTED">\n'
+        f"{'\n'.join(escaped_items)}\n"
+        "</acceptance_criteria>"
+        f"{trunc_note}\n"
+    )
+
+
 def render_review_prompt_text(
     *,
     template_text: str,
@@ -130,6 +219,7 @@ def render_review_prompt_text(
     perspective: str,
     current_date: str | None = None,
     project_context: str | None = None,
+    linked_issue_body: str | None = None,
 ) -> str:
     """Render review prompt text."""
     current_date = current_date or date.today().isoformat()
@@ -142,9 +232,14 @@ def render_review_prompt_text(
     base_branch = escape_untrusted_xml(pr_context.base_branch)
     pr_body = escape_untrusted_xml(pr_context.body)
     project_context_section = _render_project_context_section(project_context)
+    ac_section = _render_acceptance_criteria_section(
+        pr_body=pr_context.body,
+        linked_issue_body=linked_issue_body,
+    )
 
     replacements = {
         "{{PROJECT_CONTEXT_SECTION}}": project_context_section,
+        "{{ACCEPTANCE_CRITERIA_SECTION}}": ac_section,
         "{{PR_TITLE}}": pr_title,
         "{{PR_AUTHOR}}": pr_author,
         "{{HEAD_BRANCH}}": head_branch,
@@ -179,6 +274,12 @@ def render_review_prompt_file(
         raise OSError(f"unable to read template {template_path}: {exc}") from exc
     pr_context = load_pr_context(env)
     project_context = env.get("CERBERUS_CONTEXT", "") or ""
+    linked_issue_body = env.get("CERBERUS_LINKED_ISSUE_BODY", "") or ""
+    linked_issue_body_file = env.get("CERBERUS_LINKED_ISSUE_BODY_FILE", "") or ""
+    if linked_issue_body_file:
+        path = Path(linked_issue_body_file)
+        if path.exists():
+            linked_issue_body = path.read_text(encoding="utf-8")
 
     rendered = render_review_prompt_text(
         template_text=template_text,
@@ -186,6 +287,7 @@ def render_review_prompt_file(
         diff_file=diff_file,
         perspective=perspective,
         project_context=project_context,
+        linked_issue_body=linked_issue_body,
     )
     try:
         output_path.write_text(rendered, encoding="utf-8")
