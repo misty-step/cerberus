@@ -75,6 +75,7 @@ Three waves with flash → standard → pro model escalation.
 - **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@master`
 - **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`
 - **Optional:** add `templates/triage-workflow.yml` for automated failure triage
+- **Optional polish pass:** `.github/workflows/orpheus.yml` (comment-triggered Orpheus handoff after review stabilization)
 
 ## How It Works
 1. Each reviewer runs as a parallel matrix job
