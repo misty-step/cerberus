@@ -178,7 +178,7 @@ export default function githubReadExtension(pi: ExtensionAPI) {
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      closingIssuesReferences(first: 50) {
+      closingIssuesReferences(first: ${limit}) {
         nodes {
           number
           title

@@ -49,7 +49,7 @@ def test_get_pr_comments_contract() -> None:
 
 
 def test_get_linked_issues_contract() -> None:
-    assert "closingIssuesReferences(first: 50)" in TEXT
+    assert "closingIssuesReferences(first: ${limit})" in TEXT
     assert "number" in TEXT
     assert "title" in TEXT
     assert "url" in TEXT
