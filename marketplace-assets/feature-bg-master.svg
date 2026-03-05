@@ -1,0 +1,38 @@
+<svg width="1930" height="964" viewBox="0 0 1930 964" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="55%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#1f2937"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="48%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#dc2626" stop-opacity="0.32"/>
+      <stop offset="38%" stop-color="#dc2626" stop-opacity="0.11"/>
+      <stop offset="100%" stop-color="#dc2626" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.03"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+
+  <rect width="1930" height="964" fill="url(#base)"/>
+  <rect width="1930" height="964" fill="url(#glow)"/>
+
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.11" stroke-width="6">
+    <circle cx="965" cy="456" r="168"/>
+    <circle cx="1196" cy="486" r="168"/>
+    <circle cx="734" cy="486" r="168"/>
+  </g>
+
+  <g fill="none" stroke="#dc2626" stroke-opacity="0.34" stroke-width="2.5">
+    <circle cx="965" cy="456" r="228"/>
+    <circle cx="1196" cy="486" r="228"/>
+    <circle cx="734" cy="486" r="228"/>
+  </g>
+
+  <rect width="1930" height="964" filter="url(#noise)"/>
+</svg>
