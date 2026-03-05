@@ -10,7 +10,7 @@ Produce one high-signal review with actionable findings and a final schema-valid
 
 ## Required Workflow
 1. Read the diff file path provided in the prompt.
-2. Use `github_read` to fetch linked issues and PR discussion context before final verdict.
+2. Use `github_read` to fetch linked issues and PR discussion context before final verdict. If the tool is unavailable (auth/network failure), proceed with the PR metadata provided in the prompt.
 3. Investigate changed files plus required nearby context.
 4. Keep findings scoped to PR-introduced behavior (except defaults-change scope).
 5. For each finding, include exact code evidence from the cited file/line.
