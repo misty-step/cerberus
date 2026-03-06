@@ -52,6 +52,26 @@ Prefer Unix-style composition. If a script is becoming a monolith, break it into
 ### 3. Test-First Workflow
 For non-trivial changes, start with a reproduction or a failing test. We do not lower the coverage floor (currently 70% for `scripts/`).
 
+### 4. LLM-First Semantics (Hard Rule)
+Do not implement semantic classification, prioritization, extraction, or judgment with deterministic heuristics when an LLM can do it.
+
+Examples banned by default:
+- regex/keyword severity classifiers
+- brittle rule trees for intent/category inference
+- string-match scoring used as semantic truth
+
+Allowed deterministic code is narrow:
+- schema validation and type checks
+- protocol/format parsing where syntax is exact
+- safety/permission gates and hard constraints
+
+If deterministic logic is still chosen for a semantic problem, document explicit justification and risk tradeoff in PR description before merge.
+
+Review context boundary:
+- Deterministic bootstrap may fetch diff + minimal PR metadata for prompt scaffolding.
+- Semantic context (acceptance criteria, issue intent, scope discussion) must be fetched by reviewer agents via `github_read`.
+- Do not add regex/keyword extraction stages for linked-issue inference in workflow glue code.
+
 ---
 
 ## Quality Gates

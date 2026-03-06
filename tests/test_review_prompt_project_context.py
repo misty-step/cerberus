@@ -193,3 +193,22 @@ def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
     assert '<pr_title trust="UNTRUSTED">Security fix</pr_title>' in rendered
     assert "<pr_description trust=\"UNTRUSTED\">" in rendered
     assert "The PR diff is at: `/tmp/pr.diff`" in rendered
+
+
+def test_prompt_instructs_external_context_retrieval() -> None:
+    rendered = render_review_prompt_text(
+        template_text=TEMPLATE,
+        pr_context=_base_pr_context(),
+        diff_file="/tmp/pr.diff",
+        perspective="trace",
+        current_date="2026-03-03",
+    )
+
+    assert "## External Context Retrieval" in rendered
+    assert "`github_read`" in rendered
+    assert "linked issues" in rendered
+    assert "Prefer tool-retrieved criteria as the primary source" in rendered
+
+
+def test_prompt_has_no_acceptance_criteria_template_token() -> None:
+    assert "{{ACCEPTANCE_CRITERIA_SECTION}}" not in TEMPLATE

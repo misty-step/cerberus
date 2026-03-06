@@ -8,6 +8,32 @@ Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six 
 
 Repo scope: this repository is the OSS BYOK GitHub Actions distribution. Cerberus Cloud (managed GitHub App) is planned as a separate repo/product (see `docs/adr/002-oss-core-and-cerberus-cloud.md`).
 
+## LLM-First Policy (Mandatory)
+
+For semantic tasks (classification, relevance, intent mapping, finding triage, acceptance-criteria compliance), default to LLM reasoning instead of deterministic heuristics.
+
+Do not ship heuristic-only semantic systems (regex ladders, keyword scorecards, static decision trees) unless the problem is strictly syntactic.
+
+Deterministic logic is reserved for:
+- hard validation (schema/type/range)
+- exact protocol parsing
+- security and permission constraints
+
+If deterministic logic is used for semantics anyway, PR must include explicit rationale and quantified risk.
+
+### Review Context Boundary
+
+Deterministic bootstrap in workflow steps is limited to prompt scaffolding data:
+- PR diff
+- PR metadata (title/author/branches/body)
+
+Semantic review context must be retrieved by reviewer agents through the read-only `github_read` tool:
+- linked issues and acceptance criteria
+- PR discussion/comments
+- broader issue/backlog context
+
+Do not reintroduce regex/keyword linked-issue inference or acceptance-criteria injection in action glue code.
+
 ## Architecture
 
 ```text
