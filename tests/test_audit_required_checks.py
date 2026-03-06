@@ -51,6 +51,20 @@ def test_build_patch_command_uses_required_status_checks_endpoint():
     assert '"contexts":["merge-gate"]' in command
 
 
+def test_build_patch_command_warns_for_app_scoped_checks():
+    protection = RepoProtection(
+        repo="misty-step/cerberus",
+        branch="master",
+        strict=True,
+        checks=("CI",),
+        has_app_scoped_checks=True,
+    )
+
+    command = audit_required_checks.build_patch_command(protection, "merge-gate", "CI")
+
+    assert command.startswith("# warning: repo uses app-scoped required checks")
+
+
 def test_format_markdown_report_counts_matching_repos():
     protections = [
         RepoProtection(repo="misty-step/cerberus", branch="master", strict=True, checks=("CI",)),
@@ -154,10 +168,27 @@ def test_run_gh_raises_with_stderr_message(monkeypatch):
         audit_required_checks.run_gh(["repo", "list"])
 
 
+def test_run_gh_raises_when_cli_times_out(monkeypatch):
+    def fake_run(*_args, **_kwargs):
+        raise audit_required_checks.subprocess.TimeoutExpired(cmd="gh", timeout=30)
+
+    monkeypatch.setattr(audit_required_checks.subprocess, "run", fake_run)
+
+    with pytest.raises(audit_required_checks.GHError, match="timed out"):
+        audit_required_checks.run_gh(["repo", "list"])
+
+
 def test_load_json_decodes_run_gh_output(monkeypatch):
     monkeypatch.setattr(audit_required_checks, "run_gh", lambda _args: '{"ok": true}')
 
     assert audit_required_checks.load_json(["api"]) == {"ok": True}
+
+
+def test_load_json_wraps_invalid_json(monkeypatch):
+    monkeypatch.setattr(audit_required_checks, "run_gh", lambda _args: "{")
+
+    with pytest.raises(audit_required_checks.GHError, match="invalid JSON"):
+        audit_required_checks.load_json(["api"])
 
 
 def test_list_repos_ignores_missing_branch_data(monkeypatch):
@@ -181,13 +212,30 @@ def test_list_repos_ignores_missing_branch_data(monkeypatch):
     assert repos == [RepoRef(repo="misty-step/active", branch="master", archived=False)]
 
 
+def test_list_repos_rejects_non_list_payload(monkeypatch):
+    monkeypatch.setattr(audit_required_checks, "load_json", lambda _args: {"oops": True})
+
+    with pytest.raises(audit_required_checks.GHError, match="non-list JSON"):
+        audit_required_checks.list_repos("misty-step", 10, include_archived=False)
+
+
 def test_get_branch_protection_returns_none_when_gh_fails(monkeypatch):
     def raise_error(_args):
-        raise audit_required_checks.GHError("forbidden")
+        raise audit_required_checks.GHError("404 Not Found")
 
     monkeypatch.setattr(audit_required_checks, "load_json", raise_error)
 
     assert audit_required_checks.get_branch_protection("misty-step/cerberus", "master") is None
+
+
+def test_get_branch_protection_reraises_non_404_errors(monkeypatch):
+    def raise_error(_args):
+        raise audit_required_checks.GHError("403 Forbidden")
+
+    monkeypatch.setattr(audit_required_checks, "load_json", raise_error)
+
+    with pytest.raises(audit_required_checks.GHError, match="403 Forbidden"):
+        audit_required_checks.get_branch_protection("misty-step/cerberus", "master")
 
 
 def test_get_branch_protection_combines_contexts_and_checks(monkeypatch):
@@ -208,7 +256,32 @@ def test_get_branch_protection_combines_contexts_and_checks(monkeypatch):
         branch="master",
         strict=True,
         checks=("merge-gate", "review / Cerberus"),
+        has_app_scoped_checks=False,
     )
+
+
+def test_get_branch_protection_flags_app_scoped_checks(monkeypatch):
+    payload = {
+        "required_status_checks": {
+            "strict": True,
+            "contexts": [],
+            "checks": [{"context": "merge-gate", "app_id": 12345}],
+        }
+    }
+
+    monkeypatch.setattr(audit_required_checks, "load_json", lambda _args: payload)
+
+    protection = audit_required_checks.get_branch_protection("misty-step/cerberus", "master")
+
+    assert protection is not None
+    assert protection.has_app_scoped_checks is True
+
+
+def test_get_branch_protection_rejects_non_dict_payload(monkeypatch):
+    monkeypatch.setattr(audit_required_checks, "load_json", lambda _args: [])
+
+    with pytest.raises(audit_required_checks.GHError, match="not a JSON object"):
+        audit_required_checks.get_branch_protection("misty-step/cerberus", "master")
 
 
 def test_format_markdown_report_handles_no_ambiguous_or_matching_repos():
@@ -236,6 +309,11 @@ def test_parse_args_supports_include_archived(monkeypatch):
     assert args.org == "misty-step"
     assert args.include_archived is True
     assert args.json is True
+
+
+def test_positive_int_rejects_zero():
+    with pytest.raises(audit_required_checks.argparse.ArgumentTypeError, match=">= 1"):
+        audit_required_checks.positive_int("0")
 
 
 def test_main_prints_json_report(monkeypatch, capsys):
@@ -314,3 +392,58 @@ def test_main_prints_markdown_report(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "## Required Check Audit" in out
     assert "- repos with ambiguous check names: 0" in out
+
+
+def test_main_returns_error_when_repo_listing_fails(monkeypatch, capsys):
+    monkeypatch.setattr(
+        audit_required_checks,
+        "parse_args",
+        lambda: SimpleNamespace(
+            org="misty-step",
+            limit=10,
+            match_check="CI",
+            replacement="merge-gate",
+            include_archived=False,
+            flag_ambiguous=False,
+            json=False,
+        ),
+    )
+    monkeypatch.setattr(
+        audit_required_checks,
+        "list_repos",
+        lambda _org, _limit, include_archived: (_ for _ in ()).throw(audit_required_checks.GHError("boom")),
+    )
+
+    assert audit_required_checks.main() == 1
+    assert "failed to list repos" in capsys.readouterr().err
+
+
+def test_main_warns_and_skips_repo_level_failures(monkeypatch, capsys):
+    monkeypatch.setattr(
+        audit_required_checks,
+        "parse_args",
+        lambda: SimpleNamespace(
+            org="misty-step",
+            limit=10,
+            match_check="CI",
+            replacement="merge-gate",
+            include_archived=False,
+            flag_ambiguous=False,
+            json=False,
+        ),
+    )
+    monkeypatch.setattr(
+        audit_required_checks,
+        "list_repos",
+        lambda _org, _limit, include_archived: [
+            RepoRef(repo="misty-step/cerberus", branch="master", archived=include_archived)
+        ],
+    )
+    monkeypatch.setattr(
+        audit_required_checks,
+        "get_branch_protection",
+        lambda _repo, _branch: (_ for _ in ()).throw(audit_required_checks.GHError("403 Forbidden")),
+    )
+
+    assert audit_required_checks.main() == 0
+    assert "warning: skipping misty-step/cerberus: 403 Forbidden" in capsys.readouterr().err

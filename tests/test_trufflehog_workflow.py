@@ -14,7 +14,7 @@ def _load_workflow() -> dict:
 
 def test_trufflehog_workflow_pins_action_and_uses_event_specific_refs() -> None:
     workflow = _load_workflow()
-    step = workflow["jobs"]["trufflehog"]["steps"][1]
+    step = next(s for s in workflow["jobs"]["trufflehog"]["steps"] if s.get("name") == "Run TruffleHog")
 
     assert step["uses"] == "trufflesecurity/trufflehog@c3e599b7163e8198a55467f3133db0e7b2a492cb"
     assert "github.event.pull_request.base.sha" in step["with"]["base"]
