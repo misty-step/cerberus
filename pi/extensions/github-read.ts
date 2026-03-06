@@ -159,20 +159,16 @@ export default function githubReadExtension(pi: ExtensionAPI) {
 
 				if (params.action === "get_pr_comments") {
 					const prNumber = resolvePrNumber(params);
-					const issueComments = await ghJson(
-						[
-							"api",
-							`repos/${repo}/issues/${prNumber}/comments?per_page=${limit}`,
-						],
-						signal,
-					);
-					const reviewComments = await ghJson(
-						[
-							"api",
-							`repos/${repo}/pulls/${prNumber}/comments?per_page=${limit}`,
-						],
-						signal,
-					);
+					const [issueComments, reviewComments] = await Promise.all([
+						ghJson(
+							["api", `repos/${repo}/issues/${prNumber}/comments?per_page=${limit}`],
+							signal,
+						),
+						ghJson(
+							["api", `repos/${repo}/pulls/${prNumber}/comments?per_page=${limit}`],
+							signal,
+						),
+					]);
 					const payload = {
 						issue_comments: issueComments,
 						review_comments: reviewComments,
