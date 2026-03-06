@@ -25,13 +25,21 @@ class GHError(Exception):
 
 
 @dataclass(frozen=True)
+class RequiredCheck:
+    """Required status check with optional GitHub App binding."""
+
+    context: str
+    app_id: int | None = None
+
+
+@dataclass(frozen=True)
 class RepoProtection:
     """Repo default branch protection snapshot."""
 
     repo: str
     branch: str
     strict: bool
-    checks: tuple[str, ...]
+    checks: tuple[RequiredCheck, ...]
     has_app_scoped_checks: bool = False
 
 
@@ -114,19 +122,24 @@ def get_branch_protection(repo: str, branch: str) -> RepoProtection | None:
     if not isinstance(required, dict):
         raise GHError(f"{repo}: required_status_checks payload was not a JSON object")
     strict = bool(required.get("strict", False))
-    names = []
+    checks_by_context: dict[str, RequiredCheck] = {}
     has_app_scoped_checks = False
     for context in required.get("contexts", []) or []:
         if isinstance(context, str) and context:
-            names.append(context)
+            checks_by_context[context] = RequiredCheck(context=context)
     for check in required.get("checks", []) or []:
         context = check.get("context") if isinstance(check, dict) else None
         app_id = check.get("app_id") if isinstance(check, dict) else None
         if isinstance(app_id, int) and app_id != -1:
             has_app_scoped_checks = True
         if isinstance(context, str) and context:
-            names.append(context)
-    deduped = tuple(sorted(set(names)))
+            existing = checks_by_context.get(context)
+            if existing is None or existing.app_id is None:
+                checks_by_context[context] = RequiredCheck(
+                    context=context,
+                    app_id=app_id if isinstance(app_id, int) else None,
+                )
+    deduped = tuple(sorted(checks_by_context.values(), key=lambda item: item.context))
     if not deduped:
         return None
     return RepoProtection(
@@ -140,10 +153,15 @@ def get_branch_protection(repo: str, branch: str) -> RepoProtection | None:
 
 def build_patch_payload(protection: RepoProtection, replacement: str, match_check: str) -> dict[str, object]:
     """Build required_status_checks payload with one renamed check."""
-    updated = [replacement if check == match_check else check for check in protection.checks]
+    updated = []
+    for check in protection.checks:
+        item = {"context": replacement if check.context == match_check else check.context}
+        if check.app_id is not None:
+            item["app_id"] = check.app_id
+        updated.append(item)
     return {
         "strict": protection.strict,
-        "contexts": updated,
+        "checks": updated,
     }
 
 
@@ -178,9 +196,9 @@ def format_markdown_report(
     flag_ambiguous: bool,
 ) -> str:
     """Render a compact markdown report."""
-    repos_with_match = [p for p in protections if match_check in p.checks]
+    repos_with_match = [p for p in protections if any(check.context == match_check for check in p.checks)]
     repos_with_ambiguous = [
-        p for p in protections if any(check in AMBIGUOUS_CHECK_NAMES for check in p.checks)
+        p for p in protections if any(check.context in AMBIGUOUS_CHECK_NAMES for check in p.checks)
     ]
     lines = [
         "## Required Check Audit",
@@ -197,7 +215,7 @@ def format_markdown_report(
         ]
     )
     for protection in protections:
-        checks = ", ".join(protection.checks)
+        checks = ", ".join(check.context for check in protection.checks)
         lines.append(f"| `{protection.repo}` | `{protection.branch}` | `{checks}` |")
     if flag_ambiguous:
         lines.extend(["", "## Ambiguous Check Names"])
@@ -206,7 +224,7 @@ def format_markdown_report(
         else:
             for protection in repos_with_ambiguous:
                 ambiguous = ", ".join(
-                    check for check in protection.checks if check in AMBIGUOUS_CHECK_NAMES
+                    check.context for check in protection.checks if check.context in AMBIGUOUS_CHECK_NAMES
                 )
                 lines.append(f"- `{protection.repo}`: {ambiguous}")
     lines.extend(
@@ -275,21 +293,26 @@ def main() -> int:
         payload = {
             "org": args.org,
             "repos_with_required_checks": len(protections),
-            "repos_requiring_match_check": len([p for p in protections if args.match_check in p.checks]),
+            "repos_requiring_match_check": len(
+                [p for p in protections if any(check.context == args.match_check for check in p.checks)]
+            ),
             "repos_with_ambiguous_checks": len(
-                [p for p in protections if any(check in AMBIGUOUS_CHECK_NAMES for check in p.checks)]
+                [p for p in protections if any(check.context in AMBIGUOUS_CHECK_NAMES for check in p.checks)]
             ),
             "protections": [
                 {
                     "repo": p.repo,
                     "branch": p.branch,
                     "strict": p.strict,
-                    "checks": list(p.checks),
+                    "checks": [
+                        {"context": check.context, "app_id": check.app_id}
+                        for check in p.checks
+                    ],
                     "ambiguous_checks": [
-                        check for check in p.checks if check in AMBIGUOUS_CHECK_NAMES
+                        check.context for check in p.checks if check.context in AMBIGUOUS_CHECK_NAMES
                     ],
                     "patch_command": build_patch_command(p, args.replacement, args.match_check)
-                    if args.match_check in p.checks
+                    if any(check.context == args.match_check for check in p.checks)
                     else None,
                 }
                 for p in protections

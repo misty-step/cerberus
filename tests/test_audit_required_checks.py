@@ -22,6 +22,7 @@ def _load_module():
 audit_required_checks = _load_module()
 RepoProtection = audit_required_checks.RepoProtection
 RepoRef = audit_required_checks.RepoRef
+RequiredCheck = audit_required_checks.RequiredCheck
 
 
 def test_build_patch_payload_replaces_only_matching_check():
@@ -29,12 +30,15 @@ def test_build_patch_payload_replaces_only_matching_check():
         repo="misty-step/cerberus",
         branch="master",
         strict=True,
-        checks=("CI", "review / Cerberus"),
+        checks=(RequiredCheck("CI"), RequiredCheck("review / Cerberus")),
     )
 
     payload = audit_required_checks.build_patch_payload(protection, "merge-gate", "CI")
 
-    assert payload == {"strict": True, "contexts": ["merge-gate", "review / Cerberus"]}
+    assert payload == {
+        "strict": True,
+        "checks": [{"context": "merge-gate"}, {"context": "review / Cerberus"}],
+    }
 
 
 def test_build_patch_command_uses_required_status_checks_endpoint():
@@ -42,13 +46,13 @@ def test_build_patch_command_uses_required_status_checks_endpoint():
         repo="misty-step/cerberus",
         branch="master",
         strict=True,
-        checks=("CI",),
+        checks=(RequiredCheck("CI"),),
     )
 
     command = audit_required_checks.build_patch_command(protection, "merge-gate", "CI")
 
     assert "repos/misty-step/cerberus/branches/master/protection/required_status_checks" in command
-    assert '"contexts":["merge-gate"]' in command
+    assert '"checks":[{"context":"merge-gate"}]' in command
 
 
 def test_build_patch_command_warns_for_app_scoped_checks():
@@ -56,7 +60,7 @@ def test_build_patch_command_warns_for_app_scoped_checks():
         repo="misty-step/cerberus",
         branch="master",
         strict=True,
-        checks=("CI",),
+        checks=(RequiredCheck("CI", app_id=12345),),
         has_app_scoped_checks=True,
     )
 
@@ -67,8 +71,18 @@ def test_build_patch_command_warns_for_app_scoped_checks():
 
 def test_format_markdown_report_counts_matching_repos():
     protections = [
-        RepoProtection(repo="misty-step/cerberus", branch="master", strict=True, checks=("CI",)),
-        RepoProtection(repo="misty-step/chrondle", branch="master", strict=True, checks=("build", "test")),
+        RepoProtection(
+            repo="misty-step/cerberus",
+            branch="master",
+            strict=True,
+            checks=(RequiredCheck("CI"),),
+        ),
+        RepoProtection(
+            repo="misty-step/chrondle",
+            branch="master",
+            strict=True,
+            checks=(RequiredCheck("build"), RequiredCheck("test")),
+        ),
     ]
 
     report = audit_required_checks.format_markdown_report(
@@ -86,8 +100,18 @@ def test_format_markdown_report_counts_matching_repos():
 
 def test_format_markdown_report_flags_ambiguous_checks():
     protections = [
-        RepoProtection(repo="misty-step/cerberus", branch="master", strict=True, checks=("merge-gate",)),
-        RepoProtection(repo="misty-step/chrondle", branch="master", strict=True, checks=("build", "test")),
+        RepoProtection(
+            repo="misty-step/cerberus",
+            branch="master",
+            strict=True,
+            checks=(RequiredCheck("merge-gate"),),
+        ),
+        RepoProtection(
+            repo="misty-step/chrondle",
+            branch="master",
+            strict=True,
+            checks=(RequiredCheck("build"), RequiredCheck("test")),
+        ),
     ]
 
     report = audit_required_checks.format_markdown_report(
@@ -255,7 +279,7 @@ def test_get_branch_protection_combines_contexts_and_checks(monkeypatch):
         repo="misty-step/cerberus",
         branch="master",
         strict=True,
-        checks=("merge-gate", "review / Cerberus"),
+        checks=(RequiredCheck("merge-gate"), RequiredCheck("review / Cerberus")),
         has_app_scoped_checks=False,
     )
 
@@ -275,6 +299,24 @@ def test_get_branch_protection_flags_app_scoped_checks(monkeypatch):
 
     assert protection is not None
     assert protection.has_app_scoped_checks is True
+    assert protection.checks == (RequiredCheck("merge-gate", app_id=12345),)
+
+
+def test_build_patch_payload_preserves_app_binding():
+    protection = RepoProtection(
+        repo="misty-step/cerberus",
+        branch="master",
+        strict=True,
+        checks=(RequiredCheck("CI", app_id=12345),),
+        has_app_scoped_checks=True,
+    )
+
+    payload = audit_required_checks.build_patch_payload(protection, "merge-gate", "CI")
+
+    assert payload == {
+        "strict": True,
+        "checks": [{"context": "merge-gate", "app_id": 12345}],
+    }
 
 
 def test_get_branch_protection_rejects_non_dict_payload(monkeypatch):
@@ -286,7 +328,14 @@ def test_get_branch_protection_rejects_non_dict_payload(monkeypatch):
 
 def test_format_markdown_report_handles_no_ambiguous_or_matching_repos():
     report = audit_required_checks.format_markdown_report(
-        [RepoProtection(repo="misty-step/cerberus", branch="master", strict=True, checks=("merge-gate",))],
+        [
+            RepoProtection(
+                repo="misty-step/cerberus",
+                branch="master",
+                strict=True,
+                checks=(RequiredCheck("merge-gate"),),
+            )
+        ],
         match_check="CI",
         replacement="merge-gate",
         flag_ambiguous=True,
@@ -344,7 +393,7 @@ def test_main_prints_json_report(monkeypatch, capsys):
             repo="misty-step/cerberus",
             branch="master",
             strict=True,
-            checks=("CI",),
+            checks=(RequiredCheck("CI"),),
         ),
     )
 
@@ -352,6 +401,7 @@ def test_main_prints_json_report(monkeypatch, capsys):
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["repos_requiring_match_check"] == 1
+    assert payload["protections"][0]["checks"] == [{"context": "CI", "app_id": None}]
     assert payload["protections"][0]["patch_command"]
 
 
@@ -383,7 +433,7 @@ def test_main_prints_markdown_report(monkeypatch, capsys):
             repo="misty-step/cerberus",
             branch="master",
             strict=True,
-            checks=("merge-gate",),
+            checks=(RequiredCheck("merge-gate"),),
         ),
     )
 
