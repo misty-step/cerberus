@@ -26,6 +26,12 @@ function splitRepo(repo: string): { owner: string; name: string } {
 	return { owner, name };
 }
 
+function rejectCrossRepoSearchQualifiers(query: string): void {
+	if (/(^|\s)(repo|org|user):/i.test(query)) {
+		throw new Error("search_issues query must not override repository scope");
+	}
+}
+
 function runGh(args: string[], signal?: AbortSignal): Promise<GhResult> {
 	return new Promise((resolve, reject) => {
 		const child = spawn("gh", args, {
@@ -71,8 +77,12 @@ async function ghJson(args: string[], signal?: AbortSignal): Promise<unknown> {
 		const detail = result.stderr.trim() || result.stdout.trim() || "unknown gh failure";
 		throw new Error(`gh command failed: ${detail}`);
 	}
+	const stdout = result.stdout.trim();
+	if (!stdout) {
+		throw new Error("gh returned empty JSON");
+	}
 	try {
-		return JSON.parse(result.stdout || "{}");
+		return JSON.parse(stdout);
 	} catch (error) {
 		throw new Error(`gh returned invalid JSON: ${String(error)}`);
 	}
@@ -175,12 +185,12 @@ export default function githubReadExtension(pi: ExtensionAPI) {
 					const prNumber = resolvePrNumber(params);
 					const { owner, name } = splitRepo(repo);
 					const query = `
-query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      closingIssuesReferences(first: ${limit}) {
-        nodes {
-          number
+	query($owner: String!, $name: String!, $number: Int!, $limit: Int!) {
+	  repository(owner: $owner, name: $name) {
+	    pullRequest(number: $number) {
+	      closingIssuesReferences(first: $limit) {
+	        nodes {
+	          number
           title
           url
           state
@@ -200,12 +210,14 @@ query($owner: String!, $name: String!, $number: Int!) {
 							"-F",
 							`owner=${owner}`,
 							"-F",
-							`name=${name}`,
-							"-F",
-							`number=${prNumber}`,
-						],
-						signal,
-					);
+								`name=${name}`,
+								"-F",
+								`number=${prNumber}`,
+								"-F",
+								`limit=${limit}`,
+							],
+							signal,
+						);
 					const includeBodies = params.includeBodies !== false;
 					if (!includeBodies) {
 						const data = payload as {
@@ -249,12 +261,13 @@ query($owner: String!, $name: String!, $number: Int!) {
 					};
 				}
 
-				if (params.action === "search_issues") {
-					const query = (params.query || "").trim();
-					if (!query) {
-						throw new Error("query is required for search_issues");
-					}
-					const payload = await ghJson(
+					if (params.action === "search_issues") {
+						const query = (params.query || "").trim();
+						if (!query) {
+							throw new Error("query is required for search_issues");
+						}
+						rejectCrossRepoSearchQualifiers(query);
+						const payload = await ghJson(
 						[
 							"api",
 							"search/issues",

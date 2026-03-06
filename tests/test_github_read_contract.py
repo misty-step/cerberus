@@ -49,7 +49,9 @@ def test_get_pr_comments_contract() -> None:
 
 
 def test_get_linked_issues_contract() -> None:
-    assert "closingIssuesReferences(first: ${limit})" in TEXT
+    assert "query($owner: String!, $name: String!, $number: Int!, $limit: Int!)" in TEXT
+    assert "closingIssuesReferences(first: $limit)" in TEXT
+    assert "`limit=${limit}`" in TEXT
     assert "number" in TEXT
     assert "title" in TEXT
     assert "url" in TEXT
@@ -65,8 +67,13 @@ def test_get_issue_contract() -> None:
 
 def test_search_issues_contract() -> None:
     assert '"search/issues"' in TEXT
+    assert "search_issues query must not override repository scope" in TEXT
     assert "`q=repo:${repo} ${query}`" in TEXT
     assert "`per_page=${limit}`" in TEXT
+
+
+def test_gh_json_rejects_empty_stdout() -> None:
+    assert 'throw new Error("gh returned empty JSON")' in TEXT
 
 
 def test_error_payload_contract() -> None:
