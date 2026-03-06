@@ -4,6 +4,7 @@
 Usage:
     python3 scripts/audit-required-checks.py --org misty-step
     python3 scripts/audit-required-checks.py --org misty-step --match-check CI --replacement merge-gate
+    python3 scripts/audit-required-checks.py --org misty-step --flag-ambiguous
 
 Requires: gh CLI authenticated, jq available via gh --json output only.
 """
@@ -16,6 +17,7 @@ import sys
 from dataclasses import dataclass
 
 GH_TIMEOUT_SECONDS = 30
+AMBIGUOUS_CHECK_NAMES = frozenset({"CI", "check", "test", "build", "lint", "type-check", "Test"})
 
 
 class GHError(Exception):
@@ -30,6 +32,15 @@ class RepoProtection:
     branch: str
     strict: bool
     checks: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RepoRef:
+    """Repo inventory row from gh repo list."""
+
+    repo: str
+    branch: str
+    archived: bool
 
 
 def run_gh(args: list[str]) -> str:
@@ -54,8 +65,8 @@ def load_json(args: list[str]) -> object:
     return json.loads(run_gh(args))
 
 
-def list_repos(org: str, limit: int) -> list[tuple[str, str]]:
-    """Return (repo, default_branch) pairs for org repos."""
+def list_repos(org: str, limit: int, *, include_archived: bool) -> list[RepoRef]:
+    """Return repo refs for org repos."""
     payload = load_json(
         [
             "repo",
@@ -64,15 +75,18 @@ def list_repos(org: str, limit: int) -> list[tuple[str, str]]:
             "--limit",
             str(limit),
             "--json",
-            "nameWithOwner,defaultBranchRef",
+            "nameWithOwner,defaultBranchRef,isArchived",
         ]
     )
-    repos: list[tuple[str, str]] = []
+    repos: list[RepoRef] = []
     for item in payload:
         name = item.get("nameWithOwner")
         branch = (item.get("defaultBranchRef") or {}).get("name")
+        archived = bool(item.get("isArchived", False))
+        if not include_archived and archived:
+            continue
         if isinstance(name, str) and isinstance(branch, str) and branch:
-            repos.append((name, branch))
+            repos.append(RepoRef(repo=name, branch=branch, archived=archived))
     return repos
 
 
@@ -122,20 +136,40 @@ def format_markdown_report(
     *,
     match_check: str,
     replacement: str,
+    flag_ambiguous: bool,
 ) -> str:
     """Render a compact markdown report."""
     repos_with_match = [p for p in protections if match_check in p.checks]
+    repos_with_ambiguous = [
+        p for p in protections if any(check in AMBIGUOUS_CHECK_NAMES for check in p.checks)
+    ]
     lines = [
         "## Required Check Audit",
         f"- repos with repo-level required checks: {len(protections)}",
         f"- repos requiring `{match_check}`: {len(repos_with_match)}",
-        "",
-        "| Repo | Default Branch | Required Checks |",
-        "|------|----------------|-----------------|",
     ]
+    if flag_ambiguous:
+        lines.append(f"- repos with ambiguous check names: {len(repos_with_ambiguous)}")
+    lines.extend(
+        [
+            "",
+            "| Repo | Default Branch | Required Checks |",
+            "|------|----------------|-----------------|",
+        ]
+    )
     for protection in protections:
         checks = ", ".join(protection.checks)
         lines.append(f"| `{protection.repo}` | `{protection.branch}` | `{checks}` |")
+    if flag_ambiguous:
+        lines.extend(["", "## Ambiguous Check Names"])
+        if not repos_with_ambiguous:
+            lines.append("- no repos use ambiguous required check names")
+        else:
+            for protection in repos_with_ambiguous:
+                ambiguous = ", ".join(
+                    check for check in protection.checks if check in AMBIGUOUS_CHECK_NAMES
+                )
+                lines.append(f"- `{protection.repo}`: {ambiguous}")
     lines.extend(
         [
             "",
@@ -165,6 +199,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=100, help="Max repos to inspect")
     parser.add_argument("--match-check", default="CI", help="Required check name to replace")
     parser.add_argument("--replacement", default="merge-gate", help="Replacement required check name")
+    parser.add_argument(
+        "--include-archived",
+        action="store_true",
+        help="Include archived repos in the audit output",
+    )
+    parser.add_argument(
+        "--flag-ambiguous",
+        action="store_true",
+        help="Also report repos using ambiguous required check names like CI/test/build",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON instead of markdown")
     return parser.parse_args()
 
@@ -173,8 +217,8 @@ def main() -> int:
     """Entry point."""
     args = parse_args()
     protections: list[RepoProtection] = []
-    for repo, branch in list_repos(args.org, args.limit):
-        protection = get_branch_protection(repo, branch)
+    for repo in list_repos(args.org, args.limit, include_archived=args.include_archived):
+        protection = get_branch_protection(repo.repo, repo.branch)
         if protection is not None:
             protections.append(protection)
     protections.sort(key=lambda item: item.repo)
@@ -184,12 +228,18 @@ def main() -> int:
             "org": args.org,
             "repos_with_required_checks": len(protections),
             "repos_requiring_match_check": len([p for p in protections if args.match_check in p.checks]),
+            "repos_with_ambiguous_checks": len(
+                [p for p in protections if any(check in AMBIGUOUS_CHECK_NAMES for check in p.checks)]
+            ),
             "protections": [
                 {
                     "repo": p.repo,
                     "branch": p.branch,
                     "strict": p.strict,
                     "checks": list(p.checks),
+                    "ambiguous_checks": [
+                        check for check in p.checks if check in AMBIGUOUS_CHECK_NAMES
+                    ],
                     "patch_command": build_patch_command(p, args.replacement, args.match_check)
                     if args.match_check in p.checks
                     else None,
@@ -205,6 +255,7 @@ def main() -> int:
             protections,
             match_check=args.match_check,
             replacement=args.replacement,
+            flag_ambiguous=args.flag_ambiguous,
         )
     )
     return 0
