@@ -4,6 +4,7 @@
 Usage:
     python3 scripts/audit-required-checks.py --org misty-step
     python3 scripts/audit-required-checks.py --org misty-step --match-check CI --replacement merge-gate
+    python3 scripts/audit-required-checks.py --org misty-step --flag-ambiguous
 
 Requires: gh CLI authenticated, jq available via gh --json output only.
 """
@@ -16,6 +17,7 @@ import sys
 from dataclasses import dataclass
 
 GH_TIMEOUT_SECONDS = 30
+AMBIGUOUS_CHECK_NAMES = frozenset({"CI", "check", "test", "build", "lint", "type-check", "Test"})
 
 
 class GHError(Exception):
@@ -122,20 +124,40 @@ def format_markdown_report(
     *,
     match_check: str,
     replacement: str,
+    flag_ambiguous: bool,
 ) -> str:
     """Render a compact markdown report."""
     repos_with_match = [p for p in protections if match_check in p.checks]
+    repos_with_ambiguous = [
+        p for p in protections if any(check in AMBIGUOUS_CHECK_NAMES for check in p.checks)
+    ]
     lines = [
         "## Required Check Audit",
         f"- repos with repo-level required checks: {len(protections)}",
         f"- repos requiring `{match_check}`: {len(repos_with_match)}",
-        "",
-        "| Repo | Default Branch | Required Checks |",
-        "|------|----------------|-----------------|",
     ]
+    if flag_ambiguous:
+        lines.append(f"- repos with ambiguous check names: {len(repos_with_ambiguous)}")
+    lines.extend(
+        [
+            "",
+            "| Repo | Default Branch | Required Checks |",
+            "|------|----------------|-----------------|",
+        ]
+    )
     for protection in protections:
         checks = ", ".join(protection.checks)
         lines.append(f"| `{protection.repo}` | `{protection.branch}` | `{checks}` |")
+    if flag_ambiguous:
+        lines.extend(["", "## Ambiguous Check Names"])
+        if not repos_with_ambiguous:
+            lines.append("- no repos use ambiguous required check names")
+        else:
+            for protection in repos_with_ambiguous:
+                ambiguous = ", ".join(
+                    check for check in protection.checks if check in AMBIGUOUS_CHECK_NAMES
+                )
+                lines.append(f"- `{protection.repo}`: {ambiguous}")
     lines.extend(
         [
             "",
@@ -165,6 +187,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=100, help="Max repos to inspect")
     parser.add_argument("--match-check", default="CI", help="Required check name to replace")
     parser.add_argument("--replacement", default="merge-gate", help="Replacement required check name")
+    parser.add_argument(
+        "--flag-ambiguous",
+        action="store_true",
+        help="Also report repos using ambiguous required check names like CI/test/build",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON instead of markdown")
     return parser.parse_args()
 
@@ -184,12 +211,18 @@ def main() -> int:
             "org": args.org,
             "repos_with_required_checks": len(protections),
             "repos_requiring_match_check": len([p for p in protections if args.match_check in p.checks]),
+            "repos_with_ambiguous_checks": len(
+                [p for p in protections if any(check in AMBIGUOUS_CHECK_NAMES for check in p.checks)]
+            ),
             "protections": [
                 {
                     "repo": p.repo,
                     "branch": p.branch,
                     "strict": p.strict,
                     "checks": list(p.checks),
+                    "ambiguous_checks": [
+                        check for check in p.checks if check in AMBIGUOUS_CHECK_NAMES
+                    ],
                     "patch_command": build_patch_command(p, args.replacement, args.match_check)
                     if args.match_check in p.checks
                     else None,
@@ -205,6 +238,7 @@ def main() -> int:
             protections,
             match_check=args.match_check,
             replacement=args.replacement,
+            flag_ambiguous=args.flag_ambiguous,
         )
     )
     return 0

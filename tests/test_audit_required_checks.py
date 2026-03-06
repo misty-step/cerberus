@@ -56,9 +56,28 @@ def test_format_markdown_report_counts_matching_repos():
         protections,
         match_check="CI",
         replacement="merge-gate",
+        flag_ambiguous=False,
     )
 
     assert "- repos with repo-level required checks: 2" in report
     assert "- repos requiring `CI`: 1" in report
     assert "### `misty-step/cerberus`" in report
     assert "### `misty-step/chrondle`" not in report
+
+
+def test_format_markdown_report_flags_ambiguous_checks():
+    protections = [
+        RepoProtection(repo="misty-step/cerberus", branch="master", strict=True, checks=("merge-gate",)),
+        RepoProtection(repo="misty-step/chrondle", branch="master", strict=True, checks=("build", "test")),
+    ]
+
+    report = audit_required_checks.format_markdown_report(
+        protections,
+        match_check="CI",
+        replacement="merge-gate",
+        flag_ambiguous=True,
+    )
+
+    assert "- repos with ambiguous check names: 1" in report
+    assert "## Ambiguous Check Names" in report
+    assert "`misty-step/chrondle`: build, test" in report
