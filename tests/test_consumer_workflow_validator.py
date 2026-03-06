@@ -186,9 +186,7 @@ def test__comment_policy_comment_policy_wins_when_non_empty():
 @pytest.mark.parametrize(
     "path",
     [
-        # self-review.yml = self-hosted workflow (on: pull_request, local paths)
         # cerberus.yml = reusable workflow (on: workflow_call, no pull_request trigger)
-        ROOT / ".github/workflows/self-review.yml",
         ROOT / "templates/consumer-workflow-minimal.yml",
         ROOT / "templates/consumer-workflow-reusable.yml",
         ROOT / "templates/triage-workflow.yml",
@@ -199,6 +197,13 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
     types = wf["on"]["pull_request"]["types"]
     assert "ready_for_review" in types
     assert "converted_to_draft" in types
+
+
+def test_self_review_workflow_is_opt_in_and_not_always_on() -> None:
+    wf = _load_workflow(ROOT / ".github/workflows/self-review.yml")
+
+    assert wf["on"]["pull_request"]["types"] == ["labeled"]
+    assert wf["jobs"]["review"]["if"] == "github.event.label.name == 'cerberus-review'"
 
 
 def _has_skip_gate(wf: dict) -> bool:

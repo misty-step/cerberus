@@ -2,7 +2,7 @@ name: Sync v1 Tag
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Quality Checks"]
     types: [completed]
   workflow_dispatch:
 
