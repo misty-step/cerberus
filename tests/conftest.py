@@ -14,6 +14,7 @@ def _import_script(name: str, filename: str):
     """Import a script file as a module using importlib."""
     spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / filename)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
