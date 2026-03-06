@@ -2,7 +2,7 @@ name: Sync v2 Tag
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Quality Checks"]
     types: [completed]
 
 permissions:

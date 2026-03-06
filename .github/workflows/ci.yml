@@ -1,4 +1,4 @@
-name: CI
+name: Quality Checks
 
 on:
   push:
@@ -133,8 +133,8 @@ jobs:
           retention-days: 30
 
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
-  CI:
-    name: CI
+  merge-gate:
+    name: merge-gate
     needs: [lint, test]
     runs-on: ubuntu-latest
     if: always()
@@ -143,9 +143,9 @@ jobs:
         run: |
           if [[ "${{ needs.lint.result }}" == "success" && \
                 "${{ needs.test.result }}" == "success" ]]; then
-            echo "CI green"
+            echo "merge-gate green"
           else
-            echo "CI red (lint=${{ needs.lint.result }}, test=${{ needs.test.result }})"
+            echo "merge-gate red (lint=${{ needs.lint.result }}, test=${{ needs.test.result }})"
             exit 1
           fi
 
