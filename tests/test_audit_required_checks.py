@@ -17,6 +17,7 @@ def _load_module():
 
 audit_required_checks = _load_module()
 RepoProtection = audit_required_checks.RepoProtection
+RepoRef = audit_required_checks.RepoRef
 
 
 def test_build_patch_payload_replaces_only_matching_check():
@@ -81,3 +82,48 @@ def test_format_markdown_report_flags_ambiguous_checks():
     assert "- repos with ambiguous check names: 1" in report
     assert "## Ambiguous Check Names" in report
     assert "`misty-step/chrondle`: build, test" in report
+
+
+def test_list_repos_skips_archived_repos_by_default(monkeypatch):
+    payload = [
+        {
+            "nameWithOwner": "misty-step/active",
+            "defaultBranchRef": {"name": "master"},
+            "isArchived": False,
+        },
+        {
+            "nameWithOwner": "misty-step/archived",
+            "defaultBranchRef": {"name": "master"},
+            "isArchived": True,
+        },
+    ]
+
+    monkeypatch.setattr(audit_required_checks, "load_json", lambda _args: payload)
+
+    repos = audit_required_checks.list_repos("misty-step", 10, include_archived=False)
+
+    assert repos == [RepoRef(repo="misty-step/active", branch="master", archived=False)]
+
+
+def test_list_repos_can_include_archived_repos(monkeypatch):
+    payload = [
+        {
+            "nameWithOwner": "misty-step/active",
+            "defaultBranchRef": {"name": "master"},
+            "isArchived": False,
+        },
+        {
+            "nameWithOwner": "misty-step/archived",
+            "defaultBranchRef": {"name": "master"},
+            "isArchived": True,
+        },
+    ]
+
+    monkeypatch.setattr(audit_required_checks, "load_json", lambda _args: payload)
+
+    repos = audit_required_checks.list_repos("misty-step", 10, include_archived=True)
+
+    assert repos == [
+        RepoRef(repo="misty-step/active", branch="master", archived=False),
+        RepoRef(repo="misty-step/archived", branch="master", archived=True),
+    ]

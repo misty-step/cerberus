@@ -34,6 +34,15 @@ class RepoProtection:
     checks: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class RepoRef:
+    """Repo inventory row from gh repo list."""
+
+    repo: str
+    branch: str
+    archived: bool
+
+
 def run_gh(args: list[str]) -> str:
     """Run gh and return stdout."""
     try:
@@ -56,8 +65,8 @@ def load_json(args: list[str]) -> object:
     return json.loads(run_gh(args))
 
 
-def list_repos(org: str, limit: int) -> list[tuple[str, str]]:
-    """Return (repo, default_branch) pairs for org repos."""
+def list_repos(org: str, limit: int, *, include_archived: bool) -> list[RepoRef]:
+    """Return repo refs for org repos."""
     payload = load_json(
         [
             "repo",
@@ -66,15 +75,18 @@ def list_repos(org: str, limit: int) -> list[tuple[str, str]]:
             "--limit",
             str(limit),
             "--json",
-            "nameWithOwner,defaultBranchRef",
+            "nameWithOwner,defaultBranchRef,isArchived",
         ]
     )
-    repos: list[tuple[str, str]] = []
+    repos: list[RepoRef] = []
     for item in payload:
         name = item.get("nameWithOwner")
         branch = (item.get("defaultBranchRef") or {}).get("name")
+        archived = bool(item.get("isArchived", False))
+        if not include_archived and archived:
+            continue
         if isinstance(name, str) and isinstance(branch, str) and branch:
-            repos.append((name, branch))
+            repos.append(RepoRef(repo=name, branch=branch, archived=archived))
     return repos
 
 
@@ -188,6 +200,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--match-check", default="CI", help="Required check name to replace")
     parser.add_argument("--replacement", default="merge-gate", help="Replacement required check name")
     parser.add_argument(
+        "--include-archived",
+        action="store_true",
+        help="Include archived repos in the audit output",
+    )
+    parser.add_argument(
         "--flag-ambiguous",
         action="store_true",
         help="Also report repos using ambiguous required check names like CI/test/build",
@@ -200,8 +217,8 @@ def main() -> int:
     """Entry point."""
     args = parse_args()
     protections: list[RepoProtection] = []
-    for repo, branch in list_repos(args.org, args.limit):
-        protection = get_branch_protection(repo, branch)
+    for repo in list_repos(args.org, args.limit, include_archived=args.include_archived):
+        protection = get_branch_protection(repo.repo, repo.branch)
         if protection is not None:
             protections.append(protection)
     protections.sort(key=lambda item: item.repo)
