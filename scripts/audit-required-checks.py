@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Audit repo-level required status checks and print patch commands.
+
+Usage:
+    python3 scripts/audit-required-checks.py --org misty-step
+    python3 scripts/audit-required-checks.py --org misty-step --match-check CI --replacement merge-gate
+
+Requires: gh CLI authenticated, jq available via gh --json output only.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from dataclasses import dataclass
+
+GH_TIMEOUT_SECONDS = 30
+
+
+class GHError(Exception):
+    """Raised when gh CLI returns a non-zero exit status."""
+
+
+@dataclass(frozen=True)
+class RepoProtection:
+    """Repo default branch protection snapshot."""
+
+    repo: str
+    branch: str
+    strict: bool
+    checks: tuple[str, ...]
+
+
+def run_gh(args: list[str]) -> str:
+    """Run gh and return stdout."""
+    try:
+        result = subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise GHError("gh CLI not found") from exc
+    if result.returncode != 0:
+        raise GHError((result.stderr or "").strip() or "gh command failed")
+    return result.stdout
+
+
+def load_json(args: list[str]) -> object:
+    """Run gh and decode JSON output."""
+    return json.loads(run_gh(args))
+
+
+def list_repos(org: str, limit: int) -> list[tuple[str, str]]:
+    """Return (repo, default_branch) pairs for org repos."""
+    payload = load_json(
+        [
+            "repo",
+            "list",
+            org,
+            "--limit",
+            str(limit),
+            "--json",
+            "nameWithOwner,defaultBranchRef",
+        ]
+    )
+    repos: list[tuple[str, str]] = []
+    for item in payload:
+        name = item.get("nameWithOwner")
+        branch = (item.get("defaultBranchRef") or {}).get("name")
+        if isinstance(name, str) and isinstance(branch, str) and branch:
+            repos.append((name, branch))
+    return repos
+
+
+def get_branch_protection(repo: str, branch: str) -> RepoProtection | None:
+    """Return repo-level required checks for a protected branch, if any."""
+    try:
+        payload = load_json(["api", f"repos/{repo}/branches/{branch}/protection"])
+    except GHError:
+        return None
+
+    required = payload.get("required_status_checks") or {}
+    strict = bool(required.get("strict", False))
+    names = []
+    for context in required.get("contexts", []) or []:
+        if isinstance(context, str) and context:
+            names.append(context)
+    for check in required.get("checks", []) or []:
+        context = check.get("context") if isinstance(check, dict) else None
+        if isinstance(context, str) and context:
+            names.append(context)
+    deduped = tuple(sorted(set(names)))
+    if not deduped:
+        return None
+    return RepoProtection(repo=repo, branch=branch, strict=strict, checks=deduped)
+
+
+def build_patch_payload(protection: RepoProtection, replacement: str, match_check: str) -> dict[str, object]:
+    """Build required_status_checks payload with one renamed check."""
+    updated = [replacement if check == match_check else check for check in protection.checks]
+    return {
+        "strict": protection.strict,
+        "contexts": updated,
+    }
+
+
+def build_patch_command(protection: RepoProtection, replacement: str, match_check: str) -> str:
+    """Build an exact gh api patch command for one repo."""
+    payload = json.dumps(build_patch_payload(protection, replacement, match_check), separators=(",", ":"))
+    return (
+        f"gh api -X PATCH repos/{protection.repo}/branches/{protection.branch}/protection/required_status_checks "
+        f"--input - <<'JSON'\n{payload}\nJSON"
+    )
+
+
+def format_markdown_report(
+    protections: list[RepoProtection],
+    *,
+    match_check: str,
+    replacement: str,
+) -> str:
+    """Render a compact markdown report."""
+    repos_with_match = [p for p in protections if match_check in p.checks]
+    lines = [
+        "## Required Check Audit",
+        f"- repos with repo-level required checks: {len(protections)}",
+        f"- repos requiring `{match_check}`: {len(repos_with_match)}",
+        "",
+        "| Repo | Default Branch | Required Checks |",
+        "|------|----------------|-----------------|",
+    ]
+    for protection in protections:
+        checks = ", ".join(protection.checks)
+        lines.append(f"| `{protection.repo}` | `{protection.branch}` | `{checks}` |")
+    lines.extend(
+        [
+            "",
+            f"## Patch Plan: replace `{match_check}` with `{replacement}`",
+        ]
+    )
+    if not repos_with_match:
+        lines.append("- no repos require the legacy check")
+        return "\n".join(lines)
+    for protection in repos_with_match:
+        lines.extend(
+            [
+                "",
+                f"### `{protection.repo}`",
+                "```bash",
+                build_patch_command(protection, replacement, match_check),
+                "```",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse CLI args."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--org", required=True, help="GitHub organization name")
+    parser.add_argument("--limit", type=int, default=100, help="Max repos to inspect")
+    parser.add_argument("--match-check", default="CI", help="Required check name to replace")
+    parser.add_argument("--replacement", default="merge-gate", help="Replacement required check name")
+    parser.add_argument("--json", action="store_true", help="Print JSON instead of markdown")
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Entry point."""
+    args = parse_args()
+    protections: list[RepoProtection] = []
+    for repo, branch in list_repos(args.org, args.limit):
+        protection = get_branch_protection(repo, branch)
+        if protection is not None:
+            protections.append(protection)
+    protections.sort(key=lambda item: item.repo)
+
+    if args.json:
+        payload = {
+            "org": args.org,
+            "repos_with_required_checks": len(protections),
+            "repos_requiring_match_check": len([p for p in protections if args.match_check in p.checks]),
+            "protections": [
+                {
+                    "repo": p.repo,
+                    "branch": p.branch,
+                    "strict": p.strict,
+                    "checks": list(p.checks),
+                    "patch_command": build_patch_command(p, args.replacement, args.match_check)
+                    if args.match_check in p.checks
+                    else None,
+                }
+                for p in protections
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(
+        format_markdown_report(
+            protections,
+            match_check=args.match_check,
+            replacement=args.replacement,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

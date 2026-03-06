@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # `sync-v2-tag.yml` force-moves the floating `v2` tag after CI.
+      # `sync-v2-tag.yml` force-moves the floating `v2` tag after Quality Checks.
       # semantic-release runs `git fetch --tags` and will fail if local `v2`
       # exists but points elsewhere ("would clobber existing tag").
       - name: Delete local v2 tag (avoid semantic-release fetch clobber)
