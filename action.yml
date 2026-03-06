@@ -287,7 +287,8 @@ runs:
         OPENCODE_MODEL: ${{ inputs.model }}
         MODEL_TIER: ${{ inputs.model-tier }}
         MODEL_WAVE: ${{ inputs.model-wave }}
-        # Read-only GitHub context/auth for the github_read extension inside isolated runtime.
+        # GitHub auth forwarded for the github_read extension inside isolated runtime.
+        # Token permissions depend on the caller-supplied github-token input.
         GH_TOKEN: ${{ inputs.github-token }}
         CERBERUS_REPO: ${{ github.repository }}
         CERBERUS_PR_NUMBER: ${{ steps.pr.outputs.pr-number }}

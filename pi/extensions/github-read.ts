@@ -138,7 +138,9 @@ export default function githubReadExtension(pi: ExtensionAPI) {
 				requireGhAuth();
 				const params = rawParams as ToolParams;
 				const repo = requireRepo();
-				const limit = Math.max(1, Math.min(100, Number(params.limit || 20)));
+					const rawLimit = Number(params.limit ?? 20);
+					const normalizedLimit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 20;
+					const limit = Math.max(1, Math.min(100, normalizedLimit));
 
 				if (params.action === "get_pr") {
 					const prNumber = resolvePrNumber(params);

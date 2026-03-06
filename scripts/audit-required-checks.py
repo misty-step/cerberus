@@ -32,6 +32,7 @@ class RepoProtection:
     branch: str
     strict: bool
     checks: tuple[str, ...]
+    has_app_scoped_checks: bool = False
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,8 @@ def run_gh(args: list[str]) -> str:
         )
     except FileNotFoundError as exc:
         raise GHError("gh CLI not found") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GHError(f"gh command timed out after {GH_TIMEOUT_SECONDS}s") from exc
     if result.returncode != 0:
         raise GHError((result.stderr or "").strip() or "gh command failed")
     return result.stdout
@@ -62,7 +65,10 @@ def run_gh(args: list[str]) -> str:
 
 def load_json(args: list[str]) -> object:
     """Run gh and decode JSON output."""
-    return json.loads(run_gh(args))
+    try:
+        return json.loads(run_gh(args))
+    except json.JSONDecodeError as exc:
+        raise GHError(f"gh returned invalid JSON: {exc.msg}") from exc
 
 
 def list_repos(org: str, limit: int, *, include_archived: bool) -> list[RepoRef]:
@@ -78,6 +84,8 @@ def list_repos(org: str, limit: int, *, include_archived: bool) -> list[RepoRef]
             "nameWithOwner,defaultBranchRef,isArchived",
         ]
     )
+    if not isinstance(payload, list):
+        raise GHError("gh repo list returned non-list JSON")
     repos: list[RepoRef] = []
     for item in payload:
         name = item.get("nameWithOwner")
@@ -94,23 +102,40 @@ def get_branch_protection(repo: str, branch: str) -> RepoProtection | None:
     """Return repo-level required checks for a protected branch, if any."""
     try:
         payload = load_json(["api", f"repos/{repo}/branches/{branch}/protection"])
-    except GHError:
-        return None
+    except GHError as exc:
+        message = str(exc)
+        if "404" in message or "Not Found" in message or "Branch not protected" in message:
+            return None
+        raise
 
+    if not isinstance(payload, dict):
+        raise GHError(f"{repo}: branch protection payload was not a JSON object")
     required = payload.get("required_status_checks") or {}
+    if not isinstance(required, dict):
+        raise GHError(f"{repo}: required_status_checks payload was not a JSON object")
     strict = bool(required.get("strict", False))
     names = []
+    has_app_scoped_checks = False
     for context in required.get("contexts", []) or []:
         if isinstance(context, str) and context:
             names.append(context)
     for check in required.get("checks", []) or []:
         context = check.get("context") if isinstance(check, dict) else None
+        app_id = check.get("app_id") if isinstance(check, dict) else None
+        if isinstance(app_id, int) and app_id != -1:
+            has_app_scoped_checks = True
         if isinstance(context, str) and context:
             names.append(context)
     deduped = tuple(sorted(set(names)))
     if not deduped:
         return None
-    return RepoProtection(repo=repo, branch=branch, strict=strict, checks=deduped)
+    return RepoProtection(
+        repo=repo,
+        branch=branch,
+        strict=strict,
+        checks=deduped,
+        has_app_scoped_checks=has_app_scoped_checks,
+    )
 
 
 def build_patch_payload(protection: RepoProtection, replacement: str, match_check: str) -> dict[str, object]:
@@ -125,10 +150,24 @@ def build_patch_payload(protection: RepoProtection, replacement: str, match_chec
 def build_patch_command(protection: RepoProtection, replacement: str, match_check: str) -> str:
     """Build an exact gh api patch command for one repo."""
     payload = json.dumps(build_patch_payload(protection, replacement, match_check), separators=(",", ":"))
-    return (
+    command = (
         f"gh api -X PATCH repos/{protection.repo}/branches/{protection.branch}/protection/required_status_checks "
         f"--input - <<'JSON'\n{payload}\nJSON"
     )
+    if protection.has_app_scoped_checks:
+        return (
+            "# warning: repo uses app-scoped required checks; review app bindings before applying\n"
+            f"{command}"
+        )
+    return command
+
+
+def positive_int(value: str) -> int:
+    """Parse a positive integer CLI argument."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("--limit must be >= 1")
+    return parsed
 
 
 def format_markdown_report(
@@ -196,7 +235,7 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI args."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--org", required=True, help="GitHub organization name")
-    parser.add_argument("--limit", type=int, default=100, help="Max repos to inspect")
+    parser.add_argument("--limit", type=positive_int, default=100, help="Max repos to inspect")
     parser.add_argument("--match-check", default="CI", help="Required check name to replace")
     parser.add_argument("--replacement", default="merge-gate", help="Replacement required check name")
     parser.add_argument(
@@ -217,8 +256,17 @@ def main() -> int:
     """Entry point."""
     args = parse_args()
     protections: list[RepoProtection] = []
-    for repo in list_repos(args.org, args.limit, include_archived=args.include_archived):
-        protection = get_branch_protection(repo.repo, repo.branch)
+    try:
+        repos = list_repos(args.org, args.limit, include_archived=args.include_archived)
+    except GHError as exc:
+        print(f"error: failed to list repos for org '{args.org}': {exc}", file=sys.stderr)
+        return 1
+    for repo in repos:
+        try:
+            protection = get_branch_protection(repo.repo, repo.branch)
+        except GHError as exc:
+            print(f"warning: skipping {repo.repo}: {exc}", file=sys.stderr)
+            continue
         if protection is not None:
             protections.append(protection)
     protections.sort(key=lambda item: item.repo)

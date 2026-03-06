@@ -76,6 +76,11 @@ def test_gh_json_rejects_empty_stdout() -> None:
     assert 'throw new Error("gh returned empty JSON")' in TEXT
 
 
+def test_limit_is_truncated_before_graphql_and_rest_use() -> None:
+    assert "const rawLimit = Number(params.limit ?? 20);" in TEXT
+    assert "const normalizedLimit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 20;" in TEXT
+
+
 def test_error_payload_contract() -> None:
     assert "github_read error:" in TEXT
     assert "isError: true" in TEXT
