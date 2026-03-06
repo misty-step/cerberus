@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
+from urllib.parse import quote
 
 GH_TIMEOUT_SECONDS = 30
 AMBIGUOUS_CHECK_NAMES = frozenset({"CI", "check", "test", "build", "lint", "type-check", "Test"})
@@ -96,6 +98,8 @@ def list_repos(org: str, limit: int, *, include_archived: bool) -> list[RepoRef]
         raise GHError("gh repo list returned non-list JSON")
     repos: list[RepoRef] = []
     for item in payload:
+        if not isinstance(item, dict):
+            continue
         name = item.get("nameWithOwner")
         branch = (item.get("defaultBranchRef") or {}).get("name")
         archived = bool(item.get("isArchived", False))
@@ -108,8 +112,9 @@ def list_repos(org: str, limit: int, *, include_archived: bool) -> list[RepoRef]
 
 def get_branch_protection(repo: str, branch: str) -> RepoProtection | None:
     """Return repo-level required checks for a protected branch, if any."""
+    encoded_branch = quote(branch, safe="")
     try:
-        payload = load_json(["api", f"repos/{repo}/branches/{branch}/protection"])
+        payload = load_json(["api", f"repos/{repo}/branches/{encoded_branch}/protection"])
     except GHError as exc:
         message = str(exc)
         if "404" in message or "Not Found" in message or "Branch not protected" in message:
@@ -168,8 +173,12 @@ def build_patch_payload(protection: RepoProtection, replacement: str, match_chec
 def build_patch_command(protection: RepoProtection, replacement: str, match_check: str) -> str:
     """Build an exact gh api patch command for one repo."""
     payload = json.dumps(build_patch_payload(protection, replacement, match_check), separators=(",", ":"))
+    encoded_branch = quote(protection.branch, safe="")
+    endpoint = (
+        f"repos/{protection.repo}/branches/{encoded_branch}/protection/required_status_checks"
+    )
     command = (
-        f"gh api -X PATCH repos/{protection.repo}/branches/{protection.branch}/protection/required_status_checks "
+        f"gh api -X PATCH {shlex.quote(endpoint)} "
         f"--input - <<'JSON'\n{payload}\nJSON"
     )
     if protection.has_app_scoped_checks:

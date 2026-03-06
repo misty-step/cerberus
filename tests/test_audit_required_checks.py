@@ -55,6 +55,19 @@ def test_build_patch_command_uses_required_status_checks_endpoint():
     assert '"checks":[{"context":"merge-gate"}]' in command
 
 
+def test_build_patch_command_url_encodes_branch_names():
+    protection = RepoProtection(
+        repo="misty-step/cerberus",
+        branch="release/v1 beta",
+        strict=True,
+        checks=(RequiredCheck("CI"),),
+    )
+
+    command = audit_required_checks.build_patch_command(protection, "merge-gate", "CI")
+
+    assert "branches/release%2Fv1%20beta/protection/required_status_checks" in command
+
+
 def test_build_patch_command_warns_for_app_scoped_checks():
     protection = RepoProtection(
         repo="misty-step/cerberus",
@@ -222,6 +235,7 @@ def test_list_repos_ignores_missing_branch_data(monkeypatch):
             "defaultBranchRef": {"name": "master"},
             "isArchived": False,
         },
+        "bad-entry",
         {
             "nameWithOwner": "misty-step/no-branch",
             "defaultBranchRef": None,
@@ -300,6 +314,21 @@ def test_get_branch_protection_flags_app_scoped_checks(monkeypatch):
     assert protection is not None
     assert protection.has_app_scoped_checks is True
     assert protection.checks == (RequiredCheck("merge-gate", app_id=12345),)
+
+
+def test_get_branch_protection_url_encodes_branch_name(monkeypatch):
+    captured = {}
+
+    def fake_load_json(args):
+        captured["args"] = args
+        return {"required_status_checks": {"strict": True, "contexts": ["merge-gate"]}}
+
+    monkeypatch.setattr(audit_required_checks, "load_json", fake_load_json)
+
+    protection = audit_required_checks.get_branch_protection("misty-step/cerberus", "release/v1 beta")
+
+    assert protection is not None
+    assert captured["args"] == ["api", "repos/misty-step/cerberus/branches/release%2Fv1%20beta/protection"]
 
 
 def test_build_patch_payload_preserves_app_binding():
