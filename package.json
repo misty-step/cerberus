@@ -1,5 +1,5 @@
 {
-  "name": "cerberus",
+  "name": "@misty-step/cerberus",
   "version": "0.0.0",
   "description": "Cerberus workflow scaffolder CLI",
   "bin": {
@@ -14,6 +14,13 @@
     "templates/consumer-workflow-minimal.yml",
     "templates/workflow-lint.yml"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/misty-step/cerberus.git"
+  },
   "license": "Apache-2.0",
   "engines": {
     "node": ">=18.12.0"
