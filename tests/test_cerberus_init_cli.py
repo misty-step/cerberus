@@ -1,9 +1,11 @@
 """Behavior tests for the cerberus init CLI."""
 
+import json
 import os
 import shutil
 import stat
 import subprocess
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,8 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 CLI = REPO_ROOT / "bin" / "cerberus.js"
 TEMPLATE = (REPO_ROOT / "templates" / "consumer-workflow-reusable.yml").read_text()
+README = (REPO_ROOT / "README.md").read_text()
+PACKAGE = json.loads((REPO_ROOT / "package.json").read_text())
 
 
 def make_executable(path: Path, content: str) -> None:
@@ -37,6 +41,26 @@ def setup_fake_gh(bin_dir: Path, calls_file: Path) -> None:
             f"    printf '%s\\n' \"$*\" >> {str(calls_file)!r}\n"
             "    exit 0\n"
             "  fi\n"
+            "fi\n"
+            "echo \"unexpected gh args: $*\" >&2\n"
+            "exit 1\n"
+        ),
+    )
+
+
+def setup_failing_gh(bin_dir: Path, stderr_message: str) -> None:
+    make_executable(
+        bin_dir / "gh",
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "if [[ \"${1:-}\" == \"--version\" ]]; then\n"
+            "  echo \"gh version test\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [[ \"${1:-}\" == \"secret\" && \"${2:-}\" == \"set\" ]]; then\n"
+            f"  echo {stderr_message!r} >&2\n"
+            "  exit 1\n"
             "fi\n"
             "echo \"unexpected gh args: $*\" >&2\n"
             "exit 1\n"
@@ -266,3 +290,89 @@ def test_init_trims_whitespace_keys(tmp_path: Path) -> None:
     gh_call = calls_file.read_text()
     assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
     assert "real-key" not in gh_call
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_fails_outside_git_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_fake_gh(bin_dir, calls_file)
+
+    result = subprocess.run(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=build_env(bin_dir, {"CERBERUS_OPENROUTER_API_KEY": "env-key"}),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode != 0
+    assert "must run inside a git repository" in result.stderr
+    assert not calls_file.exists()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_surfaces_gh_secret_set_failure(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    setup_failing_gh(bin_dir, "gh secret set boom")
+
+    result = subprocess.run(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=build_env(bin_dir, {"CERBERUS_OPENROUTER_API_KEY": "env-key"}),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode != 0
+    assert "Failed to set CERBERUS_OPENROUTER_API_KEY in repository secrets" in result.stderr
+    assert "gh secret set boom" in result.stderr
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_fails_when_workflow_directory_is_not_writable(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    workflows_dir = repo / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    workflows_dir.chmod(0)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_fake_gh(bin_dir, calls_file)
+
+    try:
+        result = subprocess.run(
+            ["node", str(CLI), "init"],
+            cwd=repo,
+            env=build_env(bin_dir, {"CERBERUS_OPENROUTER_API_KEY": "env-key"}),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    finally:
+        workflows_dir.chmod(0o755)
+
+    assert result.returncode != 0
+    assert "EACCES" in result.stderr or "permission denied" in result.stderr.lower()
+    assert not calls_file.exists()
+
+
+def test_readme_npx_command_matches_package_name() -> None:
+    match = re.search(r"`npx\s+([^`\s]+)\s+init`", README)
+    assert match, "README must document the cerberus init npx command"
+    assert match.group(1) == PACKAGE["name"]
