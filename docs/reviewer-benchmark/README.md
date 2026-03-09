@@ -12,3 +12,8 @@ Latest report:
 
 Reusable workflow:
 - Repo-local skill: `.agents/skills/reviewer-benchmark/SKILL.md`
+
+Collector contract:
+- Output JSON includes top-level provenance: `org`, `since`, `repo_limit`, `pull_request_limit`, and `repo_listing_truncated`.
+- Each repo entry lives under `repos.<name>` and includes `pull_requests`, `error`, and `truncated`.
+- If `repo_listing_truncated` or any repo-level `truncated` flag is `true`, treat the scorecard as partial and rerun with higher limits before publishing conclusions.

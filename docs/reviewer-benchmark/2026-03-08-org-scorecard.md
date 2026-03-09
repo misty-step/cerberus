@@ -119,7 +119,7 @@ Hypothesis:
 
 Observed in:
 - `volume#401`
-- multiple larger `bitterblossom` and `gitpulse` refactors
+- multiple larger `bitterblossom` refactors
 
 Hypothesis:
 - Diff/context packaging is too coarse, so `trace` and `guard` time out before they reach the highest-risk slices.

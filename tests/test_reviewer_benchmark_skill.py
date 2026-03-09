@@ -70,6 +70,18 @@ def test_list_repos_uses_repo_limit_and_filters_archived(monkeypatch) -> None:
     assert "250" in calls[0]
 
 
+def test_list_repos_dedupes_explicit_repos() -> None:
+    mod = _import_script()
+
+    repos = mod.list_repos(
+        "misty-step",
+        ["misty-step/cerberus", "misty-step/cerberus", "misty-step/volume"],
+        250,
+    )
+
+    assert repos == ["misty-step/cerberus", "misty-step/volume"]
+
+
 def test_main_returns_error_when_repo_listing_fails(monkeypatch, tmp_path, capsys) -> None:
     mod = _import_script()
     out = tmp_path / "out.json"
@@ -116,7 +128,90 @@ def test_main_records_repo_errors_without_aborting(monkeypatch, tmp_path, capsys
     assert code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload == {
-        "a/repo": {"error": "auth warning"},
-        "b/repo": [{"number": 1}],
+        "org": "misty-step",
+        "since": "2026-03-01",
+        "repo_limit": 1000,
+        "pull_request_limit": 5,
+        "repo_listing_truncated": False,
+        "repos": {
+            "a/repo": {"pull_requests": [], "error": "auth warning", "truncated": False},
+            "b/repo": {"pull_requests": [{"number": 1}], "error": None, "truncated": False},
+        },
     }
     assert "2/2 repos collected" in capsys.readouterr().err
+
+
+def test_build_repo_result_is_consistent() -> None:
+    mod = _import_script()
+
+    assert mod.build_repo_result(pull_requests=[{"number": 1}]) == {
+        "pull_requests": [{"number": 1}],
+        "error": None,
+        "truncated": False,
+    }
+    assert mod.build_repo_result(error="boom") == {
+        "pull_requests": [],
+        "error": "boom",
+        "truncated": False,
+    }
+
+
+def test_validate_since_rejects_non_dates() -> None:
+    mod = _import_script()
+
+    assert mod.validate_since("2026-03-01") == "2026-03-01"
+    try:
+        mod.validate_since("2026-03-01 label:security")
+        raise AssertionError("expected ArgumentTypeError")
+    except mod.argparse.ArgumentTypeError as exc:
+        assert "YYYY-MM-DD" in str(exc)
+
+
+def test_main_reports_output_write_failures(monkeypatch, tmp_path, capsys) -> None:
+    mod = _import_script()
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(mod, "list_repos", lambda org, explicit_repos, repo_limit: ["a/repo"])
+    monkeypatch.setattr(mod, "collect_repo", lambda repo, since, limit: [{"number": 1}])
+
+    def fail_open(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(mod, "open", fail_open, raising=False)
+
+    code = mod.main(["--org", "misty-step", "--since", "2026-03-01", "--out", str(out)])
+
+    assert code == 1
+    assert "Failed to write output file" in capsys.readouterr().err
+
+
+def test_main_persists_truncation_metadata(monkeypatch, tmp_path) -> None:
+    mod = _import_script()
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(mod, "list_repos", lambda org, explicit_repos, repo_limit: ["a/repo", "b/repo"])
+    monkeypatch.setattr(
+        mod,
+        "collect_repo",
+        lambda repo, since, limit: [{"number": 1}] if repo == "a/repo" else [{"number": 2}, {"number": 3}],
+    )
+
+    code = mod.main(
+        [
+            "--org",
+            "misty-step",
+            "--since",
+            "2026-03-01",
+            "--out",
+            str(out),
+            "--limit",
+            "1",
+            "--repo-limit",
+            "2",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["repo_listing_truncated"] is True
+    assert payload["repos"]["a/repo"]["truncated"] is True

@@ -62,3 +62,4 @@ python3 .agents/skills/reviewer-benchmark/scripts/collect_pr_reviews.py \
 
 - Report template: `references/report-template.md`
 - Collection script: `scripts/collect_pr_reviews.py`
+- Collector output: top-level metadata plus `repos`, where each repo entry maps to `{ "pull_requests": [...], "error": null | "...", "truncated": bool }`
