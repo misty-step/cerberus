@@ -21,6 +21,7 @@ Produce a recurring cross-reviewer audit for Cerberus and convert it into durabl
 5. Translate misses into improvement hypotheses across prompts, context retrieval, reviewer architecture, model routing, timeout policy, and eval coverage.
 6. Write the report using `references/report-template.md` into `docs/reviewer-benchmark/YYYY-MM-DD-*.md`.
 7. Update `docs/BACKLOG-PRIORITIES.md` when the run changes active Cerberus hardening priorities.
+8. Raise `--limit` or `--repo-limit` when the org or review window is large enough to risk truncation warnings.
 
 ## Output Rules
 
