@@ -13,9 +13,13 @@ Everything else is deferred.
   - Reliability blockers.
   - Truthful CI/check semantics (no false-green).
   - Core security and failure-mode hardening.
+  - Cross-reviewer recall hardening: Cerberus should not routinely miss issues other AI reviewers catch first.
+  - Large-PR review reliability: reduce correctness/security timeouts and skip-driven blind spots.
 - `PRIMARY 2: OSS Chargeability Hardening`
   - Coverage and quality-gate ratchet.
   - Maintainability and supportability work needed for paid usage.
+  - Benchmark loop and scorecard ritual for recurring reviewer audits.
+  - Prompt/context/agentic experiments driven by benchmark misses, not intuition.
 - `SECONDARY: Cerberus Cloud Bootstrap (Separate Repo)`
   - Cloud setup and migration planning only.
   - Tracked by `#222`.
@@ -44,3 +48,20 @@ Cloud runtime concerns (GitHub App service, managed keys, quotas, billing, org c
 
 Tracking issue for split and migration: `#222`.
 Cloud repo: `https://github.com/misty-step/cerberus-cloud`.
+
+## Current Reviewer Hardening Tracks
+
+- `P0` Security/dataflow blind-spot hardening
+  - Untrusted-data re-entry checks (titles, branch names, defaulted config, raw error leakage).
+  - Fail-open / fail-closed review prompts for auth, quotas, env validation, and network isolation.
+- `P0` Large-PR review reliability
+  - Reduce `trace`/`guard` timeout rates on large diffs.
+  - Split or re-slice review context before correctness/security lanes skip.
+- `P1` Adjacent-regression detection
+  - Catch deleted workflows, weakened CI gates, and non-obvious neighboring-file regressions.
+- `P1` Benchmark loop
+  - Weekly org-wide reviewer scorecard.
+  - Durable agent-agnostic skill in `.agents/skills/reviewer-benchmark/`.
+  - Hypothesis log plus experiment backlog tied to concrete misses.
+- `P1` Reviewer context retrieval
+  - Pull prior review comments, author fix summaries, and linked acceptance criteria into reviewer context by default.
