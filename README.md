@@ -25,7 +25,7 @@ jobs:
 Then set one repository secret: `CERBERUS_OPENROUTER_API_KEY`.
 Leave `with:` unset to run the full default Cerberus configuration.
 
-Prefer scaffolding? Run `npx cerberus init` to install the same reusable template and prompt for the secret.
+Prefer scaffolding? Run `npx @misty-step/cerberus init` to install the same reusable template and prompt for the secret.
 
 ## Smart Routing (Why 5 reviewers, not 8)
 Cerberus routes each PR to the most relevant panel (default size: 5):

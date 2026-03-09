@@ -19,3 +19,12 @@
 - **scope changes**: Added linked-issue AC bootstrap in `action.yml` plus AC parsing/dedup logic in prompt renderer; added focused prompt tests.
 - **blockers**: Initial YAML heredoc indentation broke action parsing; replaced with one-line python commands in run block.
 - **pattern**: Keep CI action shell blocks heredoc-free when possible; small parsing helpers in Python are safer than multiline embedded scripts for YAML stability.
+
+## 2026-03-08 — Issue #273: CLI test coverage and package-name hardening for cerberus init
+
+- **issue**: #273
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Added one extra guard test to lock the README `npx` command to `package.json` so the publish surface cannot silently drift after the package rename.
+- **blockers**: `make validate` failed in `ruff` on pre-existing unrelated test-file violations after the full pytest stage passed.
+- **pattern**: For small CLIs, failure-path coverage is usually enough to prove the implementation already holds; the higher-leverage fix was metadata/documentation hardening plus a drift test, not a CLI rewrite.
