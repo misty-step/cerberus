@@ -45,6 +45,14 @@ Findings must be attributable to THIS PR's changes, not the codebase's history.
 - Flag if the newly-defaulted path was previously experimental or opt-in.
 - Check whether test coverage exercises the real implementation (not just mocks).
 
+## Workflow / Infra Adjacent Regression Pass
+- When a PR touches workflows, CI, release automation, validation scripts, status checks, or other infrastructure surfaces, expand review one hop beyond the headline diff.
+- Inspect deleted files that previously enforced the same path.
+- Inspect renamed status contexts and any workflow or script references that still depend on the old name.
+- Inspect changed enforcement flags or safety gates that weaken trust guarantees.
+- Inspect neighboring workflows or scripts that depend on the edited surface so partial updates do not silently regress enforcement.
+- Keep findings scoped to concrete adjacent regressions proven by the diff and nearby files. Do not turn this into generic repo-wide speculation.
+
 ## Evidence Rules (No Hallucinations)
 - Every finding MUST include an `evidence` field containing an exact code quote (1-6 lines) from the repository at the cited `file:line`.
 - Evidence must be copied verbatim from the current code. No paraphrase, no “approximate” snippets.
