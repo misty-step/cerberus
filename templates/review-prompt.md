@@ -28,6 +28,7 @@ Read this file to see all changes. Skip lockfiles, generated/minified files, and
 ## Scope Rules
 - ONLY flag issues in code that is ADDED or MODIFIED in this diff.
 - You MAY read surrounding code for context, but do not report issues in unchanged code.
+- Adjacent workflow/infra regressions surfaced by the Workflow / Infra Adjacent Regression Pass are also in scope when the diff itself changes the execution boundary. Deleted enforcement files, renamed status contexts, weakened gates, and one-hop neighboring workflow/script references may be cited when they are concrete regressions caused by this PR.
 - Do not suggest improvements to code outside the diff.
 - Prioritize: new files over modified files, application code over test code.
 - If the diff is very large, focus on the highest-risk changes and note which files you deprioritized.

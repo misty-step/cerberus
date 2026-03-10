@@ -51,3 +51,4 @@ def test_eval_config_contains_volume_407_adjacent_regression_fixture() -> None:
     ]
     assert any("output.verdict === 'FAIL'" in value for value in javascript_assertions)
     assert any("deleted" in value.lower() or "trufflehog" in value.lower() for value in javascript_assertions)
+    assert any("enforcement" in value.lower() or "enforce" in value.lower() for value in javascript_assertions)

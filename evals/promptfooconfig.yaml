@@ -410,14 +410,14 @@ tests:
       perspective: "architecture"
       diff: |
         diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-        @@
+        @@ -18,8 +18,8 @@ jobs:
         -          context: review
         +          context: cerberus-review
         -          enforce: true
         +          enforce: false
         diff --git a/.github/workflows/trufflehog.yml b/.github/workflows/trufflehog.yml
         deleted file mode 100644
-        @@
+        @@ -1,6 +0,0 @@
         -name: TruffleHog
         -on:
         -  pull_request:
@@ -425,7 +425,7 @@ tests:
         -  trufflehog:
         -    runs-on: ubuntu-latest
         diff --git a/scripts/check-required-status.sh b/scripts/check-required-status.sh
-        @@
+        @@ -1,2 +1,2 @@
         -# Verify the required check before merge.
         +# Verify the required status context before merge.
          REQUIRED_CONTEXT=review
