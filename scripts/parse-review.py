@@ -775,6 +775,13 @@ def normalize_evidence_fields(obj: dict) -> None:
             finding.pop("evidence", None)
 
 
+# suggestion_verified / [unverified] is guidance for behavioral uncertainty, not a
+# parser-side severity downgrade. Static findings that are directly readable from the
+# diff or inspected source (for example missing Dockerfile directives or missing
+# `.dockerignore` exclusions) should keep their original severity when reviewers quote
+# concrete evidence.
+
+
 def main() -> None:
     """Main."""
     global REVIEWER_NAME, PERSPECTIVE, RAW_INPUT

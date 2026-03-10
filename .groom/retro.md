@@ -56,6 +56,15 @@
 - **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing lint debt after the full pytest suite passes.
 - **pattern**: Keep transport retry detection centralized, but let the caller decide whether a transient delivery failure is merge-blocking. That preserves one retry path without flattening distinct workflow semantics.
 
+## 2026-03-10 — Issue #295: infra review recall hardening
+
+- **issue**: #295
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Tightened `trace` and `guard` prompt guidance for Dockerfile / `.dockerignore` PRs, added parser contract comments, and introduced focused regression tests for the new infra-review instructions.
+- **blockers**: The issue assumed `suggestion_verified` still demoted severity, but the parser/tests already preserved severity. The implementation had to pivot from behavior change to contract codification.
+- **pattern**: For review-quality issues, re-read the parser tests before changing parser logic. Prompt regressions often look like parser bugs in issue reports, but the real fix may be narrower and safer at the reviewer-instruction layer.
+
 ## 2026-03-11 — Issue #298: swallowed-error propagation guidance for trace
 
 - **issue**: #298

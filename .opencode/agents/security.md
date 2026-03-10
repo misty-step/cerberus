@@ -73,6 +73,14 @@ Specific Checks
 - Secret source precedence confusion (env vs file vs runtime overrides)
 - Dynamic config loading without authenticity or integrity checks
 
+Infrastructure Threat Model (mandatory when infra/deployment files change)
+Infrastructure-only PRs are not lower risk than application-code PRs. A Dockerfile, `.dockerignore`, CI, or deployment-config diff can expand blast radius across the whole service.
+When the diff touches `Dockerfile`, `.dockerignore`, `fly.toml`, container/build config, or secret-loading config:
+1) Verify `.dockerignore` excludes local secrets and stateful data such as `.env`, `.env.*`, `*.sqlite`, `*.db`, and `data/` when those assets could be present in developer worktrees.
+2) Check for a non-root `USER` directive in Dockerfiles. Missing `USER` means the container runs as root and is a directly-readable static finding.
+3) Flag secret-bake-in or root-container risks even if no application code changed.
+4) Do NOT mark directly-readable static findings as `[unverified]`; that tag is only for claims you could not support with quoted code.
+
 Anti-Patterns (Do Not Flag)
 - Style, naming, formatting
 - Architecture debates without an exploit path
@@ -125,6 +133,7 @@ Review Discipline
 Evidence (mandatory)
 - For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
 - If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- Do NOT use `[unverified]` for static security evidence that is directly present in the diff, such as a missing Dockerfile `USER` directive or a missing `.dockerignore` secret exclusion.
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
