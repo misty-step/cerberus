@@ -143,6 +143,10 @@ runs:
           echo "::error::Cerberus verdict output is empty; was the aggregate step skipped or failed?"
           exit 1
         fi
+        COMMENT_FAILURE_EXIT_CODE="0"
+        if [ "$VERDICT" = "FAIL" ]; then
+          COMMENT_FAILURE_EXIT_CODE="1"
+        fi
         python3 "$CERBERUS_ROOT/scripts/render-verdict-comment.py" \
           --verdict-json "${CERBERUS_TMP}/verdict.json" \
           --output "${CERBERUS_TMP}/verdict-comment.md"
@@ -151,7 +155,8 @@ runs:
           --repo "$REPO" \
           --pr "$PR_NUMBER" \
           --marker "<!-- cerberus:verdict -->" \
-          --body-file "${CERBERUS_TMP}/verdict-comment.md"
+          --body-file "${CERBERUS_TMP}/verdict-comment.md" \
+          --transient-error-exit-code "$COMMENT_FAILURE_EXIT_CODE"
 
     - name: Post inline review comments
       if: always() && steps.aggregate.outcome == 'success'

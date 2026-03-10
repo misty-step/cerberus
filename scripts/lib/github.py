@@ -23,14 +23,23 @@ class TransientGitHubError(Exception):
 
 
 def _is_transient_error(stderr: str) -> bool:
-    """Check if error is a transient GitHub API error (5xx)."""
+    """Check if error is a transient GitHub API or network error."""
     transient_codes = ("502", "503", "504")
     lower_stderr = stderr.lower()
     # Handle both gh CLI format "(http 503)" and raw "HTTP 503" formats
-    return any(
+    if any(
         f"(http {code})" in lower_stderr or f"http {code}" in lower_stderr
         for code in transient_codes
+    ):
+        return True
+
+    transient_network_markers = (
+        "i/o timeout",
+        "connection timed out",
+        "connection refused",
+        "connection reset",
     )
+    return any(marker in lower_stderr for marker in transient_network_markers)
 
 
 def _run_gh(
@@ -217,6 +226,13 @@ def main() -> None:
     parser.add_argument("--pr", type=int, required=True, help="PR number")
     parser.add_argument("--marker", required=True, help="HTML comment marker")
     parser.add_argument("--body-file", required=True, help="Path to comment body markdown")
+    parser.add_argument(
+        "--transient-error-exit-code",
+        type=int,
+        choices=(0, 1),
+        default=0,
+        help="Exit code to use when comment posting fails due to transient GitHub/network errors.",
+    )
     args = parser.parse_args()
 
     if not Path(args.body_file).exists():
@@ -234,14 +250,13 @@ def main() -> None:
         print(f"::error::{exc}", file=sys.stderr)
         sys.exit(1)
     except TransientGitHubError as exc:
-        # Treat transient errors as non-fatal - warn but don't fail the job
         print(f"::warning::{exc}", file=sys.stderr)
         print(
             "::warning::Comment post failed due to GitHub outage. "
             "Review artifact still uploaded; check logs for review results.",
             file=sys.stderr,
         )
-        sys.exit(0)  # Exit successfully to avoid merge blockers
+        sys.exit(args.transient_error_exit_code)
     except subprocess.CalledProcessError as exc:
         print(f"gh command failed: {exc.stderr}", file=sys.stderr)
         sys.exit(1)
