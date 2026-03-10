@@ -312,12 +312,17 @@ def detect_timeout(text: str) -> tuple[bool, int | None, str, str]:
 
 def generate_skip_verdict(error_type: str, text: str) -> dict:
     """Generate a SKIP verdict for API errors."""
+    summary = f"Review skipped due to API error: {error_type}"
+    suggestion = "Check API key and quota settings."
     if error_type == "API_CREDITS_DEPLETED":
         summary = f"Review skipped: API credits depleted ({error_type})"
         suggestion = "Top up API credits or configure a fallback provider."
-    else:
-        summary = f"Review skipped due to API error: {error_type}"
-        suggestion = "Check API key and quota settings."
+    elif error_type == "RATE_LIMIT":
+        suggestion = "Retry later or configure a fallback provider with more headroom."
+    elif error_type == "SERVICE_UNAVAILABLE":
+        suggestion = "Retry later or check provider status before rerunning the review."
+    elif error_type == "API_ERROR":
+        suggestion = "Check provider status, API key, and quota settings."
 
     return {
         "reviewer": REVIEWER_NAME,
@@ -442,7 +447,12 @@ def looks_like_api_error(text: str) -> tuple[bool, str, str]:
         (r"rate limit", "RATE_LIMIT", "Rate limit exceeded"),
         (r"quota exceeded", "API_CREDITS_DEPLETED", "API quota exceeded"),
         (r"billing", "API_CREDITS_DEPLETED", "Billing/quota error"),
-        (r"authentication", "API_KEY_INVALID", "Authentication error"),
+        (
+            r"authentication.{0,80}(?:401|403|failed|failure|invalid|incorrect|unauthorized)"
+            r"|(?:401|403|failed|failure|invalid|incorrect|unauthorized).{0,80}authentication",
+            "API_KEY_INVALID",
+            "Authentication error",
+        ),
     ]
 
     for pattern, err_type, msg in error_patterns:

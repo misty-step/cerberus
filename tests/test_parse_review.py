@@ -1472,6 +1472,35 @@ APOLLO (correctness) exceeded the configured timeout.
         assert "timeout after 120s" in data["summary"]
         assert data["findings"][0]["category"] == "timeout"
 
+    def test_timeout_marker_beats_authentication_heuristic(self):
+        """Explicit timeout markers must win over incidental auth wording."""
+        timeout_text = """Review Timeout: timeout after 600s
+
+GUARD (security) exceeded the configured timeout.
+Provider status page mentioned authentication middleware degradation.
+"""
+        code, out, _ = run_parse(timeout_text, env_extra={"REVIEWER_NAME": "GUARD"})
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["findings"][0]["category"] == "timeout"
+        assert "timeout" in data["summary"].lower()
+        assert "API_KEY_INVALID" not in data["summary"]
+
+    def test_ambiguous_authentication_text_does_not_map_to_key_invalid(self):
+        """Bare authentication wording without corroboration should not become API_KEY_INVALID."""
+        error_text = """
+The provider reported an authentication middleware issue while streaming output.
+No structured verdict block was emitted before the process ended.
+"""
+        code, out, err = run_parse(error_text)
+        assert code == 3
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["summary"].startswith("Review output could not be parsed")
+        assert data["findings"] == []
+        assert "API_KEY_INVALID" not in data["summary"]
+
     def test_skip_stats_are_zero(self):
         error_text = """API Error: API_ERROR
 
@@ -1606,6 +1635,22 @@ Your quota has been exceeded. billing issue detected.
         finding = data["findings"][0]
         assert "Check API key" in finding["suggestion"]
         assert "fallback" not in finding["suggestion"].lower()
+
+    def test_rate_limit_error_suggestion_does_not_blame_api_key(self):
+        """Rate-limit SKIPs should not tell operators to check their API key."""
+        error_text = """
+The API returned an error:
+429 rate limit exceeded
+
+Please retry after some time.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        finding = data["findings"][0]
+        assert finding["title"] == "API Error: RATE_LIMIT"
+        assert "api key" not in finding["suggestion"].lower()
+        assert "retry" in finding["suggestion"].lower()
 
 
 class TestEnrichedTimeoutVerdicts:
