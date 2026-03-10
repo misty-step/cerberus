@@ -400,6 +400,43 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
 
+  - description: "Architecture - Workflow Adjacent Regression Recall"
+    vars:
+      pr_title: "Fix merge gate status context"
+      pr_author: "developer"
+      head_branch: "fix/status-context"
+      base_branch: "main"
+      pr_body: "Replay for volume#407. Fix the primary status-context mismatch, but keep adjacent workflow and enforcement regressions in scope."
+      perspective: "architecture"
+      diff: |
+        diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+        @@ -18,8 +18,8 @@ jobs:
+        -          context: review
+        +          context: cerberus-review
+        -          enforce: true
+        +          enforce: false
+        diff --git a/.github/workflows/trufflehog.yml b/.github/workflows/trufflehog.yml
+        deleted file mode 100644
+        @@ -1,6 +0,0 @@
+        -name: TruffleHog
+        -on:
+        -  pull_request:
+        -jobs:
+        -  trufflehog:
+        -    runs-on: ubuntu-latest
+        diff --git a/scripts/check-required-status.sh b/scripts/check-required-status.sh
+        @@ -1,2 +1,2 @@
+        -# Verify the required check before merge.
+        +# Verify the required status context before merge.
+         REQUIRED_CONTEXT=review
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: "output.findings && output.findings.some(f => { const haystack = `${f?.title || ''} ${f?.description || ''}`.toLowerCase(); return haystack.includes('trufflehog') || haystack.includes('deleted') || haystack.includes('enforcement'); })"
+      - type: javascript
+        value: "output.findings && output.findings.every(f => { const haystack = `${f?.title || ''} ${f?.description || ''}`.toLowerCase(); return !haystack.includes('generic') && !haystack.includes('codebase-wide'); })"
+
   - description: "Maintainability - Code Duplication"
     vars:
       pr_title: "Add helpers"

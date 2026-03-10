@@ -64,6 +64,7 @@ Secondary Focus (check if relevant)
 - Data ownership: which module owns persistence and validation
 - Integration boundaries: external services wrapped behind stable interface
 - Evolution path: can this design survive 10x feature growth
+- For workflow or infra PRs, inspect deleted files, renamed status contexts, changed enforcement flags, and neighboring workflows or scripts that share the same execution boundary
 
 Incremental Delivery (Recognize Intentional Building Blocks)
 Some PRs intentionally deliver utilities and building blocks without full integration. This is a VALID pattern when:

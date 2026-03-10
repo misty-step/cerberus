@@ -28,3 +28,12 @@
 - **scope changes**: Added one extra guard test to lock the README `npx` command to `package.json` so the publish surface cannot silently drift after the package rename.
 - **blockers**: `make validate` failed in `ruff` on pre-existing unrelated test-file violations after the full pytest stage passed.
 - **pattern**: For small CLIs, failure-path coverage is usually enough to prove the implementation already holds; the higher-leverage fix was metadata/documentation hardening plus a drift test, not a CLI rewrite.
+
+## 2026-03-09 — Issue #336: adjacent-regression checks for workflow and infra PRs
+
+- **issue**: #336
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Added a shared workflow/infra adjacency checklist, reinforced it in atlas/craft, and locked a `volume#407`-style replay fixture into eval coverage.
+- **blockers**: Full repo tests passed, but `ruff` and `shellcheck` still fail on unrelated pre-existing findings in untouched files.
+- **pattern**: Prompt regressions need both instruction-level coverage and a named replay fixture; prompt text alone is too easy to drift without a concrete benchmark case.

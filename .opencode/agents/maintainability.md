@@ -52,6 +52,7 @@ Secondary Focus (check if relevant)
 - Documentation gaps for non-obvious decisions
 - Migration safety notes and runbook hints
 - Dependency hygiene: avoid new dependencies without need
+- For workflow or infra PRs, inspect deleted files, renamed status contexts, changed enforcement flags, and neighboring workflows or scripts that must stay in sync
 - Error handling flow clarity: early returns, explicit branches
 - Dead code or unused paths
 - Data contracts: explicit schemas or validation

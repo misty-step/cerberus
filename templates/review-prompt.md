@@ -28,6 +28,7 @@ Read this file to see all changes. Skip lockfiles, generated/minified files, and
 ## Scope Rules
 - ONLY flag issues in code that is ADDED or MODIFIED in this diff.
 - You MAY read surrounding code for context, but do not report issues in unchanged code.
+- Adjacent workflow/infra regressions surfaced by the Workflow / Infra Adjacent Regression Pass are also in scope when the diff itself changes the execution boundary. Deleted enforcement files, renamed status contexts, weakened gates, and one-hop neighboring workflow/script references may be cited when they are concrete regressions caused by this PR.
 - Do not suggest improvements to code outside the diff.
 - Prioritize: new files over modified files, application code over test code.
 - If the diff is very large, focus on the highest-risk changes and note which files you deprioritized.
@@ -44,6 +45,14 @@ Findings must be attributable to THIS PR's changes, not the codebase's history.
 - Trace the full execution path that becomes the new default.
 - Flag if the newly-defaulted path was previously experimental or opt-in.
 - Check whether test coverage exercises the real implementation (not just mocks).
+
+## Workflow / Infra Adjacent Regression Pass
+- When a PR touches workflows, CI, release automation, validation scripts, status checks, or other infrastructure surfaces, expand review one hop beyond the headline diff.
+- Inspect deleted files that previously enforced the same path.
+- Inspect renamed status contexts and any workflow or script references that still depend on the old name.
+- Inspect changed enforcement flags or safety gates that weaken trust guarantees.
+- Inspect neighboring workflows or scripts that depend on the edited surface so partial updates do not silently regress enforcement.
+- Keep findings scoped to concrete adjacent regressions proven by the diff and nearby files. Do not turn this into generic repo-wide speculation.
 
 ## Evidence Rules (No Hallucinations)
 - Every finding MUST include an `evidence` field containing an exact code quote (1-6 lines) from the repository at the cited `file:line`.
