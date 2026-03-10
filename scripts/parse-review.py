@@ -269,10 +269,22 @@ def read_input(path: str | None) -> str:
     return sys.stdin.read()
 
 
+def has_explicit_auth_signal(text: str) -> bool:
+    """Return True only for auth-scoped provider failures."""
+    auth_patterns = [
+        r"\bapi_key_invalid\b",
+        r"\b(?:invalid|incorrect)[ _-]?api[ _-]?key\b",
+        r"\b(?:401|403)\b",
+        r"\bunauthorized\b",
+        r"\bauthentication\s+(?:error|failed|failure)\b",
+    ]
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in auth_patterns)
+
+
 def detect_api_error(text: str) -> tuple[bool, str]:
     """Detect if the text contains an API error. Returns (is_error, error_type)."""
     if "API Error:" in text:
-        if "API_KEY_INVALID" in text or "authentication" in text.lower():
+        if has_explicit_auth_signal(text):
             return True, "API_KEY_INVALID"
         if "API_CREDITS_DEPLETED" in text or "API_QUOTA_EXCEEDED" in text:
             return True, "API_CREDITS_DEPLETED"
@@ -313,8 +325,9 @@ def detect_timeout(text: str) -> tuple[bool, int | None, str, str]:
 def generate_skip_verdict(error_type: str, text: str) -> dict:
     """Generate a SKIP verdict for API errors."""
     summary = f"Review skipped due to API error: {error_type}"
-    suggestion = "Check API key and quota settings."
-    if error_type == "API_CREDITS_DEPLETED":
+    if error_type == "API_KEY_INVALID":
+        suggestion = "Check API key and quota settings."
+    elif error_type == "API_CREDITS_DEPLETED":
         summary = f"Review skipped: API credits depleted ({error_type})"
         suggestion = "Top up API credits or configure a fallback provider."
     elif error_type == "RATE_LIMIT":
@@ -323,6 +336,8 @@ def generate_skip_verdict(error_type: str, text: str) -> dict:
         suggestion = "Retry later or check provider status before rerunning the review."
     elif error_type == "API_ERROR":
         suggestion = "Check provider status, API key, and quota settings."
+    else:
+        suggestion = "Check provider status and retry."
 
     return {
         "reviewer": REVIEWER_NAME,
@@ -432,27 +447,20 @@ def looks_like_api_error(text: str) -> tuple[bool, str, str]:
 
     Returns (is_error, error_type, error_message)
     """
+    if has_explicit_auth_signal(text):
+        return True, "API_KEY_INVALID", "Authentication error"
+
     # Common API error patterns
     error_patterns = [
-        (r"401", "API_KEY_INVALID", "Invalid API key (401)"),
         (r"402", "API_CREDITS_DEPLETED", "Payment required / credits depleted (402)"),
-        (r"403", "API_KEY_INVALID", "Forbidden (403)"),
         (r"429", "RATE_LIMIT", "Rate limit exceeded (429)"),
         (r"503", "SERVICE_UNAVAILABLE", "Service unavailable (503)"),
         (r"payment required", "API_CREDITS_DEPLETED", "Payment required / credits depleted"),
         (r"exceeded_current_quota", "API_CREDITS_DEPLETED", "API quota exceeded"),
         (r"insufficient_quota", "API_CREDITS_DEPLETED", "Insufficient quota"),
-        (r"incorrect_api_key", "API_KEY_INVALID", "Invalid API key"),
-        (r"invalid_api_key", "API_KEY_INVALID", "Invalid API key"),
         (r"rate limit", "RATE_LIMIT", "Rate limit exceeded"),
         (r"quota exceeded", "API_CREDITS_DEPLETED", "API quota exceeded"),
         (r"billing", "API_CREDITS_DEPLETED", "Billing/quota error"),
-        (
-            r"authentication.{0,80}(?:401|403|failed|failure|invalid|incorrect|unauthorized)"
-            r"|(?:401|403|failed|failure|invalid|incorrect|unauthorized).{0,80}authentication",
-            "API_KEY_INVALID",
-            "Authentication error",
-        ),
     ]
 
     for pattern, err_type, msg in error_patterns:

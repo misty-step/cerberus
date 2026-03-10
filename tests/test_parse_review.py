@@ -1501,6 +1501,31 @@ No structured verdict block was emitted before the process ended.
         assert data["findings"] == []
         assert "API_KEY_INVALID" not in data["summary"]
 
+    def test_plain_authentication_error_maps_to_key_invalid(self):
+        """Explicit auth failures without codes should still classify correctly."""
+        error_text = """
+Authentication error from provider.
+No structured verdict block was emitted before the process ended.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_KEY_INVALID" in data["summary"]
+
+    def test_explicit_api_error_path_ignores_auth_middleware_wording(self):
+        """API Error path should share the tightened auth heuristic."""
+        error_text = """API Error: upstream provider failed
+
+The provider reported an authentication middleware issue while streaming output.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_KEY_INVALID" not in data["summary"]
+        assert "API_ERROR" in data["summary"]
+
     def test_skip_stats_are_zero(self):
         error_text = """API Error: API_ERROR
 
@@ -1651,6 +1676,17 @@ Please retry after some time.
         assert finding["title"] == "API Error: RATE_LIMIT"
         assert "api key" not in finding["suggestion"].lower()
         assert "retry" in finding["suggestion"].lower()
+
+    def test_unknown_error_type_uses_neutral_suggestion(self):
+        """Future error types should not inherit API-key advice."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("parse_review", str(SCRIPT))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        verdict = mod.generate_skip_verdict("NETWORK_ERROR", "Temporary network issue")
+        assert verdict["findings"][0]["suggestion"] == "Check provider status and retry."
 
 
 class TestEnrichedTimeoutVerdicts:
