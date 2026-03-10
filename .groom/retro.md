@@ -37,3 +37,12 @@
 - **scope changes**: Added a shared workflow/infra adjacency checklist, reinforced it in atlas/craft, and locked a `volume#407`-style replay fixture into eval coverage.
 - **blockers**: Full repo tests passed, but `ruff` and `shellcheck` still fail on unrelated pre-existing findings in untouched files.
 - **pattern**: Prompt regressions need both instruction-level coverage and a named replay fixture; prompt text alone is too easy to drift without a concrete benchmark case.
+
+## 2026-03-10 — Issue #297: sentinel error tracing for trace reviewer
+
+- **issue**: #297
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Added prompt-contract tests plus a small lint cleanup in an adjacent prompt test file so touched-area validation stayed clean.
+- **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing findings across untouched repo files after the full pytest phase passed.
+- **pattern**: Prompt-only fixes need an explicit RED test first; otherwise it is too easy to ship soft wording changes that do not actually lock the intended reasoning contract.
