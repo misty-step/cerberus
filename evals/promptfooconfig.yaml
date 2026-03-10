@@ -426,8 +426,9 @@ tests:
         -    runs-on: ubuntu-latest
         diff --git a/scripts/check-required-status.sh b/scripts/check-required-status.sh
         @@
-        -REQUIRED_CONTEXT=review
-        +REQUIRED_CONTEXT=review
+        -# Verify the required check before merge.
+        +# Verify the required status context before merge.
+         REQUIRED_CONTEXT=review
     assert:
       - type: javascript
         value: "output.verdict === 'FAIL'"

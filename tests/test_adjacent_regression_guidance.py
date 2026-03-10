@@ -35,11 +35,12 @@ def test_architecture_and_maintainability_agents_reinforce_adjacent_regression_c
 def test_eval_config_contains_volume_407_adjacent_regression_fixture() -> None:
     config = yaml.safe_load(EVAL_CONFIG.read_text(encoding="utf-8"))
 
+    fixture_description = "Architecture - Workflow Adjacent Regression Recall"
     fixture = next(
-        test
-        for test in config["tests"]
-        if test["description"] == "Architecture - Workflow Adjacent Regression Recall"
+        (test for test in config["tests"] if test["description"] == fixture_description),
+        None,
     )
+    assert fixture is not None, f"Expected eval fixture {fixture_description!r} not found"
 
     assert "volume#407" in fixture["vars"]["pr_body"]
     assert "trufflehog" in fixture["vars"]["diff"].lower()
