@@ -64,3 +64,12 @@
 - **scope changes**: Added a focused prompt-contract test file and a promptfoo fixture, not just the prompt wording itself, so the swallowed-error recall lane has both unit-style and eval-style coverage.
 - **blockers**: `make validate` initially passed the full pytest phase (`1548 passed, 1 skipped`) but failed in `ruff` on unrelated pre-existing lint debt across untouched files; that gate debt was then fixed in this lane so the final branch shipped green.
 - **pattern**: Prompt-quality fixes hold better when the issue ships with one named regression file and one eval fixture. Text-only prompt edits are too easy to lose in later prompt churn.
+
+## 2026-03-10 — Issue #297: sentinel error tracing for trace reviewer
+
+- **issue**: #297
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Added prompt-contract tests plus a small lint cleanup in an adjacent prompt test file so touched-area validation stayed clean.
+- **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing findings across untouched repo files after the full pytest phase passed.
+- **pattern**: Prompt-only fixes need an explicit RED test first; otherwise it is too easy to ship soft wording changes that do not actually lock the intended reasoning contract.
