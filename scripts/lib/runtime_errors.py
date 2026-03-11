@@ -41,6 +41,14 @@ def classify_api_error_text(text: str, *, runtime_error_class: str | None = None
 
     lower = text.lower()
 
+    if runtime_error_class in {"auth", "api_key_invalid"}:
+        return "API_KEY_INVALID"
+    if runtime_error_class in {"quota", "credits", "api_credits_depleted"}:
+        return "API_CREDITS_DEPLETED"
+
+    # "auth_or_quota" is intentionally left text-driven. The runtime facade
+    # collapses two operator actions into one class, and defaulting that
+    # ambiguous bucket to auth or quota would mislead remediation guidance.
     if runtime_error_class == "rate_limit" or re.search(
         r"rate[ ._-]?limit|too many requests|retry-after|http[^0-9]*429|error[^0-9]*429",
         lower,
