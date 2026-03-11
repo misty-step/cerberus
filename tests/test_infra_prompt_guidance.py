@@ -26,6 +26,8 @@ def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
     assert "Infrastructure-only PRs are not lower risk" in text
     assert ".env" in text
     assert "*.sqlite" in text
+    assert "*.db" in text
+    assert "data/" in text
     assert "non-root `USER` directive" in text
     assert "Do NOT mark directly-readable static findings as `[unverified]`" in text
 
