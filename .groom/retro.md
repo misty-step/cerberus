@@ -46,3 +46,12 @@
 - **scope changes**: Tightened auth-only heuristics in `parse-review.py`, added timeout-vs-auth regression coverage, and corrected rate-limit operator guidance so non-auth SKIPs no longer point users at API keys.
 - **blockers**: `make validate` passed the full pytest phase (`1526 passed, 1 skipped`) but failed later in `ruff` on unrelated pre-existing lint debt outside this diff.
 - **pattern**: Skip-classification bugs are cross-boundary contract bugs. Fix the classifier and pin the emitted titles/suggestions with regression tests instead of patching downstream comment renderers.
+
+## 2026-03-10 — Issue #290: Verdict job should not fail on transient PASS comment timeouts
+
+- **issue**: #290
+- **predicted effort**: p1 (small-medium)
+- **actual effort**: ~1 hour
+- **scope changes**: Added a configurable transient-exit policy to the shared GitHub comment helper, extended transient detection to TCP timeouts, and added a walkthrough artifact for the verdict path.
+- **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing lint debt after the full pytest suite passes.
+- **pattern**: Keep transport retry detection centralized, but let the caller decide whether a transient delivery failure is merge-blocking. That preserves one retry path without flattening distinct workflow semantics.

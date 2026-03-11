@@ -29,6 +29,7 @@ def test_verdict_action_uses_shared_upsert() -> None:
     assert "scripts/lib/github.py" in content
     assert '--body-file "${CERBERUS_TMP}/verdict-comment.md"' in content
     assert "--marker" in content
+    assert "--transient-error-exit-code" in content
 
 
 def test_verdict_action_posts_inline_review_comments() -> None:
@@ -144,6 +145,14 @@ def test_verdict_action_uses_python_renderer_for_verdict_comment() -> None:
 
     assert "scripts/render-verdict-comment.py" in content
     assert '--output "${CERBERUS_TMP}/verdict-comment.md"' in content
+
+
+def test_verdict_action_only_hard_fails_comment_post_for_fail_verdicts() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    assert 'COMMENT_FAILURE_EXIT_CODE="0"' in content
+    assert 'if [ "$VERDICT" = "FAIL" ]; then' in content
+    assert 'COMMENT_FAILURE_EXIT_CODE="1"' in content
 
 
 def test_verdict_action_does_not_use_sparse_checkout_dot() -> None:

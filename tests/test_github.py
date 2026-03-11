@@ -7,7 +7,6 @@ import pytest
 
 from lib.github import (
     CommentPermissionError,
-    TransientGitHubError,
     find_comment_by_marker,
     upsert_pr_comment,
 )
@@ -506,6 +505,7 @@ class TestTransientErrorRetry:
     @pytest.mark.parametrize("error_stderr", [
         "gh: HTTP 502: Bad Gateway",
         "gh: HTTP 504: Gateway Timeout",
+        'Post "https://api.github.com/repos/x/y/issues/1/comments": dial tcp 140.82.112.6:443: i/o timeout',
     ])
     def test_5xx_error_triggers_retry(self, monkeypatch, error_stderr):
         call_count = 0
@@ -623,6 +623,44 @@ class TestTransientErrorHandlingInMain:
             mod.main()
 
         assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "GitHub outage" in captured.err
+
+    def test_transient_error_can_exit_nonzero_when_requested(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("Test body")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "prog",
+                "--repo",
+                "o/r",
+                "--pr",
+                "1",
+                "--marker",
+                "m",
+                "--body-file",
+                str(body_file),
+                "--transient-error-exit-code",
+                "1",
+            ],
+        )
+
+        def mock_upsert(*args, **kwargs):
+            import lib.github as mod
+            raise mod.TransientGitHubError("HTTP 503 after retries")
+
+        import lib.github as mod
+
+        monkeypatch.setattr(mod, "upsert_pr_comment", mock_upsert)
+
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+
+        assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "GitHub outage" in captured.err
 
