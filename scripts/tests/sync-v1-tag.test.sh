@@ -69,7 +69,7 @@ test_annotated_tag_sha() {
   setup_repo
 
   local commit_sha tag_sha
-  commit_sha=$(git rev-parse v1.1.0^{commit})
+  commit_sha=$(git rev-parse "v1.1.0^{commit}")
   tag_sha=$(git rev-parse v1.1.0)
 
   if [[ "$commit_sha" == "$tag_sha" ]]; then
@@ -92,23 +92,23 @@ test_updates_v1_tag() {
   setup_repo
 
   # Set v1 to v1.0.0 commit (behind latest)
-  git tag -fa v1 v1.0.0^{commit} -m "Initial v1"
+  git tag -fa v1 "v1.0.0^{commit}" -m "Initial v1"
   git push origin "refs/tags/v1" --force
 
   local before after
-  before=$(git rev-parse v1^{commit})
+  before=$(git rev-parse "v1^{commit}")
 
   # Run sync
   bash "$SCRIPT_DIR/../sync-v1-tag.sh"
 
-  after=$(git rev-parse v1^{commit})
+  after=$(git rev-parse "v1^{commit}")
 
   if [[ "$before" == "$after" ]]; then
     echo "FAIL: v1 tag should have been updated"
     return 1
   fi
 
-  if [[ "$after" != "$(git rev-parse v1.1.0^{commit})" ]]; then
+  if [[ "$after" != "$(git rev-parse "v1.1.0^{commit}")" ]]; then
     echo "FAIL: v1 should point to v1.1.0 commit"
     return 1
   fi
@@ -120,7 +120,7 @@ test_skips_when_current() {
   setup_repo
 
   # Set v1 to latest v1.x.x
-  git tag -fa v1 v1.1.0^{commit} -m "Current v1"
+  git tag -fa v1 "v1.1.0^{commit}" -m "Current v1"
   git push origin "refs/tags/v1" --force
 
   # Run sync - should exit 0 without changes

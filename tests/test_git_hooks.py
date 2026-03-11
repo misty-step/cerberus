@@ -1,7 +1,6 @@
 """Tests for git hooks setup and functionality."""
 import os
 import subprocess
-import tempfile
 import shutil
 from pathlib import Path
 

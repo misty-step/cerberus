@@ -1,6 +1,5 @@
 """Tests for lib.markdown — severity_icon, repo_context, blob_url, location_link, details_block."""
 
-import os
 
 from lib.markdown import _location_label, blob_url, details_block, location_link, repo_context, severity_icon
 
