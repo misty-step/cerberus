@@ -13,7 +13,10 @@ def test_correctness_agent_includes_infra_cross_check_guidance() -> None:
     text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
 
     assert "Infrastructure Configuration Cross-Check" in text
-    assert ".dockerignore" in text
+    assert (
+        "When the diff touches `.dockerignore`, `Dockerfile`, `docker-compose.yml`, "
+        "`fly.toml`, or similar deployment/config files:"
+    ) in text
     assert "startup file reads" in text
     assert "Cross-file startup breakage is in scope" in text
     assert "inconsistent PEM header formats" in text
@@ -26,6 +29,7 @@ def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
     assert "Infrastructure Threat Model" in text
     assert "Infrastructure-only PRs are not lower risk" in text
     assert ".env" in text
+    assert ".env.*" in text
     assert "*.sqlite" in text
     assert "*.db" in text
     assert "data/" in text
