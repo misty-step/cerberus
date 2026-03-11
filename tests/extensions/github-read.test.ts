@@ -185,10 +185,17 @@ test("get_pr_comments merges issue and review comments", async () => {
 			issue_comments: [{ id: 1, body: "issue" }],
 			review_comments: [{ id: 2, body: "review" }],
 		});
-		assert.deepEqual(readCalls(fakeGh.logFile), [
-			["api", "repos/misty-step/cerberus/issues/319/comments?per_page=3"],
-			["api", "repos/misty-step/cerberus/pulls/319/comments?per_page=3"],
-		]);
+		assert.deepEqual(
+			readCalls(fakeGh.logFile).sort((a, b) => {
+				const ka = a[1] ?? "";
+				const kb = b[1] ?? "";
+				return ka < kb ? -1 : ka > kb ? 1 : 0;
+			}),
+			[
+				["api", "repos/misty-step/cerberus/issues/319/comments?per_page=3"],
+				["api", "repos/misty-step/cerberus/pulls/319/comments?per_page=3"],
+			],
+		);
 	} finally {
 		restoreEnv();
 		fakeGh.cleanup();

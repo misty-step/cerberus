@@ -22,6 +22,12 @@ EXIT_NO_JSON_BLOCK = 3  # no ```json block found (transient — caller may retry
 EVIDENCE_MAX_CHARS = 2000
 CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
+# suggestion_verified / [unverified] is guidance for behavioral uncertainty, not a
+# parser-side severity downgrade. Static findings that are directly readable from the
+# diff or inspected source (for example missing Dockerfile directives or missing
+# `.dockerignore` exclusions) should keep their original severity when reviewers quote
+# concrete evidence.
+
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
     """Resolve reviewer."""
@@ -773,7 +779,6 @@ def normalize_evidence_fields(obj: dict) -> None:
             finding["evidence"] = _truncate_evidence_for_output(evidence)
         else:
             finding.pop("evidence", None)
-
 
 def main() -> None:
     """Main."""

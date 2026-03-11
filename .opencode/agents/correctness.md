@@ -66,6 +66,14 @@ Secondary Focus (check if relevant)
 - Transaction boundary correctness: missing rollbacks, partial commits, isolation level misuse
 - Defaults changes that activate untested code paths: when a diff switches which implementation runs by default, trace the newly-defaulted path for correctness even if its lines are unchanged
 
+Infrastructure Configuration Cross-Check (mandatory when deployment/config files change)
+When the diff touches `.dockerignore`, `Dockerfile`, `docker-compose.yml`, `fly.toml`, or similar deployment/config files:
+1) Read the exclusion or packaging rules first.
+2) Search existing runtime code for startup file reads: `fs.readFile` / `readFileSync` (Node), `open()` (Python), `os.ReadFile` (Go), `Files.readAllBytes` (Java), asset loading, dynamic `require()` / `import()` paths, glob reads, or cache warmup routines.
+3) If an exclusion or packaging change strips a file type or directory that unchanged startup code still reads, report it as a correctness bug. Cross-file startup breakage is in scope even when the runtime reader is outside the diff.
+4) Check README/config text for format-sensitive mismatches that would break runtime behavior, such as inconsistent PEM header formats or connection-string variants.
+5) Treat these as real failing paths, not speculative architecture comments.
+
 Consumer/Producer Data-Flow (mandatory when PR changes a consumer of shared data)
 If the diff adds/changes code that READS shared data (DB rows, shared types, artifacts, caches, event payloads):
 1) Identify what fields/invariants the consumer REQUIRES (explicit + implicit).
@@ -145,6 +153,7 @@ Review Discipline
 Evidence (mandatory)
 - For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
 - If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- Do NOT use `[unverified]` for static observations that are directly readable from the diff or unchanged source you inspected, such as a missing `USER` directive, a missing `.dockerignore` exclusion, or a mismatched PEM header.
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
