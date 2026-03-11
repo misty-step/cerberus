@@ -17,6 +17,7 @@ def test_correctness_agent_includes_infra_cross_check_guidance() -> None:
     assert "startup file reads" in text
     assert "Cross-file startup breakage is in scope" in text
     assert "inconsistent PEM header formats" in text
+    assert "Do NOT use `[unverified]` for static observations" in text
 
 
 def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
