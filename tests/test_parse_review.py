@@ -1526,6 +1526,19 @@ The provider reported an authentication middleware issue while streaming output.
         assert "API_KEY_INVALID" not in data["summary"]
         assert "API_ERROR" in data["summary"]
 
+    def test_explicit_api_error_header_token_wins(self):
+        """Explicit header tokens should not be re-derived from a generic body."""
+        error_text = """API Error: API_KEY_INVALID
+
+Error message here.
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_KEY_INVALID" in data["summary"]
+        assert data["findings"][0]["title"] == "API Error: API_KEY_INVALID"
+
     def test_explicit_api_error_preserves_rate_limit_signal(self):
         """Explicit markers with 429 details should not collapse to generic API_ERROR."""
         error_text = """API Error: upstream provider failed
@@ -1539,6 +1552,19 @@ Retry-After: 9
         assert data["verdict"] == "SKIP"
         assert "RATE_LIMIT" in data["summary"]
         assert data["findings"][0]["title"] == "API Error: RATE_LIMIT"
+
+    def test_explicit_api_error_403_still_maps_to_key_invalid(self):
+        """Explicit markers with 403 auth failures should keep the legacy auth mapping."""
+        error_text = """API Error: upstream provider failed
+
+HTTP 403 Forbidden
+"""
+        code, out, _ = run_parse(error_text)
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "API_KEY_INVALID" in data["summary"]
+        assert data["findings"][0]["title"] == "API Error: API_KEY_INVALID"
 
     def test_skip_stats_are_zero(self):
         error_text = """API Error: API_ERROR

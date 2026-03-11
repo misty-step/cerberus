@@ -156,9 +156,11 @@ def test_resolve_profile_requires_profiles_unless_allow_flag(tmp_path: Path, mon
 
 
 def test_classify_api_error_text_branches() -> None:
+    assert classify_api_error_text("API Error: API_KEY_INVALID") == "API_KEY_INVALID"
     assert classify_api_error_text("insufficient_quota") == "API_CREDITS_DEPLETED"
     assert classify_api_error_text("HTTP 429 Too Many Requests") == "RATE_LIMIT"
     assert classify_api_error_text("HTTP 503 service unavailable") == "SERVICE_UNAVAILABLE"
+    assert classify_api_error_text("HTTP 403 Forbidden") == "API_KEY_INVALID"
     assert classify_api_error_text("random error") == "API_ERROR"
 
 

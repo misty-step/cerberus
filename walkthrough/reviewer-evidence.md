@@ -19,14 +19,14 @@
 
 ## Evidence
 
-- Shared module: [scripts/lib/runtime_errors.py](/Users/phaedrus/.codex/worktrees/d150/cerberus/scripts/lib/runtime_errors.py)
-- Runner callsite: [scripts/run-reviewer.py](/Users/phaedrus/.codex/worktrees/d150/cerberus/scripts/run-reviewer.py)
-- Parser callsite: [scripts/parse-review.py](/Users/phaedrus/.codex/worktrees/d150/cerberus/scripts/parse-review.py)
-- Focused helper coverage: [tests/test_run_reviewer_helpers.py](/Users/phaedrus/.codex/worktrees/d150/cerberus/tests/test_run_reviewer_helpers.py)
-- Parser coverage for explicit rate-limit markers: [tests/test_parse_review.py](/Users/phaedrus/.codex/worktrees/d150/cerberus/tests/test_parse_review.py)
+- Shared module: [`scripts/lib/runtime_errors.py`](../scripts/lib/runtime_errors.py)
+- Runner callsite: [`scripts/run-reviewer.py`](../scripts/run-reviewer.py)
+- Parser callsite: [`scripts/parse-review.py`](../scripts/parse-review.py)
+- Focused helper coverage: [`tests/test_run_reviewer_helpers.py`](../tests/test_run_reviewer_helpers.py)
+- Parser coverage for explicit rate-limit markers: [`tests/test_parse_review.py`](../tests/test_parse_review.py)
 
 ## Persistent Verification
 
 `pytest tests/test_run_reviewer_helpers.py tests/test_runtime_facade.py tests/test_parse_review.py tests/test_run_reviewer_runtime.py -q`
 
-Result in this workspace: `209 passed in 18.34s`
+Result in this workspace: `211 passed in 17.64s`
