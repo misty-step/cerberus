@@ -226,7 +226,7 @@ tests:
         +}
     assert:
       - type: javascript
-        value: "Array.isArray(output.findings) && output.findings.some(f => ['major', 'critical'].includes(f.severity) && /resp/i.test(`${f.title || ''} ${f.description || ''}`))"
+        value: "Array.isArray(output.findings) && output.findings.some(f => ['major', 'critical'].includes(f.severity) && /resp/i.test(`${f.title || ''} ${f.description || ''}`)) && ['WARN', 'FAIL'].includes(output.verdict)"
 
   - description: "Performance - N+1 Query"
     vars:

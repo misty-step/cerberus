@@ -56,3 +56,6 @@ def test_eval_config_contains_swallowed_error_fixture() -> None:
     ]
     assert any("major" in value.lower() or "critical" in value.lower() for value in javascript_assertions)
     assert any("resp" in value.lower() for value in javascript_assertions)
+    assert any("output.verdict" in value for value in javascript_assertions), (
+        "Eval assertion should also validate the top-level verdict is not PASS"
+    )
