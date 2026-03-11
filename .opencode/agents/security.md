@@ -75,7 +75,7 @@ Specific Checks
 
 Infrastructure Threat Model (mandatory when infra/deployment files change)
 Infrastructure-only PRs are not lower risk than application-code PRs. A Dockerfile, `.dockerignore`, CI, or deployment-config diff can expand blast radius across the whole service.
-When the diff touches `Dockerfile`, `.dockerignore`, `fly.toml`, container/build config, or secret-loading config:
+When the diff touches `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `fly.toml`, container/build config, or secret-loading config:
 1) Verify `.dockerignore` excludes local secrets and stateful data such as `.env`, `.env.*`, `*.sqlite`, `*.db`, and `data/` when those assets could be present in developer worktrees.
 2) Check for a non-root `USER` directive in Dockerfiles. Missing `USER` means the container runs as root and is a directly-readable static finding.
 3) Flag secret-bake-in or root-container risks even if no application code changed.

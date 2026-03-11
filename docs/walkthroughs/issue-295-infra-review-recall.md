@@ -31,7 +31,7 @@ python3 -m pytest tests/test_infra_prompt_guidance.py tests/test_parse_review.py
 
 Observed result on this branch:
 
-- `140 passed`
+- Targeted command passed on this branch
 
 Broader repo gate:
 

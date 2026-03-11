@@ -28,6 +28,10 @@ def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
 
     assert "Infrastructure Threat Model" in text
     assert "Infrastructure-only PRs are not lower risk" in text
+    assert (
+        "When the diff touches `Dockerfile`, `.dockerignore`, `docker-compose.yml`, "
+        "`fly.toml`, container/build config, or secret-loading config:"
+    ) in text
     assert ".env" in text
     assert ".env.*" in text
     assert "*.sqlite" in text
