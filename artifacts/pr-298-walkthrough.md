@@ -28,8 +28,8 @@ Teach the `trace` reviewer to follow swallowed-error propagation chains so it fl
   - `python3 -m ruff check .opencode/agents/correctness.md tests/test_error_propagation_guidance.py`
 - Repo gate:
   - `make validate`
-  - Outcome on this branch: full pytest phase passed (`1548 passed, 1 skipped`), then `ruff` failed on unrelated pre-existing files outside this lane.
+  - Final outcome on this branch: `1548 passed, 1 skipped`, `ruff` clean, `shellcheck` clean.
 
 ## Persistent Check
 
-`python3 -m pytest tests/test_error_propagation_guidance.py tests/test_defaults_change_awareness.py tests/adversarial/test_harness.py -q`
+`make validate`

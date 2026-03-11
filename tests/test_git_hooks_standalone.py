@@ -47,28 +47,28 @@ def test_pre_commits_on_valid_shell():
     import tempfile
     import subprocess
     from pathlib import Path
-    
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         repo = Path(tmp_dir) / "repo"
         repo.mkdir()
-        
+
         # Init git repo
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         # Copy hooks
         githooks = Path(".githooks")
         hooks_dest = repo / ".git" / "hooks"
         if hooks_dest.exists():
             shutil.rmtree(hooks_dest)
         shutil.copytree(githooks, hooks_dest)
-        
+
         # Create valid shell script (SC-compliant)
         script = repo / "scripts" / "test.sh"
         script.parent.mkdir()
         script.write_text("#!/bin/bash\n# Test script\necho 'hello world'")
-        
+
         # Stage and test pre-commit
         subprocess.run(["git", "add", "scripts/test.sh"], cwd=repo, check=True)
         result = subprocess.run(
@@ -85,24 +85,24 @@ def test_pre_commits_fails_on_bad_shell():
     with tempfile.TemporaryDirectory() as tmp_dir:
         repo = Path(tmp_dir) / "repo"
         repo.mkdir()
-        
+
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         githooks = Path(".githooks")
         hooks_dest = repo / ".git" / "hooks"
         if hooks_dest.exists():
             shutil.rmtree(hooks_dest)
         shutil.copytree(githooks, hooks_dest)
-        
+
         # Create bad shell script (undefined variable)
         script = repo / "scripts" / "bad.sh"
         script.parent.mkdir()
         script.write_text("#!/bin/sh\necho $UNDEFINED_VAR")
-        
+
         subprocess.run(["git", "add", "scripts/bad.sh"], cwd=repo, check=True)
-        
+
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-commit"],
             cwd=repo,
@@ -119,24 +119,24 @@ def test_pre_commits_fails_on_bad_python():
     with tempfile.TemporaryDirectory() as tmp_dir:
         repo = Path(tmp_dir) / "repo"
         repo.mkdir()
-        
+
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-        
+
         githooks = Path(".githooks")
         hooks_dest = repo / ".git" / "hooks"
         if hooks_dest.exists():
             shutil.rmtree(hooks_dest)
         shutil.copytree(githooks, hooks_dest)
-        
+
         # Create Python with syntax error
         script = repo / "scripts" / "bad.py"
         script.parent.mkdir()
         script.write_text("print('hello'")  # Missing closing paren
-        
+
         subprocess.run(["git", "add", "scripts/bad.py"], cwd=repo, check=True)
-        
+
         result = subprocess.run(
             [repo / ".git" / "hooks" / "pre-commit"],
             cwd=repo,
@@ -155,7 +155,7 @@ def test_contributing_mentions_hooks():
 
 if __name__ == "__main__":
     os.chdir("/tmp/cerberus")
-    
+
     tests = [
         test_setup_script_exists,
         test_githooks_directory_exists,
@@ -167,10 +167,10 @@ if __name__ == "__main__":
         test_pre_commits_fails_on_bad_python,
         test_contributing_mentions_hooks,
     ]
-    
+
     passed = 0
     failed = 0
-    
+
     for test in tests:
         try:
             test()
@@ -181,7 +181,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"✗ {test.__name__} errored: {e}")
             failed += 1
-    
+
     print(f"\n{passed}/{len(tests)} tests passed")
     if failed > 0:
         exit(1)

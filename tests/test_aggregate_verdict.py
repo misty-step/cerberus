@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from conftest import aggregate_verdict
+from lib.overrides import Override
+
 SCRIPT = Path(__file__).parent.parent / "scripts" / "aggregate-verdict.py"
 FIXTURES = Path(__file__).parent / "fixtures" / "sample-verdicts"
 
@@ -684,9 +687,6 @@ def test_partial_model_metadata_propagates_present_values(tmp_path):
 # Phase 2: Unit tests via importlib (no subprocess)
 # ---------------------------------------------------------------------------
 
-from conftest import aggregate_verdict
-from lib.overrides import Override
-
 _parse_override = aggregate_verdict.parse_override
 _aggregate = aggregate_verdict.aggregate
 _validate_actor = aggregate_verdict.validate_actor
@@ -955,7 +955,6 @@ class TestPipelineIntegration:
     """End-to-end: parse raw reviewer output, then aggregate verdicts."""
 
     def test_parse_then_aggregate_pass(self, tmp_path):
-        from conftest import parse_review
         # Simulate three PASS reviews
         for name in ["APOLLO", "ATHENA", "SENTINEL"]:
             raw = json.dumps({

@@ -337,7 +337,7 @@ def main() -> int:
                     except Exception as exc:
                         artifact = futures[future]
                         print(f"Warning: failed to download artifact: {exc}", file=sys.stderr)
-            
+
             print(f"Successfully downloaded {downloaded}/{len(artifacts)} quality reports", file=sys.stderr)
     else:
         parser.error("Either --repo or --artifact-dir is required")

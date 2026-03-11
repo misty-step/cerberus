@@ -1,7 +1,6 @@
 """Tests for scripts/read-defaults-config.py CLI."""
 
 import importlib
-import sys
 from pathlib import Path
 
 # Import the script module directly.

@@ -1048,7 +1048,6 @@ def test_format_skip_diagnostics_table_escapes_pipe_in_label() -> None:
         "findings": [],
     }
     lines = format_skip_diagnostics_table([rv])
-    table = "\n".join(lines)
     # The raw pipe in the label must be escaped
     for row in lines:
         if row.startswith("| ") and "Reviewer" not in row and "---" not in row:
@@ -1086,11 +1085,11 @@ def test_format_skip_diagnostics_table_empty() -> None:
 def test_format_skip_diagnostics_table_single_timeout() -> None:
     rv = _skip_reviewer("timeout", "Reviewer timeout after 300s", "review skipped due to timeout after 300s.")
     lines = format_skip_diagnostics_table([rv])
-    table = "\n".join(lines)
-    assert "### Skipped Reviews" in table
-    assert "| Reviewer | Reason | Recovery |" in table
-    assert "300s" in table
-    assert "timeout" in table.lower()
+    rendered = "\n".join(lines)
+    assert "### Skipped Reviews" in rendered
+    assert "| Reviewer | Reason | Recovery |" in rendered
+    assert "300s" in rendered
+    assert "timeout" in rendered.lower()
 
 
 def test_format_skip_diagnostics_table_multiple_reviewers() -> None:
@@ -1100,9 +1099,8 @@ def test_format_skip_diagnostics_table_multiple_reviewers() -> None:
         _skip_reviewer("parse-failure", "Review output could not be parsed"),
     ]
     lines = format_skip_diagnostics_table(rvs)
-    table = "\n".join(lines)
     # Three data rows plus header/separator
-    data_rows = [l for l in lines if l.startswith("| ") and "Reviewer" not in l and "---" not in l]
+    data_rows = [line for line in lines if line.startswith("| ") and "Reviewer" not in line and "---" not in line]
     assert len(data_rows) == 3
 
 
@@ -1193,8 +1191,8 @@ def test_verdict_comment_includes_skip_diagnostics_table_with_all_types(tmp_path
     assert "### Skipped Reviews" in body
     # At least the 4 structured-finding reviewers should have rows
     data_rows = [
-        l for l in body.splitlines()
-        if l.startswith("| ") and "Reviewer" not in l and "---" not in l and "Skipped Reviews" not in l
+        line for line in body.splitlines()
+        if line.startswith("| ") and "Reviewer" not in line and "---" not in line and "Skipped Reviews" not in line
     ]
     assert len(data_rows) >= 4
 

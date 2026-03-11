@@ -10,7 +10,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-import pytest
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 RUN_REVIEWER = REPO_ROOT / "scripts" / "run-reviewer.sh"

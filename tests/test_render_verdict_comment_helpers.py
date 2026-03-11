@@ -4,13 +4,10 @@ These test edge-case branches in helper functions that are hard to hit
 through the full subprocess rendering pipeline.
 """
 
-import os
 
 from lib.render_verdict_comment import (
     as_int,
-    collect_hotspots,
     collect_issue_groups,
-    collect_key_findings,
     count_findings,
     detect_skip_banner,
     finding_location,
