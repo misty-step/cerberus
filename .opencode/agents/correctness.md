@@ -69,7 +69,7 @@ Secondary Focus (check if relevant)
 Infrastructure Configuration Cross-Check (mandatory when deployment/config files change)
 When the diff touches `.dockerignore`, `Dockerfile`, `docker-compose.yml`, `fly.toml`, or similar deployment/config files:
 1) Read the exclusion or packaging rules first.
-2) Search existing runtime code for startup file reads, asset loading, dynamic `require()` paths, `fs.readFile` / `readFileSync`, glob reads, or cache warmup routines.
+2) Search existing runtime code for startup file reads: `fs.readFile` / `readFileSync` (Node), `open()` (Python), `os.ReadFile` (Go), `Files.readAllBytes` (Java), asset loading, dynamic `require()` / `import()` paths, glob reads, or cache warmup routines.
 3) If an exclusion or packaging change strips a file type or directory that unchanged startup code still reads, report it as a correctness bug. Cross-file startup breakage is in scope even when the runtime reader is outside the diff.
 4) Check README/config text for format-sensitive mismatches that would break runtime behavior, such as inconsistent PEM header formats or connection-string variants.
 5) Treat these as real failing paths, not speculative architecture comments.

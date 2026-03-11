@@ -186,7 +186,7 @@ test("get_pr_comments merges issue and review comments", async () => {
 			review_comments: [{ id: 2, body: "review" }],
 		});
 		assert.deepEqual(
-			readCalls(fakeGh.logFile).sort((a, b) => a[1].localeCompare(b[1])),
+			readCalls(fakeGh.logFile).sort((a, b) => (a[1] ?? "").localeCompare(b[1] ?? "")),
 			[
 				["api", "repos/misty-step/cerberus/issues/319/comments?per_page=3"],
 				["api", "repos/misty-step/cerberus/pulls/319/comments?per_page=3"],
