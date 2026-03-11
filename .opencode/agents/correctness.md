@@ -73,6 +73,24 @@ If the diff adds/changes code that READS shared data (DB rows, shared types, art
 3) Verify each producer satisfies the consumer; if not, show the failing path.
 4) Treat silent-failure amplifiers as severity multipliers: swallowed errors, fallbacks, partial writes.
 
+Error Propagation Chains (mandatory when a failing call is logged but execution continues)
+For each error that is caught-and-logged (not returned, not re-raised):
+1) Identify the result of the failing call and what value remains in scope on the error path.
+2) Determine whether that value is nil, zero, unset, stale, or otherwise unsafe to use after the failure.
+3) Trace every use of that value in the remainder of the function and any immediately obvious caller path.
+4) If later code dereferences, indexes, calls a method on, or mutates that value without a nil/zero guard or early return, flag a major correctness bug.
+5) Name the specific variable, the specific downstream call, and the specific crashing line or corruption path.
+
+Language patterns to recognize:
+- Go: `if err != nil { log.Warn(...) }` with no return, then `resp` or another result is used below.
+- Python: `except Exception: logger.warning(...)` with no raise/return, then the result variable is used below.
+- JS/TS: `catch (e) { console.warn(e) }` with no throw/return, then the result is used below.
+
+Do not flag error sites where:
+- The error path assigns a safe explicit fallback before later use.
+- The subsequent code checks the result for nil/zero before use.
+- The function returns immediately after logging.
+
 Anti-Patterns (Do Not Flag)
 - Naming, formatting, style, lint rules
 - Documentation or comments unless they hide a bug

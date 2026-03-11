@@ -55,3 +55,12 @@
 - **scope changes**: Added a configurable transient-exit policy to the shared GitHub comment helper, extended transient detection to TCP timeouts, and added a walkthrough artifact for the verdict path.
 - **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing lint debt after the full pytest suite passes.
 - **pattern**: Keep transport retry detection centralized, but let the caller decide whether a transient delivery failure is merge-blocking. That preserves one retry path without flattening distinct workflow semantics.
+
+## 2026-03-11 — Issue #298: swallowed-error propagation guidance for trace
+
+- **issue**: #298
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Added a focused prompt-contract test file and a promptfoo fixture, not just the prompt wording itself, so the swallowed-error recall lane has both unit-style and eval-style coverage.
+- **blockers**: `make validate` initially passed the full pytest phase (`1548 passed, 1 skipped`) but failed in `ruff` on unrelated pre-existing lint debt across untouched files; that gate debt was then fixed in this lane so the final branch shipped green.
+- **pattern**: Prompt-quality fixes hold better when the issue ships with one named regression file and one eval fixture. Text-only prompt edits are too easy to lose in later prompt churn.
