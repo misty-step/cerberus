@@ -28,7 +28,7 @@ Teach the `trace` reviewer to follow swallowed-error propagation chains so it fl
   - `python3 -m ruff check .opencode/agents/correctness.md tests/test_error_propagation_guidance.py`
 - Repo gate:
   - `make validate`
-  - Final outcome on this branch: `1548 passed, 1 skipped`, `ruff` clean, `shellcheck` clean.
+  - Final outcome on this branch after rebase and review fixes: `1551 passed, 1 skipped`, `ruff` clean, `shellcheck` clean.
 
 ## Persistent Check
 

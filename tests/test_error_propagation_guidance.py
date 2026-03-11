@@ -6,45 +6,36 @@ import yaml
 ROOT = Path(__file__).parent.parent
 CORRECTNESS_AGENT = ROOT / ".opencode" / "agents" / "correctness.md"
 EVAL_CONFIG = ROOT / "evals" / "promptfooconfig.yaml"
+CORRECTNESS_TEXT = CORRECTNESS_AGENT.read_text(encoding="utf-8")
 
 
 def test_correctness_agent_has_error_propagation_chains_section() -> None:
-    text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
-
-    assert "Error Propagation Chains" in text
+    assert "Error Propagation Chains" in CORRECTNESS_TEXT
 
 
 def test_error_propagation_guidance_mentions_logged_only_errors() -> None:
-    text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
-
-    assert "caught-and-logged" in text
-    assert "not returned, not re-raised" in text
-    assert "result of the failing call" in text
+    assert "caught-and-logged" in CORRECTNESS_TEXT
+    assert "not returned, not re-raised" in CORRECTNESS_TEXT
+    assert "result of the failing call" in CORRECTNESS_TEXT
 
 
 def test_error_propagation_guidance_requires_downstream_trace() -> None:
-    text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
-
-    assert "Trace every use of that value" in text
-    assert "Name the specific variable" in text
-    assert "specific crashing line" in text
+    assert "Trace every use of that value" in CORRECTNESS_TEXT
+    assert "Name the specific variable" in CORRECTNESS_TEXT
+    assert "specific crashing line" in CORRECTNESS_TEXT
 
 
 def test_error_propagation_guidance_calls_out_safe_fallback_exemptions() -> None:
-    text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
-
-    assert "safe explicit fallback" in text
-    assert "checks the result for nil/zero before use" in text
-    assert "returns immediately after logging" in text
+    assert "safe explicit fallback" in CORRECTNESS_TEXT
+    assert "checks the result for nil/zero before use" in CORRECTNESS_TEXT
+    assert "returns immediately after logging" in CORRECTNESS_TEXT
 
 
 def test_error_propagation_guidance_covers_cross_language_patterns() -> None:
-    text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
-
-    assert "Go:" in text
-    assert "Python:" in text
-    assert "JS/TS:" in text
-    assert "log.Warn" in text
+    assert "Go:" in CORRECTNESS_TEXT
+    assert "Python:" in CORRECTNESS_TEXT
+    assert "JS/TS:" in CORRECTNESS_TEXT
+    assert "log.Warn" in CORRECTNESS_TEXT
 
 
 def test_eval_config_contains_swallowed_error_fixture() -> None:
