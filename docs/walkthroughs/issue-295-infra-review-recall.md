@@ -27,6 +27,7 @@ Persistent verification for this path:
 
 ```bash
 python3 -m pytest tests/test_infra_prompt_guidance.py tests/test_parse_review.py -q
+python3 -m ruff check tests/test_infra_prompt_guidance.py scripts/parse-review.py
 ```
 
 Observed result on this branch:
