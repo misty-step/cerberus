@@ -12,7 +12,7 @@ This lane fixes a security-review blind spot in the `guard` prompt. Cerberus alr
 
 ## After
 
-- `guard` now runs a dedicated GitHub Actions supply-chain pass when workflow/config files change.
+- `guard` now runs a dedicated GitHub Actions supply-chain pass when `.github/workflows/*.yml`, `.github/workflows/*.yaml`, or related workflow/config files change.
 - Mutable third-party refs are explicitly at least `minor`.
 - Mutable third-party refs that receive forwarded reusable credentials via `env:` or `with:` on an action step, or via reusable-workflow `secrets:` blocks, are explicitly `major`, with concrete examples for what should and should not escalate.
 - Full SHAs and full third-party release tags such as `@v1.2.3` are explicitly non-findings, while partial semver refs such as `@v1` and `@v1.2` remain mutable.

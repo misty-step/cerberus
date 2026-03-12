@@ -40,6 +40,7 @@ def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> N
     assert "non-root `USER` directive" in text
     assert "omit the finding instead of inventing a weaker fallback label" in text
     assert "GitHub Actions Supply-Chain" in text
+    assert "When the diff touches `.github/workflows/*.yml`, `.github/workflows/*.yaml`" in text
     assert "Treat `uses: owner/repo@<ref>` as a supply-chain check" in text
     assert "mutable branch ref (`@master`, `@main`, `@develop`, or similar)" in text
     assert "partial semver tag that is not a full three-part release" in text

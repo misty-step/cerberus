@@ -82,7 +82,7 @@ When the diff touches `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `fly.
 4) Directly-readable static findings still need exact quoted evidence from the code. If you cannot quote the code, omit the finding instead of inventing a weaker fallback label.
 
 GitHub Actions Supply-Chain (mandatory when workflow files change)
-When the diff touches `.github/workflows/*.yml` or other GitHub Actions workflow/config files:
+When the diff touches `.github/workflows/*.yml`, `.github/workflows/*.yaml`, or other GitHub Actions workflow/config files:
 1) Treat `uses: owner/repo@<ref>` as a supply-chain check, not a style note.
 2) If a third-party action uses a mutable branch ref (`@master`, `@main`, `@develop`, or similar) or any partial semver tag that is not a full three-part release (for example `@v1`, `@v2`, or `@v1.2`), report at least `minor`.
 3) Escalate to `major` when that mutable third-party action receives a forwarded external API key or other reusable credential with exfiltration value, including via sibling `env:` or `with:` keys on the action step, or via a `secrets:` block on a reusable-workflow `uses:` call. Examples that should usually escalate: `AWS_ACCESS_KEY_ID`, `NPM_TOKEN`, `STRIPE_SECRET_KEY`, `SLACK_BOT_TOKEN`, or third-party SaaS credentials. Examples that should usually stay `minor` unless broader blast radius is evident: `GITHUB_TOKEN` or repository-scoped internal secrets without third-party reach.
