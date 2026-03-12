@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from lib.github_reviews import (
     ReviewComment,
     create_pr_review,
@@ -84,3 +86,35 @@ def test_create_pr_review_posts_json_payload(monkeypatch) -> None:
         "body": "hello",
         "comments": [{"path": "a.py", "position": 3, "body": "c"}],
     }
+
+
+def test_list_pr_reviews_translates_permission_errors(monkeypatch) -> None:
+    import lib.github_platform as platform
+    import lib.github_reviews as mod
+
+    def fake_list_pr_reviews(repo: str, pr_number: int):
+        raise platform.GitHubPermissionError("no permission")
+
+    monkeypatch.setattr(platform, "list_pr_reviews", fake_list_pr_reviews)
+
+    with pytest.raises(mod.CommentPermissionError, match="no permission"):
+        mod.list_pr_reviews("owner/repo", 42)
+
+
+def test_create_pr_review_translates_transient_errors(monkeypatch) -> None:
+    import lib.github_platform as platform
+    import lib.github_reviews as mod
+
+    def fake_create_pr_review(**kwargs):
+        raise platform.TransientGitHubError("temporary")
+
+    monkeypatch.setattr(platform, "create_pr_review", fake_create_pr_review)
+
+    with pytest.raises(mod.TransientGitHubError, match="temporary"):
+        mod.create_pr_review(
+            repo="owner/repo",
+            pr_number=7,
+            commit_id="deadbeef",
+            body="hello",
+            comments=[],
+        )

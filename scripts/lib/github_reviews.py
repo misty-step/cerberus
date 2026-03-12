@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from lib.github import CommentPermissionError, TransientGitHubError
 from lib import github_platform as platform
 
 
@@ -21,7 +22,12 @@ class ReviewComment:
 
 def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
     """List pr reviews."""
-    return platform.list_pr_reviews(repo, pr_number)
+    try:
+        return platform.list_pr_reviews(repo, pr_number)
+    except platform.GitHubPermissionError as exc:
+        raise CommentPermissionError(str(exc)) from exc
+    except platform.TransientGitHubError as exc:
+        raise TransientGitHubError(str(exc)) from exc
 
 
 def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
@@ -39,7 +45,12 @@ def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
 
 def list_pr_files(repo: str, pr_number: int) -> list[dict]:
     """List pr files."""
-    return platform.list_pr_files(repo, pr_number)
+    try:
+        return platform.list_pr_files(repo, pr_number)
+    except platform.GitHubPermissionError as exc:
+        raise CommentPermissionError(str(exc)) from exc
+    except platform.TransientGitHubError as exc:
+        raise TransientGitHubError(str(exc)) from exc
 
 
 def create_pr_review(
@@ -51,12 +62,17 @@ def create_pr_review(
     comments: list[ReviewComment],
 ) -> dict:
     """Create pr review."""
-    return platform.create_pr_review(
-        repo=repo,
-        pr_number=pr_number,
-        commit_id=commit_id,
-        body=body,
-        comments=[
-            {"path": c.path, "position": c.position, "body": c.body} for c in comments
-        ],
-    )
+    try:
+        return platform.create_pr_review(
+            repo=repo,
+            pr_number=pr_number,
+            commit_id=commit_id,
+            body=body,
+            comments=[
+                {"path": c.path, "position": c.position, "body": c.body} for c in comments
+            ],
+        )
+    except platform.GitHubPermissionError as exc:
+        raise CommentPermissionError(str(exc)) from exc
+    except platform.TransientGitHubError as exc:
+        raise TransientGitHubError(str(exc)) from exc

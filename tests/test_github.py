@@ -333,6 +333,17 @@ def test_fetch_comments_translates_platform_transient_error(monkeypatch):
         mod.fetch_comments("o/r", 5)
 
 
+def test_fetch_comments_returns_empty_list_on_invalid_payload(monkeypatch):
+    import lib.github as mod
+
+    def fake_fetch_issue_comments(*args, **kwargs):
+        raise ValueError("bad payload")
+
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
+
+    assert mod.fetch_comments("o/r", 5) == []
+
+
 class TestRunGhErrorHandling:
     def test_403_raises_permission_error(self, monkeypatch):
         def mock_subprocess_run(args, **kwargs):

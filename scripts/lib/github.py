@@ -123,6 +123,8 @@ def fetch_comments(
             max_pages=max_pages,
             stop_on_marker=stop_on_marker,
         )
+    except ValueError:
+        return []
     except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
         _reraise_platform_error(exc)
 
