@@ -1055,7 +1055,7 @@ class TestStaleKnowledgeAnnotation:
         assert data["verdict"] == "FAIL"
 
     def test_annotation_marker_is_set(self):
-        """Annotated findings have _stale_knowledge_annotated flag."""
+        """Annotated findings are tracked in pipeline diagnostics, not findings."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Bad version",
@@ -1074,7 +1074,9 @@ class TestStaleKnowledgeAnnotation:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0].get("_stale_knowledge_annotated") is True
+        assert "_stale_knowledge_annotated" not in data["findings"][0]
+        annotations = data["_diagnostics"]["stale_knowledge_annotations"]
+        assert annotations[0]["finding_index"] == 0
 
     def test_stats_unchanged_after_annotation(self):
         """Stats reflect original severity — annotation does not change the severity counts."""
@@ -1206,7 +1208,8 @@ class TestStaleKnowledgeAnnotation:
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0].get("_stale_knowledge_annotated") is True
+        assert "_stale_knowledge_annotated" not in data["findings"][0]
+        assert data["_diagnostics"]["stale_knowledge_annotations"][0]["finding_index"] == 0
 
     def test_normalized_category_variants_all_protect(self):
         """All separator variants of version-conflict category protect findings."""
@@ -2493,6 +2496,7 @@ class TestStatsValidation:
         assert code == 0
         data = json.loads(out)
         assert "_stats_discrepancy" not in data
+        assert "_diagnostics" not in data or "stats_discrepancy" not in data["_diagnostics"]
 
     def test_llm_over_reports_corrected(self):
         """When LLM reports more issues than actually exist, stats are corrected."""
@@ -2518,9 +2522,10 @@ class TestStatsValidation:
         assert data["stats"]["major"] == 1
         assert data["stats"]["minor"] == 0
         assert data["stats"]["info"] == 0
-        assert data["_stats_discrepancy"]["discrepancy"] is True
-        assert data["_stats_discrepancy"]["reported"]["critical"] == 2
-        assert data["_stats_discrepancy"]["actual"]["critical"] == 0
+        discrepancy = data["_diagnostics"]["stats_discrepancy"]
+        assert discrepancy["discrepancy"] is True
+        assert discrepancy["reported"]["critical"] == 2
+        assert discrepancy["actual"]["critical"] == 0
 
     def test_llm_under_reports_corrected(self):
         """When LLM reports fewer issues than actually exist, stats are corrected."""
@@ -2555,9 +2560,10 @@ class TestStatsValidation:
         data = json.loads(out)
         assert data["stats"]["major"] == 1
         assert data["stats"]["minor"] == 1
-        assert data["_stats_discrepancy"]["discrepancy"] is True
-        assert data["_stats_discrepancy"]["reported"]["major"] == 0
-        assert data["_stats_discrepancy"]["actual"]["major"] == 1
+        discrepancy = data["_diagnostics"]["stats_discrepancy"]
+        assert discrepancy["discrepancy"] is True
+        assert discrepancy["reported"]["major"] == 0
+        assert discrepancy["actual"]["major"] == 1
 
     def test_zero_findings_stats_zeroed(self):
         """When there are zero findings, all severity stats should be zero."""
@@ -2576,7 +2582,7 @@ class TestStatsValidation:
         assert data["stats"]["minor"] == 0
         assert data["stats"]["info"] == 0
         assert data["stats"]["files_with_issues"] == 0
-        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_diagnostics"]["stats_discrepancy"]["discrepancy"] is True
 
     def test_files_with_issues_corrected(self):
         """files_with_issues is corrected to match unique files in findings."""
@@ -2610,7 +2616,7 @@ class TestStatsValidation:
         assert code == 0
         data = json.loads(out)
         assert data["stats"]["files_with_issues"] == 1
-        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_diagnostics"]["stats_discrepancy"]["discrepancy"] is True
 
     def test_discrepancy_logged_to_stderr(self):
         """Stats discrepancy is logged to stderr."""
@@ -2624,6 +2630,81 @@ class TestStatsValidation:
         code, out, err = run_parse(f"```json\n{review}\n```")
         assert code == 0
         assert "stats discrepancy" in err.lower()
+
+    def test_model_authored_diagnostics_are_dropped(self):
+        """Reviewer-provided _diagnostics must not survive parser output."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "One major issue",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "_diagnostics": {
+                "injected_key": "malicious",
+                "stats_discrepancy": {"reported": {"major": 99}},
+            },
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert "_diagnostics" not in data
+
+    def test_model_authored_diagnostics_replaced_by_real_pipeline_diagnostics(self):
+        """Real parser diagnostics replace any reviewer-provided _diagnostics."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issues found",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "_diagnostics": {"injected_key": "malicious"},
+            "stats": {"files_reviewed": 5, "files_with_issues": 3,
+                      "critical": 2, "major": 3, "minor": 1, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        discrepancy = data["_diagnostics"]["stats_discrepancy"]
+        assert discrepancy["reported"]["critical"] == 2
+        assert "injected_key" not in data["_diagnostics"]
+
+    def test_pipeline_diagnostics_share_one_envelope(self):
+        """Stats and stale-knowledge diagnostics coexist in one pipeline envelope."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Bad version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": "go.mod",
+                "line": 3,
+                "title": "Go 1.25 does not exist",
+                "description": "go 1.25 does not exist. Latest stable is Go 1.23.",
+                "suggestion": "Use Go 1.23."
+            }],
+            "stats": {"files_reviewed": 5, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        diagnostics = data["_diagnostics"]
+        assert diagnostics["stats_discrepancy"]["discrepancy"] is True
+        assert diagnostics["stale_knowledge_annotations"][0]["finding_index"] == 0
 
 
 class TestDirectJsonInput:

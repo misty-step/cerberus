@@ -1,0 +1,14 @@
+$ pytest tests/test_parse_review.py tests/test_extract_verdict.py tests/test_render_findings.py -q
+============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/phaedrus/.codex/worktrees/8a13/cerberus
+configfile: pytest.ini
+collected 199 items
+
+tests/test_parse_review.py ............................................. [ 22%]
+........................................................................ [ 58%]
+............................................                             [ 80%]
+tests/test_extract_verdict.py ........................                   [ 92%]
+tests/test_render_findings.py ..............                             [100%]
+
+============================= 199 passed in 5.41s ==============================

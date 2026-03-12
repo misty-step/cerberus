@@ -145,3 +145,12 @@
 - **scope changes**: Tightened the issue itself before coding, then limited implementation to the review-path seam: `github_platform`, `github.py`, `github_reviews.py`, `collect-overrides.py`, focused tests, and boundary docs. Left `triage.py` and non-review admin scripts out of scope.
 - **blockers**: The first test pass surfaced that `collect-overrides.py` still relied on old local wrapper behavior; moving the test expectations to the adapter boundary fixed the mismatch without widening the code change.
 - **pattern**: Boundary refactors hold up better when the deep module owns intention-level operations, not just transport primitives. Leaving stable wrapper APIs in place while moving behavior downward keeps the diff reversible and the tests honest.
+
+## 2026-03-12 — Issue #355: parser diagnostics moved behind `_diagnostics`
+
+- **issue**: #355
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Kept the fix focused on parser/schema boundaries by moving stats and stale-knowledge metadata into one explicit pipeline envelope, updating parser tests, and adding branch-scoped transcript evidence instead of broad verdict-pipeline refactors.
+- **blockers**: Terminal capture via `script(1)` changed the environment enough to break `tests/test_pipeline_integration.py` on `/tmp` paths even though `make validate` was green in the normal shell; switched walkthrough capture to plain `tee`.
+- **pattern**: When backend-only lanes need durable walkthrough proof, prefer plain command transcripts over terminal wrappers. Some repo tests are sensitive to shell/TTY wrappers, and the evidence path should match the real validation environment.
