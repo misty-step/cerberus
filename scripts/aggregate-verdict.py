@@ -34,6 +34,36 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "google/gemini-3.1-pro-preview": (1.25, 5.00),
 }
 DEFAULT_PRICING: tuple[float, float] = (0.50, 1.50)
+KNOWN_LARGE_RUNTIME_DEPENDENCIES = {
+    "axios",
+    "bluebird",
+    "date-fns",
+    "jquery",
+    "lodash",
+    "moment",
+    "ramda",
+    "rxjs",
+    "underscore",
+}
+DEV_DEPENDENCY_MARKERS = frozenset(
+    {
+        "dev dependency",
+        "dev dependencies",
+        "dev-dependency",
+        "devdependency",
+        "devdependencies",
+    }
+)
+UNUSED_DEPENDENCY_TERMS = (
+    "dependency",
+    "dependencies",
+    "package",
+    "dev dependency",
+    "dev dependencies",
+    "dev-dependency",
+    "devdependency",
+    "devdependencies",
+)
 
 
 def _normalize_model_slug(model: str) -> str:
@@ -183,6 +213,157 @@ def is_explicit_noncritical_fail(verdict: dict) -> bool:
     return False
 
 
+def _finding_file(finding: dict) -> str:
+    return str(finding.get("file", "")).strip().lower()
+
+
+def _finding_text(finding: dict) -> str:
+    title = str(finding.get("title", "") or "")
+    description = str(finding.get("description", "") or "")
+    return f"{title}\n{description}".lower()
+
+
+def _looks_like_unused_dependency(finding: dict) -> bool:
+    text = _finding_text(finding)
+    return "unused" in text and any(term in text for term in UNUSED_DEPENDENCY_TERMS)
+
+
+def _is_dev_dependency_finding(finding: dict) -> bool:
+    text = _finding_text(finding)
+    return any(marker in text for marker in DEV_DEPENDENCY_MARKERS)
+
+
+def _extract_dependency_name(finding: dict) -> str | None:
+    text = _finding_text(finding)
+    for segment in text.split("`")[1::2]:
+        candidate = segment.strip().lower()
+        if candidate and all(ch.isalnum() or ch in "@._/-" for ch in candidate):
+            return candidate
+
+    for pattern in (
+        "unused dependency:",
+        "unused dependency -",
+        "unused dev dependency:",
+        "unused dev dependency -",
+        "unused devdependency:",
+        "unused devdependency -",
+        "unused dev-dependency:",
+        "unused dev-dependency -",
+        "unused package:",
+        "unused package -",
+    ):
+        start = text.find(pattern)
+        if start == -1:
+            continue
+        remainder = text[start + len(pattern):].lstrip()
+        candidate = remainder.split()[0].strip(".,:;()[]{}").lower()
+        if candidate and all(ch.isalnum() or ch in "@._/-" for ch in candidate):
+            return candidate
+
+    return None
+
+
+def _is_large_runtime_unused_dependency(finding: dict) -> bool:
+    if finding.get("severity") != "info" or not _looks_like_unused_dependency(finding):
+        return False
+    if _is_dev_dependency_finding(finding):
+        return False
+    dependency = _extract_dependency_name(finding)
+    return dependency in KNOWN_LARGE_RUNTIME_DEPENDENCIES
+
+
+def _normalize_unused_dependency_key(finding: dict) -> str | None:
+    if not _looks_like_unused_dependency(finding):
+        return None
+    if _is_dev_dependency_finding(finding):
+        return None
+    file_key = _finding_file(finding)
+    dependency = _extract_dependency_name(finding)
+    if not file_key or not dependency:
+        return None
+    return f"{file_key}::{dependency}"
+
+
+def _promote_finding_to_minor(finding: dict) -> bool:
+    if finding.get("severity") == "minor":
+        return False
+    if finding.get("severity") != "info":
+        return False
+    finding["severity"] = "minor"
+    return True
+
+
+def _annotate_cross_reviewer_agreement(
+    finding: dict,
+    reviewers: list[str],
+    current_reviewer: str,
+) -> None:
+    other_reviewers = [reviewer for reviewer in reviewers if reviewer != current_reviewer]
+    if not other_reviewers:
+        return
+    note = f"Cross-reviewer agreement: also flagged by {', '.join(other_reviewers)}."
+    description = str(finding.get("description", "") or "").strip()
+    if note in description:
+        return
+    finding["description"] = f"{description} {note}".strip() if description else note
+
+
+def recompute_verdict_stats(verdict: dict) -> None:
+    findings = verdict.get("findings")
+    if not isinstance(findings, list):
+        return
+
+    stats = verdict.get("stats")
+    if not isinstance(stats, dict):
+        return
+
+    stats["critical"] = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "critical")
+    stats["major"] = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "major")
+    stats["minor"] = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "minor")
+    stats["info"] = sum(1 for f in findings if isinstance(f, dict) and f.get("severity") == "info")
+    stats["files_with_issues"] = len(
+        {
+            str(f.get("file", "")).strip()
+            for f in findings
+            if isinstance(f, dict) and str(f.get("file", "")).strip() not in {"", "N/A"}
+        }
+    )
+
+
+def promote_unused_dependency_findings(verdicts: list[dict]) -> None:
+    groups: dict[str, list[tuple[str, dict]]] = {}
+    changed_reviewers: set[str] = set()
+
+    for verdict in verdicts:
+        reviewer = str(verdict.get("reviewer") or verdict.get("perspective") or "unknown")
+        findings = verdict.get("findings")
+        if not isinstance(findings, list):
+            continue
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            if _is_large_runtime_unused_dependency(finding) and _promote_finding_to_minor(finding):
+                changed_reviewers.add(reviewer)
+            key = _normalize_unused_dependency_key(finding)
+            if key:
+                groups.setdefault(key, []).append((reviewer, finding))
+
+    for grouped_findings in groups.values():
+        reviewers = sorted({reviewer for reviewer, _finding in grouped_findings})
+        if len(reviewers) < 2:
+            continue
+        for reviewer, finding in grouped_findings:
+            if _promote_finding_to_minor(finding):
+                changed_reviewers.add(reviewer)
+            _annotate_cross_reviewer_agreement(finding, reviewers, reviewer)
+            changed_reviewers.add(reviewer)
+
+    for verdict in verdicts:
+        reviewer = str(verdict.get("reviewer") or verdict.get("perspective") or "unknown")
+        if reviewer in changed_reviewers:
+            recompute_verdict_stats(verdict)
+
+
 def aggregate(
     verdicts: list[dict],
     override: Override | None = None,
@@ -199,6 +380,7 @@ def aggregate(
     - ``"warn"``: reclassify as SKIP for aggregation, emit warning (default)
     - ``"skip"``: reclassify as SKIP silently
     """
+    promote_unused_dependency_findings(verdicts)
     override_used = override is not None
 
     # Determine effective verdict per reviewer — parse failures may be

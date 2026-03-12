@@ -82,3 +82,12 @@
 - **scope changes**: Added prompt-contract tests plus a small lint cleanup in an adjacent prompt test file so touched-area validation stayed clean.
 - **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing findings across untouched repo files after the full pytest phase passed.
 - **pattern**: Prompt-only fixes need an explicit RED test first; otherwise it is too easy to ship soft wording changes that do not actually lock the intended reasoning contract.
+
+## 2026-03-11 — Issue #300: unused dependency findings promoted from info to minor
+
+- **issue**: #300
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Added a committed reviewer-evidence walkthrough because the lane touched only backend review semantics and needed a durable, reviewer-friendly proof artifact instead of video.
+- **blockers**: Running full pytest and coverage commands in parallel caused a false failure because both suites write `/tmp/verdict.json`; rerunning the gates sequentially confirmed the branch was healthy.
+- **pattern**: Aggregation-only severity fixes should recompute reviewer stats in the same pass. Otherwise reporting and rendering drift even when the promoted finding itself is correct.

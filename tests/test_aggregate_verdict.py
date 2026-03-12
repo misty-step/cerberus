@@ -1,6 +1,7 @@
 """Tests for aggregate-verdict.py"""
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 
 from conftest import aggregate_verdict
 from lib.overrides import Override
+from lib.render_findings import render_findings
 
 SCRIPT = Path(__file__).parent.parent / "scripts" / "aggregate-verdict.py"
 FIXTURES = Path(__file__).parent / "fixtures" / "sample-verdicts"
@@ -857,6 +859,197 @@ class TestAggregateUnit:
         verdicts = [_verdict("A")]
         result = _aggregate(verdicts)
         assert result["override"]["used"] is False
+
+    def test_promotes_large_unused_runtime_dependency_to_minor(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 12,
+                        "title": "Unused dependency: lodash",
+                        "description": "The runtime dependency `lodash` is no longer imported anywhere in the diff.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            )
+        ]
+
+        result = _aggregate(verdicts)
+
+        finding = result["reviewers"][0]["findings"][0]
+        assert finding["severity"] == "minor"
+        assert result["reviewers"][0]["stats"]["minor"] == 1
+        assert result["reviewers"][0]["stats"]["info"] == 0
+
+    def test_keeps_large_known_package_as_info_when_dev_dependency(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 9,
+                        "title": "Unused devDependency: lodash",
+                        "description": "The dev dependency `lodash` is not referenced by the current scripts.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            )
+        ]
+
+        result = _aggregate(verdicts)
+
+        finding = result["reviewers"][0]["findings"][0]
+        assert finding["severity"] == "info"
+        assert result["reviewers"][0]["stats"]["minor"] == 0
+        assert result["reviewers"][0]["stats"]["info"] == 1
+
+    def test_promotes_cross_reviewer_unused_dependency_and_marks_agreement(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 12,
+                        "title": "Unused dependency: lodash",
+                        "description": "The runtime dependency `lodash` is not imported by the changed code.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            ),
+            _verdict(
+                "atlas",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 12,
+                        "title": "Unused dependency - lodash remains in package.json",
+                        "description": "The changed package manifest still carries `lodash` even though the code path no longer uses it.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            ),
+        ]
+
+        result = _aggregate(verdicts)
+
+        craft_reviewer = next(r for r in result["reviewers"] if r["reviewer"] == "craft")
+        atlas_reviewer = next(r for r in result["reviewers"] if r["reviewer"] == "atlas")
+
+        craft_finding = craft_reviewer["findings"][0]
+        assert craft_finding["severity"] == "minor"
+        assert re.search(r"Cross-reviewer agreement: also flagged by atlas\.", craft_finding["description"])
+        assert craft_reviewer["stats"]["minor"] == 1
+        assert craft_reviewer["stats"]["info"] == 0
+
+        atlas_finding = atlas_reviewer["findings"][0]
+        assert atlas_finding["severity"] == "minor"
+        assert re.search(r"Cross-reviewer agreement: also flagged by craft\.", atlas_finding["description"])
+        assert atlas_reviewer["stats"]["minor"] == 1
+        assert atlas_reviewer["stats"]["info"] == 0
+
+    def test_keeps_cross_reviewer_dev_dependencies_as_info(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 9,
+                        "title": "Unused dev-dependency: lodash",
+                        "description": "The devDependency `lodash` is only listed in development tooling.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            ),
+            _verdict(
+                "atlas",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 9,
+                        "title": "Unused dev dependency: lodash",
+                        "description": "The dev dependency `lodash` is not used by the current scripts.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            ),
+        ]
+
+        result = _aggregate(verdicts)
+
+        for reviewer in result["reviewers"]:
+            finding = reviewer["findings"][0]
+            assert finding["severity"] == "info"
+            assert "Cross-reviewer agreement" not in finding["description"]
+            assert reviewer["stats"]["minor"] == 0
+            assert reviewer["stats"]["info"] == 1
+
+    def test_ignores_ambiguous_unused_dependency_titles_without_package_name(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 3,
+                        "title": "Unused dependency in package.json",
+                        "description": "The manifest still has an unused package entry.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            )
+        ]
+
+        result = _aggregate(verdicts)
+
+        finding = result["reviewers"][0]["findings"][0]
+        assert finding["severity"] == "info"
+
+    def test_promoted_finding_renders_in_markdown(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "line": 12,
+                        "title": "Unused dependency: lodash",
+                        "description": "The runtime dependency `lodash` is no longer imported anywhere in the diff.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            )
+        ]
+
+        result = _aggregate(verdicts)
+        lines = render_findings(
+            result["reviewers"][0]["findings"],
+            server="https://github.com",
+            repo="misty-step/cerberus",
+            sha="deadbeef",
+        )
+
+        assert any("Unused dependency: lodash" in line for line in lines)
 
     def test_summary_includes_counts(self):
         verdicts = [_verdict("A"), _verdict("B", "FAIL")]
