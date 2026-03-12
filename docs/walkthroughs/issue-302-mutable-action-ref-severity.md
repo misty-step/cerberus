@@ -16,7 +16,7 @@ This lane fixes a security-review blind spot in the `guard` prompt. Cerberus alr
 - Mutable third-party refs are explicitly at least `minor`.
 - Mutable third-party refs that receive forwarded reusable credentials via `env:`, `with:`, or reusable-workflow `secrets:` blocks are explicitly `major`, with concrete examples for what should and should not escalate.
 - Full SHAs and full third-party release tags such as `@v1.2.3` are explicitly non-findings, while partial semver refs such as `@v1` and `@v1.2` remain mutable.
-- GitHub-owned semver-pinned actions such as `actions/checkout@v4` are explicitly non-findings.
+- GitHub-owned actions on semver-style tags such as `actions/checkout@v4` are explicitly non-findings as a lower-risk policy exception, not because those tags are immutable pins.
 - GitHub-owned actions on mutable branch refs are now defined as a lower-risk case that can warrant `info`, rather than being left ambiguous.
 - Regression tests fail if that prompt contract disappears.
 
@@ -29,7 +29,7 @@ This lane fixes a security-review blind spot in the `guard` prompt. Cerberus alr
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@v1.2.3`, when reviewed by `guard`, then no supply-chain finding is emitted.
   Evidence: `.opencode/agents/security.md` now declares full SHAs and full third-party release tags such as `@v1.2.3` acceptable refs, while keeping partial semver refs such as `@v1` and `@v1.2` out of the safe set, and `tests/test_infra_prompt_guidance.py` asserts that text is present.
 - ⚠️ PARTIAL: Given a PR diff with `uses: actions/checkout@v4`, when reviewed by `guard`, then no supply-chain finding is emitted.
-  Evidence: `.opencode/agents/security.md` now explicitly exempts GitHub-owned semver-pinned actions such as `actions/checkout@v4`, and the regression test locks that example.
+  Evidence: `.opencode/agents/security.md` now explicitly exempts GitHub-owned semver-style refs such as `actions/checkout@v4` as a lower-risk policy carveout rather than an immutability claim, and the regression test locks that example.
 
 Additional review hardening applied during `/pr-fix`:
 
@@ -38,6 +38,7 @@ Additional review hardening applied during `/pr-fix`:
 - closed the partial-semver gap by treating third-party `@v1`/`@v2` refs as mutable while preserving the accepted safe example `@v1.2.3`
 - widened the `major` escalation trigger to cover credential forwarding via `env:` and `with:` on action steps, not only `secrets:` on reusable-workflow calls
 - tightened the mutable-ref rule again so partial third-party semver refs such as `@v1.2` are treated the same as `@v1`, not left in an undefined middle ground
+- clarified that `actions/checkout@v4` is a trusted-provider policy exception, not a truly pinned immutable ref
 
 Gate: PASS WITH PARTIALS
 Reason: all acceptance criteria are covered by explicit prompt-contract evidence plus regression tests, but no live LLM replay was added in this lane.

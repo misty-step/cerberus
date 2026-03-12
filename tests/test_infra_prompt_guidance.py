@@ -51,8 +51,10 @@ def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> N
     assert "GITHUB_TOKEN" in text
     assert "Acceptable third-party refs are full pinned SHAs" in text
     assert "full release tags such as `@v1.2.3`" in text
-    assert "actions/checkout@v4" in text
+    assert "semver-style tags such as `actions/checkout@v4`" in text
     assert "actions/*` or `github/*` actions on mutable branch refs" in text
+    assert "trusted-provider refs by policy" in text
+    assert "Prefer concrete fixes: pin the action to a full commit SHA" in text
 
 
 def test_parse_review_documents_findings_as_first_class_items() -> None:
