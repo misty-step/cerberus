@@ -292,17 +292,6 @@ def test_fetch_comments_translates_transient_errors(monkeypatch):
     with pytest.raises(mod.TransientGitHubError, match="temporary"):
         mod.fetch_comments("o/r", 5)
 
-
-def test_fetch_comments_returns_empty_list_on_invalid_json_payload(monkeypatch):
-    import lib.github as mod
-
-    def fake_fetch(*args, **kwargs):
-        raise ValueError("bad payload")
-
-    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch)
-
-    assert mod.fetch_comments("o/r", 5) == []
-
 def test_multiple_markers_dont_conflict(monkeypatch, tmp_path):
     body_file = tmp_path / "body.md"
     body_file.write_text("Body for council")
@@ -353,21 +342,6 @@ def test_permission_denied_raises(monkeypatch, tmp_path):
             body_file=str(body_file),
             comments=[],
         )
-
-
-def test_fetch_comments_translates_platform_transient_error(monkeypatch):
-    import lib.github as mod
-    import lib.github_platform as platform
-
-    def fake_fetch_issue_comments(*args, **kwargs):
-        raise platform.TransientGitHubError("temporary")
-
-    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
-
-    with pytest.raises(mod.TransientGitHubError, match="temporary"):
-        mod.fetch_comments("o/r", 5)
-
-
 def test_fetch_comments_returns_empty_list_on_invalid_payload(monkeypatch):
     import lib.github as mod
 
