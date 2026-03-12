@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from lib.runtime_errors import build_api_error_marker, classify_api_error_text, redact_runtime_error
+
 _script_path = Path(__file__).parent.parent / "scripts" / "run-reviewer.py"
 _spec = importlib.util.spec_from_file_location("run_reviewer_py", _script_path)
 _mod = importlib.util.module_from_spec(_spec)
@@ -154,8 +156,12 @@ def test_resolve_profile_requires_profiles_unless_allow_flag(tmp_path: Path, mon
 
 
 def test_classify_api_error_text_branches() -> None:
-    assert _mod.classify_api_error_text("insufficient_quota") == "API_CREDITS_DEPLETED"
-    assert _mod.classify_api_error_text("random error") == "API_ERROR"
+    assert classify_api_error_text("API Error: API_KEY_INVALID") == "API_KEY_INVALID"
+    assert classify_api_error_text("insufficient_quota") == "API_CREDITS_DEPLETED"
+    assert classify_api_error_text("HTTP 429 Too Many Requests") == "RATE_LIMIT"
+    assert classify_api_error_text("HTTP 503 service unavailable") == "SERVICE_UNAVAILABLE"
+    assert classify_api_error_text("HTTP 403 Forbidden") == "API_KEY_INVALID"
+    assert classify_api_error_text("random error") == "API_ERROR"
 
 
 def test_redact_runtime_error_removes_tokens() -> None:
@@ -164,11 +170,22 @@ def test_redact_runtime_error_removes_tokens() -> None:
         "api_key=abc123\n"
         "token: xyz789\n"
     )
-    redacted = _mod.redact_runtime_error(raw)
+    redacted = redact_runtime_error(raw)
     assert "secret-token" not in redacted
     assert "abc123" not in redacted
     assert "xyz789" not in redacted
     assert redacted.count("<redacted>") >= 3
+
+
+def test_build_api_error_marker_uses_runtime_error_class() -> None:
+    marker = build_api_error_marker(
+        stdout="",
+        stderr="provider returned error",
+        models=["openrouter/a", "openrouter/b"],
+        runtime_error_class="server_5xx",
+    )
+    assert "API Error: SERVICE_UNAVAILABLE" in marker
+    assert "Models tried: openrouter/a openrouter/b" in marker
 
 
 def test_print_tail_missing_file(capsys, tmp_path: Path) -> None:

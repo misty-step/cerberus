@@ -82,3 +82,12 @@
 - **scope changes**: Pivoted the lane away from a bad `unverified finding` category and toward the actual contract: findings remain first-class, evidence/citations support them, prompts must quote exact code or omit the finding, and deprecated marker paths were deleted instead of preserved as compatibility shims.
 - **blockers**: The open issue and PR still described weighted unverified verdict math even though the better fix was vocabulary and contract cleanup across prompts, parser, renderer, docs, and tests.
 - **pattern**: When review-quality work starts inventing second-class finding types, stop and define the nouns first. Stable terminology prevents downstream parser/render drift.
+
+## 2026-03-10 — Issue #297: sentinel error tracing for trace reviewer
+
+- **issue**: #297
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Added prompt-contract tests plus a small lint cleanup in an adjacent prompt test file so touched-area validation stayed clean.
+- **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing findings across untouched repo files after the full pytest phase passed.
+- **pattern**: Prompt-only fixes need an explicit RED test first; otherwise it is too easy to ship soft wording changes that do not actually lock the intended reasoning contract.

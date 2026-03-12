@@ -25,6 +25,7 @@ from lib.reviewer_profiles import (
     RuntimeProfile,
     load_reviewer_profiles,
 )
+from lib.runtime_errors import build_api_error_marker
 from lib.runtime_facade import (
     RuntimeAttemptRequest,
     classify_runtime_error,
@@ -222,43 +223,18 @@ def build_wave_models_list(
     return [primary] + remaining
 
 
-def classify_api_error_text(text: str) -> str:
-    lower = text.lower()
-    if re.search(r"incorrect_api_key|invalid_api_key|invalid.api.key|authentication|unauthorized|401|missing authentication header", lower):
-        return "API_KEY_INVALID"
-    if re.search(r"exceeded_current_quota|insufficient_quota|insufficient.credits|payment.required|quota.exceeded|credits.depleted|credits.exhausted|402", lower):
-        return "API_CREDITS_DEPLETED"
-    return "API_ERROR"
-
-
-def redact_runtime_error(text: str) -> str:
-    redacted = text
-    patterns = [
-        (r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+", r"\1<redacted>"),
-        (r"(?i)((?:api|access|secret|auth)[_-]?key\s*[:=]\s*)[^\s,;]+", r"\1<redacted>"),
-        (r"(?i)(token\s*[:=]\s*)[^\s,;]+", r"\1<redacted>"),
-    ]
-    for pattern, replacement in patterns:
-        redacted = re.sub(pattern, replacement, redacted)
-    return redacted
-
-
 def write_api_error_marker(
     *,
     stdout_file: Path,
     stderr_file: Path,
     models: list[str],
+    runtime_error_class: str | None = None,
 ) -> None:
-    error_msg = f"{read_text(stdout_file) if stdout_file.exists() else ''}\n{read_text(stderr_file) if stderr_file.exists() else ''}"
-    sanitized_error = redact_runtime_error(error_msg)
-    error_type = classify_api_error_text(sanitized_error)
-    models_tried = " ".join(models)
-    marker = (
-        f"API Error: {error_type}\n\n"
-        "The API provider returned an error that prevents the review from completing:\n\n"
-        f"{sanitized_error.strip()}\n\n"
-        f"Models tried: {models_tried}\n"
-        "Please check your API key and quota settings.\n"
+    marker = build_api_error_marker(
+        stdout=read_text(stdout_file) if stdout_file.exists() else "",
+        stderr=read_text(stderr_file) if stderr_file.exists() else "",
+        models=models,
+        runtime_error_class=runtime_error_class,
     )
     write_text(stdout_file, marker)
 
@@ -786,7 +762,12 @@ def main(argv: list[str]) -> int:
         )
         if error_type in {"permanent", "transient"} or (error_type == "unknown" and has_output):
             print(f"{error_type.capitalize()} API/runtime error detected. Writing error verdict.")
-            write_api_error_marker(stdout_file=stdout_file, stderr_file=stderr_file, models=models)
+            write_api_error_marker(
+                stdout_file=stdout_file,
+                stderr_file=stderr_file,
+                models=models,
+                runtime_error_class=detected_error_class,
+            )
             exit_code = 0
 
     if exit_code not in {0, 124}:

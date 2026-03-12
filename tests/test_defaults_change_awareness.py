@@ -6,7 +6,6 @@ defaults changes because the scope rules limited review to modified lines.
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).parent.parent
 REVIEW_PROMPT = ROOT / "templates" / "review-prompt.md"
 AGENTS_DIR = ROOT / ".opencode" / "agents"
