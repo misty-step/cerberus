@@ -52,7 +52,7 @@ make validate
 Observed result on this branch:
 
 - `tests/test_infra_prompt_guidance.py`: `3 passed`
-- `make validate`: `1577 passed, 1 skipped`
+- `make validate`: `1605 passed, 1 skipped`
 - `ruff`: clean
 - `shellcheck`: clean
 
