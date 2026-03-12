@@ -1,11 +1,15 @@
 """Tests for lib.findings public API."""
 
+from itertools import permutations
+
 from lib.findings import (
     SEVERITY_ORDER,
     as_int,
     best_text,
+    content_tokens,
     format_reviewer_list,
     group_findings,
+    is_equivalent_finding,
     norm_key,
     normalize_severity,
     reviewer_label,
@@ -233,6 +237,115 @@ class TestGroupFindings:
         out = group_findings(pairs)
         assert out[0]["file"] == ""
 
+    def test_nearby_same_root_cause_titles_merge(self):
+        pairs = [
+            ("Codex", [{
+                "severity": "major",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 40,
+                "title": "Restore host executor after sandbox cleanup",
+                "description": "The executor stays swapped after cleanup returns.",
+                "suggestion": "restore the prior executor before exit",
+            }]),
+            ("CodeRabbit", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 42,
+                "title": "Executor field is replaced but not restored",
+                "description": "Cleanup leaves the swapped executor installed.",
+                "suggestion": "restore the original executor after cleanup",
+            }]),
+        ]
+        out = group_findings(pairs, text_fields=("description", "suggestion"))
+        assert len(out) == 1
+        assert out[0]["severity"] == "major"
+        assert out[0]["line"] == 40
+        assert out[0]["reviewers"] == ["CodeRabbit", "Codex"]
+
+    def test_nearby_lines_without_shared_root_cause_stay_separate(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "bug", "file": "engine.go", "line": 40, "title": "Missing auth token"}]),
+            ("B", [{"severity": "major", "category": "bug", "file": "engine.go", "line": 41, "title": "Missing retry backoff"}]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 2
+
+    def test_same_title_different_lines_stay_separate(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "bug", "file": "engine.go", "line": 40, "title": "Shared title"}]),
+            ("B", [{"severity": "minor", "category": "bug", "file": "engine.go", "line": 41, "title": "Shared title"}]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 2
+
+    def test_fileless_blank_and_na_merge(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "api_error", "file": "", "line": 0, "title": "RATE_LIMIT"}]),
+            ("B", [{"severity": "minor", "category": "api_error", "file": "N/A", "line": 0, "title": "RATE_LIMIT"}]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 1
+        assert out[0]["file"] == ""
+        assert out[0]["reviewers"] == ["A", "B"]
+
+    def test_equivalence_uses_original_group_text(self):
+        pairs = [
+            ("A", [{
+                "severity": "major",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 40,
+                "title": "bounded cleanup context",
+            }]),
+            ("B", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 41,
+                "title": "bounded cleanup context live executor",
+            }]),
+            ("C", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 42,
+                "title": "live executor reset",
+            }]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 2
+
+    def test_grouping_is_invariant_to_reviewer_order(self):
+        pairs = [
+            ("B", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 41,
+                "title": "bounded cleanup context live executor",
+            }]),
+            ("A", [{
+                "severity": "major",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 40,
+                "title": "bounded cleanup context",
+            }]),
+            ("C", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 42,
+                "title": "live executor reset",
+            }]),
+        ]
+
+        expected = group_findings(pairs)
+        for candidate in permutations(pairs):
+            assert group_findings(candidate) == expected
+
 
 class TestAsInt:
     def test_none(self):
@@ -275,6 +388,53 @@ class TestNormalizeSeverity:
         custom = {"blocker": 0, "trivial": 1}
         assert normalize_severity("blocker", custom) == "blocker"
         assert normalize_severity("critical", custom) == "info"
+
+
+class TestSemanticMergeHelpers:
+    def test_content_tokens_drop_short_and_stop_words(self):
+        assert content_tokens("Use the live cleanup context") == {"live", "cleanup", "context"}
+
+    def test_content_tokens_include_base_form_for_ed_suffix(self):
+        assert "cancel" in content_tokens("canceled")
+        assert "restore" in content_tokens("restored")
+
+    def test_content_tokens_keep_plain_s_word_for_plural_overlap(self):
+        assert "process" in content_tokens("process")
+        assert "process" in content_tokens("processes")
+
+    def test_is_equivalent_finding_requires_same_file_category_and_overlap(self):
+        first = {
+            "file": "src/a.py",
+            "line": 10,
+            "category": "bug",
+            "title": "Use bounded cleanup context",
+            "description": "cleanup uses an already canceled context",
+        }
+        second = {
+            "file": "src/a.py",
+            "line": 12,
+            "category": "bug",
+            "title": "Run cleanup with a live context",
+            "description": "cleanup should not reuse the canceled context",
+        }
+        assert is_equivalent_finding(first, second) is True
+
+    def test_is_equivalent_finding_treats_blank_and_na_as_same_file(self):
+        first = {
+            "file": "",
+            "line": 0,
+            "category": "api_error",
+            "title": "RATE_LIMIT",
+            "description": "provider rejected the request",
+        }
+        second = {
+            "file": "N/A",
+            "line": 0,
+            "category": "api_error",
+            "title": "RATE_LIMIT",
+            "description": "provider rejected the request",
+        }
+        assert is_equivalent_finding(first, second) is True
 
 
 class TestSeverityOrder:

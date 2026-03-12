@@ -1,7 +1,4 @@
-"""Finding aggregation and formatting helpers.
-
-Intentionally tiny: normalization + merging + reviewer list formatting.
-"""
+"""Finding aggregation and formatting helpers."""
 
 from __future__ import annotations
 
@@ -9,6 +6,33 @@ import re
 from collections.abc import Callable, Iterable
 
 SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
+FINDING_TOKEN_RE = re.compile(r"[a-z0-9]+")
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "same",
+    "that",
+    "the",
+    "this",
+    "to",
+    "use",
+    "used",
+    "using",
+    "with",
+}
 
 
 def norm_key(value: object) -> str:
@@ -60,6 +84,131 @@ def normalize_severity(value: object, order: dict[str, int] | None = None) -> st
     return text if text in (order if order is not None else SEVERITY_ORDER) else "info"
 
 
+def content_tokens(*values: object) -> set[str]:
+    """Extract meaningful lowercase tokens from finding text."""
+    tokens: set[str] = set()
+    for value in values:
+        for token in FINDING_TOKEN_RE.findall(str(value or "").lower()):
+            if len(token) < 4:
+                continue
+            if token in STOP_WORDS:
+                continue
+            if len(token) > 6 and token.endswith("ing"):
+                tokens.add(token[:-3])
+                continue
+            if len(token) > 5 and token.endswith("ed"):
+                root = token[:-2]
+                tokens.add(root)
+                tokens.add(f"{root}e")
+                continue
+            if len(token) > 5 and token.endswith("es"):
+                tokens.add(token[:-2])
+                continue
+            if len(token) > 5 and token.endswith("s"):
+                tokens.add(token[:-1])
+                tokens.add(token)
+                continue
+            tokens.add(token)
+    return tokens
+
+
+def choose_line(current: object, candidate: object) -> int:
+    """Keep the earliest positive line when merging findings."""
+    current_line = as_int(current) or 0
+    candidate_line = as_int(candidate) or 0
+    positive = [line for line in (current_line, candidate_line) if line > 0]
+    if positive:
+        return min(positive)
+    return max(current_line, candidate_line, 0)
+
+
+def normalize_finding_file(value: object) -> str:
+    """Collapse no-file sentinels into a stable comparison key."""
+    text = str(value or "").strip()
+    if not text or text.upper() == "N/A":
+        return ""
+    return text
+
+
+def finding_bucket_key(file_value: object, category_value: object) -> tuple[str, str]:
+    """Return the coarse bucket key used before fuzzy equivalence checks."""
+    return (normalize_finding_file(file_value), norm_key(category_value))
+
+
+def finding_sort_key(reviewer_name: str, finding: dict) -> tuple[str, str, int, str, str]:
+    """Return a stable processing order for grouping."""
+    line = as_int(finding.get("line")) or 0
+    return (
+        *finding_bucket_key(finding.get("file"), finding.get("category")),
+        max(line, 0),
+        norm_key(finding.get("title")),
+        reviewer_name,
+    )
+
+
+def finding_match_title(finding: dict) -> str:
+    """Return the stable title used for equivalence checks."""
+    return norm_key(finding.get("_equivalence_title", finding.get("title")))
+
+
+def finding_match_tokens(finding: dict) -> set[str]:
+    """Return the stable token set used for equivalence checks."""
+    cached = finding.get("_equivalence_tokens")
+    if isinstance(cached, set):
+        return cached
+    return content_tokens(finding.get("title"), finding.get("description"))
+
+
+def is_equivalent_finding(existing: dict, finding: dict) -> bool:
+    """Return True for conservative same-root-cause matches.
+
+    We only fuzzy-merge findings when they point at the same file/category,
+    sit on nearby lines, and share at least two meaningful title/description
+    tokens. This keeps the dedupe path narrow enough to avoid collapsing
+    unrelated comments that merely happen to mention the same module.
+    """
+    if normalize_finding_file(existing.get("file")) != normalize_finding_file(finding.get("file")):
+        return False
+    if norm_key(existing.get("category")) != norm_key(finding.get("category")):
+        return False
+
+    existing_line = as_int(existing.get("line")) or 0
+    candidate_line = as_int(finding.get("line")) or 0
+    if existing_line > 0 and candidate_line > 0 and abs(existing_line - candidate_line) > 3:
+        return False
+
+    existing_title = finding_match_title(existing)
+    candidate_title = finding_match_title(finding)
+    if (
+        existing_title
+        and candidate_title
+        and existing_title == candidate_title
+        and existing_line > 0
+        and candidate_line > 0
+        and existing_line != candidate_line
+    ):
+        return False
+    if (
+        existing_title
+        and existing_title == candidate_title
+        and (
+            existing_line <= 0
+            or candidate_line <= 0
+            or existing_line == candidate_line
+        )
+    ):
+        return True
+
+    existing_tokens = finding_match_tokens(existing)
+    candidate_tokens = finding_match_tokens(finding)
+    overlap = existing_tokens & candidate_tokens
+    if len(overlap) < 2:
+        return False
+
+    smaller = min(len(existing_tokens), len(candidate_tokens))
+    return smaller > 0 and (len(overlap) >= 3 or (len(overlap) / smaller) >= 0.4)
+
+
 def split_reviewer_description(value: object) -> tuple[str, str]:
     """Split 'Role — Tagline' or 'Role - Tagline' into (role, tagline)."""
     text = str(value or "").strip()
@@ -98,7 +247,7 @@ def group_findings(
     predicate: Callable[[dict, str], bool] | None = None,
     severity_order: dict[str, int] | None = None,
 ) -> list[dict]:
-    """Group and merge findings from multiple reviewers by (file, line, category, title).
+    """Group and merge findings from multiple reviewers.
 
     Deduplicates matching findings, takes the worst severity, and merges text
     fields with best_text. Returns a list of finding dicts with "reviewers" as
@@ -113,7 +262,9 @@ def group_findings(
                         Defaults to the standard critical/major/minor/info order.
     """
     order = severity_order if severity_order is not None else SEVERITY_ORDER
-    grouped: dict[tuple[str, int, str, str], dict] = {}
+    grouped: list[dict] = []
+    grouped_by_bucket: dict[tuple[str, str], list[dict]] = {}
+    pending: list[tuple[str, dict]] = []
 
     for rname, findings in findings_by_reviewer:
         for finding in findings:
@@ -121,41 +272,51 @@ def group_findings(
                 continue
             if predicate is not None and not predicate(finding, rname):
                 continue
+            pending.append((rname, finding))
 
-            file = str(finding.get("file") or "").strip()
-            line = as_int(finding.get("line")) or 0
-            if line < 0:
-                line = 0
+    pending.sort(key=lambda item: finding_sort_key(item[0], item[1]))
 
-            severity = normalize_severity(finding.get("severity"), order)
-            category = str(finding.get("category") or "").strip() or "uncategorized"
-            title = str(finding.get("title") or "").strip() or "Untitled finding"
+    for rname, finding in pending:
+        file = normalize_finding_file(finding.get("file"))
+        line = as_int(finding.get("line")) or 0
+        if line < 0:
+            line = 0
 
-            key = (file, line, norm_key(category), norm_key(title))
-            existing = grouped.get(key)
-            if existing is None:
-                grouped[key] = {
-                    "severity": severity,
-                    "category": category,
-                    "file": file,
-                    "line": line,
-                    "title": title,
-                    "reviewers": {rname},
-                    **{field: str(finding.get(field) or "").strip() for field in text_fields},
-                }
-                continue
+        severity = normalize_severity(finding.get("severity"), order)
+        category = str(finding.get("category") or "").strip() or "uncategorized"
+        title = str(finding.get("title") or "").strip() or "Untitled finding"
+        bucket_key = finding_bucket_key(file, category)
 
-            existing["reviewers"].add(rname)
-            if order.get(severity, 99) < order.get(existing.get("severity"), 99):
-                existing["severity"] = severity
-            for field in text_fields:
-                existing[field] = best_text(existing.get(field), finding.get(field))
+        bucket = grouped_by_bucket.setdefault(bucket_key, [])
+        existing = next((item for item in bucket if is_equivalent_finding(item, finding)), None)
+        if existing is None:
+            item = {
+                "severity": severity,
+                "category": category,
+                "file": file,
+                "line": line,
+                "title": title,
+                "reviewers": {rname},
+                "_equivalence_title": title,
+                "_equivalence_tokens": content_tokens(title, finding.get("description")),
+                **{field: str(finding.get(field) or "").strip() for field in text_fields},
+            }
+            grouped.append(item)
+            bucket.append(item)
+            continue
+
+        existing["reviewers"].add(rname)
+        if order.get(severity, 99) < order.get(existing.get("severity"), 99):
+            existing["severity"] = severity
+        existing["line"] = choose_line(existing.get("line"), line)
+        existing["title"] = best_text(existing.get("title"), title)
+        for field in text_fields:
+            existing[field] = best_text(existing.get(field), finding.get(field))
 
     out: list[dict] = []
-    for item in grouped.values():
+    for item in grouped:
         reviewers = sorted(
             str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip()
         )
-        item["reviewers"] = reviewers
-        out.append(item)
+        out.append({key: value for key, value in item.items() if not key.startswith("_")} | {"reviewers": reviewers})
     return out

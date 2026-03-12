@@ -83,6 +83,15 @@
 - **blockers**: `make validate` still fails in `ruff` on unrelated pre-existing findings across untouched repo files after the full pytest phase passed.
 - **pattern**: Prompt-only fixes need an explicit RED test first; otherwise it is too easy to ship soft wording changes that do not actually lock the intended reasoning contract.
 
+## 2026-03-11 — Issue #299: dedupe equivalent top-level verdict findings
+
+- **issue**: #299
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Tightened the issue itself with a real product spec and design, then limited the implementation to the aggregate verdict renderer instead of changing reviewer verdict artifacts or parser semantics.
+- **blockers**: The first merge heuristic over-collapsed exact-title findings on adjacent lines and under-collapsed wording variants because token normalization was too naive; focused regression tests exposed both failure modes quickly.
+- **pattern**: For “semantic enough” render-layer dedupe, keep the heuristic conservative and pin both the merge and non-merge cases in tests. The safe shape is same-file, same-category, nearby-line agreement with explicit overlap evidence, not broad fuzzy clustering.
+
 ## 2026-03-11 — Issue #300: unused dependency findings promoted from info to minor
 
 - **issue**: #300
