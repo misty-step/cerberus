@@ -57,7 +57,8 @@ DEV_DEPENDENCY_MARKERS = frozenset(
 UNUSED_DEPENDENCY_TERMS = (
     "dependency",
     "dependencies",
-    "package",
+    "package:",
+    "package -",
     "dev dependency",
     "dev dependencies",
     "dev-dependency",
@@ -235,8 +236,11 @@ def _is_dev_dependency_finding(finding: dict) -> bool:
 
 def _extract_dependency_name(finding: dict) -> str | None:
     text = _finding_text(finding)
+    file_key = _finding_file(finding)
     for segment in text.split("`")[1::2]:
         candidate = segment.strip().lower()
+        if candidate == file_key:
+            continue
         if candidate and all(ch.isalnum() or ch in "@._/-" for ch in candidate):
             return candidate
 

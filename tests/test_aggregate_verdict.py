@@ -695,6 +695,7 @@ _validate_actor = aggregate_verdict.validate_actor
 _is_fallback_verdict = aggregate_verdict.is_fallback_verdict
 _parse_expected_reviewers = aggregate_verdict.parse_expected_reviewers
 _extract_dependency_name = aggregate_verdict._extract_dependency_name
+_looks_like_unused_dependency = aggregate_verdict._looks_like_unused_dependency
 _promote_finding_to_minor = aggregate_verdict._promote_finding_to_minor
 _annotate_cross_reviewer_agreement = aggregate_verdict._annotate_cross_reviewer_agreement
 _recompute_verdict_stats = aggregate_verdict.recompute_verdict_stats
@@ -1035,6 +1036,23 @@ class TestAggregateUnit:
         }
 
         assert _extract_dependency_name(finding) == "lodash"
+
+    def test_extracts_dependency_name_after_skipping_manifest_file_segment(self):
+        finding = {
+            "file": "package.json",
+            "title": "Unused dependency",
+            "description": "In `package.json`, `chalk` is still listed but never imported.",
+        }
+
+        assert _extract_dependency_name(finding) == "chalk"
+
+    def test_package_term_alone_does_not_mark_unused_dependency(self):
+        finding = {
+            "title": "Unused export in core package",
+            "description": "The package still exposes an unused helper.",
+        }
+
+        assert _looks_like_unused_dependency(finding) is False
 
     def test_promote_finding_to_minor_ignores_non_info_findings(self):
         finding = {"severity": "major"}
