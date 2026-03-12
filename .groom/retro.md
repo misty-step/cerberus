@@ -119,6 +119,15 @@
 - **blockers**: `make validate` initially failed only in `ruff` because a compatibility import kept for the retry tests looked unused after the transport refactor; the fix was to make the back-compat surface explicit instead of deleting it and breaking callers/tests.
 - **pattern**: Boundary refactors in mature codepaths go faster when the new deep module is introduced underneath stable compatibility seams. For Cerberus, preserving `lib.github` and `collect-overrides.py` wrapper surfaces while moving transport underneath `github_platform` kept the diff small and the tests credible.
 
+## 2026-03-12 — Issue #328: coupling guard for execution boundary
+
+- **issue**: #328
+- **predicted effort**: p1 (small — under a day)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Enriched the issue before coding, added one narrow execution-boundary regression test, expanded ADR 004 with explicit extension-point guidance, and added a walkthrough artifact for the lane.
+- **blockers**: The first guard test overreached by flagging harmless `"gh ..."` strings in error text rather than actual subprocess call sites; narrowing the assertion to call sites kept the guard useful instead of noisy.
+- **pattern**: Boundary guardrails need both halves: executable enforcement plus contributor-facing routing language. A test without the ADR becomes a trap; an ADR without the test becomes drift-prone.
+
 ## 2026-03-12 — Issue #302: mutable action ref severity in guard
 
 - **issue**: #302

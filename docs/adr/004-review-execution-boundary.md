@@ -83,6 +83,13 @@ surface for the GitHub lane is:
 - The GitHub Action path now has one more artifact to manage.
 - Legacy env fallbacks must remain for compatibility during migration.
 
+## Extension Points
+
+- If a new review-path feature needs direct GitHub CLI or GitHub API transport, extend `scripts/lib/github_platform.py`.
+- If a change belongs to fetch/bootstrap setup before the engine runs, extend the GitHub workflow bootstrap.
+- Do not add raw `gh` transport directly to engine-path modules such as `run-reviewer.py`, `review_run_contract.py`, `runtime_facade.py`, `github.py`, `github_reviews.py`, or their review-path callers.
+- Compatibility wrappers may preserve caller-visible contracts, but their transport must still route through `github_platform`.
+
 ## Alternatives Considered
 
 1. Keep raw `GH_*` env bootstrap in engine code.
