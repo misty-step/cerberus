@@ -694,6 +694,11 @@ _aggregate = aggregate_verdict.aggregate
 _validate_actor = aggregate_verdict.validate_actor
 _is_fallback_verdict = aggregate_verdict.is_fallback_verdict
 _parse_expected_reviewers = aggregate_verdict.parse_expected_reviewers
+_extract_dependency_name = aggregate_verdict._extract_dependency_name
+_promote_finding_to_minor = aggregate_verdict._promote_finding_to_minor
+_annotate_cross_reviewer_agreement = aggregate_verdict._annotate_cross_reviewer_agreement
+_recompute_verdict_stats = aggregate_verdict.recompute_verdict_stats
+_promote_unused_dependency_findings = aggregate_verdict.promote_unused_dependency_findings
 
 
 def _verdict(name: str, result: str = "PASS", **extra) -> dict:
@@ -1022,6 +1027,88 @@ class TestAggregateUnit:
 
         finding = result["reviewers"][0]["findings"][0]
         assert finding["severity"] == "info"
+
+    def test_extracts_dependency_name_from_explicit_delimiter_without_backticks(self):
+        finding = {
+            "title": "Unused dependency: lodash",
+            "description": "Remove it from the manifest.",
+        }
+
+        assert _extract_dependency_name(finding) == "lodash"
+
+    def test_promote_finding_to_minor_ignores_non_info_findings(self):
+        finding = {"severity": "major"}
+
+        assert _promote_finding_to_minor(finding) is False
+        assert finding["severity"] == "major"
+
+    def test_cross_reviewer_annotation_skips_single_reviewer(self):
+        finding = {"description": "Existing note."}
+
+        _annotate_cross_reviewer_agreement(finding, ["craft"], "craft")
+
+        assert finding["description"] == "Existing note."
+
+    def test_cross_reviewer_annotation_deduplicates_existing_note(self):
+        finding = {
+            "description": "Existing note. Cross-reviewer agreement: also flagged by atlas."
+        }
+
+        _annotate_cross_reviewer_agreement(finding, ["atlas", "craft"], "craft")
+
+        assert finding["description"].count("Cross-reviewer agreement") == 1
+
+    def test_recompute_verdict_stats_ignores_non_list_findings(self):
+        verdict = {"findings": None, "stats": {"minor": 1}}
+
+        _recompute_verdict_stats(verdict)
+
+        assert verdict["stats"]["minor"] == 1
+
+    def test_recompute_verdict_stats_ignores_non_dict_stats(self):
+        verdict = {"findings": [], "stats": None}
+
+        _recompute_verdict_stats(verdict)
+
+        assert verdict["stats"] is None
+
+    def test_promote_unused_dependency_findings_skips_non_dict_entries(self):
+        verdicts = [
+            _verdict(
+                "craft",
+                findings=[
+                    "not-a-finding",
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "title": "Unused dependency: chalk",
+                        "description": "Remove chalk from the runtime manifest.",
+                    },
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            ),
+            _verdict(
+                "atlas",
+                findings=[
+                    {
+                        "severity": "info",
+                        "category": "dependency-hygiene",
+                        "file": "package.json",
+                        "title": "Unused dependency - chalk",
+                        "description": "Still present in the runtime manifest.",
+                    }
+                ],
+                stats={"critical": 0, "major": 0, "minor": 0, "info": 1, "files_with_issues": 1},
+            ),
+        ]
+
+        _promote_unused_dependency_findings(verdicts)
+
+        for verdict in verdicts:
+            assert verdict["findings"][-1]["severity"] == "minor"
+            assert verdict["stats"]["minor"] == 1
+            assert verdict["stats"]["info"] == 0
 
     def test_promoted_finding_renders_in_markdown(self):
         verdicts = [
