@@ -41,6 +41,22 @@ Primary Focus (always check)
 - CAS/atomic retry loops with ABA or no-progress risks
 - State transitions that can become inconsistent
 
+Sentinel Error Tracing
+Sentinel errors carry semantic meaning that outer loops and state machines depend on.
+Incorrectly returning a sentinel on an error path silently corrupts control flow.
+
+For each sentinel error value defined or used in the diff (ErrNoIssues, ErrNotFound, io.EOF, sql.ErrNoRows, StopIteration, None-as-signal, null-as-signal):
+1. Identify all return sites of the sentinel.
+2. For each return site, determine whether the sentinel marks a legitimate empty/done path or a real failure path.
+3. If a real error causes the sentinel to be returned, flag it as at least major and explain both the incorrect assignment site and the caller consequence.
+4. Trace callers: does the caller trigger loop termination, return early, skip retry logic, or misadvance a state machine because it trusted the sentinel?
+
+Pattern to recognize across languages:
+- Go: `if err != nil { return nil, ErrSentinel }` should usually return `nil, err`
+- Python: `except Exception: raise StopIteration` should usually re-raise or raise a domain error
+- JS: `catch(e) { return null }` when `null` means "not found"
+- Rust: returning `None` from `Option` when `Err` is semantically correct
+
 Secondary Focus (check if relevant)
 - Logic inversions, wrong comparators, inverted boolean flags
 - Incorrect default values, missing initialization, stale state
@@ -108,6 +124,7 @@ Anti-Patterns (Do Not Flag)
 - Speculation without a concrete failing path
 - "Could be better" suggestions without a correctness risk
 - Test-only PRs: if the diff contains ONLY test files (files matching `test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`, `tests/`, `spec/`), PASS with summary "Test-only change, no correctness concerns." and empty findings.
+- Do NOT flag all sentinel usage; legitimate empty/done path sentinels are fine unless the diff maps a real error into them.
 
 Knowledge Boundaries
 Your training data has a cutoff date. You WILL encounter valid code that post-dates your knowledge:
