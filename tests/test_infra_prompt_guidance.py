@@ -1,4 +1,4 @@
-"""Regression tests for infra review guidance added in issue #295."""
+"""Regression tests for infra review guidance added in issues #295 and #302."""
 
 from pathlib import Path
 
@@ -23,7 +23,7 @@ def test_correctness_agent_includes_infra_cross_check_guidance() -> None:
     assert "If you cannot quote exact code, omit the finding." in text
 
 
-def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
+def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> None:
     text = SECURITY_AGENT.read_text(encoding="utf-8")
 
     assert "Infrastructure Threat Model" in text
@@ -39,6 +39,25 @@ def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
     assert "data/" in text
     assert "non-root `USER` directive" in text
     assert "omit the finding instead of inventing a weaker fallback label" in text
+    assert "GitHub Actions Supply-Chain" in text
+    assert "When the diff touches `.github/workflows/*.yml`, `.github/workflows/*.yaml`" in text
+    assert "Treat `uses: owner/repo@<ref>` as a supply-chain check" in text
+    assert "mutable branch ref (`@master`, `@main`, `@develop`, or similar)" in text
+    assert "partial semver tag that is not a full three-part release" in text
+    assert "`@v1`, `@v2`, or `@v1.2`" in text
+    assert "report at least `minor`" in text
+    assert "Escalate to `major`" in text
+    assert "including via sibling `env:` or `with:` keys on the action step" in text
+    assert "or via a `secrets:` block on a reusable-workflow `uses:` call" in text
+    assert "AWS_ACCESS_KEY_ID" in text
+    assert "GITHUB_TOKEN" in text
+    assert "Acceptable third-party refs are full pinned SHAs" in text
+    assert "full stable release tags matching `@vMAJOR.MINOR.PATCH`" in text
+    assert "`@v1.2.3-beta` or `@v1.2.3-rc.1`" in text
+    assert "semver-style tags such as `actions/checkout@v4`" in text
+    assert "actions/*` or `github/*` actions on mutable branch refs" in text
+    assert "trusted-provider refs by policy" in text
+    assert "Prefer concrete fixes: pin the action to a full commit SHA" in text
 
 
 def test_parse_review_documents_findings_as_first_class_items() -> None:

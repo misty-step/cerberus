@@ -81,6 +81,15 @@ When the diff touches `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `fly.
 3) Flag secret-bake-in or root-container risks even if no application code changed.
 4) Directly-readable static findings still need exact quoted evidence from the code. If you cannot quote the code, omit the finding instead of inventing a weaker fallback label.
 
+GitHub Actions Supply-Chain (mandatory when workflow files change)
+When the diff touches `.github/workflows/*.yml`, `.github/workflows/*.yaml`, or other GitHub Actions workflow/config files:
+1) Treat `uses: owner/repo@<ref>` as a supply-chain check, not a style note.
+2) If a third-party action uses a mutable branch ref (`@master`, `@main`, `@develop`, or similar) or any partial semver tag that is not a full three-part release (for example `@v1`, `@v2`, or `@v1.2`), report at least `minor`.
+3) Escalate to `major` when that mutable third-party action receives a forwarded external API key or other reusable credential with exfiltration value, including via sibling `env:` or `with:` keys on the action step, or via a `secrets:` block on a reusable-workflow `uses:` call. Examples that should usually escalate: `AWS_ACCESS_KEY_ID`, `NPM_TOKEN`, `STRIPE_SECRET_KEY`, `SLACK_BOT_TOKEN`, or third-party SaaS credentials. Examples that should usually stay `minor` unless broader blast radius is evident: `GITHUB_TOKEN` or repository-scoped internal secrets without third-party reach.
+4) Acceptable third-party refs are full pinned SHAs and full stable release tags matching `@vMAJOR.MINOR.PATCH` with no prerelease suffix, such as `@v1.2.3`. Prerelease tags such as `@v1.2.3-beta` or `@v1.2.3-rc.1` are mutable and should be treated the same as partial semver refs. Do not flag `actions/*` or `github/*` actions on semver-style tags such as `actions/checkout@v4`; treat those as lower-risk trusted-provider refs by policy, not as immutable pins.
+5) For `actions/*` or `github/*` actions on mutable branch refs, treat the risk as lower than third-party mutable refs. Only emit an `info` note when the diff makes the mutable pin materially relevant; do not escalate it like a third-party action by default.
+6) Prefer concrete fixes: pin the action to a full commit SHA and keep the version comment/tag as documentation.
+
 Anti-Patterns (Do Not Flag)
 - Style, naming, formatting
 - Architecture debates without an exploit path

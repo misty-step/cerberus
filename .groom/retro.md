@@ -118,3 +118,12 @@
 - **scope changes**: Shipped the smallest viable boundary cut: a provider-agnostic review-run contract, GitHub bootstrap script, shared `github_platform` transport, ADR, focused guard tests, and issue shaping/design work on the parent epic itself.
 - **blockers**: `make validate` initially failed only in `ruff` because a compatibility import kept for the retry tests looked unused after the transport refactor; the fix was to make the back-compat surface explicit instead of deleting it and breaking callers/tests.
 - **pattern**: Boundary refactors in mature codepaths go faster when the new deep module is introduced underneath stable compatibility seams. For Cerberus, preserving `lib.github` and `collect-overrides.py` wrapper surfaces while moving transport underneath `github_platform` kept the diff small and the tests credible.
+
+## 2026-03-12 — Issue #302: mutable action ref severity in guard
+
+- **issue**: #302
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~1.5 hours
+- **scope changes**: Filled in missing issue `Product Spec` / `Intent Contract` / `Technical Design`, added a committed walkthrough artifact, and treated AC verification as prompt-contract evidence with explicit `PARTIAL` status instead of pretending to have live LLM replay proof.
+- **blockers**: None in the repo gate; the only evidence gap is expected for prompt-only behavior because this lane did not add a live eval replay harness.
+- **pattern**: Prompt-only review-quality fixes ship best when the issue contract, prompt text, regression test, and reviewer evidence doc all land together. Otherwise the branch passes locally but still leaves reviewers guessing about what behavior is actually protected.
