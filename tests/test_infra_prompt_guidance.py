@@ -52,7 +52,8 @@ def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> N
     assert "AWS_ACCESS_KEY_ID" in text
     assert "GITHUB_TOKEN" in text
     assert "Acceptable third-party refs are full pinned SHAs" in text
-    assert "full release tags such as `@v1.2.3`" in text
+    assert "full stable release tags matching `@vMAJOR.MINOR.PATCH`" in text
+    assert "`@v1.2.3-beta` or `@v1.2.3-rc.1`" in text
     assert "semver-style tags such as `actions/checkout@v4`" in text
     assert "actions/*` or `github/*` actions on mutable branch refs" in text
     assert "trusted-provider refs by policy" in text
