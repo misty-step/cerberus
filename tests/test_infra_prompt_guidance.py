@@ -1,4 +1,4 @@
-"""Regression tests for infra review guidance added in issue #295."""
+"""Regression tests for infra review guidance added in issues #295 and #302."""
 
 from pathlib import Path
 
@@ -41,13 +41,15 @@ def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> N
     assert "omit the finding instead of inventing a weaker fallback label" in text
     assert "GitHub Actions Supply-Chain" in text
     assert "Treat `uses: owner/repo@<ref>` as a supply-chain check" in text
-    assert "mutable branch ref (`@master`, `@main`, `@develop`" in text
+    assert "mutable branch ref (`@master`, `@main`, `@develop`, or similar)" in text
+    assert "floating major-only tag such as `@v1`/`@v2`" in text
     assert "report at least `minor`" in text
     assert "Escalate to `major`" in text
     assert "sibling `secrets:` block" in text
     assert "AWS_ACCESS_KEY_ID" in text
     assert "GITHUB_TOKEN" in text
-    assert "Acceptable refs are full pinned SHAs and semver tags" in text
+    assert "Acceptable third-party refs are full pinned SHAs" in text
+    assert "full release tags such as `@v1.2.3`" in text
     assert "actions/checkout@v4" in text
     assert "actions/*` or `github/*` actions on mutable branch refs" in text
 
