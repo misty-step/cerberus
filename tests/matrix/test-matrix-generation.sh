@@ -114,6 +114,38 @@ fi
 
 echo "PASS: Wave filtering emits expected matrix metadata"
 
+# --- Test 1d: panel filtering happens in generate-matrix.py ---
+panel_output="$(PANEL_FILTER='["security"]' python3 "$SCRIPT" "$test_config")"
+panel_matrix=$(echo "$panel_output" | sed -n '1p')
+panel_count=$(echo "$panel_output" | sed -n '2p')
+panel_names=$(echo "$panel_output" | sed -n '3p')
+
+if [[ "$panel_count" != "1" ]]; then
+    echo "FAIL: Expected panel-filtered matrix count 1, got $panel_count"
+    exit 1
+fi
+
+if [[ "$panel_names" != "TEST2" ]]; then
+    echo "FAIL: Expected panel-filtered reviewer TEST2, got $panel_names"
+    exit 1
+fi
+
+if ! python3 - "$panel_matrix" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+entry = payload["include"][0]
+if entry.get("perspective") != "security":
+    sys.exit(1)
+PY
+then
+    echo "FAIL: panel-filtered matrix did not keep expected reviewer"
+    exit 1
+fi
+
+echo "PASS: Panel filtering emits expected matrix"
+
 # --- Test 2: actual defaults/config.yml ---
 result=$(python3 "$SCRIPT" "defaults/config.yml")
 count=$(echo "$result" | sed -n '2p')
