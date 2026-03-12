@@ -2711,6 +2711,144 @@ class TestDirectJsonInput:
         assert data["_extraction_usage"]["prompt_tokens"] == 123
         assert data["_extraction_usage"]["completion_tokens"] == 45
 
+    def test_bare_json_rejects_non_string_reviewer(self):
+        """Structured-output path still enforces string root fields."""
+        verdict = self._make_verdict(reviewer=123)
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "reviewer must be string" in err
+
+    def test_bare_json_rejects_invalid_verdict(self):
+        """Structured-output path rejects unsupported verdict values."""
+        verdict = self._make_verdict(verdict="MAYBE")
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "invalid verdict" in err
+
+    def test_bare_json_rejects_non_string_finding_field(self):
+        """Finding text fields must already be strings on direct JSON input."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": 7,
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "field must be string: category" in err
+
+    def test_bare_json_rejects_non_string_scope(self):
+        """Optional scope must be a string when present."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "scope": 7,
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "scope must be string" in err
+
+    def test_bare_json_rejects_invalid_scope(self):
+        """Optional scope stays on the exact enum boundary."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "scope": "repo",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "invalid scope" in err
+
+    def test_bare_json_rejects_non_boolean_suggestion_verified(self):
+        """suggestion_verified remains strictly boolean."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "suggestion_verified": "yes",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "suggestion_verified must be boolean" in err
+
+    def test_bare_json_rejects_non_object_stats(self):
+        """Structured-output path still requires stats to be an object."""
+        verdict = self._make_verdict(stats=[])
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "stats must be object" in err
+
     def test_fenced_json_still_works(self):
         """Existing fenced-block path is not broken by the new direct path."""
         verdict = self._make_verdict(verdict="FAIL", confidence=0.95,
