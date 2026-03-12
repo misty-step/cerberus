@@ -20,9 +20,8 @@ def test_reviewer_profiles_load_github_read_extension() -> None:
     assert "pi/extensions/github-read.ts" in base_extensions
 
 
-def test_run_review_env_includes_github_auth_and_pr_context() -> None:
+def test_run_review_env_uses_github_auth_and_review_run_contract() -> None:
     content = ACTION_FILE.read_text(encoding="utf-8")
     assert "GH_TOKEN: ${{ inputs.github-token }}" in content
-    assert "CERBERUS_REPO: ${{ github.repository }}" in content
-    assert "CERBERUS_PR_NUMBER: ${{ steps.pr.outputs.pr-number }}" in content
+    assert "CERBERUS_REVIEW_RUN: ${{ env.CERBERUS_TMP }}/review-run.json" in content
     assert "CERBERUS_LINKED_ISSUE_BODY_FILE" not in content

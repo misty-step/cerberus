@@ -464,6 +464,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     review_run = load_review_run_contract_from_env(os.environ)
+    runtime_context_env = review_run.runtime_env(os.environ) if review_run is not None else {}
     diff_file_raw = ""
     if review_run is not None:
         diff_file_raw = review_run.diff_file
@@ -543,6 +544,7 @@ def main(argv: list[str]) -> int:
             trusted_system_prompt_file=system_prompt_file,
             telemetry_file=telemetry_file,
             prompt_capture_path=os.environ.get("CERBERUS_PROMPT_CAPTURE_PATH"),
+            context_env=runtime_context_env,
         )
         result = run_pi_attempt(req)
         write_text(stdout_file, result.stdout)

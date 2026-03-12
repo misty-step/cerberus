@@ -53,6 +53,18 @@ graph TD
   - verdict schema redesign
   - prompt-policy redesign
 
+## Contract Fields
+
+The current contract is documented in `docs/review-run-contract.md`. The stable
+surface for the GitHub lane is:
+
+- repository identity: `repository`
+- PR identity: `pr_number`
+- branch refs: `head_ref`, `base_ref`
+- prompt inputs: `diff_file`, `pr_context_file`
+- runtime output root: `temp_dir`
+- GitHub auth/context binding: `github.repo`, `github.pr_number`, `github.token_env_var`
+
 ## Consequences
 
 ### Positive

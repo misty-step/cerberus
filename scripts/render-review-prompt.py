@@ -11,6 +11,7 @@ Environment:
   CERBERUS_CONTEXT (optional) maintainer-provided project context injected into prompt
 
 PR context (either):
+  CERBERUS_REVIEW_RUN   path to review-run contract (preferred)
   GH_PR_CONTEXT   path to JSON file from `gh pr view --json ...`
   or GH_PR_TITLE, GH_PR_AUTHOR, GH_HEAD_BRANCH, GH_BASE_BRANCH, GH_PR_BODY
 """

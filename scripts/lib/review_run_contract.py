@@ -19,6 +19,23 @@ class GitHubExecutionContext:
     pr_number: int
     token_env_var: str = "GH_TOKEN"
 
+    def runtime_env(self, source_env: Mapping[str, str]) -> dict[str, str]:
+        """Build the GitHub-scoped runtime env from the contract."""
+
+        runtime_env = {
+            "CERBERUS_REPO": self.repo,
+            "CERBERUS_PR_NUMBER": str(self.pr_number),
+        }
+        token_name = self.token_env_var.strip() or "GH_TOKEN"
+        token_value = str(source_env.get(token_name, "") or "").strip()
+        if token_value:
+            runtime_env[token_name] = token_value
+            if token_name == "GH_TOKEN":
+                runtime_env.setdefault("GITHUB_TOKEN", token_value)
+            elif token_name == "GITHUB_TOKEN":
+                runtime_env.setdefault("GH_TOKEN", token_value)
+        return runtime_env
+
 
 @dataclass(frozen=True)
 class ReviewRunContract:
@@ -30,9 +47,18 @@ class ReviewRunContract:
     pr_context_file: str
     workspace_root: str
     temp_dir: str
+    head_ref: str = ""
+    base_ref: str = ""
     platform: str = "github"
     version: int = CONTRACT_VERSION
     github: GitHubExecutionContext | None = None
+
+    def runtime_env(self, source_env: Mapping[str, str]) -> dict[str, str]:
+        """Build any platform-scoped runtime env needed by the review engine."""
+
+        if self.platform == "github" and self.github is not None:
+            return self.github.runtime_env(source_env)
+        return {}
 
 
 def _require_string(payload: Mapping[str, object], key: str) -> str:
@@ -47,6 +73,15 @@ def _require_int(payload: Mapping[str, object], key: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"invalid review-run contract: missing {key}")
     return value
+
+
+def _optional_string(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"invalid review-run contract: {key} must be a string")
+    return value.strip()
 
 
 def _load_github_context(payload: object) -> GitHubExecutionContext | None:
@@ -92,6 +127,8 @@ def load_review_run_contract(path: Path) -> ReviewRunContract:
         platform=str(payload.get("platform") or "github").strip() or "github",
         repository=_require_string(payload, "repository"),
         pr_number=_require_int(payload, "pr_number"),
+        head_ref=_optional_string(payload, "head_ref"),
+        base_ref=_optional_string(payload, "base_ref"),
         diff_file=_require_string(payload, "diff_file"),
         pr_context_file=_require_string(payload, "pr_context_file"),
         workspace_root=_require_string(payload, "workspace_root"),

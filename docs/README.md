@@ -4,6 +4,7 @@ Consumer docs live in `README.md`.
 
 Maintainer docs:
 - Architecture + roadmap: `docs/ARCHITECTURE.md`
+- Review-run contract: `docs/review-run-contract.md`
 - Terminology + core concepts: `docs/TERMINOLOGY.md`
 - Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
 - Reviewer benchmark loop + scorecards: `docs/reviewer-benchmark/`
