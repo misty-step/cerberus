@@ -91,3 +91,12 @@
 - **scope changes**: Tightened the issue itself with a real product spec and design, then limited the implementation to the aggregate verdict renderer instead of changing reviewer verdict artifacts or parser semantics.
 - **blockers**: The first merge heuristic over-collapsed exact-title findings on adjacent lines and under-collapsed wording variants because token normalization was too naive; focused regression tests exposed both failure modes quickly.
 - **pattern**: For “semantic enough” render-layer dedupe, keep the heuristic conservative and pin both the merge and non-merge cases in tests. The safe shape is same-file, same-category, nearby-line agreement with explicit overlap evidence, not broad fuzzy clustering.
+
+## 2026-03-11 — Issue #300: unused dependency findings promoted from info to minor
+
+- **issue**: #300
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Added a committed reviewer-evidence walkthrough because the lane touched only backend review semantics and needed a durable, reviewer-friendly proof artifact instead of video.
+- **blockers**: Running full pytest and coverage commands in parallel caused a false failure because both suites write `/tmp/verdict.json`; rerunning the gates sequentially confirmed the branch was healthy.
+- **pattern**: Aggregation-only severity fixes should recompute reviewer stats in the same pass. Otherwise reporting and rendering drift even when the promoted finding itself is correct.
