@@ -9,6 +9,7 @@ Commands:
   model-pool     Print: model.pool entries (one per line)
   model-pool-for-tier  Print: model.tiers.<tier> entries (one per line, requires --tier)
   model-pool-for-wave  Print: model.wave_pools.<wave> entries (one per line, requires --wave)
+  override-policies  Print JSON or GitHub Action outputs for override policies
   wave-order     Print: waves.order entries (one per line)
   wave-reviewers Print: waves.definitions.<wave>.reviewers entries (one per line, requires --wave)
   wave-max-for-tier Print: waves.max_for_tier.<tier> (or 0 if unset)
@@ -17,8 +18,10 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 from lib.defaults_config import ConfigError, load_defaults_config
 
@@ -28,6 +31,18 @@ def _single_line(value: str | None) -> str:
         return ""
     # Make shell parsing safe; descriptions with newlines render poorly anyway.
     return " ".join(value.replace("\t", " ").split())
+
+
+def _append_multiline_output(path: Path, key: str, value: str) -> None:
+    delimiter = f"CERBERUS_{key.upper()}_{uuid4().hex}"
+    while delimiter in value:
+        delimiter = f"CERBERUS_{key.upper()}_{uuid4().hex}"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"{key}<<{delimiter}\n")
+        fh.write(value)
+        if not value.endswith("\n"):
+            fh.write("\n")
+        fh.write(f"{delimiter}\n")
 
 
 def main(argv: list[str]) -> int:
@@ -52,6 +67,10 @@ def main(argv: list[str]) -> int:
     model_pool_for_wave = sub.add_parser("model-pool-for-wave")
     model_pool_for_wave.add_argument("--config", required=True)
     model_pool_for_wave.add_argument("--wave", required=True)
+
+    override_policies = sub.add_parser("override-policies")
+    override_policies.add_argument("--config", required=True)
+    override_policies.add_argument("--github-output", default="")
 
     wave_order = sub.add_parser("wave-order")
     wave_order.add_argument("--config", required=True)
@@ -124,6 +143,25 @@ def main(argv: list[str]) -> int:
         wave_pool = cfg.model.wave_pools.get(wave, [])
         for item in wave_pool:
             print(_single_line(item))
+        return 0
+
+    if args.cmd == "override-policies":
+        payload = {
+            "global_policy": cfg.override.actor,
+            "reviewer_policies": cfg.reviewer_override_policies(),
+        }
+        github_output = str(args.github_output).strip()
+        if github_output:
+            output_path = Path(github_output)
+            with output_path.open("a", encoding="utf-8") as fh:
+                fh.write(f"global_policy={cfg.override.actor}\n")
+            _append_multiline_output(
+                output_path,
+                "reviewer_policies",
+                json.dumps(payload["reviewer_policies"], separators=(",", ":")),
+            )
+            return 0
+        print(json.dumps(payload, indent=2, sort_keys=False))
         return 0
 
     if args.cmd == "wave-order":

@@ -1,6 +1,7 @@
 """Tests for scripts/read-defaults-config.py CLI."""
 
 import importlib
+import json
 from pathlib import Path
 
 # Import the script module directly.
@@ -164,6 +165,53 @@ reviewers:
         assert code == 2
         captured = capsys.readouterr()
         assert "--wave must be non-empty" in captured.err
+
+
+class TestOverridePolicies:
+    def test_prints_json_payload(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, """
+override:
+  actor: write_access
+reviewers:
+  - name: TRACE
+    perspective: correctness
+  - name: GUARD
+    perspective: security
+    override: maintainers_only
+""")
+        code = main(["override-policies", "--config", cfg])
+        assert code == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload == {
+            "global_policy": "write_access",
+            "reviewer_policies": {
+                "TRACE": "write_access",
+                "GUARD": "maintainers_only",
+            },
+        }
+
+    def test_writes_github_outputs(self, tmp_path):
+        cfg = _write_config(tmp_path, """
+reviewers:
+  - name: TRACE
+    perspective: correctness
+""")
+        output_path = tmp_path / "github-output.txt"
+        code = main(
+            [
+                "override-policies",
+                "--config",
+                cfg,
+                "--github-output",
+                str(output_path),
+            ]
+        )
+        assert code == 0
+        output = output_path.read_text()
+        assert "global_policy=pr_author" in output
+        assert "reviewer_policies<<" in output
+        assert '{"TRACE":"pr_author"}' in output
 
 
 class TestWaveHelpers:
