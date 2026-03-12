@@ -78,8 +78,15 @@ def _write_empty_wave_mapping_config(tmp_path: Path) -> Path:
     return config
 
 
+@pytest.fixture(autouse=True)
+def _matrix_output_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mod, "TMP_MATRIX_OUTPUT", tmp_path / "matrix-output.json")
+    monkeypatch.setattr(mod, "TMP_MATRIX_COUNT", tmp_path / "matrix-count.txt")
+    monkeypatch.setattr(mod, "TMP_MATRIX_NAMES", tmp_path / "matrix-names.txt")
+
+
 def _load_matrix_output() -> dict:
-    return json.loads(Path("/tmp/matrix-output.json").read_text())
+    return json.loads(mod.TMP_MATRIX_OUTPUT.read_text())
 
 
 def test_generate_matrix_includes_model_tier_when_env_set(tmp_path: Path, monkeypatch) -> None:
@@ -111,6 +118,36 @@ def test_generate_matrix_filters_by_wave_and_sets_model_wave(tmp_path: Path, mon
     assert entry["reviewer"] == "guard"
     assert entry["model_wave"] == "wave2"
     assert entry["wave"] == "wave2"
+
+
+def test_generate_matrix_filters_by_panel_when_matches_exist(tmp_path: Path, monkeypatch) -> None:
+    config = _write_config(tmp_path)
+    monkeypatch.setenv("PANEL_FILTER", '["security"]')
+    mod.generate_matrix(str(config))
+    payload = _load_matrix_output()
+    assert len(payload["include"]) == 1
+    assert payload["include"][0]["reviewer"] == "guard"
+    assert payload["include"][0]["perspective"] == "security"
+
+
+def test_generate_matrix_falls_back_to_full_matrix_when_panel_has_no_match(
+    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = _write_config(tmp_path)
+    monkeypatch.setenv("PANEL_FILTER", '["architecture"]')
+    mod.generate_matrix(str(config))
+    payload = _load_matrix_output()
+    assert len(payload["include"]) == 2
+    assert [entry["reviewer"] for entry in payload["include"]] == ["TRACE", "guard"]
+    assert "full matrix" in capsys.readouterr().err.lower()
+
+
+def test_generate_matrix_fails_on_invalid_panel_filter_json(tmp_path: Path, monkeypatch) -> None:
+    config = _write_config(tmp_path)
+    monkeypatch.setenv("PANEL_FILTER", "{bad-json")
+    with pytest.raises(SystemExit) as exc:
+        mod.generate_matrix(str(config))
+    assert exc.value.code == 1
 
 
 def test_generate_matrix_fails_when_wave_filter_produces_empty_matrix(

@@ -60,10 +60,6 @@ runs:
         MODEL_TIER="$INPUT_MODEL_TIER" REVIEW_WAVE="$INPUT_WAVE" \
           python3 "${{ github.action_path }}/generate-matrix.py" "$config_file" > /dev/null
 
-        if [[ -n "${PANEL_FILTER:-}" && "$PANEL_FILTER" != "[]" ]]; then
-          python3 "${{ github.action_path }}/filter-panel.py" "$PANEL_FILTER"
-        fi
-
         matrix_json=$(cat /tmp/matrix-output.json)
         count=$(cat /tmp/matrix-count.txt)
         names=$(cat /tmp/matrix-names.txt)

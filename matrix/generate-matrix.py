@@ -14,11 +14,26 @@ Also prints to stdout for test consumption:
     Line 2: count
     Line 3: comma-separated names
 """
+
+from __future__ import annotations
+
 import json
 import os
 import sys
+from pathlib import Path
+from typing import Any
 
-import yaml
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from lib.defaults_config import ConfigError, DefaultsConfig, Reviewer, load_defaults_config  # noqa: E402
+
+
+TMP_MATRIX_OUTPUT = Path("/tmp/matrix-output.json")
+TMP_MATRIX_COUNT = Path("/tmp/matrix-count.txt")
+TMP_MATRIX_NAMES = Path("/tmp/matrix-names.txt")
 
 
 def split_description(value: object) -> tuple[str, str]:
@@ -35,91 +50,103 @@ def split_description(value: object) -> tuple[str, str]:
     return (text, "")
 
 
-def generate_matrix(config_path):
-    """Generate matrix."""
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+def _load_config(path: str) -> DefaultsConfig:
+    try:
+        return load_defaults_config(Path(path))
+    except ConfigError as exc:
+        print(f"Config load error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
-    reviewers = config.get("reviewers", [])
+
+def _reviewers_for_wave(cfg: DefaultsConfig, review_wave: str) -> list[Reviewer]:
+    if not review_wave:
+        return list(cfg.reviewers)
+
+    definition = cfg.waves.definitions.get(review_wave)
+    if definition is None:
+        print(f"Unknown review wave '{review_wave}'", file=sys.stderr)
+        raise SystemExit(1)
+
+    reviewers_by_name = {reviewer.name: reviewer for reviewer in cfg.reviewers}
+    reviewers = [
+        reviewers_by_name[name]
+        for name in definition.reviewers
+        if name in reviewers_by_name
+    ]
     if not reviewers:
-        print("No reviewers found in config", file=sys.stderr)
-        sys.exit(1)
+        print(f"Wave '{review_wave}' produced an empty reviewer matrix", file=sys.stderr)
+        raise SystemExit(1)
+    return reviewers
 
-    review_wave = os.getenv("REVIEW_WAVE", "").strip().lower()
+
+def _normalize_panel_filter(raw: str) -> set[str]:
+    if not raw.strip():
+        return set()
+    try:
+        panel = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid PANEL_FILTER JSON: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    if not isinstance(panel, list):
+        print("Invalid PANEL_FILTER JSON: expected array", file=sys.stderr)
+        raise SystemExit(1)
+    return {str(item) for item in panel}
+
+
+def _build_entry(reviewer: Reviewer, *, model_tier: str, review_wave: str) -> dict[str, Any]:
+    role, tagline = split_description(reviewer.description)
+    label = role or reviewer.perspective.replace("_", " ").title()
+    codename = reviewer.name.title() if reviewer.name.isupper() else reviewer.name
+
+    entry: dict[str, Any] = {
+        "reviewer": reviewer.name,
+        "perspective": reviewer.perspective,
+        "reviewer_label": label,
+        "reviewer_codename": codename,
+    }
+    if model_tier:
+        entry["model_tier"] = model_tier
     if review_wave:
-        waves = config.get("waves") if isinstance(config, dict) else {}
-        definitions = {}
-        if isinstance(waves, dict):
-            raw_definitions = waves.get("definitions")
-            if isinstance(raw_definitions, dict):
-                definitions = raw_definitions
+        entry["wave"] = review_wave
+        entry["model_wave"] = review_wave
+    if reviewer.description:
+        entry["reviewer_description"] = reviewer.description
+    if tagline:
+        entry["reviewer_tagline"] = tagline
+    return entry
 
-        if review_wave not in definitions:
-            print(f"Unknown review wave '{review_wave}'", file=sys.stderr)
-            sys.exit(1)
 
-        wave_reviewers = []
-        wave_cfg = definitions.get(review_wave)
-        if isinstance(wave_cfg, dict):
-            raw_reviewers = wave_cfg.get("reviewers")
-            if isinstance(raw_reviewers, list):
-                wave_reviewers = [str(item).strip() for item in raw_reviewers if str(item).strip()]
+def generate_matrix(config_path: str) -> None:
+    """Generate matrix."""
+    cfg = _load_config(config_path)
+    review_wave = os.getenv("REVIEW_WAVE", "").strip().lower()
+    model_tier = os.getenv("MODEL_TIER", "").strip().lower()
+    panel_filter = _normalize_panel_filter(os.getenv("PANEL_FILTER", ""))
 
-        if wave_reviewers:
-            reviewers_by_name = {}
-            for reviewer in reviewers:
-                name = reviewer.get("name")
-                if name:
-                    reviewers_by_name[str(name)] = reviewer
-            reviewers = [reviewers_by_name[name] for name in wave_reviewers if name in reviewers_by_name]
-        if not reviewers:
-            print(f"Wave '{review_wave}' produced an empty reviewer matrix", file=sys.stderr)
-            sys.exit(1)
+    reviewers = _reviewers_for_wave(cfg, review_wave)
+    matrix = [
+        _build_entry(reviewer, model_tier=model_tier, review_wave=review_wave)
+        for reviewer in reviewers
+    ]
 
-    matrix = []
-    names = []
-    for r in reviewers:
-        name = r.get("name")
-        perspective = r.get("perspective")
-        if name and perspective:
-            desc = r.get("description")
-            role, tagline = split_description(desc)
-            label = role or str(perspective).replace("_", " ").title()
-            codename = str(name).title() if str(name).isupper() else str(name)
-
-            entry = {
-                "reviewer": name,
-                "perspective": perspective,
-                "reviewer_label": label,
-                "reviewer_codename": codename,
-            }
-            model_tier = os.getenv("MODEL_TIER", "").strip().lower()
-            if model_tier:
-                entry["model_tier"] = model_tier
-            if review_wave:
-                entry["wave"] = review_wave
-                entry["model_wave"] = review_wave
-            if isinstance(desc, str) and desc.strip():
-                entry["reviewer_description"] = desc.strip()
-            if tagline:
-                entry["reviewer_tagline"] = tagline
-
-            matrix.append(entry)
-            names.append(name)
+    if panel_filter:
+        filtered = [entry for entry in matrix if entry["perspective"] in panel_filter]
+        if filtered:
+            matrix = filtered
+        else:
+            print(
+                "::warning::Panel filter matched no reviewers; using full matrix",
+                file=sys.stderr,
+            )
 
     matrix_json = json.dumps({"include": matrix})
     count = str(len(matrix))
-    names_csv = ",".join(names)
+    names_csv = ",".join(entry["reviewer"] for entry in matrix)
 
-    # Write output files (used by the GitHub Action)
-    with open("/tmp/matrix-output.json", "w") as f:
-        f.write(matrix_json)
-    with open("/tmp/matrix-count.txt", "w") as f:
-        f.write(count)
-    with open("/tmp/matrix-names.txt", "w") as f:
-        f.write(names_csv)
+    TMP_MATRIX_OUTPUT.write_text(matrix_json)
+    TMP_MATRIX_COUNT.write_text(count)
+    TMP_MATRIX_NAMES.write_text(names_csv)
 
-    # Print for stdout consumption (tests)
     print(matrix_json)
     print(count)
     print(names_csv)
