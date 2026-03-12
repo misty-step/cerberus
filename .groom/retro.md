@@ -74,11 +74,11 @@
 - **blockers**: `make validate` initially passed the full pytest phase (`1548 passed, 1 skipped`) but failed in `ruff` on unrelated pre-existing lint debt across untouched files; that gate debt was then fixed in this lane so the final branch shipped green.
 - **pattern**: Prompt-quality fixes hold better when the issue ships with one named regression file and one eval fixture. Text-only prompt edits are too easy to lose in later prompt churn.
 
-## 2026-03-11 — Issue #305: unverified findings should not disappear from verdicts
+## 2026-03-11 — Issue #305: findings are first-class and evidence supports them
 
 - **issue**: #305
-- **predicted effort**: p0 (medium — 1-2 days)
+- **predicted effort**: p1 (medium — 1-2 days)
 - **actual effort**: ~2 hours
-- **scope changes**: Narrowed the lane from the stale issue body to the live contract gap: parser normalization, weighted verdict math, renderer compatibility, docs cleanup, and focused regression tests.
-- **blockers**: The issue body still described downgrade helpers that had already been removed, so the first step was re-reading parser/tests and reshaping the issue before touching code.
-- **pattern**: Review-quality bugs can turn into contract-drift bugs after adjacent fixes land. Re-read the parser, renderer, and docs together before implementing the issue literally.
+- **scope changes**: Pivoted the lane away from a bad `unverified finding` category and toward the actual contract: findings remain first-class, evidence/citations support them, prompts must quote exact code or omit the finding, and parser/renderer paths only retain legacy-marker cleanup.
+- **blockers**: The open issue and PR still described weighted unverified verdict math even though the better fix was vocabulary and contract cleanup across prompts, parser, renderer, docs, and tests.
+- **pattern**: When review-quality work starts inventing second-class finding types, stop and define the nouns first. Stable terminology prevents downstream parser/render drift.

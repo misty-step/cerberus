@@ -65,6 +65,7 @@ Three waves with flash → standard → pro model escalation.
 ## Docs
 
 - Migration guide (v1 → v2): `docs/MIGRATION.md`
+- Terminology: `docs/TERMINOLOGY.md`
 - OSS vs Cloud: `docs/OSS-VS-CLOUD.md`
 - Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
 - Troubleshooting: `docs/TROUBLESHOOTING.md`

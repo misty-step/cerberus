@@ -133,7 +133,8 @@ Optional finding fields:
 - `evidence` (string) — exact code quote backing the claim
 - `scope` (string) — set to `defaults-change` when citing unchanged code that became newly-defaulted
 - `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative
-- `_unverified` / `_evidence_unverified` (boolean) — optional reviewer-side signal that the finding should stay visible at its original severity but count as discounted signal in parser-side verdict recomputation
+
+Findings are first-class review items. Evidence, citations, and scope support the finding; Cerberus should not model separate "verified" vs "unverified" finding types.
 
 Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.

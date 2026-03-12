@@ -20,7 +20,7 @@ def test_correctness_agent_includes_infra_cross_check_guidance() -> None:
     assert "startup file reads" in text
     assert "Cross-file startup breakage is in scope" in text
     assert "inconsistent PEM header formats" in text
-    assert "Do NOT use `[unverified]` for static observations" in text
+    assert "If you cannot quote exact code, omit the finding." in text
 
 
 def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
@@ -38,12 +38,12 @@ def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
     assert "*.db" in text
     assert "data/" in text
     assert "non-root `USER` directive" in text
-    assert "Do NOT mark directly-readable static findings as `[unverified]`" in text
+    assert "omit the finding instead of inventing a weaker fallback label" in text
 
 
-def test_parse_review_documents_unverified_scope_boundary() -> None:
+def test_parse_review_documents_findings_as_first_class_items() -> None:
     text = PARSE_REVIEW.read_text(encoding="utf-8")
 
-    assert "suggestion_verified / [unverified] is guidance for behavioral uncertainty" in text
-    assert "missing Dockerfile directives" in text
-    assert "`.dockerignore` exclusions" in text
+    assert "Findings are first-class review items." in text
+    assert "should not invent a second" in text
+    assert '"verified vs unverified finding" state' in text

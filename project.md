@@ -15,13 +15,15 @@ Agentic code review platform — multi-perspective review, auto-triage, and obse
 
 ## Domain Glossary
 
+Canonical source: `docs/TERMINOLOGY.md`
+
 | Term | Definition |
 |------|-----------|
 | Perspective | One reviewer's analytical lens: correctness, security, testing, architecture, resilience, maintainability |
 | Wave | A tier of reviewers that runs in sequence. wave1=flash, wave2=standard, wave3=pro. wave N runs only when wave N-1 exits clean |
 | Verdict | The aggregated outcome: PASS / WARN / FAIL. Emitted by aggregate-verdict.py from all reviewer verdicts |
-| Reviewer | One agentic LLM-powered code reviewer. Emits a JSON verdict block. Six per full run (trace, guard, proof, atlas, fuse, craft) |
-| Finding | A specific code issue identified by a reviewer. Has: severity, category, file, line, title, description, suggestion |
+| Reviewer | One agentic LLM-powered code reviewer. Emits a JSON verdict block. Six per full run (trace, guard, proof, atlas, fuse, craft). |
+| Finding | A first-class issue claim emitted by a reviewer. Evidence, citations, scope, and severity support the finding; Cerberus should not model separate "verified" vs "unverified" finding types. |
 | SKIP | A reviewer that failed to produce a verdict (timeout, parse failure, etc.) |
 | [stale-knowledge] | Pipeline-added tag indicating a finding may assert stale training-data knowledge (version claims, release dates). Severity preserved — human judges |
 | Override | A `/cerberus override sha=<sha>` comment from an authorized actor, suppressing a FAIL verdict |
@@ -33,7 +35,7 @@ Agentic code review platform — multi-perspective review, auto-triage, and obse
 ## Active Focus
 
 - **Milestone:** PRIMARY 1: OSS Production Readiness (due 2026-03-14)
-- **Key Issues:** #305 (p0, now), #256 (now), #293 (now), #278 (now)
+- **Key Issues:** #305 (p1, now), #256 (now), #293 (now), #278 (now)
 - **Theme:** Stop false positives and false negatives. Make verdicts trustworthy enough to use as a merge gate.
 
 ## Quality Bar
@@ -84,10 +86,10 @@ model:
 
 | Decision | Outcome | Lesson |
 |----------|---------|--------|
-| `[unverified]` tag demotes severity to info | Real P1 bugs invisible in review, false PASS | Evidence should annotate, not gate severity |
+| Evidence-gated finding severity hid real bugs | Real P1 bugs disappeared behind weaker fallback handling | Findings are first-class claims; evidence supports them, but should not create a second finding category |
 | minimax-m2.5 and mimo-v2-flash in flash pool | Consistent JSON contract failures = SKIP | Remove unreliable models; replace with proven ones |
 | Reusable workflow @master ref with secret forwarding | Supply-chain risk rated info by reviewers | guard.md needs explicit mutable-ref + secret = major |
 
 ---
-*Last updated: 2026-02-28*
+*Last updated: 2026-03-12*
 *Updated during: /groom session*

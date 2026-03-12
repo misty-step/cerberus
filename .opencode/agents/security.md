@@ -79,7 +79,7 @@ When the diff touches `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `fly.
 1) Verify `.dockerignore` excludes local secrets and stateful data such as `.env`, `.env.*`, `*.sqlite`, `*.db`, and `data/` when those assets could be present in developer worktrees.
 2) Check for a non-root `USER` directive in Dockerfiles. Missing `USER` means the container runs as root and is a directly-readable static finding.
 3) Flag secret-bake-in or root-container risks even if no application code changed.
-4) Do NOT mark directly-readable static findings as `[unverified]`; that tag is only for claims you could not support with quoted code.
+4) Directly-readable static findings still need exact quoted evidence from the code. If you cannot quote the code, omit the finding instead of inventing a weaker fallback label.
 
 Anti-Patterns (Do Not Flag)
 - Style, naming, formatting
@@ -132,8 +132,7 @@ Review Discipline
 
 Evidence (mandatory)
 - For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
-- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
-- Do NOT use `[unverified]` for static security evidence that is directly present in the diff, such as a missing Dockerfile `USER` directive or a missing `.dockerignore` secret exclusion.
+- If you cannot quote exact code, omit the finding. Do not emit a weaker placeholder finding as fallback.
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format

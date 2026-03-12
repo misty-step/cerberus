@@ -48,19 +48,17 @@ def test_renders_none_when_no_findings(tmp_path: Path) -> None:
     assert body.strip() == "- None"
 
 
-def test_renders_unverified_meta_and_evidence_block(tmp_path: Path) -> None:
+def test_renders_evidence_block(tmp_path: Path) -> None:
     verdict = {
         "findings": [
             {
                 "severity": "major",
                 "file": "src/app.py",
                 "line": 12,
-                "title": "[unverified] Example",
+                "title": "Example",
                 "description": "desc",
                 "suggestion": "fix",
                 "evidence": "x = 1\nreturn x",
-                "_evidence_unverified": True,
-                "_evidence_reason": "evidence-mismatch",
             }
         ]
     }
@@ -68,7 +66,6 @@ def test_renders_unverified_meta_and_evidence_block(tmp_path: Path) -> None:
     assert code == 0, err
     assert out.strip() == "1"
     assert "`src/app.py:12`" in body
-    assert "_(unverified: evidence-mismatch)_" in body
     assert "<details>" in body
     assert "<summary>Details</summary>" in body
     assert "Evidence:" in body
@@ -236,26 +233,15 @@ def test_render_findings_negative_line_number() -> None:
     assert "[`a.py`]" in lines[0]
 
 
-def test_render_findings_unverified_no_reason() -> None:
+def test_render_findings_ignores_legacy_unverified_metadata() -> None:
     lines = render_findings(
         [{"severity": "minor", "file": "a.py", "line": 1, "title": "ok",
-          "_evidence_unverified": True}],
+          "_evidence_unverified": True, "_evidence_reason": "legacy"}],
         server="https://gh.com",
         repo="org/repo",
         sha="abc",
     )
-    assert "_(unverified)_" in lines[0]
-
-
-def test_render_findings_accepts_normalized_unverified_fields() -> None:
-    lines = render_findings(
-        [{"severity": "major", "file": "a.py", "line": 3, "title": "[unverified] ok",
-          "_unverified": True, "_unverified_reason": "behavioral-uncertainty"}],
-        server="https://gh.com",
-        repo="org/repo",
-        sha="abc",
-    )
-    assert "_(unverified: behavioral-uncertainty)_" in lines[0]
+    assert "unverified" not in lines[0]
 
 
 def test_render_findings_no_description_no_suggestion() -> None:
