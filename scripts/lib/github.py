@@ -6,6 +6,7 @@ Used by per-reviewer comments, verdict, and triage diagnosis.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import subprocess
 import sys
@@ -23,12 +24,11 @@ def _ensure_scripts_import_root() -> None:
 
 _ensure_scripts_import_root()
 
-from lib.github_platform import (  # noqa: E402
-    GitHubPermissionError as PlatformPermissionError,
-    TransientGitHubError as PlatformTransientGitHubError,
-    is_transient_error,
-    run_gh,
-)
+_github_platform = importlib.import_module("lib.github_platform")
+PlatformPermissionError = _github_platform.GitHubPermissionError
+PlatformTransientGitHubError = _github_platform.TransientGitHubError
+is_transient_error = _github_platform.is_transient_error
+run_gh = _github_platform.run_gh
 
 class CommentPermissionError(Exception):
     """Token lacks pull-requests: write permission."""
