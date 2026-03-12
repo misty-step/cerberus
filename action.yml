@@ -298,14 +298,10 @@ runs:
         # GitHub auth forwarded for the github_read extension inside isolated runtime.
         # Token permissions depend on the caller-supplied github-token input.
         GH_TOKEN: ${{ inputs.github-token }}
-        CERBERUS_REPO: ${{ github.repository }}
-        CERBERUS_PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
         CERBERUS_CONTEXT: ${{ inputs.context }}
         CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
         OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
         REVIEW_TIMEOUT: ${{ inputs.timeout }}
-        GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
-        GH_PR_CONTEXT: ${{ env.CERBERUS_TMP }}/pr-context.json
         CERBERUS_REVIEW_RUN: ${{ env.CERBERUS_TMP }}/review-run.json
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"

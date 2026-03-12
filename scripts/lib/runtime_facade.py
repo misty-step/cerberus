@@ -32,6 +32,7 @@ class RuntimeAttemptRequest:
     trusted_system_prompt_file: Path | None = None
     telemetry_file: Path | None = None
     prompt_capture_path: str | None = None
+    context_env: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -204,14 +205,17 @@ def run_pi_attempt(req: RuntimeAttemptRequest) -> RuntimeAttemptResult:
         env["LANG"] = os.environ["LANG"]
     if os.environ.get("LC_ALL"):
         env["LC_ALL"] = os.environ["LC_ALL"]
-    if os.environ.get("GH_TOKEN"):
-        env["GH_TOKEN"] = os.environ["GH_TOKEN"]
-    if os.environ.get("GITHUB_TOKEN"):
-        env["GITHUB_TOKEN"] = os.environ["GITHUB_TOKEN"]
-    if os.environ.get("CERBERUS_REPO"):
-        env["CERBERUS_REPO"] = os.environ["CERBERUS_REPO"]
-    if os.environ.get("CERBERUS_PR_NUMBER"):
-        env["CERBERUS_PR_NUMBER"] = os.environ["CERBERUS_PR_NUMBER"]
+
+    runtime_context_env = dict(req.context_env or {})
+    if not runtime_context_env:
+        for key in ("GH_TOKEN", "GITHUB_TOKEN", "CERBERUS_REPO", "CERBERUS_PR_NUMBER"):
+            value = str(os.environ.get(key, "") or "").strip()
+            if value:
+                runtime_context_env[key] = value
+    for key, value in runtime_context_env.items():
+        text = str(value or "").strip()
+        if text:
+            env[key] = text
 
     if req.max_steps is not None and req.max_steps > 0:
         env["CERBERUS_MAX_STEPS"] = str(req.max_steps)

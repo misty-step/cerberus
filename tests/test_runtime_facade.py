@@ -181,10 +181,6 @@ class TestRunPiAttempt:
         monkeypatch.setattr(subprocess, "run", fake_run)
         monkeypatch.setenv("LANG", "en_US.UTF-8")
         monkeypatch.setenv("LC_ALL", "C.UTF-8")
-        monkeypatch.setenv("GH_TOKEN", "gh-test-token")
-        monkeypatch.setenv("GITHUB_TOKEN", "github-test-token")
-        monkeypatch.setenv("CERBERUS_REPO", "misty-step/cerberus")
-        monkeypatch.setenv("CERBERUS_PR_NUMBER", "316")
 
         req = RuntimeAttemptRequest(
             perspective="security",
@@ -204,6 +200,12 @@ class TestRunPiAttempt:
             trusted_system_prompt_file=trusted,
             telemetry_file=telemetry,
             prompt_capture_path="/tmp/capture.md",
+            context_env={
+                "GH_TOKEN": "gh-test-token",
+                "GITHUB_TOKEN": "github-test-token",
+                "CERBERUS_REPO": "misty-step/cerberus",
+                "CERBERUS_PR_NUMBER": "316",
+            },
         )
 
         result = run_pi_attempt(req)

@@ -127,3 +127,12 @@
 - **scope changes**: Filled in missing issue `Product Spec` / `Intent Contract` / `Technical Design`, added a committed walkthrough artifact, and treated AC verification as prompt-contract evidence with explicit `PARTIAL` status instead of pretending to have live LLM replay proof.
 - **blockers**: None in the repo gate; the only evidence gap is expected for prompt-only behavior because this lane did not add a live eval replay harness.
 - **pattern**: Prompt-only review-quality fixes ship best when the issue contract, prompt text, regression test, and reviewer evidence doc all land together. Otherwise the branch passes locally but still leaves reviewers guessing about what behavior is actually protected.
+
+## 2026-03-12 — Issue #324: complete the review-run contract boundary
+
+- **issue**: #324
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Finished the already-started boundary instead of inventing a new one: enriched the existing review-run contract with branch refs and runtime-env derivation, removed review-step repo/PR env wiring from `action.yml`, added a dedicated contract doc, and shipped committed walkthrough evidence.
+- **blockers**: No product blockers; the only shell hiccup was a harmless zsh `status` readonly-name collision after `gh pr create` had already opened the PR.
+- **pattern**: Boundary work sticks when the contract becomes authoritative for one real lane. Leaving both the contract and raw env plumbing active in the main path keeps the new abstraction shallow and untrusted.

@@ -22,6 +22,8 @@ def test_write_and_load_review_run_contract_round_trips(tmp_path: Path) -> None:
         pr_context_file="/tmp/pr-context.json",
         workspace_root="/repo",
         temp_dir="/tmp/cerberus",
+        head_ref="feature/review-run",
+        base_ref="master",
         github=GitHubExecutionContext(repo="misty-step/cerberus", pr_number=323),
     )
 
@@ -61,6 +63,8 @@ def test_load_review_run_contract_from_env_loads_contract(tmp_path: Path) -> Non
         pr_context_file="/tmp/pr-context.json",
         workspace_root="/repo",
         temp_dir="/tmp/cerberus",
+        head_ref="feature/review-run",
+        base_ref="master",
         github=GitHubExecutionContext(repo="misty-step/cerberus", pr_number=323),
     )
 
@@ -109,3 +113,28 @@ def test_load_review_run_contract_rejects_missing_file(tmp_path: Path) -> None:
 
 def test_load_review_run_contract_from_env_returns_none_when_unset() -> None:
     assert load_review_run_contract_from_env({}) is None
+
+
+def test_github_runtime_env_uses_contract_identity_and_auth_aliases() -> None:
+    contract = ReviewRunContract(
+        repository="misty-step/cerberus",
+        pr_number=324,
+        diff_file="/tmp/pr.diff",
+        pr_context_file="/tmp/pr-context.json",
+        workspace_root="/repo",
+        temp_dir="/tmp/cerberus",
+        github=GitHubExecutionContext(
+            repo="misty-step/cerberus",
+            pr_number=324,
+            token_env_var="GH_TOKEN",
+        ),
+    )
+
+    runtime_env = contract.runtime_env({"GH_TOKEN": "gh-secret"})
+
+    assert runtime_env == {
+        "CERBERUS_REPO": "misty-step/cerberus",
+        "CERBERUS_PR_NUMBER": "324",
+        "GH_TOKEN": "gh-secret",
+        "GITHUB_TOKEN": "gh-secret",
+    }
