@@ -2700,6 +2700,17 @@ class TestDirectJsonInput:
         data = json.loads(out)
         assert data["verdict"] == "PASS"
 
+    def test_bare_json_with_extraction_usage_preserved(self):
+        """Structured extraction metadata is valid pipeline root data."""
+        verdict = self._make_verdict(
+            _extraction_usage={"prompt_tokens": 123, "completion_tokens": 45},
+        )
+        code, out, _ = run_parse(json.dumps(verdict))
+        assert code == 0
+        data = json.loads(out)
+        assert data["_extraction_usage"]["prompt_tokens"] == 123
+        assert data["_extraction_usage"]["completion_tokens"] == 45
+
     def test_fenced_json_still_works(self):
         """Existing fenced-block path is not broken by the new direct path."""
         verdict = self._make_verdict(verdict="FAIL", confidence=0.95,

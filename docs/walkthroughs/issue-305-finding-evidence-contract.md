@@ -27,14 +27,9 @@ This lane replaces the muddled `unverified finding` language with a cleaner cont
 Persistent verification for this path:
 
 ```bash
-python3 -m pytest tests/test_parse_review.py tests/test_render_findings.py tests/test_infra_prompt_guidance.py -q
+python3 -m pytest tests/test_parse_review.py tests/test_render_findings.py tests/test_extract_verdict.py tests/test_infra_prompt_guidance.py -q
 make validate
 ```
-
-Observed on this branch:
-
-- Targeted suite passed: `166 passed`
-- Full repo gate passed: `1559 passed, 1 skipped`
 
 ## Why This Is Better
 

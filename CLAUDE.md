@@ -135,9 +135,10 @@ Optional finding fields:
 - `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative
 
 Findings are first-class review items. Evidence, citations, and scope support the finding; Cerberus should not model separate "verified" vs "unverified" finding types.
-Unsupported root or finding fields fail validation. Deprecated finding-marker fields and title prefixes such as `[unverified]` or `[speculative]` are invalid input, not compatibility aliases.
+Unsupported reviewer root or finding fields fail validation. Deprecated finding-marker fields and title prefixes such as `[unverified]` or `[speculative]` are invalid input, not compatibility aliases.
 
 Optional fields added by the pipeline:
+- `_extraction_usage` (object) — structured-extraction token usage, preserved for downstream cost reporting.
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
 - `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Stored in fallback/partial verdicts for debugging via workflow logs/artifacts (not rendered in PR comments).
 

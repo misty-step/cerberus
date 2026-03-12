@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from io import BytesIO
@@ -15,6 +17,10 @@ import pytest
 
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "scripts" / "extract-verdict.py"
+SCRIPTS_DIR = ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+review_schema = importlib.import_module("lib.review_schema")
 
 spec = importlib.util.spec_from_file_location("extract_verdict_script", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
@@ -290,6 +296,9 @@ class TestExtractVerdictFunction:
 
 
 class TestVerdictSchema:
+    def test_schema_matches_shared_contract(self) -> None:
+        assert mod.VERDICT_SCHEMA == review_schema.EXTRACTION_VERDICT_SCHEMA
+
     def test_schema_has_required_fields(self) -> None:
         assert "verdict" in mod.VERDICT_SCHEMA["required"]
         assert "confidence" in mod.VERDICT_SCHEMA["required"]
@@ -302,7 +311,7 @@ class TestVerdictSchema:
 
     def test_finding_required_fields(self) -> None:
         required = mod.VERDICT_SCHEMA["properties"]["findings"]["items"]["required"]
-        for field in ("severity", "category", "file", "line", "title", "description", "suggestion"):
+        for field in sorted(review_schema.REQUIRED_FINDING_FIELDS | {"suggestion"}):
             assert field in required
 
     def test_finding_optional_scope_enum(self) -> None:

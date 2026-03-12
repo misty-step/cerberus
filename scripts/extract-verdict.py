@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from lib.review_schema import EXTRACTION_VERDICT_SCHEMA
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Default extraction model — confirmed to support response_format: json_schema on OpenRouter.
@@ -33,55 +35,7 @@ _UNSUPPORTED_MODELS: frozenset[str] = frozenset({
 })
 
 # Verdict JSON schema for response_format: json_schema enforcement.
-VERDICT_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
-        "verdict": {"type": "string", "enum": ["PASS", "WARN", "FAIL", "SKIP"]},
-        "confidence": {"type": "number"},
-        "summary": {"type": "string"},
-        "findings": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "severity": {"type": "string", "enum": ["critical", "major", "minor", "info"]},
-                    "category": {"type": "string"},
-                    "file": {"type": "string"},
-                    "line": {"type": "integer"},
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "suggestion": {"type": "string"},
-                    "evidence": {"type": "string"},
-                    "scope": {"type": "string", "enum": ["diff", "defaults-change"]},
-                    "suggestion_verified": {"type": "boolean"},
-                },
-                "required": [
-                    "severity", "category", "file", "line",
-                    "title", "description", "suggestion",
-                ],
-                "additionalProperties": False,
-            },
-        },
-        "stats": {
-            "type": "object",
-            "properties": {
-                "files_reviewed": {"type": "integer"},
-                "files_with_issues": {"type": "integer"},
-                "critical": {"type": "integer"},
-                "major": {"type": "integer"},
-                "minor": {"type": "integer"},
-                "info": {"type": "integer"},
-            },
-            "required": [
-                "files_reviewed", "files_with_issues",
-                "critical", "major", "minor", "info",
-            ],
-            "additionalProperties": False,
-        },
-    },
-    "required": ["verdict", "confidence", "summary", "findings", "stats"],
-    "additionalProperties": False,
-}
+VERDICT_SCHEMA: dict = EXTRACTION_VERDICT_SCHEMA
 
 
 def _resolve_api_key() -> str:

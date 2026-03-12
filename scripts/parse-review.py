@@ -7,6 +7,16 @@ import tempfile
 from pathlib import Path
 from typing import NoReturn
 
+from lib.review_schema import (
+    DEPRECATED_FINDING_FIELDS,
+    DEPRECATED_FINDING_TITLE_PREFIXES,
+    FINDING_FIELDS,
+    REQUIRED_FINDING_FIELDS,
+    REQUIRED_ROOT_FIELDS,
+    ROOT_FIELDS,
+    VALID_FINDING_SCOPES,
+    VERDICT_VALUES,
+)
 from lib.runtime_errors import classify_api_error_text
 
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
@@ -23,38 +33,6 @@ EXIT_NO_JSON_BLOCK = 3  # no ```json block found (transient — caller may retry
 
 EVIDENCE_MAX_CHARS = 2000
 CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
-ROOT_FIELDS = frozenset({
-    "reviewer",
-    "perspective",
-    "verdict",
-    "confidence",
-    "summary",
-    "findings",
-    "stats",
-})
-REQUIRED_FINDING_FIELDS = frozenset({
-    "severity",
-    "category",
-    "file",
-    "line",
-    "title",
-    "description",
-})
-OPTIONAL_FINDING_FIELDS = frozenset({
-    "suggestion",
-    "evidence",
-    "scope",
-    "suggestion_verified",
-})
-FINDING_FIELDS = REQUIRED_FINDING_FIELDS | OPTIONAL_FINDING_FIELDS
-DEPRECATED_FINDING_FIELDS = frozenset({
-    "_unverified",
-    "_unverified_reason",
-    "_evidence_unverified",
-    "_evidence_reason",
-})
-DEPRECATED_FINDING_TITLE_PREFIXES = ("[unverified] ", "[speculative] ")
-VALID_FINDING_SCOPES = frozenset({"diff", "defaults-change"})
 
 # Findings are first-class review items. They may carry supporting fields like
 # evidence or suggestion_verified, but the parser should not invent a second
@@ -510,7 +488,7 @@ def validate(obj: dict) -> None:
     if "perspective" not in obj:
         obj["perspective"] = PERSPECTIVE
 
-    for key in ROOT_FIELDS:
+    for key in REQUIRED_ROOT_FIELDS:
         if key not in obj:
             fail(f"missing root field: {key}")
 
@@ -522,7 +500,7 @@ def validate(obj: dict) -> None:
         if not isinstance(obj[key], str):
             fail(f"{key} must be string")
 
-    if obj["verdict"] not in {"PASS", "WARN", "FAIL", "SKIP"}:
+    if obj["verdict"] not in VERDICT_VALUES:
         fail("invalid verdict")
 
     if not isinstance(obj["confidence"], (int, float)):
