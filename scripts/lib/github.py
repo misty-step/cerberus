@@ -9,7 +9,6 @@ import argparse
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from lib.github_platform import (
@@ -18,10 +17,6 @@ from lib.github_platform import (
     is_transient_error,
     run_gh,
 )
-
-# Back-compat surface for tests/callers that patch lib.github.time.sleep directly.
-_TIME_MODULE = time
-
 
 class CommentPermissionError(Exception):
     """Token lacks pull-requests: write permission."""

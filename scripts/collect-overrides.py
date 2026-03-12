@@ -9,7 +9,11 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from lib.github_platform import run_gh as platform_run_gh
+from lib.github_platform import (
+    GitHubPermissionError,
+    TransientGitHubError,
+    run_gh as platform_run_gh,
+)
 
 
 def run_gh(args: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
@@ -70,7 +74,13 @@ def fetch_actor_permissions(repo: str, actors: list[str]) -> dict[str, str]:
         endpoint = f"repos/{repo}/collaborators/{actor}/permission"
         try:
             payload = gh_json(["api", endpoint], timeout=10)
-        except Exception:
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            GitHubPermissionError,
+            TransientGitHubError,
+            ValueError,
+        ):
             permissions[actor] = ""
             continue
         permission = ""
@@ -137,7 +147,13 @@ def main() -> None:
 
     try:
         overrides, actor_permissions = collect_override_data(args.repo, args.pr)
-    except Exception as exc:
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        GitHubPermissionError,
+        TransientGitHubError,
+        ValueError,
+    ) as exc:
         print(f"::warning::Failed to fetch override comments: {exc}", file=sys.stderr)
 
     if args.github_output:

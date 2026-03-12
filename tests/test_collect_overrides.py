@@ -207,23 +207,27 @@ def test_fetch_actor_permissions_handles_expected_exceptions(monkeypatch) -> Non
     def fake_gh_json(args, *, timeout=20):
         endpoint = args[1]
         if "collaborators/alice/permission" in endpoint:
+            raise mod.GitHubPermissionError("missing permission")
+        if "collaborators/bob/permission" in endpoint:
+            raise mod.TransientGitHubError("temporary")
+        if "collaborators/chris/permission" in endpoint:
             raise subprocess.CalledProcessError(
                 returncode=1,
                 cmd=args,
                 output="",
                 stderr="boom",
             )
-        if "collaborators/bob/permission" in endpoint:
+        if "collaborators/drew/permission" in endpoint:
             raise subprocess.TimeoutExpired(cmd=args, timeout=10)
-        if "collaborators/chris/permission" in endpoint:
+        if "collaborators/erin/permission" in endpoint:
             raise ValueError("bad json")
         raise AssertionError(f"unexpected endpoint: {endpoint}")
 
     monkeypatch.setattr(mod, "gh_json", fake_gh_json)
 
-    permissions = mod.fetch_actor_permissions("owner/repo", ["alice", "bob", "chris"])
+    permissions = mod.fetch_actor_permissions("owner/repo", ["alice", "bob", "chris", "drew", "erin"])
 
-    assert permissions == {"alice": "", "bob": "", "chris": ""}
+    assert permissions == {"alice": "", "bob": "", "chris": "", "drew": "", "erin": ""}
 
 
 def test_append_multiline_output_regenerates_delimiter_on_collision(monkeypatch, tmp_path) -> None:
@@ -254,7 +258,7 @@ def test_main_writes_safe_empty_outputs_when_fetch_fails(monkeypatch, tmp_path, 
     output_file = tmp_path / "github_output.txt"
 
     def fail_collect(repo: str, pr_number: int):
-        raise RuntimeError("boom")
+        raise mod.TransientGitHubError("boom")
 
     monkeypatch.setattr(mod, "collect_override_data", fail_collect)
     monkeypatch.setattr(
