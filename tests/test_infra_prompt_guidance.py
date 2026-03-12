@@ -23,7 +23,7 @@ def test_correctness_agent_includes_infra_cross_check_guidance() -> None:
     assert "If you cannot quote exact code, omit the finding." in text
 
 
-def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
+def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> None:
     text = SECURITY_AGENT.read_text(encoding="utf-8")
 
     assert "Infrastructure Threat Model" in text
@@ -39,6 +39,17 @@ def test_security_agent_includes_dockerignore_and_non_root_guidance() -> None:
     assert "data/" in text
     assert "non-root `USER` directive" in text
     assert "omit the finding instead of inventing a weaker fallback label" in text
+    assert "GitHub Actions Supply-Chain" in text
+    assert "Treat `uses: owner/repo@<ref>` as a supply-chain check" in text
+    assert "mutable branch ref (`@master`, `@main`, `@develop`" in text
+    assert "report at least `minor`" in text
+    assert "Escalate to `major`" in text
+    assert "sibling `secrets:` block" in text
+    assert "AWS_ACCESS_KEY_ID" in text
+    assert "GITHUB_TOKEN" in text
+    assert "Acceptable refs are full pinned SHAs and semver tags" in text
+    assert "actions/checkout@v4" in text
+    assert "actions/*` or `github/*` actions on mutable branch refs" in text
 
 
 def test_parse_review_documents_findings_as_first_class_items() -> None:
