@@ -106,6 +106,7 @@ def content_tokens(*values: object) -> set[str]:
                 continue
             if len(token) > 5 and token.endswith("s"):
                 tokens.add(token[:-1])
+                tokens.add(token)
                 continue
             tokens.add(token)
     return tokens
@@ -121,6 +122,27 @@ def choose_line(current: object, candidate: object) -> int:
     return max(current_line, candidate_line, 0)
 
 
+def normalize_finding_file(value: object) -> str:
+    """Collapse no-file sentinels into a stable comparison key."""
+    text = str(value or "").strip()
+    if not text or text.upper() == "N/A":
+        return ""
+    return text
+
+
+def finding_match_title(finding: dict) -> str:
+    """Return the stable title used for equivalence checks."""
+    return norm_key(finding.get("_equivalence_title", finding.get("title")))
+
+
+def finding_match_tokens(finding: dict) -> set[str]:
+    """Return the stable token set used for equivalence checks."""
+    cached = finding.get("_equivalence_tokens")
+    if isinstance(cached, set):
+        return cached
+    return content_tokens(finding.get("title"), finding.get("description"))
+
+
 def is_equivalent_finding(existing: dict, finding: dict) -> bool:
     """Return True for conservative same-root-cause matches.
 
@@ -129,7 +151,7 @@ def is_equivalent_finding(existing: dict, finding: dict) -> bool:
     tokens. This keeps the dedupe path narrow enough to avoid collapsing
     unrelated comments that merely happen to mention the same module.
     """
-    if str(existing.get("file") or "").strip() != str(finding.get("file") or "").strip():
+    if normalize_finding_file(existing.get("file")) != normalize_finding_file(finding.get("file")):
         return False
     if norm_key(existing.get("category")) != norm_key(finding.get("category")):
         return False
@@ -139,8 +161,8 @@ def is_equivalent_finding(existing: dict, finding: dict) -> bool:
     if existing_line > 0 and candidate_line > 0 and abs(existing_line - candidate_line) > 3:
         return False
 
-    existing_title = norm_key(existing.get("title"))
-    candidate_title = norm_key(finding.get("title"))
+    existing_title = finding_match_title(existing)
+    candidate_title = finding_match_title(finding)
     if (
         existing_title
         and candidate_title
@@ -161,8 +183,8 @@ def is_equivalent_finding(existing: dict, finding: dict) -> bool:
     ):
         return True
 
-    existing_tokens = content_tokens(existing.get("title"), existing.get("description"))
-    candidate_tokens = content_tokens(finding.get("title"), finding.get("description"))
+    existing_tokens = finding_match_tokens(existing)
+    candidate_tokens = finding_match_tokens(finding)
     overlap = existing_tokens & candidate_tokens
     if len(overlap) < 2:
         return False
@@ -251,6 +273,8 @@ def group_findings(
                     "line": line,
                     "title": title,
                     "reviewers": {rname},
+                    "_equivalence_title": title,
+                    "_equivalence_tokens": content_tokens(title, finding.get("description")),
                     **{field: str(finding.get(field) or "").strip() for field in text_fields},
                 })
                 continue
@@ -268,6 +292,5 @@ def group_findings(
         reviewers = sorted(
             str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip()
         )
-        item["reviewers"] = reviewers
-        out.append(item)
+        out.append({key: value for key, value in item.items() if not key.startswith("_")} | {"reviewers": reviewers})
     return out

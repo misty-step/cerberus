@@ -278,6 +278,42 @@ class TestGroupFindings:
         out = group_findings(pairs)
         assert len(out) == 2
 
+    def test_fileless_blank_and_na_merge(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "api_error", "file": "", "line": 0, "title": "RATE_LIMIT"}]),
+            ("B", [{"severity": "minor", "category": "api_error", "file": "N/A", "line": 0, "title": "RATE_LIMIT"}]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 1
+        assert out[0]["reviewers"] == ["A", "B"]
+
+    def test_equivalence_uses_original_group_text(self):
+        pairs = [
+            ("A", [{
+                "severity": "major",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 40,
+                "title": "bounded cleanup context",
+            }]),
+            ("B", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 41,
+                "title": "bounded cleanup context live executor",
+            }]),
+            ("C", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 42,
+                "title": "live executor reset",
+            }]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 2
+
 
 class TestAsInt:
     def test_none(self):
@@ -330,6 +366,10 @@ class TestSemanticMergeHelpers:
         assert "cancel" in content_tokens("canceled")
         assert "restore" in content_tokens("restored")
 
+    def test_content_tokens_keep_plain_s_word_for_plural_overlap(self):
+        assert "process" in content_tokens("process")
+        assert "process" in content_tokens("processes")
+
     def test_is_equivalent_finding_requires_same_file_category_and_overlap(self):
         first = {
             "file": "src/a.py",
@@ -344,6 +384,23 @@ class TestSemanticMergeHelpers:
             "category": "bug",
             "title": "Run cleanup with a live context",
             "description": "cleanup should not reuse the canceled context",
+        }
+        assert is_equivalent_finding(first, second) is True
+
+    def test_is_equivalent_finding_treats_blank_and_na_as_same_file(self):
+        first = {
+            "file": "",
+            "line": 0,
+            "category": "api_error",
+            "title": "RATE_LIMIT",
+            "description": "provider rejected the request",
+        }
+        second = {
+            "file": "N/A",
+            "line": 0,
+            "category": "api_error",
+            "title": "RATE_LIMIT",
+            "description": "provider rejected the request",
         }
         assert is_equivalent_finding(first, second) is True
 
