@@ -100,4 +100,3 @@ def create_pr_review(
     )
     data = json.loads(result.stdout or "{}")
     return data if isinstance(data, dict) else {}
-

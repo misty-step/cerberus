@@ -20,7 +20,7 @@ def test_verdict_action_uses_python_override_collection() -> None:
     assert "scripts/collect-overrides.py" in content
     assert "--github-output \"$GITHUB_OUTPUT\"" in content
     assert "OVERRIDES=$(gh api" not in content
-    assert "user.get(\"login\")" in collector
+    assert "platform_run_gh" in collector
 
 
 def test_verdict_action_uses_shared_upsert() -> None:
@@ -132,6 +132,7 @@ def test_permission_help_is_present_in_shared_module() -> None:
     content = github_module.read_text()
 
     assert "pull-requests: write" in content
+    assert "github_platform" in content
 
 
 def test_verdict_action_avoids_heredoc_in_run_block() -> None:
@@ -210,3 +211,10 @@ def test_review_prompt_references_diff_file_placeholder() -> None:
 
     assert "{{DIFF_FILE}}" in prompt_content
     assert "DIFF_FILE" in render_prompt_content
+
+
+def test_review_action_writes_review_run_contract() -> None:
+    content = ACTION_FILE.read_text()
+
+    assert "scripts/bootstrap-review-run.py" in content
+    assert "CERBERUS_REVIEW_RUN" in content

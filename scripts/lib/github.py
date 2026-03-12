@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import subprocess
 import sys
-import time
 from pathlib import Path
 
+from lib.github_platform import (
+    GitHubPermissionError as PlatformPermissionError,
+    TransientGitHubError as PlatformTransientGitHubError,
+    is_transient_error,
+    run_gh,
+)
 
 class CommentPermissionError(Exception):
     """Token lacks pull-requests: write permission."""
@@ -24,22 +28,7 @@ class TransientGitHubError(Exception):
 
 def _is_transient_error(stderr: str) -> bool:
     """Check if error is a transient GitHub API or network error."""
-    transient_codes = ("502", "503", "504")
-    lower_stderr = stderr.lower()
-    # Handle both gh CLI format "(http 503)" and raw "HTTP 503" formats
-    if any(
-        f"(http {code})" in lower_stderr or f"http {code}" in lower_stderr
-        for code in transient_codes
-    ):
-        return True
-
-    transient_network_markers = (
-        "i/o timeout",
-        "connection timed out",
-        "connection refused",
-        "connection reset",
-    )
-    return any(marker in lower_stderr for marker in transient_network_markers)
+    return is_transient_error(stderr)
 
 
 def _run_gh(
@@ -65,54 +54,17 @@ def _run_gh(
         TransientGitHubError: GitHub API returned 5xx after all retries
         subprocess.CalledProcessError: Other gh CLI failures
     """
-    for attempt in range(max_retries):
-        result = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, check=False
+    try:
+        return run_gh(
+            args,
+            check=check,
+            max_retries=max_retries,
+            base_delay=base_delay,
         )
-
-        if result.returncode == 0:
-            return result
-
-        stderr = (result.stderr or "").lower()
-
-        # Check for permission errors (don't retry these)
-        if any(s in stderr for s in ("403", "resource not accessible", "insufficient")):
-            raise CommentPermissionError(
-                "Unable to post PR comment: token lacks pull-requests: write permission.\n"
-                "Add this to your workflow:\n"
-                "permissions:\n"
-                "  contents: read\n"
-                "  pull-requests: write"
-            )
-
-        # Check for transient errors (5xx) and retry
-        if _is_transient_error(result.stderr or ""):
-            if attempt < max_retries - 1:
-                # Exponential backoff with jitter: 1s, 2s, 4s + random jitter
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                print(
-                    f"::warning::GitHub API error (attempt {attempt + 1}/{max_retries}), "
-                    f"retrying in {delay:.1f}s...",
-                    file=sys.stderr,
-                )
-                time.sleep(delay)
-                continue
-            else:
-                # Exhausted retries - raise as transient error
-                raise TransientGitHubError(
-                    f"GitHub API returned transient error after {max_retries} attempts: "
-                    f"{result.stderr}"
-                )
-
-        # Non-transient error - fail immediately
-        if check:
-            raise subprocess.CalledProcessError(
-                result.returncode, result.args, result.stdout, result.stderr
-            )
-        return result
-
-    # The loop must either return or raise. This code should be unreachable.
-    raise RuntimeError("_run_gh retry loop exited unexpectedly")
+    except PlatformPermissionError as exc:
+        raise CommentPermissionError(str(exc)) from exc
+    except PlatformTransientGitHubError as exc:
+        raise TransientGitHubError(str(exc)) from exc
 
 
 def fetch_comments(
@@ -149,7 +101,6 @@ def fetch_comments(
             break
         comments.extend([c for c in payload if isinstance(c, dict)])
 
-        # Early exit: check if marker found in this page
         if stop_on_marker is not None:
             for comment in payload:
                 if isinstance(comment, dict) and stop_on_marker in str(comment.get("body", "")):

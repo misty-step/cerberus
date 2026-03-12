@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .prompt_sanitize import escape_untrusted_xml
+from .review_run_contract import load_review_run_contract_from_env
 
 MAX_PROJECT_CONTEXT_CHARS = 4000
 TOKEN_RE = re.compile(r"\{\{[A-Z0-9_]+\}\}")
@@ -68,6 +69,10 @@ def _load_pr_context_from_json(path: Path) -> PullRequestContext:
 
 def load_pr_context(env: Mapping[str, str]) -> PullRequestContext:
     """Load pr context."""
+    contract = load_review_run_contract_from_env(env)
+    if contract is not None:
+        return _load_pr_context_from_json(Path(contract.pr_context_file))
+
     pr_context_file = env.get("GH_PR_CONTEXT", "")
     if pr_context_file:
         p = Path(pr_context_file)

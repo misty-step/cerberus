@@ -109,3 +109,12 @@
 - **scope changes**: Added a committed reviewer-evidence walkthrough because the lane touched only backend review semantics and needed a durable, reviewer-friendly proof artifact instead of video.
 - **blockers**: Running full pytest and coverage commands in parallel caused a false failure because both suites write `/tmp/verdict.json`; rerunning the gates sequentially confirmed the branch was healthy.
 - **pattern**: Aggregation-only severity fixes should recompute reviewer stats in the same pass. Otherwise reporting and rendering drift even when the promoted finding itself is correct.
+
+## 2026-03-12 — Issue #323: review execution boundary
+
+- **issue**: #323
+- **predicted effort**: p1 (large foundational lane)
+- **actual effort**: ~4 hours
+- **scope changes**: Shipped the smallest viable boundary cut: a provider-agnostic review-run contract, GitHub bootstrap script, shared `github_platform` transport, ADR, focused guard tests, and issue shaping/design work on the parent epic itself.
+- **blockers**: `make validate` initially failed only in `ruff` because a compatibility import kept for the retry tests looked unused after the transport refactor; the fix was to make the back-compat surface explicit instead of deleting it and breaking callers/tests.
+- **pattern**: Boundary refactors in mature codepaths go faster when the new deep module is introduced underneath stable compatibility seams. For Cerberus, preserving `lib.github` and `collect-overrides.py` wrapper surfaces while moving transport underneath `github_platform` kept the diff small and the tests credible.

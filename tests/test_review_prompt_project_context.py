@@ -172,6 +172,38 @@ def test_load_pr_context_from_json_errors_on_non_object_json(tmp_path: Path) -> 
         _load_pr_context_from_json(p)
 
 
+def test_load_pr_context_prefers_review_run_contract(tmp_path: Path) -> None:
+    from lib.review_prompt import load_pr_context
+    from lib.review_run_contract import ReviewRunContract, write_review_run_contract
+
+    pr_context = tmp_path / "pr-context.json"
+    pr_context.write_text(
+        '{"title":"t","author":{"login":"alice"},"headRefName":"feat","baseRefName":"master","body":"b"}',
+        encoding="utf-8",
+    )
+    contract_path = tmp_path / "review-run.json"
+    write_review_run_contract(
+        contract_path,
+        ReviewRunContract(
+            repository="misty-step/cerberus",
+            pr_number=323,
+            diff_file="/tmp/pr.diff",
+            pr_context_file=str(pr_context),
+            workspace_root="/repo",
+            temp_dir="/tmp/cerberus",
+        ),
+    )
+
+    context = load_pr_context({"CERBERUS_REVIEW_RUN": str(contract_path)})
+    assert context == PullRequestContext(
+        title="t",
+        author="alice",
+        head_branch="feat",
+        base_branch="master",
+        body="b",
+    )
+
+
 def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     output_path = tmp_path / "prompt.md"
