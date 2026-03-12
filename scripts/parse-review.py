@@ -40,6 +40,15 @@ CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 # Deprecated marker variants are invalid input, not aliases to normalize.
 
 
+def _diagnostics_envelope(obj: dict) -> dict:
+    diagnostics = obj.get("_diagnostics")
+    if isinstance(diagnostics, dict):
+        return diagnostics
+    diagnostics = {}
+    obj["_diagnostics"] = diagnostics
+    return diagnostics
+
+
 def resolve_reviewer(cli_reviewer: str | None) -> str:
     """Resolve reviewer."""
     reviewer = cli_reviewer or os.environ.get("REVIEWER_NAME") or "UNKNOWN"
@@ -570,7 +579,7 @@ def validate_and_correct_stats(obj: dict) -> None:
     """Validate LLM-reported stats against actual findings; correct if mismatched.
 
     Replaces hallucinated severity counts with programmatically counted values.
-    Adds _stats_discrepancy to the output when a mismatch is detected.
+    Records stats-discrepancy metadata in the pipeline diagnostics envelope.
     """
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
@@ -617,7 +626,7 @@ def validate_and_correct_stats(obj: dict) -> None:
         stats["minor"] = actual_minor
         stats["info"] = actual_info
         stats["files_with_issues"] = actual_files_with_issues
-        obj["_stats_discrepancy"] = {
+        _diagnostics_envelope(obj)["stats_discrepancy"] = {
             "reported": reported,
             "actual": actual,
             "discrepancy": True,
@@ -699,17 +708,19 @@ _RELEASE_CLAIM_PATTERNS = [
 def annotate_stale_knowledge_findings(obj: dict) -> None:
     """Annotate findings that appear to assert stale training-data knowledge.
 
-    Findings are tagged with [stale-knowledge] and _stale_knowledge_annotated
-    for transparency, but their severity is preserved — a potentially-hallucinated
-    version claim is still a finding that a human should see and judge.
-    Demoting to info was burying real issues when the model happened to mention
-    a version number alongside a legitimate finding.
+    Findings are tagged with [stale-knowledge] for transparency while the
+    diagnostics envelope tracks which entries were parser-annotated. Severity is
+    preserved — a potentially-hallucinated version claim is still a finding that
+    a human should see and judge. Demoting to info was burying real issues when
+    the model happened to mention a version number alongside a legitimate
+    finding.
     """
     findings = obj.get("findings", [])
     if not isinstance(findings, list):
         return
+    annotations: list[dict[str, object]] = []
 
-    for finding in findings:
+    for idx, finding in enumerate(findings):
         if not isinstance(finding, dict):
             continue
 
@@ -742,10 +753,16 @@ def annotate_stale_knowledge_findings(obj: dict) -> None:
         if not should_flag:
             continue
 
-        finding["_stale_knowledge_annotated"] = True
         title = str(finding.get("title", ""))
         if not title.startswith("[stale-knowledge] "):
             finding["title"] = f"[stale-knowledge] {title}"
+        annotations.append({
+            "finding_index": idx,
+            "title": finding["title"],
+        })
+
+    if annotations:
+        _diagnostics_envelope(obj)["stale_knowledge_annotations"] = annotations
 
 
 def _unwrap_fenced_code_block(text: str) -> str:

@@ -15,7 +15,7 @@ REQUIRED_ROOT_FIELDS = (
     "findings",
     "stats",
 )
-PIPELINE_ROOT_FIELDS = frozenset({"_extraction_usage"})
+PIPELINE_ROOT_FIELDS = frozenset({"_diagnostics", "_extraction_usage"})
 ROOT_FIELDS = frozenset(REQUIRED_ROOT_FIELDS) | PIPELINE_ROOT_FIELDS
 REQUIRED_FINDING_FIELDS = frozenset({
     "severity",

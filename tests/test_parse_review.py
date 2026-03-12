@@ -1055,7 +1055,7 @@ class TestStaleKnowledgeAnnotation:
         assert data["verdict"] == "FAIL"
 
     def test_annotation_marker_is_set(self):
-        """Annotated findings have _stale_knowledge_annotated flag."""
+        """Annotated findings are tracked in pipeline diagnostics, not findings."""
         review = json.dumps({
             "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
             "confidence": 0.95, "summary": "Bad version",
@@ -1074,7 +1074,10 @@ class TestStaleKnowledgeAnnotation:
         code, out, _ = run_parse(f"```json\n{review}\n```")
         assert code == 0
         data = json.loads(out)
-        assert data["findings"][0].get("_stale_knowledge_annotated") is True
+        assert "_stale_knowledge_annotated" not in data["findings"][0]
+        annotations = data["_diagnostics"]["stale_knowledge_annotations"]
+        assert annotations[0]["finding_index"] == 0
+        assert annotations[0]["title"].startswith("[stale-knowledge] ")
 
     def test_stats_unchanged_after_annotation(self):
         """Stats reflect original severity — annotation does not change the severity counts."""
@@ -1206,7 +1209,8 @@ class TestStaleKnowledgeAnnotation:
         assert code == 0
         data = json.loads(out)
         assert data["findings"][0]["severity"] == "major"
-        assert data["findings"][0].get("_stale_knowledge_annotated") is True
+        assert "_stale_knowledge_annotated" not in data["findings"][0]
+        assert data["_diagnostics"]["stale_knowledge_annotations"][0]["finding_index"] == 0
 
     def test_normalized_category_variants_all_protect(self):
         """All separator variants of version-conflict category protect findings."""
@@ -2493,6 +2497,7 @@ class TestStatsValidation:
         assert code == 0
         data = json.loads(out)
         assert "_stats_discrepancy" not in data
+        assert "_diagnostics" not in data or "stats_discrepancy" not in data["_diagnostics"]
 
     def test_llm_over_reports_corrected(self):
         """When LLM reports more issues than actually exist, stats are corrected."""
@@ -2518,9 +2523,10 @@ class TestStatsValidation:
         assert data["stats"]["major"] == 1
         assert data["stats"]["minor"] == 0
         assert data["stats"]["info"] == 0
-        assert data["_stats_discrepancy"]["discrepancy"] is True
-        assert data["_stats_discrepancy"]["reported"]["critical"] == 2
-        assert data["_stats_discrepancy"]["actual"]["critical"] == 0
+        discrepancy = data["_diagnostics"]["stats_discrepancy"]
+        assert discrepancy["discrepancy"] is True
+        assert discrepancy["reported"]["critical"] == 2
+        assert discrepancy["actual"]["critical"] == 0
 
     def test_llm_under_reports_corrected(self):
         """When LLM reports fewer issues than actually exist, stats are corrected."""
@@ -2555,9 +2561,10 @@ class TestStatsValidation:
         data = json.loads(out)
         assert data["stats"]["major"] == 1
         assert data["stats"]["minor"] == 1
-        assert data["_stats_discrepancy"]["discrepancy"] is True
-        assert data["_stats_discrepancy"]["reported"]["major"] == 0
-        assert data["_stats_discrepancy"]["actual"]["major"] == 1
+        discrepancy = data["_diagnostics"]["stats_discrepancy"]
+        assert discrepancy["discrepancy"] is True
+        assert discrepancy["reported"]["major"] == 0
+        assert discrepancy["actual"]["major"] == 1
 
     def test_zero_findings_stats_zeroed(self):
         """When there are zero findings, all severity stats should be zero."""
@@ -2576,7 +2583,7 @@ class TestStatsValidation:
         assert data["stats"]["minor"] == 0
         assert data["stats"]["info"] == 0
         assert data["stats"]["files_with_issues"] == 0
-        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_diagnostics"]["stats_discrepancy"]["discrepancy"] is True
 
     def test_files_with_issues_corrected(self):
         """files_with_issues is corrected to match unique files in findings."""
@@ -2610,7 +2617,7 @@ class TestStatsValidation:
         assert code == 0
         data = json.loads(out)
         assert data["stats"]["files_with_issues"] == 1
-        assert data["_stats_discrepancy"]["discrepancy"] is True
+        assert data["_diagnostics"]["stats_discrepancy"]["discrepancy"] is True
 
     def test_discrepancy_logged_to_stderr(self):
         """Stats discrepancy is logged to stderr."""
