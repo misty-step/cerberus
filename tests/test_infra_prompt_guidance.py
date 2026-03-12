@@ -42,7 +42,8 @@ def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> N
     assert "GitHub Actions Supply-Chain" in text
     assert "Treat `uses: owner/repo@<ref>` as a supply-chain check" in text
     assert "mutable branch ref (`@master`, `@main`, `@develop`, or similar)" in text
-    assert "floating major-only tag such as `@v1`/`@v2`" in text
+    assert "partial semver tag that is not a full three-part release" in text
+    assert "`@v1`, `@v2`, or `@v1.2`" in text
     assert "report at least `minor`" in text
     assert "Escalate to `major`" in text
     assert "including via sibling `env:`, `with:`, or `secrets:` blocks" in text
