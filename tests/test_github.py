@@ -1,7 +1,10 @@
 """Tests for lib.github PR comment upsert."""
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -193,6 +196,21 @@ def test_fetch_issue_comments_uses_shared_transport(monkeypatch) -> None:
     comments = fetch_issue_comments("owner/repo", 42, per_page=100, max_pages=1)
     assert comments == [{"id": 1, "body": "x"}]
     assert calls == [["api", "repos/owner/repo/issues/42/comments?per_page=100&page=1"]]
+
+
+def test_github_helper_runs_as_standalone_script() -> None:
+    script = Path(__file__).resolve().parent.parent / "scripts" / "lib" / "github.py"
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        capture_output=True,
+        env=env,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert "usage:" in result.stdout.lower()
 
 def test_fetch_comments_paginates(monkeypatch):
     import json

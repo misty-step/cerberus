@@ -6,17 +6,29 @@ Used by per-reviewer comments, verdict, and triage diagnosis.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from lib.github_platform import (
-    GitHubPermissionError as PlatformPermissionError,
-    TransientGitHubError as PlatformTransientGitHubError,
-    is_transient_error,
-    run_gh,
-)
+
+def _ensure_scripts_import_root() -> None:
+    """Allow direct execution from scripts/lib without caller PYTHONPATH tweaks."""
+    if __package__ not in (None, ""):
+        return
+    scripts_dir = Path(__file__).resolve().parent.parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+
+_ensure_scripts_import_root()
+
+_github_platform = importlib.import_module("lib.github_platform")
+PlatformPermissionError = _github_platform.GitHubPermissionError
+PlatformTransientGitHubError = _github_platform.TransientGitHubError
+is_transient_error = _github_platform.is_transient_error
+run_gh = _github_platform.run_gh
 
 class CommentPermissionError(Exception):
     """Token lacks pull-requests: write permission."""
