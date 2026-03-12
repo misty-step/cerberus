@@ -774,6 +774,30 @@ class TestEvidenceNormalization:
         assert "evidence" not in data["findings"][0]
         assert data["verdict"] == "WARN"
 
+    def test_deprecated_marker_fields_fail_validation(self):
+        """Deprecated finding marker fields are rejected at validation time."""
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "[unverified] Missing guard",
+                "description": "desc",
+                "suggestion": "fix",
+                "_unverified": True,
+                "_unverified_reason": "behavioral-uncertainty",
+                "_evidence_unverified": True,
+                "_evidence_reason": "legacy",
+            },
+            verdict="WARN",
+        )
+        code, out, err = run_parse(self._wrap_json(review))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "deprecated field" in err
+
     def test_evidence_truncated_at_limit(self):
         """Evidence longer than EVIDENCE_MAX_CHARS is truncated with ellipsis."""
         long_val = "a" * 2100
@@ -823,8 +847,8 @@ class TestEvidenceNormalization:
         assert "y = 2" in evidence
         assert "z = 3" in evidence
 
-    def test_non_string_evidence_ignored(self):
-        """Non-string evidence (int, null) is left unchanged — not crashed on."""
+    def test_non_string_evidence_fails_validation(self):
+        """Evidence must match the documented string schema."""
         review = self._review(
             {
                 "severity": "major",
@@ -837,10 +861,11 @@ class TestEvidenceNormalization:
                 "suggestion": "fix",
             }
         )
-        code, out, _ = run_parse(self._wrap_json(review))
-        assert code == 0
+        code, out, err = run_parse(self._wrap_json(review))
+        assert code == 1
         data = json.loads(out)
-        assert data["findings"][0]["evidence"] == 42
+        assert data["verdict"] == "SKIP"
+        assert "evidence must be string" in err
 
     def test_fenced_code_block_unwrapped(self):
         """Fenced code blocks in evidence are unwrapped to bare content."""
@@ -863,6 +888,50 @@ class TestEvidenceNormalization:
         assert "```" not in evidence
         assert "x = 1" in evidence
         assert "y = 2" in evidence
+
+    def test_deprecated_title_prefix_fails_validation(self):
+        """Deprecated title prefixes are rejected instead of normalized away."""
+        findings = [
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "[unverified] First issue",
+                "description": "desc",
+                "suggestion": "fix",
+            },
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 2,
+                "title": "[unverified] Second issue",
+                "description": "desc",
+                "suggestion": "fix",
+            },
+        ]
+        review = {
+            "reviewer": "APOLLO",
+            "perspective": "correctness",
+            "verdict": "WARN",
+            "confidence": 0.95,
+            "summary": "Deprecated title prefix",
+            "findings": findings,
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 2,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+        code, out, err = run_parse(self._wrap_json(review))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "deprecated title prefix" in err
 
 
 class TestStaleKnowledgeAnnotation:
@@ -1196,8 +1265,8 @@ def test_fallback_default_reviewer():
     assert data["reviewer"] == "UNKNOWN"
 
 
-def test_string_line_coerced_to_int():
-    """String line numbers (e.g. "42") are coerced to int."""
+def test_string_line_rejected():
+    """Line numbers must already be integers in the review JSON."""
     review = json.dumps({
         "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
         "confidence": 0.8, "summary": "ok",
@@ -1208,11 +1277,11 @@ def test_string_line_coerced_to_int():
         "stats": {"files_reviewed": 1, "files_with_issues": 1,
                   "critical": 0, "major": 0, "minor": 0, "info": 1},
     })
-    code, out, _ = run_parse(f"```json\n{review}\n```")
-    assert code == 0
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    assert code == 1
     data = json.loads(out)
-    assert data["findings"][0]["line"] == 42
-    assert isinstance(data["findings"][0]["line"], int)
+    assert data["verdict"] == "SKIP"
+    assert "line must be int" in err
 
 
 def test_non_numeric_line_produces_fallback():
@@ -1227,11 +1296,51 @@ def test_non_numeric_line_produces_fallback():
         "stats": {"files_reviewed": 1, "files_with_issues": 1,
                   "critical": 0, "major": 0, "minor": 0, "info": 1},
     })
-    code, out, _ = run_parse(f"```json\n{review}\n```")
+    code, out, err = run_parse(f"```json\n{review}\n```")
     assert code == 1
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
+    assert "line must be int" in err
+
+
+def test_unexpected_finding_field_fails_validation():
+    """Findings must not carry undeclared fields."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok",
+        "findings": [{
+            "severity": "info", "category": "style", "file": "a.py",
+            "line": 42, "title": "t", "description": "d", "suggestion": "s",
+            "extra": "noise",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    assert code == 1
+    data = json.loads(out)
+    assert data["verdict"] == "SKIP"
+    assert "unexpected field" in err
+
+
+def test_unexpected_root_field_fails_validation():
+    """Root JSON must stay within the documented schema."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok", "notes": "extra",
+        "findings": [{
+            "severity": "info", "category": "style", "file": "a.py",
+            "line": 42, "title": "t", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    assert code == 1
+    data = json.loads(out)
+    assert data["verdict"] == "SKIP"
+    assert "unexpected root field" in err
 
 
 def test_invalid_finding_severity():
@@ -2590,6 +2699,155 @@ class TestDirectJsonInput:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "PASS"
+
+    def test_bare_json_with_extraction_usage_preserved(self):
+        """Structured extraction metadata is valid pipeline root data."""
+        verdict = self._make_verdict(
+            _extraction_usage={"prompt_tokens": 123, "completion_tokens": 45},
+        )
+        code, out, _ = run_parse(json.dumps(verdict))
+        assert code == 0
+        data = json.loads(out)
+        assert data["_extraction_usage"]["prompt_tokens"] == 123
+        assert data["_extraction_usage"]["completion_tokens"] == 45
+
+    def test_bare_json_rejects_non_string_reviewer(self):
+        """Structured-output path still enforces string root fields."""
+        verdict = self._make_verdict(reviewer=123)
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "reviewer must be string" in err
+
+    def test_bare_json_rejects_invalid_verdict(self):
+        """Structured-output path rejects unsupported verdict values."""
+        verdict = self._make_verdict(verdict="MAYBE")
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "invalid verdict" in err
+
+    def test_bare_json_rejects_non_string_finding_field(self):
+        """Finding text fields must already be strings on direct JSON input."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": 7,
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "field must be string: category" in err
+
+    def test_bare_json_rejects_non_string_scope(self):
+        """Optional scope must be a string when present."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "scope": 7,
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "scope must be string" in err
+
+    def test_bare_json_rejects_invalid_scope(self):
+        """Optional scope stays on the exact enum boundary."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "scope": "repo",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "invalid scope" in err
+
+    def test_bare_json_rejects_non_boolean_suggestion_verified(self):
+        """suggestion_verified remains strictly boolean."""
+        verdict = self._make_verdict(
+            findings=[{
+                "severity": "minor",
+                "category": "correctness",
+                "file": "src/main.py",
+                "line": 42,
+                "title": "Off-by-one",
+                "description": "Loop bound is wrong.",
+                "suggestion": "Use < not <=.",
+                "suggestion_verified": "yes",
+            }],
+            stats={
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 0,
+                "minor": 1,
+                "info": 0,
+            },
+        )
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "suggestion_verified must be boolean" in err
+
+    def test_bare_json_rejects_non_object_stats(self):
+        """Structured-output path still requires stats to be an object."""
+        verdict = self._make_verdict(stats=[])
+        code, out, err = run_parse(json.dumps(verdict))
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert "stats must be object" in err
 
     def test_fenced_json_still_works(self):
         """Existing fenced-block path is not broken by the new direct path."""

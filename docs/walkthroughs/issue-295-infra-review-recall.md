@@ -6,7 +6,7 @@ This lane hardens reviewer guidance for infrastructure-heavy PRs without changin
 
 - `trace` to cross-check deployment/config diffs against unchanged startup file reads and format-sensitive configuration usage.
 - `guard` to treat Dockerfile and `.dockerignore` changes as first-class security surfaces, including secret bake-in risk and missing non-root `USER`.
-- `parse-review.py` to document the intended boundary for `[unverified]` / `suggestion_verified`: behavioral uncertainty only, not direct static observations.
+- `parse-review.py` to document that findings are first-class review items and that evidence supports them without creating a second finding category.
 
 ## Before
 
@@ -17,7 +17,7 @@ This lane hardens reviewer guidance for infrastructure-heavy PRs without changin
 ## After
 
 - `trace` now runs an infrastructure configuration cross-check when deployment/config files change and treats cross-file startup breakage as in scope.
-- `guard` now runs an infrastructure threat-model pass for Dockerfile / `.dockerignore` changes and forbids `[unverified]` on directly-readable static evidence.
+- `guard` now runs an infrastructure threat-model pass for Dockerfile / `.dockerignore` changes and requires direct quoted evidence for static findings.
 - `parse-review.py` now documents the static-vs-behavioral boundary so prompt guidance and parser behavior stay aligned.
 - Regression tests fail if that guidance disappears.
 

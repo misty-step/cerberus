@@ -65,3 +65,7 @@ Cloud repo: `https://github.com/misty-step/cerberus-cloud`.
   - Hypothesis log plus experiment backlog tied to concrete misses.
 - `P1` Reviewer context retrieval
   - Pull prior review comments, author fix summaries, and linked acceptance criteria into reviewer context by default.
+- `P1` Terminology and contract alignment
+  - Keep one canonical vocabulary for review objects in `docs/TERMINOLOGY.md`.
+  - Avoid separate "verified" vs "unverified" finding types; findings stay first-class and are supported by evidence, citations, scope, and confidence.
+  - Align prompts, docs, issues, walkthroughs, and PR language when terminology changes.

@@ -130,11 +130,15 @@ Override: `/cerberus override sha=<sha>` comment on PR with reason. SHA must mat
 Every reviewer must end with a JSON block containing: `reviewer`, `perspective`, `verdict`, `confidence` (0-1), `summary`, `findings[]` (each with severity/category/file/line/title/description/suggestion), `stats` (files_reviewed, files_with_issues, critical, major, minor, info).
 
 Optional finding fields:
-- `evidence` (string) — exact code quote backing the claim (parser may downgrade unverified findings to `info`)
-- `scope` (string) — set to `defaults-change` when citing unchanged code that became newly-defaulted
-- `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative (parser downgrades `false` findings to `info`)
+- `evidence` (string) — exact code quote backing the claim
+- `scope` (string) — `diff` or `defaults-change`
+- `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative
+
+Findings are first-class review items. Evidence, citations, and scope support the finding; Cerberus should not model separate "verified" vs "unverified" finding types.
+Unsupported reviewer root or finding fields fail validation. Deprecated finding-marker fields and title prefixes such as `[unverified]` or `[speculative]` are invalid input, not compatibility aliases.
 
 Optional fields added by the pipeline:
+- `_extraction_usage` (object) — structured-extraction token usage, preserved for downstream cost reporting.
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
 - `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Stored in fallback/partial verdicts for debugging via workflow logs/artifacts (not rendered in PR comments).
 

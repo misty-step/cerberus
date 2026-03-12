@@ -28,13 +28,6 @@ def render_findings(findings: list[dict], *, server: str, repo: str, sha: str) -
         desc = str(f.get("description", "") or "")
         sugg = str(f.get("suggestion", "") or "")
         evidence = f.get("evidence", "")
-        unverified = bool(f.get("_evidence_unverified"))
-        reason = f.get("_evidence_reason", "")
-
-        meta = ""
-        if unverified:
-            meta = f" _(unverified: {reason})_" if reason else " _(unverified)_"
-
         location = location_link(
             file,
             line,
@@ -43,7 +36,7 @@ def render_findings(findings: list[dict], *, server: str, repo: str, sha: str) -
             sha=sha,
             missing_label="unknown",
         )
-        lines.append(f"- {emoji} {location} — {title}{meta}")
+        lines.append(f"- {emoji} {location} — {title}")
 
         details: list[str] = []
         if desc:

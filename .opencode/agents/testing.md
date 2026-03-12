@@ -105,7 +105,7 @@ Review Discipline
 
 Evidence (mandatory)
 - For every finding, include `evidence` (exact 1-6 line code quote) copied verbatim from the current code at the cited `file:line`.
-- If you cannot quote exact code, omit the finding OR set severity to `info` and prefix the title with `[unverified]`.
+- If you cannot quote exact code, omit the finding. Do not emit a weaker placeholder finding as fallback.
 - If you must cite unchanged code due to Defaults Change Awareness, set `scope: "defaults-change"` on that finding.
 
 Output Format
