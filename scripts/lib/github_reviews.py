@@ -6,11 +6,9 @@ create a single PR review with inline comments.
 
 from __future__ import annotations
 
-import json
-import tempfile
 from dataclasses import dataclass
 
-from lib import github as gh
+from lib import github_platform as platform
 
 
 @dataclass(frozen=True)
@@ -23,9 +21,7 @@ class ReviewComment:
 
 def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
     """List pr reviews."""
-    result = gh._run_gh(["api", f"repos/{repo}/pulls/{pr_number}/reviews?per_page=100"])
-    data = json.loads(result.stdout)
-    return data if isinstance(data, list) else []
+    return platform.list_pr_reviews(repo, pr_number)
 
 
 def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
@@ -42,26 +38,8 @@ def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
 
 
 def list_pr_files(repo: str, pr_number: int) -> list[dict]:
-    # --paginate without --slurp does not produce valid JSON.
     """List pr files."""
-    result = gh._run_gh(
-        [
-            "api",
-            "--paginate",
-            "--slurp",
-            f"repos/{repo}/pulls/{pr_number}/files?per_page=100",
-        ]
-    )
-    pages = json.loads(result.stdout)
-    if not isinstance(pages, list):
-        return []
-    files: list[dict] = []
-    for page in pages:
-        if isinstance(page, list):
-            for item in page:
-                if isinstance(item, dict):
-                    files.append(item)
-    return files
+    return platform.list_pr_files(repo, pr_number)
 
 
 def create_pr_review(
@@ -73,30 +51,12 @@ def create_pr_review(
     comments: list[ReviewComment],
 ) -> dict:
     """Create pr review."""
-    payload: dict[str, object] = {
-        "event": "COMMENT",
-        "commit_id": commit_id,
-        "body": body,
-    }
-    if comments:
-        payload["comments"] = [
+    return platform.create_pr_review(
+        repo=repo,
+        pr_number=pr_number,
+        commit_id=commit_id,
+        body=body,
+        comments=[
             {"path": c.path, "position": c.position, "body": c.body} for c in comments
-        ]
-
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
-        json.dump(payload, handle)
-        handle.flush()
-        tmp_path = handle.name
-
-    result = gh._run_gh(
-        [
-            "api",
-            "-X",
-            "POST",
-            f"repos/{repo}/pulls/{pr_number}/reviews",
-            "--input",
-            tmp_path,
-        ]
+        ],
     )
-    data = json.loads(result.stdout or "{}")
-    return data if isinstance(data, dict) else {}

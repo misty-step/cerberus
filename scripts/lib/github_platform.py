@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -15,6 +17,9 @@ class GitHubPermissionError(Exception):
 
 class TransientGitHubError(Exception):
     """GitHub API returned a transient error after retries."""
+
+
+DEFAULT_GH_TIMEOUT = 20
 
 
 def is_transient_error(stderr: str) -> bool:
@@ -118,19 +123,148 @@ def fetch_issue_comments(
     number: int,
     *,
     per_page: int = 100,
-    max_pages: int = 20,
+    max_pages: int | None = 20,
+    stop_on_marker: str | None = None,
 ) -> list[dict]:
     """Fetch issue comments for a PR or issue using the shared transport."""
 
     comments: list[dict] = []
-    for page in range(1, max_pages + 1):
+    page = 1
+    while max_pages is None or page <= max_pages:
         endpoint = f"repos/{repo}/issues/{number}/comments?per_page={per_page}&page={page}"
-        payload = gh_json(["api", endpoint], timeout=20)
+        payload = gh_json(["api", endpoint], timeout=DEFAULT_GH_TIMEOUT)
         if not isinstance(payload, list):
             raise ValueError(f"unexpected comments payload type: {type(payload).__name__}")
         if not payload:
             break
         comments.extend([entry for entry in payload if isinstance(entry, dict)])
+        if stop_on_marker is not None:
+            for entry in payload:
+                if isinstance(entry, dict) and stop_on_marker in str(entry.get("body", "")):
+                    return comments
         if len(payload) < per_page:
             break
+        page += 1
     return comments
+
+
+def create_issue_comment(*, repo: str, number: int, body_file: str) -> subprocess.CompletedProcess[str]:
+    """Create an issue or PR comment using the shared transport."""
+
+    return run_gh(
+        ["api", f"repos/{repo}/issues/{number}/comments", "-F", f"body=@{body_file}"],
+        timeout=DEFAULT_GH_TIMEOUT,
+    )
+
+
+def update_issue_comment(
+    *,
+    repo: str,
+    comment_id: int,
+    body_file: str,
+) -> subprocess.CompletedProcess[str]:
+    """Update an existing issue or PR comment using the shared transport."""
+
+    return run_gh(
+        [
+            "api",
+            f"repos/{repo}/issues/comments/{comment_id}",
+            "-X",
+            "PATCH",
+            "-F",
+            f"body=@{body_file}",
+        ],
+        timeout=DEFAULT_GH_TIMEOUT,
+    )
+
+
+def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
+    """List reviews for a pull request."""
+
+    payload = gh_json(
+        [
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repo}/pulls/{pr_number}/reviews?per_page=100",
+        ],
+        timeout=DEFAULT_GH_TIMEOUT,
+    )
+    if not isinstance(payload, list):
+        return []
+
+    return [
+        item
+        for page in payload
+        if isinstance(page, list)
+        for item in page
+        if isinstance(item, dict)
+    ]
+
+
+def list_pr_files(repo: str, pr_number: int) -> list[dict]:
+    """List changed files for a pull request."""
+
+    payload = gh_json(
+        [
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repo}/pulls/{pr_number}/files?per_page=100",
+        ],
+        timeout=DEFAULT_GH_TIMEOUT,
+    )
+    if not isinstance(payload, list):
+        return []
+
+    return [
+        item
+        for page in payload
+        if isinstance(page, list)
+        for item in page
+        if isinstance(item, dict)
+    ]
+
+
+def create_pr_review(
+    *,
+    repo: str,
+    pr_number: int,
+    commit_id: str,
+    body: str,
+    comments: list[dict[str, object]],
+) -> dict:
+    """Create a single pull-request review with optional inline comments."""
+
+    payload: dict[str, object] = {
+        "event": "COMMENT",
+        "commit_id": commit_id,
+        "body": body,
+    }
+    if comments:
+        payload["comments"] = comments
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+        json.dump(payload, handle)
+        handle.flush()
+        payload_path = handle.name
+
+    try:
+        result = run_gh(
+            [
+                "api",
+                "-X",
+                "POST",
+                f"repos/{repo}/pulls/{pr_number}/reviews",
+                "--input",
+                payload_path,
+            ],
+            timeout=DEFAULT_GH_TIMEOUT,
+        )
+    finally:
+        try:
+            os.unlink(payload_path)
+        except FileNotFoundError:
+            pass
+    data = json.loads(result.stdout or "{}")
+    return data if isinstance(data, dict) else {}

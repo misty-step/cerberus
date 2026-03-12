@@ -136,3 +136,12 @@
 - **scope changes**: Finished the already-started boundary instead of inventing a new one: enriched the existing review-run contract with branch refs and runtime-env derivation, removed review-step repo/PR env wiring from `action.yml`, added a dedicated contract doc, and shipped committed walkthrough evidence.
 - **blockers**: No product blockers; the only shell hiccup was a harmless zsh `status` readonly-name collision after `gh pr create` had already opened the PR.
 - **pattern**: Boundary work sticks when the contract becomes authoritative for one real lane. Leaving both the contract and raw env plumbing active in the main path keeps the new abstraction shallow and untrusted.
+
+## 2026-03-12 — Issue #325: deepen github_platform into the review-path adapter
+
+- **issue**: #325
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Tightened the issue itself before coding, then limited implementation to the review-path seam: `github_platform`, `github.py`, `github_reviews.py`, `collect-overrides.py`, focused tests, and boundary docs. Left `triage.py` and non-review admin scripts out of scope.
+- **blockers**: The first test pass surfaced that `collect-overrides.py` still relied on old local wrapper behavior; moving the test expectations to the adapter boundary fixed the mismatch without widening the code change.
+- **pattern**: Boundary refactors hold up better when the deep module owns intention-level operations, not just transport primitives. Leaving stable wrapper APIs in place while moving behavior downward keeps the diff reversible and the tests honest.

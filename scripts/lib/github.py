@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 
 def _ensure_scripts_import_root() -> None:
@@ -27,8 +27,12 @@ _ensure_scripts_import_root()
 _github_platform = importlib.import_module("lib.github_platform")
 PlatformPermissionError = _github_platform.GitHubPermissionError
 PlatformTransientGitHubError = _github_platform.TransientGitHubError
+create_issue_comment = _github_platform.create_issue_comment
+fetch_issue_comments = _github_platform.fetch_issue_comments
 is_transient_error = _github_platform.is_transient_error
 run_gh = _github_platform.run_gh
+update_issue_comment = _github_platform.update_issue_comment
+
 
 class CommentPermissionError(Exception):
     """Token lacks pull-requests: write permission."""
@@ -79,6 +83,16 @@ def _run_gh(
         raise TransientGitHubError(str(exc)) from exc
 
 
+def _reraise_platform_error(exc: Exception) -> NoReturn:
+    """Map platform exceptions onto this module's public exception contract."""
+
+    if isinstance(exc, PlatformPermissionError):
+        raise CommentPermissionError(str(exc)) from exc
+    if isinstance(exc, PlatformTransientGitHubError):
+        raise TransientGitHubError(str(exc)) from exc
+    raise exc
+
+
 def fetch_comments(
     repo: str,
     pr_number: int,
@@ -101,26 +115,16 @@ def fetch_comments(
     Returns:
         List of comment dictionaries fetched up to the stopping point
     """
-    comments: list[dict] = []
-    for page in range(1, max_pages + 1):
-        endpoint = f"repos/{repo}/issues/{pr_number}/comments?per_page={per_page}&page={page}"
-        result = _run_gh(["api", endpoint])
-        try:
-            payload = json.loads(result.stdout or "[]")
-        except json.JSONDecodeError:
-            break
-        if not isinstance(payload, list) or not payload:
-            break
-        comments.extend([c for c in payload if isinstance(c, dict)])
-
-        if stop_on_marker is not None:
-            for comment in payload:
-                if isinstance(comment, dict) and stop_on_marker in str(comment.get("body", "")):
-                    return comments
-
-        if len(payload) < per_page:
-            break
-    return comments
+    try:
+        return fetch_issue_comments(
+            repo,
+            pr_number,
+            per_page=per_page,
+            max_pages=max_pages,
+            stop_on_marker=stop_on_marker,
+        )
+    except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
+        _reraise_platform_error(exc)
 
 
 def find_comment_by_marker(comments: list[dict], marker: str) -> int | None:
@@ -167,19 +171,13 @@ def upsert_pr_comment(
 
     existing_id = find_comment_by_marker(comments, marker)
 
-    if existing_id is not None:
-        _run_gh([
-            "api",
-            f"repos/{repo}/issues/comments/{existing_id}",
-            "-X", "PATCH",
-            "-F", f"body=@{body_file}",
-        ])
-    else:
-        _run_gh([
-            "api",
-            f"repos/{repo}/issues/{pr_number}/comments",
-            "-F", f"body=@{body_file}",
-        ])
+    try:
+        if existing_id is not None:
+            update_issue_comment(repo=repo, comment_id=existing_id, body_file=body_file)
+        else:
+            create_issue_comment(repo=repo, number=pr_number, body_file=body_file)
+    except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
+        _reraise_platform_error(exc)
 
 
 def main() -> None:

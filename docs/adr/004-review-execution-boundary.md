@@ -24,6 +24,7 @@ At the same time, GitHub CLI transport logic had drifted across multiple review/
 2. Keep the GitHub Action as the default OSS distribution, but have it write the contract before invoking the engine runner.
 3. Keep GitHub-specific `gh` transport and retry/permission behavior behind `scripts/lib/github_platform.py`.
 4. Preserve current public behavior for the GitHub Action path while making the internal boundary explicit.
+5. Route review-path GitHub reads and writes through that adapter, including comment fetch/write helpers, PR review reads/writes, and PR file metadata reads.
 
 ## Boundary
 
@@ -47,6 +48,9 @@ graph TD
   - `gh` transport
   - retry/permission classification for GitHub calls
   - review/report helper calls that talk to GitHub APIs
+  - PR comment reads and writes
+  - PR review listing and creation
+  - PR file metadata retrieval
 
 - **Outside scope for this boundary**
   - Cloud billing, worker leasing, quotas, or Sprite orchestration
