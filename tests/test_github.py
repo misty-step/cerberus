@@ -82,15 +82,15 @@ class TestUpsertPrComment:
         body_file = tmp_path / "body.md"
         body_file.write_text("Test body")
 
-        calls = []
+        calls: list[tuple[str, int, str]] = []
 
-        def mock_run_gh(args, *, check=True):
-            calls.append(args)
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        def fake_create_issue_comment(*, repo: str, number: int, body_file: str):
+            calls.append((repo, number, body_file))
+            return subprocess.CompletedProcess(args=["gh"], returncode=0, stdout="", stderr="")
 
         import lib.github as mod
 
-        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+        monkeypatch.setattr(mod, "create_issue_comment", fake_create_issue_comment)
 
         upsert_pr_comment(
             repo="owner/repo",
@@ -100,27 +100,21 @@ class TestUpsertPrComment:
             comments=[],
         )
 
-        assert len(calls) == 1
-        assert calls[0] == [
-            "api",
-            "repos/owner/repo/issues/42/comments",
-            "-F",
-            f"body=@{body_file}",
-        ]
+        assert calls == [("owner/repo", 42, str(body_file))]
 
     def test_updates_existing_comment(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"
         body_file.write_text("Updated body")
 
-        calls = []
+        calls: list[tuple[str, int, str]] = []
 
-        def mock_run_gh(args, *, check=True):
-            calls.append(args)
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        def fake_update_issue_comment(*, repo: str, comment_id: int, body_file: str):
+            calls.append((repo, comment_id, body_file))
+            return subprocess.CompletedProcess(args=["gh"], returncode=0, stdout="", stderr="")
 
         import lib.github as mod
 
-        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+        monkeypatch.setattr(mod, "update_issue_comment", fake_update_issue_comment)
 
         comments = [
             {"id": 555, "body": "<!-- test -->\nOld body"},
@@ -134,36 +128,34 @@ class TestUpsertPrComment:
             comments=comments,
         )
 
-        assert len(calls) == 1
-        assert calls[0] == [
-            "api",
-            "repos/owner/repo/issues/comments/555",
-            "-X",
-            "PATCH",
-            "-F",
-            f"body=@{body_file}",
-        ]
+        assert calls == [("owner/repo", 555, str(body_file))]
 
     def test_fetches_comments_when_not_provided(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"
         body_file.write_text("Body")
 
-        calls = []
+        fetch_calls: list[tuple[str, int, int, int, str | None]] = []
+        update_calls: list[tuple[str, int, str]] = []
 
-        def mock_run_gh(args, *, check=True):
-            calls.append(args)
-            if "per_page=100&page=1" in args[1] and "-F" not in args:
-                return subprocess.CompletedProcess(
-                    args=args,
-                    returncode=0,
-                    stdout='[{"id": 999, "body": "<!-- test -->\\nContent"}]',
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        def fake_fetch_issue_comments(
+            repo: str,
+            number: int,
+            *,
+            per_page: int = 100,
+            max_pages: int = 20,
+            stop_on_marker: str | None = None,
+        ):
+            fetch_calls.append((repo, number, per_page, max_pages, stop_on_marker))
+            return [{"id": 999, "body": "<!-- test -->\nContent"}]
+
+        def fake_update_issue_comment(*, repo: str, comment_id: int, body_file: str):
+            update_calls.append((repo, comment_id, body_file))
+            return subprocess.CompletedProcess(args=["gh"], returncode=0, stdout="", stderr="")
 
         import lib.github as mod
 
-        monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+        monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
+        monkeypatch.setattr(mod, "update_issue_comment", fake_update_issue_comment)
 
         upsert_pr_comment(
             repo="owner/repo",
@@ -172,15 +164,8 @@ class TestUpsertPrComment:
             body_file=str(body_file),
         )
 
-        assert len(calls) == 2
-        assert calls[1] == [
-            "api",
-            "repos/owner/repo/issues/comments/999",
-            "-X",
-            "PATCH",
-            "-F",
-            f"body=@{body_file}",
-        ]
+        assert fetch_calls == [("owner/repo", 42, 100, 20, None)]
+        assert update_calls == [("owner/repo", 999, str(body_file))]
 
 
 def test_fetch_issue_comments_uses_shared_transport(monkeypatch) -> None:
@@ -213,192 +198,89 @@ def test_github_helper_runs_as_standalone_script() -> None:
     assert "usage:" in result.stdout.lower()
 
 def test_fetch_comments_paginates(monkeypatch):
-    import json
-    import subprocess
-
     import lib.github as mod
 
-    calls = []
+    seen: list[tuple[str, int, int, int, str | None]] = []
 
-    def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
-        calls.append(args)
-        endpoint = args[1]
-        if "page=1" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 1, "body": "a"},
-                        {"id": 2, "body": "b"},
-                    ]
-                ),
-                stderr="",
-            )
-        if "page=2" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 3, "body": "c"},
-                    ]
-                ),
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+    def fake_fetch_issue_comments(repo: str, number: int, *, per_page=100, max_pages=20, stop_on_marker=None):
+        seen.append((repo, number, per_page, max_pages, stop_on_marker))
+        return [{"id": 1, "body": "a"}, {"id": 2, "body": "b"}, {"id": 3, "body": "c"}]
 
-    monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
     comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20)
     assert [c.get("id") for c in comments] == [1, 2, 3]
-    assert len(calls) == 2  # stopped when page size < per_page
+    assert seen == [("o/r", 5, 2, 20, None)]
 
 def test_fetch_comments_stop_on_marker_exits_early(monkeypatch):
-    """Test that stop_on_marker stops pagination when marker is found."""
-    import json
-    import subprocess
-
     import lib.github as mod
 
-    calls = []
+    seen: list[tuple[str, int, int, int, str | None]] = []
 
-    def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
-        calls.append(args)
-        endpoint = args[1]
-        if "page=1" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 1, "body": "first comment"},
-                        {"id": 2, "body": "<!-- cerberus:council -->\nCerberus verdict"},
-                    ]
-                ),
-                stderr="",
-            )
-        if "page=2" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 3, "body": "third comment"},
-                    ]
-                ),
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+    def fake_fetch_issue_comments(repo: str, number: int, *, per_page=100, max_pages=20, stop_on_marker=None):
+        seen.append((repo, number, per_page, max_pages, stop_on_marker))
+        return [
+            {"id": 1, "body": "first comment"},
+            {"id": 2, "body": "<!-- cerberus:council -->\nCerberus verdict"},
+        ]
 
-    monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
     comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20, stop_on_marker="<!-- cerberus:council -->")
-    # Should stop at page 1 because marker was found
     assert [c.get("id") for c in comments] == [1, 2]
-    assert len(calls) == 1  # Only one API call made
+    assert seen == [("o/r", 5, 2, 20, "<!-- cerberus:council -->")]
 
 def test_fetch_comments_stop_on_marker_not_found_fetches_all(monkeypatch):
-    """Test that all pages are fetched when marker is not found."""
-    import json
-    import subprocess
-
     import lib.github as mod
 
-    calls = []
+    seen: list[tuple[str, int, int, int, str | None]] = []
 
-    def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
-        calls.append(args)
-        endpoint = args[1]
-        if "page=1" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 1, "body": "first comment"},
-                        {"id": 2, "body": "second comment"},
-                    ]
-                ),
-                stderr="",
-            )
-        if "page=2" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 3, "body": "third comment"},
-                    ]
-                ),
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+    def fake_fetch_issue_comments(repo: str, number: int, *, per_page=100, max_pages=20, stop_on_marker=None):
+        seen.append((repo, number, per_page, max_pages, stop_on_marker))
+        return [
+            {"id": 1, "body": "first comment"},
+            {"id": 2, "body": "second comment"},
+            {"id": 3, "body": "third comment"},
+        ]
 
-    monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
     comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20, stop_on_marker="<!-- not-found -->")
-    # Should fetch all pages since marker not found
     assert [c.get("id") for c in comments] == [1, 2, 3]
-    assert len(calls) == 2  # Both pages fetched
+    assert seen == [("o/r", 5, 2, 20, "<!-- not-found -->")]
 
 def test_fetch_comments_without_stop_on_marker_fetches_all(monkeypatch):
-    """Test that default behavior (no stop_on_marker) fetches all pages."""
-    import json
-    import subprocess
-
     import lib.github as mod
 
-    calls = []
+    seen: list[tuple[str, int, int, int, str | None]] = []
 
-    def mock_run_gh(args, *, check=True, max_retries=3, base_delay=1.0):
-        calls.append(args)
-        endpoint = args[1]
-        if "page=1" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 1, "body": "<!-- cerberus:council -->"},
-                        {"id": 2, "body": "second"},
-                    ]
-                ),
-                stderr="",
-            )
-        if "page=2" in endpoint:
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {"id": 3, "body": "third"},
-                    ]
-                ),
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+    def fake_fetch_issue_comments(repo: str, number: int, *, per_page=100, max_pages=20, stop_on_marker=None):
+        seen.append((repo, number, per_page, max_pages, stop_on_marker))
+        return [
+            {"id": 1, "body": "<!-- cerberus:council -->"},
+            {"id": 2, "body": "second"},
+            {"id": 3, "body": "third"},
+        ]
 
-    monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
-    # Without stop_on_marker, should fetch all pages even with marker present
     comments = mod.fetch_comments("o/r", 5, per_page=2, max_pages=20)
     assert [c.get("id") for c in comments] == [1, 2, 3]
-    assert len(calls) == 2  # Both pages fetched
+    assert seen == [("o/r", 5, 2, 20, None)]
 
 def test_multiple_markers_dont_conflict(monkeypatch, tmp_path):
     body_file = tmp_path / "body.md"
     body_file.write_text("Body for council")
 
-    calls = []
+    calls: list[tuple[str, int, str]] = []
 
-    def mock_run_gh(args, *, check=True):
-        calls.append(args)
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+    def fake_update_issue_comment(*, repo: str, comment_id: int, body_file: str):
+        calls.append((repo, comment_id, body_file))
+        return subprocess.CompletedProcess(args=["gh"], returncode=0, stdout="", stderr="")
 
     import lib.github as mod
 
-    monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+    monkeypatch.setattr(mod, "update_issue_comment", fake_update_issue_comment)
 
     comments = [
         {"id": 100, "body": "<!-- cerberus:correctness -->\nReview"},
@@ -413,25 +295,18 @@ def test_multiple_markers_dont_conflict(monkeypatch, tmp_path):
         comments=comments,
     )
 
-    assert calls[0] == [
-        "api",
-        "repos/owner/repo/issues/comments/200",
-        "-X",
-        "PATCH",
-        "-F",
-        f"body=@{body_file}",
-    ]
+    assert calls == [("owner/repo", 200, str(body_file))]
 
 def test_permission_denied_raises(monkeypatch, tmp_path):
     body_file = tmp_path / "body.md"
     body_file.write_text("Body")
 
-    def mock_run_gh(args, *, check=True):
+    def mock_create_issue_comment(*, repo: str, number: int, body_file: str):
         raise CommentPermissionError("no permission")
 
     import lib.github as mod
 
-    monkeypatch.setattr(mod, "_run_gh", mock_run_gh)
+    monkeypatch.setattr(mod, "create_issue_comment", mock_create_issue_comment)
 
     with pytest.raises(CommentPermissionError):
         upsert_pr_comment(

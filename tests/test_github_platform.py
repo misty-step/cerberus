@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
@@ -99,3 +100,126 @@ def test_fetch_issue_comments_paginates(monkeypatch) -> None:
         ["api", "repos/owner/repo/issues/42/comments?per_page=2&page=1"],
         ["api", "repos/owner/repo/issues/42/comments?per_page=2&page=2"],
     ]
+
+
+def test_fetch_issue_comments_stops_on_marker(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_gh_json(args, *, timeout=None, max_retries=3, base_delay=1.0):
+        calls.append(args)
+        endpoint = args[1]
+        if "page=1" in endpoint:
+            return [{"id": 1, "body": "plain"}, {"id": 2, "body": "<!-- marker -->"}]
+        raise AssertionError(f"unexpected endpoint: {endpoint}")
+
+    monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+
+    comments = mod.fetch_issue_comments(
+        "owner/repo",
+        42,
+        per_page=2,
+        max_pages=4,
+        stop_on_marker="<!-- marker -->",
+    )
+
+    assert comments == [{"id": 1, "body": "plain"}, {"id": 2, "body": "<!-- marker -->"}]
+    assert calls == [["api", "repos/owner/repo/issues/42/comments?per_page=2&page=1"]]
+
+
+def test_create_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> None:
+    body_file = tmp_path / "body.md"
+    body_file.write_text("body")
+    seen: list[list[str]] = []
+
+    def fake_run_gh(args, **kwargs):
+        seen.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "run_gh", fake_run_gh)
+
+    mod.create_issue_comment(repo="owner/repo", number=7, body_file=str(body_file))
+
+    assert seen == [["api", "repos/owner/repo/issues/7/comments", "-F", f"body=@{body_file}"]]
+
+
+def test_update_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> None:
+    body_file = tmp_path / "body.md"
+    body_file.write_text("body")
+    seen: list[list[str]] = []
+
+    def fake_run_gh(args, **kwargs):
+        seen.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "run_gh", fake_run_gh)
+
+    mod.update_issue_comment(repo="owner/repo", comment_id=11, body_file=str(body_file))
+
+    assert seen == [
+        ["api", "repos/owner/repo/issues/comments/11", "-X", "PATCH", "-F", f"body=@{body_file}"]
+    ]
+
+
+def test_list_pr_reviews_uses_adapter_json(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_gh_json(args, *, timeout=None, max_retries=3, base_delay=1.0):
+        calls.append(args)
+        return [{"id": 9, "body": "ok"}]
+
+    monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+
+    reviews = mod.list_pr_reviews("owner/repo", 42)
+
+    assert reviews == [{"id": 9, "body": "ok"}]
+    assert calls == [["api", "repos/owner/repo/pulls/42/reviews?per_page=100"]]
+
+
+def test_list_pr_files_flattens_paginated_pages(monkeypatch) -> None:
+    def fake_gh_json(args, *, timeout=None, max_retries=3, base_delay=1.0):
+        assert args == [
+            "api",
+            "--paginate",
+            "--slurp",
+            "repos/owner/repo/pulls/5/files?per_page=100",
+        ]
+        return [
+            [{"filename": "a.py", "patch": "@@ -1 +1 @@\n+hi"}],
+            [{"filename": "b.py"}],
+        ]
+
+    monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+
+    files = mod.list_pr_files("owner/repo", 5)
+
+    assert [f.get("filename") for f in files] == ["a.py", "b.py"]
+
+
+def test_create_pr_review_posts_json_payload(monkeypatch) -> None:
+    seen_payload: dict | None = None
+
+    def fake_run_gh(args, **kwargs):
+        nonlocal seen_payload
+        assert args[0:4] == ["api", "-X", "POST", "repos/owner/repo/pulls/7/reviews"]
+        payload_path = args[args.index("--input") + 1]
+        with open(payload_path, encoding="utf-8") as handle:
+            seen_payload = json.load(handle)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout='{"id": 123}', stderr="")
+
+    monkeypatch.setattr(mod, "run_gh", fake_run_gh)
+
+    out = mod.create_pr_review(
+        repo="owner/repo",
+        pr_number=7,
+        commit_id="deadbeef",
+        body="hello",
+        comments=[{"path": "a.py", "position": 3, "body": "c"}],
+    )
+
+    assert out == {"id": 123}
+    assert seen_payload == {
+        "event": "COMMENT",
+        "commit_id": "deadbeef",
+        "body": "hello",
+        "comments": [{"path": "a.py", "position": 3, "body": "c"}],
+    }

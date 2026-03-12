@@ -112,6 +112,9 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `scripts/run-reviewer.sh` - orchestrates one reviewer via `scripts/run-reviewer.py` and Pi runtime
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
+- `scripts/lib/github_platform.py` - GitHub review-path adapter for shared `gh` transport, PR comments, review reads/writes, and PR file metadata
+- `scripts/lib/github.py` - comment marker/idempotency helpers layered on the GitHub platform adapter
+- `scripts/lib/github_reviews.py` - compatibility layer for PR review helpers backed by the GitHub platform adapter
 - `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes aggregated verdict
 - `scripts/post-verdict-review.py` - posts a single PR review with inline comments (best-effort) for verdict findings
 - `scripts/triage.py` - triage trigger router + circuit breaker + diagnosis/fix runtime

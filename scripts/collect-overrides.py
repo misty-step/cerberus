@@ -12,6 +12,8 @@ from uuid import uuid4
 from lib.github_platform import (
     GitHubPermissionError,
     TransientGitHubError,
+    fetch_issue_comments,
+    gh_json as platform_gh_json,
     run_gh as platform_run_gh,
 )
 
@@ -24,30 +26,12 @@ def run_gh(args: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess
 
 def gh_json(args: list[str], *, timeout: int = 20) -> object:
     """Decode JSON returned by gh via the shared platform adapter."""
-
-    result = run_gh(args, timeout=timeout)
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid JSON from gh command {args!r}: {exc}") from exc
+    return platform_gh_json(args, timeout=timeout)
 
 
 def fetch_pr_comments(repo: str, pr_number: int, *, per_page: int = 100) -> list[dict]:
     """Fetch pr comments."""
-    comments: list[dict] = []
-    page = 1
-    while True:
-        endpoint = f"repos/{repo}/issues/{pr_number}/comments?per_page={per_page}&page={page}"
-        payload = gh_json(["api", endpoint], timeout=20)
-        if not isinstance(payload, list):
-            raise ValueError(f"unexpected comments payload type: {type(payload).__name__}")
-        if not payload:
-            break
-        comments.extend([entry for entry in payload if isinstance(entry, dict)])
-        if len(payload) < per_page:
-            break
-        page += 1
-    return comments
+    return fetch_issue_comments(repo, pr_number, per_page=per_page)
 
 
 def extract_override_comments(comments: list[dict]) -> list[dict[str, str]]:

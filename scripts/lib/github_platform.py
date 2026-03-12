@@ -6,6 +6,7 @@ import json
 import random
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -119,6 +120,7 @@ def fetch_issue_comments(
     *,
     per_page: int = 100,
     max_pages: int = 20,
+    stop_on_marker: str | None = None,
 ) -> list[dict]:
     """Fetch issue comments for a PR or issue using the shared transport."""
 
@@ -131,6 +133,103 @@ def fetch_issue_comments(
         if not payload:
             break
         comments.extend([entry for entry in payload if isinstance(entry, dict)])
+        if stop_on_marker is not None:
+            for entry in payload:
+                if isinstance(entry, dict) and stop_on_marker in str(entry.get("body", "")):
+                    return comments
         if len(payload) < per_page:
             break
     return comments
+
+
+def create_issue_comment(*, repo: str, number: int, body_file: str) -> subprocess.CompletedProcess[str]:
+    """Create an issue or PR comment using the shared transport."""
+
+    return run_gh(["api", f"repos/{repo}/issues/{number}/comments", "-F", f"body=@{body_file}"])
+
+
+def update_issue_comment(
+    *,
+    repo: str,
+    comment_id: int,
+    body_file: str,
+) -> subprocess.CompletedProcess[str]:
+    """Update an existing issue or PR comment using the shared transport."""
+
+    return run_gh(
+        [
+            "api",
+            f"repos/{repo}/issues/comments/{comment_id}",
+            "-X",
+            "PATCH",
+            "-F",
+            f"body=@{body_file}",
+        ]
+    )
+
+
+def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
+    """List reviews for a pull request."""
+
+    payload = gh_json(["api", f"repos/{repo}/pulls/{pr_number}/reviews?per_page=100"])
+    return payload if isinstance(payload, list) else []
+
+
+def list_pr_files(repo: str, pr_number: int) -> list[dict]:
+    """List changed files for a pull request."""
+
+    payload = gh_json(
+        [
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repo}/pulls/{pr_number}/files?per_page=100",
+        ]
+    )
+    if not isinstance(payload, list):
+        return []
+
+    files: list[dict] = []
+    for page in payload:
+        if isinstance(page, list):
+            for item in page:
+                if isinstance(item, dict):
+                    files.append(item)
+    return files
+
+
+def create_pr_review(
+    *,
+    repo: str,
+    pr_number: int,
+    commit_id: str,
+    body: str,
+    comments: list[dict[str, object]],
+) -> dict:
+    """Create a single pull-request review with optional inline comments."""
+
+    payload: dict[str, object] = {
+        "event": "COMMENT",
+        "commit_id": commit_id,
+        "body": body,
+    }
+    if comments:
+        payload["comments"] = comments
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+        json.dump(payload, handle)
+        handle.flush()
+        payload_path = handle.name
+
+    result = run_gh(
+        [
+            "api",
+            "-X",
+            "POST",
+            f"repos/{repo}/pulls/{pr_number}/reviews",
+            "--input",
+            payload_path,
+        ]
+    )
+    data = json.loads(result.stdout or "{}")
+    return data if isinstance(data, dict) else {}

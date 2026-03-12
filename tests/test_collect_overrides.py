@@ -36,39 +36,39 @@ def test_extract_override_comments_preserves_metacharacters() -> None:
 def test_collect_override_data_uses_repo_api(monkeypatch) -> None:
     mod = _import_script()
     payload = "/cerberus override sha=abc1234\nReason: `id` $(uname); rm -rf / | cat /etc/passwd"
-    calls: list[list[str]] = []
+    comment_calls: list[tuple[str, int]] = []
+    permission_calls: list[list[str]] = []
+
+    def fake_fetch_issue_comments(repo: str, pr_number: int, *, per_page: int = 100, max_pages: int = 20, stop_on_marker=None):
+        comment_calls.append((repo, pr_number))
+        return [{"body": payload, "user": {"login": "attacker"}}]
 
     def fake_gh_json(args, *, timeout=20):
-        calls.append(args)
+        permission_calls.append(args)
         endpoint = args[1]
-        if "issues/77/comments" in endpoint and "page=1" in endpoint:
-            return [{"body": payload, "user": {"login": "attacker"}}]
         if "collaborators/attacker/permission" in endpoint:
             return {"permission": "read"}
         return []
 
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
     monkeypatch.setattr(mod, "gh_json", fake_gh_json)
 
     overrides, permissions = mod.collect_override_data("owner/repo", 77)
 
     assert overrides == [{"actor": "attacker", "body": payload}]
     assert permissions == {"attacker": "read"}
-    assert calls[0][0] == "api"
-    assert "issues/77/comments" in calls[0][1]
+    assert comment_calls == [("owner/repo", 77)]
+    assert permission_calls[0][0] == "api"
+    assert "collaborators/attacker/permission" in permission_calls[0][1]
 
 
 def test_run_gh_raises_called_process_error_on_failure(monkeypatch) -> None:
     mod = _import_script()
 
-    def fake_run(*args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args[0],
-            returncode=9,
-            stdout="out",
-            stderr="err",
-        )
+    def fake_platform_run_gh(args, *, timeout=20):
+        raise subprocess.CalledProcessError(returncode=9, cmd=args, output="out", stderr="err")
 
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod, "platform_run_gh", fake_platform_run_gh)
 
     try:
         mod.run_gh(["api", "repos/owner/repo/issues/1/comments"])
@@ -82,10 +82,10 @@ def test_run_gh_raises_called_process_error_on_failure(monkeypatch) -> None:
 def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
     mod = _import_script()
 
-    def fake_run_gh(args, *, timeout=20):
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{bad", stderr="")
+    def fake_platform_gh_json(args, *, timeout=20, max_retries=3, base_delay=1.0):
+        raise ValueError("invalid JSON from gh command ['api', 'repos/owner/repo/issues/1/comments']: nope")
 
-    monkeypatch.setattr(mod, "run_gh", fake_run_gh)
+    monkeypatch.setattr(mod, "platform_gh_json", fake_platform_gh_json)
 
     try:
         mod.gh_json(["api", "repos/owner/repo/issues/1/comments"])
@@ -96,34 +96,28 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
 
 def test_fetch_pr_comments_handles_multi_page_responses(monkeypatch) -> None:
     mod = _import_script()
-    calls: list[list[str]] = []
+    calls: list[tuple[str, int]] = []
 
-    def fake_gh_json(args, *, timeout=20):
-        calls.append(args)
-        endpoint = args[1]
-        if "page=1" in endpoint:
-            return [{"id": 1}, {"id": 2}]
-        if "page=2" in endpoint:
-            return []
-        raise AssertionError(f"unexpected endpoint: {endpoint}")
+    def fake_fetch_issue_comments(repo: str, pr_number: int, *, per_page: int = 100, max_pages: int = 20, stop_on_marker=None):
+        calls.append((repo, pr_number))
+        assert per_page == 2
+        return [{"id": 1}, {"id": 2}]
 
-    monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
     comments = mod.fetch_pr_comments("owner/repo", 7, per_page=2)
 
     assert comments == [{"id": 1}, {"id": 2}]
-    assert len(calls) == 2
-    assert "page=1" in calls[0][1]
-    assert "page=2" in calls[1][1]
+    assert calls == [("owner/repo", 7)]
 
 
 def test_fetch_pr_comments_raises_on_non_list_payload(monkeypatch) -> None:
     mod = _import_script()
 
-    def fake_gh_json(args, *, timeout=20):
-        return {"unexpected": "payload"}
+    def fake_fetch_issue_comments(repo: str, pr_number: int, *, per_page: int = 100, max_pages: int = 20, stop_on_marker=None):
+        raise ValueError("unexpected comments payload type: dict")
 
-    monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
     try:
         mod.fetch_pr_comments("owner/repo", 7)
