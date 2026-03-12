@@ -247,6 +247,17 @@ def test_render_findings_unverified_no_reason() -> None:
     assert "_(unverified)_" in lines[0]
 
 
+def test_render_findings_accepts_normalized_unverified_fields() -> None:
+    lines = render_findings(
+        [{"severity": "major", "file": "a.py", "line": 3, "title": "[unverified] ok",
+          "_unverified": True, "_unverified_reason": "behavioral-uncertainty"}],
+        server="https://gh.com",
+        repo="org/repo",
+        sha="abc",
+    )
+    assert "_(unverified: behavioral-uncertainty)_" in lines[0]
+
+
 def test_render_findings_no_description_no_suggestion() -> None:
     lines = render_findings(
         [{"severity": "minor", "file": "a.py", "line": 1, "title": "ok"}],

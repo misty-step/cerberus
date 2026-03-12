@@ -130,9 +130,10 @@ Override: `/cerberus override sha=<sha>` comment on PR with reason. SHA must mat
 Every reviewer must end with a JSON block containing: `reviewer`, `perspective`, `verdict`, `confidence` (0-1), `summary`, `findings[]` (each with severity/category/file/line/title/description/suggestion), `stats` (files_reviewed, files_with_issues, critical, major, minor, info).
 
 Optional finding fields:
-- `evidence` (string) — exact code quote backing the claim (parser may downgrade unverified findings to `info`)
+- `evidence` (string) — exact code quote backing the claim
 - `scope` (string) — set to `defaults-change` when citing unchanged code that became newly-defaulted
-- `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative (parser downgrades `false` findings to `info`)
+- `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative
+- `_unverified` / `_evidence_unverified` (boolean) — optional reviewer-side signal that the finding should stay visible at its original severity but count as discounted signal in parser-side verdict recomputation
 
 Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.

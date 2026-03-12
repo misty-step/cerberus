@@ -14,6 +14,8 @@ RAW_INPUT = ""
 VERDICT_CONFIDENCE_MIN = 0.7
 WARN_MINOR_THRESHOLD = 5
 WARN_SAME_CATEGORY_MINOR_THRESHOLD = 3
+UNVERIFIED_FINDING_WEIGHT = 0.5
+UNVERIFIED_CRITICAL_MAJOR_EQUIVALENT = 1.0
 EXIT_SUCCESS = 0
 EXIT_VALIDATION_FAILURE = 1  # JSON found but failed schema validation
 EXIT_USAGE_ERROR = 2  # bad args, file not found, etc.
@@ -621,22 +623,37 @@ def enforce_verdict_consistency(obj: dict) -> None:
     if confidence < VERDICT_CONFIDENCE_MIN:
         findings = []
 
-    critical = sum(1 for f in findings if f.get("severity") == "critical")
-    major = sum(1 for f in findings if f.get("severity") == "major")
-    minor = sum(1 for f in findings if f.get("severity") == "minor")
-    minor_by_category: dict[str, int] = {}
+    verified_critical = sum(
+        1 for f in findings
+        if f.get("severity") == "critical" and not is_unverified_finding(f)
+    )
+    major_points = 0.0
+    minor_points = 0.0
+    minor_by_category: dict[str, float] = {}
     for finding in findings:
-        if finding.get("severity") != "minor":
+        severity = finding.get("severity")
+        unverified = is_unverified_finding(finding)
+        weight = UNVERIFIED_FINDING_WEIGHT if unverified else 1.0
+
+        if severity == "critical" and unverified:
+            major_points += UNVERIFIED_CRITICAL_MAJOR_EQUIVALENT
             continue
+        if severity == "major":
+            major_points += weight
+            continue
+        if severity != "minor":
+            continue
+
+        minor_points += weight
         category = str(finding.get("category", "uncategorized")).strip() or "uncategorized"
-        minor_by_category[category] = minor_by_category.get(category, 0) + 1
+        minor_by_category[category] = minor_by_category.get(category, 0.0) + weight
     same_category_minor_cluster = any(
         count >= WARN_SAME_CATEGORY_MINOR_THRESHOLD for count in minor_by_category.values()
     )
 
-    if critical > 0 or major >= 2:
+    if verified_critical > 0 or major_points >= 2:
         computed = "FAIL"
-    elif major == 1 or minor >= WARN_MINOR_THRESHOLD or same_category_minor_cluster:
+    elif major_points >= 1 or minor_points >= WARN_MINOR_THRESHOLD or same_category_minor_cluster:
         computed = "WARN"
     else:
         computed = "PASS"
@@ -779,6 +796,47 @@ def normalize_evidence_fields(obj: dict) -> None:
             finding["evidence"] = _truncate_evidence_for_output(evidence)
         else:
             finding.pop("evidence", None)
+
+
+def is_unverified_finding(finding: dict) -> bool:
+    """Treat explicit reviewer unverified markers as discounted, non-zero signal."""
+    if not isinstance(finding, dict):
+        return False
+    if bool(finding.get("_unverified")) or bool(finding.get("_evidence_unverified")):
+        return True
+    title = str(finding.get("title", ""))
+    return title.startswith("[unverified] ")
+
+
+def normalize_unverified_findings(obj: dict) -> None:
+    """Normalize explicit unverified markers without demoting severity."""
+    findings = obj.get("findings", [])
+    if not isinstance(findings, list):
+        return
+
+    note = (
+        "Unverified note: severity is preserved, but verdict thresholds discount "
+        "this signal until evidence is confirmed."
+    )
+    for finding in findings:
+        if not isinstance(finding, dict) or not is_unverified_finding(finding):
+            continue
+
+        finding["_unverified"] = True
+        reason = str(finding.get("_unverified_reason") or finding.get("_evidence_reason") or "").strip()
+        if reason:
+            finding["_unverified_reason"] = reason
+            finding["_evidence_reason"] = reason
+
+        finding["_evidence_unverified"] = True
+
+        title = str(finding.get("title", "")).strip()
+        if title and not title.startswith("[unverified] "):
+            finding["title"] = f"[unverified] {title}"
+
+        description = str(finding.get("description", "") or "")
+        if note not in description:
+            finding["description"] = f"{description}\n\n{note}" if description else note
 
 def main() -> None:
     """Main."""
@@ -933,6 +991,7 @@ def main() -> None:
         validate(obj)
         validate_and_correct_stats(obj)
         normalize_evidence_fields(obj)
+        normalize_unverified_findings(obj)
         annotate_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:

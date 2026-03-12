@@ -774,6 +774,35 @@ class TestEvidenceNormalization:
         assert "evidence" not in data["findings"][0]
         assert data["verdict"] == "WARN"
 
+    def test_explicit_unverified_finding_keeps_severity_and_adds_metadata(self):
+        """Explicitly unverified findings keep severity and gain normalized metadata."""
+        review = self._review(
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "Missing guard",
+                "description": "desc",
+                "suggestion": "fix",
+                "_unverified": True,
+                "_unverified_reason": "behavioral-uncertainty",
+            },
+            verdict="WARN",
+        )
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        finding = data["findings"][0]
+        assert finding["severity"] == "major"
+        assert finding["_unverified"] is True
+        assert finding["_evidence_unverified"] is True
+        assert finding["_unverified_reason"] == "behavioral-uncertainty"
+        assert finding["_evidence_reason"] == "behavioral-uncertainty"
+        assert finding["title"].startswith("[unverified] ")
+        assert "severity is preserved" in finding["description"]
+        assert data["verdict"] == "PASS"
+
     def test_evidence_truncated_at_limit(self):
         """Evidence longer than EVIDENCE_MAX_CHARS is truncated with ellipsis."""
         long_val = "a" * 2100
@@ -863,6 +892,104 @@ class TestEvidenceNormalization:
         assert "```" not in evidence
         assert "x = 1" in evidence
         assert "y = 2" in evidence
+
+    def test_two_unverified_majors_warn_instead_of_pass(self):
+        """Two unverified majors still count as a discounted WARN-level signal."""
+        findings = [
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 1,
+                "title": "[unverified] First issue",
+                "description": "desc",
+                "suggestion": "fix",
+            },
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 2,
+                "title": "[unverified] Second issue",
+                "description": "desc",
+                "suggestion": "fix",
+            },
+        ]
+        review = {
+            "reviewer": "APOLLO",
+            "perspective": "correctness",
+            "verdict": "PASS",
+            "confidence": 0.95,
+            "summary": "Two uncertain issues",
+            "findings": findings,
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 2,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "WARN"
+
+    def test_four_unverified_majors_fail(self):
+        """Four discounted majors still cross the FAIL threshold."""
+        findings = [
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": idx,
+                "title": f"[unverified] Issue {idx}",
+                "description": "desc",
+                "suggestion": "fix",
+            }
+            for idx in range(1, 5)
+        ]
+        review = {
+            "reviewer": "APOLLO",
+            "perspective": "correctness",
+            "verdict": "PASS",
+            "confidence": 0.95,
+            "summary": "Four uncertain issues",
+            "findings": findings,
+            "stats": {
+                "files_reviewed": 1,
+                "files_with_issues": 1,
+                "critical": 0,
+                "major": 4,
+                "minor": 0,
+                "info": 0,
+            },
+        }
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "FAIL"
+
+    def test_unverified_critical_warns_without_forcing_fail(self):
+        """Unverified critical findings stay visible without auto-failing the review."""
+        review = self._review(
+            {
+                "severity": "critical",
+                "category": "safety",
+                "file": "app.py",
+                "line": 9,
+                "title": "[unverified] Catastrophic issue",
+                "description": "desc",
+                "suggestion": "fix",
+            },
+            verdict="PASS",
+        )
+        code, out, _ = run_parse(self._wrap_json(review))
+        assert code == 0
+        data = json.loads(out)
+        assert data["findings"][0]["severity"] == "critical"
+        assert data["verdict"] == "WARN"
 
 
 class TestStaleKnowledgeAnnotation:

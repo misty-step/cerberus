@@ -28,8 +28,8 @@ def render_findings(findings: list[dict], *, server: str, repo: str, sha: str) -
         desc = str(f.get("description", "") or "")
         sugg = str(f.get("suggestion", "") or "")
         evidence = f.get("evidence", "")
-        unverified = bool(f.get("_evidence_unverified"))
-        reason = f.get("_evidence_reason", "")
+        unverified = bool(f.get("_unverified")) or bool(f.get("_evidence_unverified"))
+        reason = f.get("_unverified_reason") or f.get("_evidence_reason", "")
 
         meta = ""
         if unverified:
