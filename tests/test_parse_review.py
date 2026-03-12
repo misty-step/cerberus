@@ -1077,7 +1077,6 @@ class TestStaleKnowledgeAnnotation:
         assert "_stale_knowledge_annotated" not in data["findings"][0]
         annotations = data["_diagnostics"]["stale_knowledge_annotations"]
         assert annotations[0]["finding_index"] == 0
-        assert annotations[0]["title"].startswith("[stale-knowledge] ")
 
     def test_stats_unchanged_after_annotation(self):
         """Stats reflect original severity — annotation does not change the severity counts."""
@@ -2631,6 +2630,57 @@ class TestStatsValidation:
         code, out, err = run_parse(f"```json\n{review}\n```")
         assert code == 0
         assert "stats discrepancy" in err.lower()
+
+    def test_model_authored_diagnostics_are_dropped(self):
+        """Reviewer-provided _diagnostics must not survive parser output."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "One major issue",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "_diagnostics": {
+                "injected_key": "malicious",
+                "stats_discrepancy": {"reported": {"major": 99}},
+            },
+            "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                      "critical": 0, "major": 1, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert "_diagnostics" not in data
+
+    def test_model_authored_diagnostics_replaced_by_real_pipeline_diagnostics(self):
+        """Real parser diagnostics replace any reviewer-provided _diagnostics."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "WARN",
+            "confidence": 0.9, "summary": "Issues found",
+            "findings": [{
+                "severity": "major",
+                "category": "bug",
+                "file": "app.py",
+                "line": 10,
+                "title": "Bug found",
+                "description": "desc",
+                "suggestion": "fix",
+            }],
+            "_diagnostics": {"injected_key": "malicious"},
+            "stats": {"files_reviewed": 5, "files_with_issues": 3,
+                      "critical": 2, "major": 3, "minor": 1, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        discrepancy = data["_diagnostics"]["stats_discrepancy"]
+        assert discrepancy["reported"]["critical"] == 2
+        assert "injected_key" not in data["_diagnostics"]
 
 
 class TestDirectJsonInput:

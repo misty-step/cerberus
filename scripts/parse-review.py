@@ -756,10 +756,7 @@ def annotate_stale_knowledge_findings(obj: dict) -> None:
         title = str(finding.get("title", ""))
         if not title.startswith("[stale-knowledge] "):
             finding["title"] = f"[stale-knowledge] {title}"
-        annotations.append({
-            "finding_index": idx,
-            "title": finding["title"],
-        })
+        annotations.append({"finding_index": idx})
 
     if annotations:
         _diagnostics_envelope(obj)["stale_knowledge_annotations"] = annotations
@@ -967,6 +964,9 @@ def main() -> None:
             fail("root must be object")
 
         validate(obj)
+        # `_diagnostics` is pipeline-owned metadata. Drop any model-authored
+        # value before parser code emits its own diagnostics.
+        obj.pop("_diagnostics", None)
         validate_and_correct_stats(obj)
         normalize_evidence_fields(obj)
         annotate_stale_knowledge_findings(obj)
