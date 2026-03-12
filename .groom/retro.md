@@ -163,3 +163,12 @@
 - **scope changes**: Kept the fix focused on parser/schema boundaries by moving stats and stale-knowledge metadata into one explicit pipeline envelope, updating parser tests, and adding branch-scoped transcript evidence instead of broad verdict-pipeline refactors.
 - **blockers**: Terminal capture via `script(1)` changed the environment enough to break `tests/test_pipeline_integration.py` on `/tmp` paths even though `make validate` was green in the normal shell; switched walkthrough capture to plain `tee`.
 - **pattern**: When backend-only lanes need durable walkthrough proof, prefer plain command transcripts over terminal wrappers. Some repo tests are sensitive to shell/TTY wrappers, and the evidence path should match the real validation environment.
+
+## 2026-03-12 — Issue #326: move bootstrap GitHub reads behind github_platform
+
+- **issue**: #326
+- **predicted effort**: p1 (medium — 1-2 days)
+- **actual effort**: ~2 hours
+- **scope changes**: Added issue shaping comments, moved PR diff/context bootstrap behind `github_platform` via `fetch-pr-bootstrap.py`, slimmed `action.yml` down to workflow plumbing, updated boundary docs, and committed walkthrough transcripts for targeted and full validation gates.
+- **blockers**: No product blockers. The only implementation hiccup was the new helper-script test import path, which needed explicit `sys.modules` registration before dataclass evaluation.
+- **pattern**: Workflow shell should own orchestration, not transport policy. Once retry/error classification migrates into a shared adapter-backed helper, action files get smaller, tests get narrower, and boundary docs stay truthful.

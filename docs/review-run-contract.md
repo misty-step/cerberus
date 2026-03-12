@@ -35,7 +35,7 @@ bootstrap env wiring.
 
 The current action maps cleanly onto the contract:
 
-1. `action.yml` fetches `pr.diff` and `pr-context.json`.
+1. `action.yml` invokes `scripts/fetch-pr-bootstrap.py`, which fetches `pr.diff` and `pr-context.json` through `scripts/lib/github_platform.py`.
 2. `scripts/bootstrap-review-run.py` writes `review-run.json`.
 3. `scripts/run-reviewer.py` loads the contract, reads diff/context from it, and
    reconstructs GitHub runtime env for the isolated Pi process from

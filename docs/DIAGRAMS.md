@@ -10,7 +10,7 @@ flowchart TD
 
   REVIEW_FANOUT -->|N parallel jobs| REVIEW[action.yml\nuses: cerberus@master\n(single perspective)]
 
-  REVIEW --> CTX[Fetch PR diff + context\n(gh pr diff/view)]
+  REVIEW --> CTX[Fetch PR diff + context\n(fetch-pr-bootstrap.py -> github_platform)]
   CTX --> LLM[Run reviewer\n(pi --print --system-prompt <perspective>)]
   LLM --> PARSE[Parse reviewer output -> verdict.json\nscripts/parse-review.py]
 
