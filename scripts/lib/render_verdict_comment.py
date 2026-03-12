@@ -581,6 +581,11 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
     return out
 
 
+def collect_unique_findings(reviewers: list[dict]) -> list[dict]:
+    """Collect unique top-level findings for comment rendering."""
+    return collect_issue_groups(reviewers)
+
+
 def format_fix_order_lines(reviewers: list[dict], *, max_items: int) -> list[str]:
     """Format fix order lines."""
     items = collect_issue_groups(reviewers)
@@ -676,12 +681,12 @@ def format_hotspots_lines(reviewers: list[dict], *, max_files: int) -> list[str]
 
 def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[str]:
     """Format key findings lines."""
-    items = collect_key_findings(reviewers, max_total=max_total)
+    items = collect_unique_findings(reviewers)[:max_total]
     if not items:
         return ["_No findings reported._"]
 
     lines: list[str] = []
-    for rname, finding in items:
+    for finding in items:
         severity = normalize_severity(finding.get("severity"))
         sev_icon = severity_icon(severity)
         title = truncate(finding.get("title"), max_len=200) or "Untitled finding"
@@ -689,8 +694,9 @@ def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[
         location = finding_location_link(finding)
         description = truncate(finding.get("description"), max_len=1000)
         suggestion = truncate(finding.get("suggestion"), max_len=1000)
+        reviewers_label = format_reviewer_list(finding.get("reviewers") or [])
 
-        lines.append(f"- {sev_icon} **{title}** (`{category}`) at {location} ({rname})")
+        lines.append(f"- {sev_icon} **{title}** (`{category}`) at {location} ({reviewers_label})")
 
         detail_lines: list[str] = []
         if description:

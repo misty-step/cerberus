@@ -1,7 +1,4 @@
-"""Finding aggregation and formatting helpers.
-
-Intentionally tiny: normalization + merging + reviewer list formatting.
-"""
+"""Finding aggregation and formatting helpers."""
 
 from __future__ import annotations
 
@@ -9,6 +6,33 @@ import re
 from collections.abc import Callable, Iterable
 
 SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
+FINDING_TOKEN_RE = re.compile(r"[a-z0-9]+")
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "same",
+    "that",
+    "the",
+    "this",
+    "to",
+    "use",
+    "used",
+    "using",
+    "with",
+}
 
 
 def norm_key(value: object) -> str:
@@ -58,6 +82,79 @@ def normalize_severity(value: object, order: dict[str, int] | None = None) -> st
     """Normalize severity string; unknown values collapse to 'info'."""
     text = str(value or "").strip().lower()
     return text if text in (order if order is not None else SEVERITY_ORDER) else "info"
+
+
+def content_tokens(*values: object) -> set[str]:
+    """Extract meaningful lowercase tokens from finding text."""
+    tokens: set[str] = set()
+    for value in values:
+        for token in FINDING_TOKEN_RE.findall(str(value or "").lower()):
+            if len(token) < 4:
+                continue
+            if token in STOP_WORDS:
+                continue
+            normalized = token
+            if len(normalized) > 6 and normalized.endswith("ing"):
+                normalized = normalized[:-3]
+            elif len(normalized) > 5 and normalized.endswith("ed"):
+                normalized = normalized[:-1]
+            elif len(normalized) > 5 and normalized.endswith("es"):
+                normalized = normalized[:-2]
+            elif len(normalized) > 5 and normalized.endswith("s"):
+                normalized = normalized[:-1]
+            tokens.add(normalized)
+    return tokens
+
+
+def choose_line(current: object, candidate: object) -> int:
+    """Keep the earliest positive line when merging findings."""
+    current_line = as_int(current) or 0
+    candidate_line = as_int(candidate) or 0
+    positive = [line for line in (current_line, candidate_line) if line > 0]
+    if positive:
+        return min(positive)
+    return max(current_line, candidate_line, 0)
+
+
+def is_equivalent_finding(existing: dict, finding: dict) -> bool:
+    """Return True for conservative same-root-cause matches.
+
+    We only fuzzy-merge findings when they point at the same file/category,
+    sit on nearby lines, and share at least two meaningful title/description
+    tokens. This keeps the dedupe path narrow enough to avoid collapsing
+    unrelated comments that merely happen to mention the same module.
+    """
+    if str(existing.get("file") or "").strip() != str(finding.get("file") or "").strip():
+        return False
+    if norm_key(existing.get("category")) != norm_key(finding.get("category")):
+        return False
+
+    existing_line = as_int(existing.get("line")) or 0
+    candidate_line = as_int(finding.get("line")) or 0
+    if existing_line > 0 and candidate_line > 0 and abs(existing_line - candidate_line) > 3:
+        return False
+
+    existing_title = norm_key(existing.get("title"))
+    candidate_title = norm_key(finding.get("title"))
+    if (
+        existing_title
+        and existing_title == candidate_title
+        and (
+            existing_line <= 0
+            or candidate_line <= 0
+            or existing_line == candidate_line
+        )
+    ):
+        return True
+
+    existing_tokens = content_tokens(existing.get("title"), existing.get("description"))
+    candidate_tokens = content_tokens(finding.get("title"), finding.get("description"))
+    overlap = existing_tokens & candidate_tokens
+    if len(overlap) < 2:
+        return False
+
+    smaller = min(len(existing_tokens), len(candidate_tokens))
+    return smaller > 0 and (len(overlap) / smaller) >= 0.4
 
 
 def split_reviewer_description(value: object) -> tuple[str, str]:
@@ -113,7 +210,7 @@ def group_findings(
                         Defaults to the standard critical/major/minor/info order.
     """
     order = severity_order if severity_order is not None else SEVERITY_ORDER
-    grouped: dict[tuple[str, int, str, str], dict] = {}
+    grouped: list[dict] = []
 
     for rname, findings in findings_by_reviewer:
         for finding in findings:
@@ -131,10 +228,9 @@ def group_findings(
             category = str(finding.get("category") or "").strip() or "uncategorized"
             title = str(finding.get("title") or "").strip() or "Untitled finding"
 
-            key = (file, line, norm_key(category), norm_key(title))
-            existing = grouped.get(key)
+            existing = next((item for item in grouped if is_equivalent_finding(item, finding)), None)
             if existing is None:
-                grouped[key] = {
+                grouped.append({
                     "severity": severity,
                     "category": category,
                     "file": file,
@@ -142,17 +238,19 @@ def group_findings(
                     "title": title,
                     "reviewers": {rname},
                     **{field: str(finding.get(field) or "").strip() for field in text_fields},
-                }
+                })
                 continue
 
             existing["reviewers"].add(rname)
             if order.get(severity, 99) < order.get(existing.get("severity"), 99):
                 existing["severity"] = severity
+            existing["line"] = choose_line(existing.get("line"), line)
+            existing["title"] = best_text(existing.get("title"), title)
             for field in text_fields:
                 existing[field] = best_text(existing.get(field), finding.get(field))
 
     out: list[dict] = []
-    for item in grouped.values():
+    for item in grouped:
         reviewers = sorted(
             str(r or "").strip() for r in item.get("reviewers", set()) if str(r or "").strip()
         )

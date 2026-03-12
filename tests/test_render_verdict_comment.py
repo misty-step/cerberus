@@ -420,6 +420,90 @@ def test_collect_issue_groups_merges_matching_findings() -> None:
     assert merged[("src/a.py", 10, "Shared issue")]["reviewers"] == ["Apollo", "Vulcan"]
 
 
+def test_collect_issue_groups_merges_equivalent_titles_on_nearby_lines() -> None:
+    reviewer_a = {
+        "reviewer": "CODEX",
+        "findings": [
+            {
+                "severity": "major",
+                "category": "bug",
+                "file": "src/a.py",
+                "line": 10,
+                "title": "Restore host executor after sandbox cleanup",
+                "description": "The previous executor is lost after cleanup.",
+                "suggestion": "restore the old executor before returning",
+            }
+        ],
+    }
+    reviewer_b = {
+        "reviewer": "CODERABBIT",
+        "findings": [
+            {
+                "severity": "minor",
+                "category": "bug",
+                "file": "src/a.py",
+                "line": 12,
+                "title": "Executor field is replaced but not restored",
+                "description": "Cleanup leaves the swapped executor installed.",
+                "suggestion": "put the original executor back after cleanup",
+            }
+        ],
+    }
+
+    groups = collect_issue_groups([reviewer_a, reviewer_b])
+    assert len(groups) == 1
+    assert groups[0]["severity"] == "major"
+    assert groups[0]["reviewers"] == ["Coderabbit", "Codex"]
+
+
+def test_render_comment_dedupes_equivalent_key_findings() -> None:
+    comment = render_comment(
+        {
+            "verdict": "WARN",
+            "reviewers": [
+                {
+                    "reviewer": "CODEX",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "bug",
+                            "file": "src/a.py",
+                            "line": 10,
+                            "title": "Use bounded cleanup context",
+                            "description": "cleanup receives a canceled context",
+                            "suggestion": "create a fresh bounded context",
+                        }
+                    ],
+                },
+                {
+                    "reviewer": "CODERABBIT",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "bug",
+                            "file": "src/a.py",
+                            "line": 12,
+                            "title": "Run cleanup with a live context",
+                            "description": "cleanup should not reuse the canceled context",
+                            "suggestion": "create a live context for cleanup",
+                        }
+                    ],
+                },
+            ],
+        },
+        max_findings=5,
+        max_key_findings=5,
+        marker="<!-- test -->",
+    )
+    key_findings = comment.split("### Key Findings", 1)[1].split("####", 1)[0]
+    assert key_findings.count("cleanup") >= 1
+    assert key_findings.count("CodeRabbit") + key_findings.count("Coderabbit") >= 1
+    assert key_findings.count("Codex") >= 1
+    assert key_findings.count("Use bounded cleanup context") + key_findings.count("Run cleanup with a live context") == 1
+
+
 def test_collect_hotspots_handles_multiple_reviewers() -> None:
     reviewer_a = {
         "reviewer": "APOLLO",
