@@ -19,7 +19,6 @@ class ReviewComment:
     position: int
     body: str
 
-
 def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
     """List pr reviews."""
     try:
