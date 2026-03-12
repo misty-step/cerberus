@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import NoReturn
 
+from lib.runtime_errors import classify_api_error_text
+
 PARSE_FAILURE_PREFIX = "Review output could not be parsed: "
 REVIEWER_NAME = "UNKNOWN"
 PERSPECTIVE = "unknown"
@@ -290,15 +292,7 @@ def has_explicit_auth_signal(text: str) -> bool:
 def detect_api_error(text: str) -> tuple[bool, str]:
     """Detect if the text contains an API error. Returns (is_error, error_type)."""
     if "API Error:" in text:
-        if has_explicit_auth_signal(text):
-            return True, "API_KEY_INVALID"
-        if "API_CREDITS_DEPLETED" in text or "API_QUOTA_EXCEEDED" in text:
-            return True, "API_CREDITS_DEPLETED"
-        if "402" in text or "payment required" in text.lower():
-            return True, "API_CREDITS_DEPLETED"
-        if "quota" in text.lower() or "billing" in text.lower():
-            return True, "API_CREDITS_DEPLETED"
-        return True, "API_ERROR"
+        return True, classify_api_error_text(text)
     return False, ""
 
 
