@@ -23,6 +23,15 @@ def test_verdict_action_uses_python_override_collection() -> None:
     assert "platform_run_gh" in collector
 
 
+def test_verdict_action_reads_override_policies_via_typed_defaults_cli() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    assert "scripts/read-defaults-config.py" in content
+    assert "override-policies" in content
+    assert '--github-output "$GITHUB_OUTPUT"' in content
+    assert "re.search(r'^\\s*override:" not in content
+
+
 def test_verdict_action_uses_shared_upsert() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 

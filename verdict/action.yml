@@ -53,34 +53,10 @@ runs:
         CERBERUS_ROOT: ${{ github.action_path }}/..
       run: |
         CONFIG="$CERBERUS_ROOT/defaults/config.yml"
-        python3 - "$CONFIG" <<'PYEOF'
-        import json, os, re, sys
-        config_path = sys.argv[1]
-        with open(config_path) as fh:
-            raw = fh.read()
-        # Strip comment-only lines to prevent matching commented-out entries.
-        text = "\n".join(
-            line for line in raw.splitlines()
-            if not line.lstrip().startswith("#")
-        )
-        # Extract global override actor policy.
-        m = re.search(r'^\s*override:\s*\n(?:.*\n)*?^\s+actor:\s*(\S+)', text, re.MULTILINE)
-        global_policy = m.group(1).strip("\"'") if m else "pr_author"
-        # Extract per-reviewer override policies from reviewers list.
-        policies = {}
-        for block in re.finditer(
-            r'^\s*-\s+name:\s*(\S+).*?(?=^\s*-\s+name:|\Z)', text, re.DOTALL | re.MULTILINE
-        ):
-            name = block.group(1).strip("\"'")
-            om = re.search(r'^\s*override:\s*(\S+)', block.group(0), re.MULTILINE)
-            if om:
-                policies[name] = om.group(1).strip("\"'")
-            else:
-                policies[name] = global_policy
-        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"global_policy={global_policy}\n")
-            f.write(f"reviewer_policies={json.dumps(policies)}\n")
-        PYEOF
+        python3 "$CERBERUS_ROOT/scripts/read-defaults-config.py" \
+          override-policies \
+          --config "$CONFIG" \
+          --github-output "$GITHUB_OUTPUT"
 
     - name: Check for override
       id: override

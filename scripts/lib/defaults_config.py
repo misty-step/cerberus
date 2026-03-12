@@ -24,6 +24,14 @@ class Reviewer:
     perspective: str
     model: str | None = None
     description: str | None = None
+    override: str | None = None
+
+
+@dataclass(frozen=True)
+class OverrideConfig:
+    """Data class for global override policy."""
+
+    actor: str = "pr_author"
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,7 @@ class DefaultsConfig:
     """Data class for Defaults Config."""
     reviewers: list[Reviewer]
     model: ModelConfig
+    override: OverrideConfig = field(default_factory=OverrideConfig)
     waves: WavesConfig = field(default_factory=WavesConfig)
 
     def reviewer_for_perspective(self, perspective: str) -> Reviewer | None:
@@ -73,6 +82,14 @@ class DefaultsConfig:
             if reviewer.perspective == perspective:
                 return reviewer
         return None
+
+    def reviewer_override_policies(self) -> dict[str, str]:
+        """Effective override policy for each reviewer."""
+
+        return {
+            reviewer.name: reviewer.override or self.override.actor
+            for reviewer in self.reviewers
+        }
 
 
 def _require_mapping(value: Any, ctx: str) -> dict[str, Any]:
@@ -164,12 +181,16 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
         description = _optional_str(
             reviewer.get("description"), f"config.reviewers[{idx}].description"
         )
+        override = _optional_str(
+            reviewer.get("override"), f"config.reviewers[{idx}].override"
+        )
         reviewers.append(
             Reviewer(
                 name=name,
                 perspective=perspective,
                 model=model,
                 description=description,
+                override=override,
             )
         )
 
@@ -199,6 +220,14 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
                     models, f"config.model.wave_pools[{wave_name}]"
                 )
         model = ModelConfig(default=model_default, pool=pool, tiers=tiers, wave_pools=wave_pools)
+
+    override_cfg = OverrideConfig()
+    override_raw = cfg.get("override")
+    if override_raw is not None:
+        override_map = _require_mapping(override_raw, "config.override")
+        override_cfg = OverrideConfig(
+            actor=_optional_str(override_map.get("actor"), "config.override.actor") or "pr_author"
+        )
 
     waves_raw = cfg.get("waves")
     waves = WavesConfig()
@@ -290,4 +319,4 @@ def load_defaults_config(path: Path) -> DefaultsConfig:
             definitions=definitions,
         )
 
-    return DefaultsConfig(reviewers=reviewers, model=model, waves=waves)
+    return DefaultsConfig(reviewers=reviewers, model=model, override=override_cfg, waves=waves)

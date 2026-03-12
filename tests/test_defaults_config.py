@@ -7,6 +7,7 @@ from lib.defaults_config import (
     ConfigError,
     DefaultsConfig,
     ModelConfig,
+    OverrideConfig,
     Reviewer,
     load_defaults_config,
 )
@@ -52,6 +53,9 @@ reviewers:
     perspective: security
     model: openrouter/specific
     description: Security reviewer
+    override: maintainers_only
+override:
+  actor: write_access
 """)
         cfg = load_defaults_config(path)
         assert cfg.model.default == "openrouter/kimi-k2.5"
@@ -63,6 +67,8 @@ reviewers:
         }
         assert cfg.reviewers[0].model == "openrouter/specific"
         assert cfg.reviewers[0].description == "Security reviewer"
+        assert cfg.reviewers[0].override == "maintainers_only"
+        assert cfg.override.actor == "write_access"
 
     def test_model_tiers_parsed(self, tmp_path):
         path = write_config(tmp_path, """
@@ -428,3 +434,20 @@ class TestReviewerForPerspective:
             model=ModelConfig(),
         )
         assert cfg.reviewer_for_perspective("security") is None
+
+
+class TestOverridePolicies:
+    def test_reviewer_override_policies_uses_global_default(self):
+        cfg = DefaultsConfig(
+            reviewers=[
+                Reviewer(name="A", perspective="correctness"),
+                Reviewer(name="B", perspective="security", override="maintainers_only"),
+            ],
+            model=ModelConfig(),
+            override=OverrideConfig(actor="write_access"),
+        )
+
+        assert cfg.reviewer_override_policies() == {
+            "A": "write_access",
+            "B": "maintainers_only",
+        }
