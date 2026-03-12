@@ -45,7 +45,7 @@ def test_security_agent_includes_infra_and_workflow_supply_chain_guidance() -> N
     assert "floating major-only tag such as `@v1`/`@v2`" in text
     assert "report at least `minor`" in text
     assert "Escalate to `major`" in text
-    assert "sibling `secrets:` block" in text
+    assert "including via sibling `env:`, `with:`, or `secrets:` blocks" in text
     assert "AWS_ACCESS_KEY_ID" in text
     assert "GITHUB_TOKEN" in text
     assert "Acceptable third-party refs are full pinned SHAs" in text
