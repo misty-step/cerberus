@@ -41,6 +41,9 @@ CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
 
 
 def _diagnostics_envelope(obj: dict) -> dict:
+    # main() drops any model-authored `_diagnostics` before parser code runs.
+    # After that precondition holds, the helper only accumulates pipeline-owned
+    # diagnostics across multiple parser passes in the same object.
     diagnostics = obj.get("_diagnostics")
     if isinstance(diagnostics, dict):
         return diagnostics

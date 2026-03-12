@@ -2682,6 +2682,30 @@ class TestStatsValidation:
         assert discrepancy["reported"]["critical"] == 2
         assert "injected_key" not in data["_diagnostics"]
 
+    def test_pipeline_diagnostics_share_one_envelope(self):
+        """Stats and stale-knowledge diagnostics coexist in one pipeline envelope."""
+        review = json.dumps({
+            "reviewer": "APOLLO", "perspective": "correctness", "verdict": "FAIL",
+            "confidence": 0.95, "summary": "Bad version",
+            "findings": [{
+                "severity": "critical",
+                "category": "invalid-version",
+                "file": "go.mod",
+                "line": 3,
+                "title": "Go 1.25 does not exist",
+                "description": "go 1.25 does not exist. Latest stable is Go 1.23.",
+                "suggestion": "Use Go 1.23."
+            }],
+            "stats": {"files_reviewed": 5, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, _ = run_parse(f"```json\n{review}\n```")
+        assert code == 0
+        data = json.loads(out)
+        diagnostics = data["_diagnostics"]
+        assert diagnostics["stats_discrepancy"]["discrepancy"] is True
+        assert diagnostics["stale_knowledge_annotations"][0]["finding_index"] == 0
+
 
 class TestDirectJsonInput:
     """Tests for the structured-output extraction path.
