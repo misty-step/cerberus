@@ -11,7 +11,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-from lib.github_platform import (
+
+def _ensure_scripts_import_root() -> None:
+    """Allow direct execution from scripts/lib without caller PYTHONPATH tweaks."""
+    if __package__ not in (None, ""):
+        return
+    scripts_dir = Path(__file__).resolve().parent.parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+
+_ensure_scripts_import_root()
+
+from lib.github_platform import (  # noqa: E402
     GitHubPermissionError as PlatformPermissionError,
     TransientGitHubError as PlatformTransientGitHubError,
     is_transient_error,
