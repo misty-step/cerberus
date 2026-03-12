@@ -14,7 +14,7 @@ This lane fixes a security-review blind spot in the `guard` prompt. Cerberus alr
 
 - `guard` now runs a dedicated GitHub Actions supply-chain pass when workflow/config files change.
 - Mutable third-party refs are explicitly at least `minor`.
-- Mutable third-party refs that receive forwarded reusable credentials via `env:`, `with:`, or reusable-workflow `secrets:` blocks are explicitly `major`, with concrete examples for what should and should not escalate.
+- Mutable third-party refs that receive forwarded reusable credentials via `env:` or `with:` on an action step, or via reusable-workflow `secrets:` blocks, are explicitly `major`, with concrete examples for what should and should not escalate.
 - Full SHAs and full third-party release tags such as `@v1.2.3` are explicitly non-findings, while partial semver refs such as `@v1` and `@v1.2` remain mutable.
 - GitHub-owned actions on semver-style tags such as `actions/checkout@v4` are explicitly non-findings as a lower-risk policy exception, not because those tags are immutable pins.
 - GitHub-owned actions on mutable branch refs are now defined as a lower-risk case that can warrant `info`, rather than being left ambiguous.
@@ -25,7 +25,7 @@ This lane fixes a security-review blind spot in the `guard` prompt. Cerberus alr
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@master` with a sibling `secrets:` block passing any secret, when reviewed by `guard`, then a finding with severity `minor` or higher is emitted with category `supply-chain` or `security`.
   Evidence: `.opencode/agents/security.md` now requires mutable third-party refs to report at least `minor`, and `tests/test_infra_prompt_guidance.py` locks that language. This is prompt-contract evidence rather than a live LLM replay.
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@master` with `secrets: api-key: ${{ secrets.SOME_API_KEY }}`, when reviewed by `guard`, then severity is `major`.
-  Evidence: `.opencode/agents/security.md` now explicitly says to escalate to `major` when forwarded reusable credentials reach the mutable third-party action via `env:`, `with:`, or reusable-workflow `secrets:` blocks, and the regression test locks that clause.
+  Evidence: `.opencode/agents/security.md` now explicitly says to escalate to `major` when forwarded reusable credentials reach the mutable third-party action via `env:` or `with:` on an action step, or via reusable-workflow `secrets:` blocks, and the regression test locks that clause.
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@v1.2.3`, when reviewed by `guard`, then no supply-chain finding is emitted.
   Evidence: `.opencode/agents/security.md` now declares full SHAs and full third-party release tags such as `@v1.2.3` acceptable refs, while keeping partial semver refs such as `@v1` and `@v1.2` out of the safe set, and `tests/test_infra_prompt_guidance.py` asserts that text is present.
 - ⚠️ PARTIAL: Given a PR diff with `uses: actions/checkout@v4`, when reviewed by `guard`, then no supply-chain finding is emitted.
@@ -55,7 +55,7 @@ make validate
 Observed result on this branch:
 
 - `tests/test_infra_prompt_guidance.py`: `3 passed`
-- `make validate`: `1605 passed, 1 skipped`
+- `make validate`: `1623 passed, 1 skipped`
 - `ruff`: clean
 - `shellcheck`: clean
 
