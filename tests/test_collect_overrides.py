@@ -96,10 +96,10 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
 
 def test_fetch_pr_comments_handles_multi_page_responses(monkeypatch) -> None:
     mod = _import_script()
-    calls: list[tuple[str, int]] = []
+    calls: list[tuple[str, int, int, int | None]] = []
 
     def fake_fetch_issue_comments(repo: str, pr_number: int, *, per_page: int = 100, max_pages: int = 20, stop_on_marker=None):
-        calls.append((repo, pr_number))
+        calls.append((repo, pr_number, per_page, max_pages))
         assert per_page == 2
         return [{"id": 1}, {"id": 2}]
 
@@ -108,7 +108,7 @@ def test_fetch_pr_comments_handles_multi_page_responses(monkeypatch) -> None:
     comments = mod.fetch_pr_comments("owner/repo", 7, per_page=2)
 
     assert comments == [{"id": 1}, {"id": 2}]
-    assert calls == [("owner/repo", 7)]
+    assert calls == [("owner/repo", 7, 2, None)]
 
 
 def test_fetch_pr_comments_raises_on_non_list_payload(monkeypatch) -> None:

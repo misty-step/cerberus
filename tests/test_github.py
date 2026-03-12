@@ -302,7 +302,9 @@ def test_permission_denied_raises(monkeypatch, tmp_path):
     body_file.write_text("Body")
 
     def mock_create_issue_comment(*, repo: str, number: int, body_file: str):
-        raise CommentPermissionError("no permission")
+        import lib.github_platform as platform
+
+        raise platform.GitHubPermissionError("no permission")
 
     import lib.github as mod
 
@@ -316,6 +318,19 @@ def test_permission_denied_raises(monkeypatch, tmp_path):
             body_file=str(body_file),
             comments=[],
         )
+
+
+def test_fetch_comments_translates_platform_transient_error(monkeypatch):
+    import lib.github as mod
+    import lib.github_platform as platform
+
+    def fake_fetch_issue_comments(*args, **kwargs):
+        raise platform.TransientGitHubError("temporary")
+
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
+
+    with pytest.raises(mod.TransientGitHubError, match="temporary"):
+        mod.fetch_comments("o/r", 5)
 
 
 class TestRunGhErrorHandling:

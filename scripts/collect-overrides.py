@@ -31,7 +31,7 @@ def gh_json(args: list[str], *, timeout: int = 20) -> object:
 
 def fetch_pr_comments(repo: str, pr_number: int, *, per_page: int = 100) -> list[dict]:
     """Fetch pr comments."""
-    return fetch_issue_comments(repo, pr_number, per_page=per_page)
+    return fetch_issue_comments(repo, pr_number, per_page=per_page, max_pages=None)
 
 
 def extract_override_comments(comments: list[dict]) -> list[dict[str, str]]:

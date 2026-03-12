@@ -126,6 +126,29 @@ def test_fetch_issue_comments_stops_on_marker(monkeypatch) -> None:
     assert calls == [["api", "repos/owner/repo/issues/42/comments?per_page=2&page=1"]]
 
 
+def test_fetch_issue_comments_allows_unbounded_pagination(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_gh_json(args, *, timeout=None, max_retries=3, base_delay=1.0):
+        calls.append(args)
+        endpoint = args[1]
+        if endpoint.endswith("page=1"):
+            return [{"id": index} for index in range(100)]
+        if endpoint.endswith("page=2"):
+            return []
+        raise AssertionError(f"unexpected endpoint: {endpoint}")
+
+    monkeypatch.setattr(mod, "gh_json", fake_gh_json)
+
+    comments = mod.fetch_issue_comments("owner/repo", 42, max_pages=None)
+
+    assert comments == [{"id": index} for index in range(100)]
+    assert calls == [
+        ["api", "repos/owner/repo/issues/42/comments?per_page=100&page=1"],
+        ["api", "repos/owner/repo/issues/42/comments?per_page=100&page=2"],
+    ]
+
+
 def test_create_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> None:
     body_file = tmp_path / "body.md"
     body_file.write_text("body")
@@ -133,6 +156,7 @@ def test_create_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> No
 
     def fake_run_gh(args, **kwargs):
         seen.append(args)
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(mod, "run_gh", fake_run_gh)
@@ -140,6 +164,7 @@ def test_create_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> No
     mod.create_issue_comment(repo="owner/repo", number=7, body_file=str(body_file))
 
     assert seen == [["api", "repos/owner/repo/issues/7/comments", "-F", f"body=@{body_file}"]]
+    assert mod.DEFAULT_GH_TIMEOUT == 20
 
 
 def test_update_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> None:
@@ -149,6 +174,7 @@ def test_update_issue_comment_uses_shared_transport(monkeypatch, tmp_path) -> No
 
     def fake_run_gh(args, **kwargs):
         seen.append(args)
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(mod, "run_gh", fake_run_gh)
@@ -165,14 +191,20 @@ def test_list_pr_reviews_uses_adapter_json(monkeypatch) -> None:
 
     def fake_gh_json(args, *, timeout=None, max_retries=3, base_delay=1.0):
         calls.append(args)
-        return [{"id": 9, "body": "ok"}]
+        assert timeout == mod.DEFAULT_GH_TIMEOUT
+        return [[{"id": 9, "body": "ok"}], [{"id": 10, "body": "again"}]]
 
     monkeypatch.setattr(mod, "gh_json", fake_gh_json)
 
     reviews = mod.list_pr_reviews("owner/repo", 42)
 
-    assert reviews == [{"id": 9, "body": "ok"}]
-    assert calls == [["api", "repos/owner/repo/pulls/42/reviews?per_page=100"]]
+    assert reviews == [{"id": 9, "body": "ok"}, {"id": 10, "body": "again"}]
+    assert calls == [[
+        "api",
+        "--paginate",
+        "--slurp",
+        "repos/owner/repo/pulls/42/reviews?per_page=100",
+    ]]
 
 
 def test_list_pr_files_flattens_paginated_pages(monkeypatch) -> None:
@@ -183,6 +215,7 @@ def test_list_pr_files_flattens_paginated_pages(monkeypatch) -> None:
             "--slurp",
             "repos/owner/repo/pulls/5/files?per_page=100",
         ]
+        assert timeout == mod.DEFAULT_GH_TIMEOUT
         return [
             [{"filename": "a.py", "patch": "@@ -1 +1 @@\n+hi"}],
             [{"filename": "b.py"}],
@@ -197,10 +230,12 @@ def test_list_pr_files_flattens_paginated_pages(monkeypatch) -> None:
 
 def test_create_pr_review_posts_json_payload(monkeypatch) -> None:
     seen_payload: dict | None = None
+    payload_path: str | None = None
 
     def fake_run_gh(args, **kwargs):
-        nonlocal seen_payload
+        nonlocal seen_payload, payload_path
         assert args[0:4] == ["api", "-X", "POST", "repos/owner/repo/pulls/7/reviews"]
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
         payload_path = args[args.index("--input") + 1]
         with open(payload_path, encoding="utf-8") as handle:
             seen_payload = json.load(handle)
@@ -223,3 +258,5 @@ def test_create_pr_review_posts_json_payload(monkeypatch) -> None:
         "body": "hello",
         "comments": [{"path": "a.py", "position": 3, "body": "c"}],
     }
+    assert payload_path is not None
+    assert not mod.os.path.exists(payload_path)
