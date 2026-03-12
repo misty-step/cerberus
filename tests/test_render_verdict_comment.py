@@ -504,6 +504,65 @@ def test_render_comment_dedupes_equivalent_key_findings() -> None:
     assert key_findings.count("Use bounded cleanup context") + key_findings.count("Run cleanup with a live context") == 1
 
 
+def test_render_comment_preserves_grouped_description_in_key_findings() -> None:
+    comment = render_comment(
+        {
+            "verdict": "WARN",
+            "reviewers": [
+                {
+                    "reviewer": "CODEX",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "bug",
+                            "file": "src/a.py",
+                            "line": 10,
+                            "title": "Use bounded cleanup context",
+                            "description": "cleanup receives a canceled context",
+                            "suggestion": "create a fresh bounded context",
+                        }
+                    ],
+                }
+            ],
+        },
+        max_findings=5,
+        max_key_findings=5,
+        marker="<!-- test -->",
+    )
+    assert "Description: cleanup receives a canceled context" in comment
+
+
+def test_render_comment_preserves_fileless_key_findings() -> None:
+    comment = render_comment(
+        {
+            "verdict": "WARN",
+            "reviewers": [
+                {
+                    "reviewer": "TRACE",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "api_error",
+                            "file": "",
+                            "line": 0,
+                            "title": "RATE_LIMIT",
+                            "description": "provider rejected the request",
+                            "suggestion": "retry with fewer parallel reviewers",
+                        }
+                    ],
+                }
+            ],
+        },
+        max_findings=5,
+        max_key_findings=5,
+        marker="<!-- test -->",
+    )
+    assert "RATE_LIMIT" in comment
+    assert "provider rejected the request" in comment
+
+
 def test_collect_hotspots_handles_multiple_reviewers() -> None:
     reviewer_a = {
         "reviewer": "APOLLO",

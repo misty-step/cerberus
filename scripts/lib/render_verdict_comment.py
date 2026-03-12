@@ -563,7 +563,7 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
 
     out = group_findings(
         ((reviewer_label(rv), findings_for(rv)) for rv in reviewers),
-        text_fields=("suggestion",),
+        text_fields=("description", "suggestion"),
         predicate=_predicate,
         severity_order=SEVERITY_ORDER,
     )
@@ -583,7 +583,29 @@ def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
 
 def collect_unique_findings(reviewers: list[dict]) -> list[dict]:
     """Collect unique top-level findings for comment rendering."""
-    return collect_issue_groups(reviewers)
+    grouped = collect_issue_groups(reviewers)
+    non_file = group_findings(
+        ((reviewer_label(rv), findings_for(rv)) for rv in reviewers),
+        text_fields=("description", "suggestion"),
+        predicate=lambda finding, _rname: not (
+            str(finding.get("file") or "").strip()
+            and str(finding.get("file") or "").strip().upper() != "N/A"
+        ),
+        severity_order=SEVERITY_ORDER,
+    )
+
+    def _sort_key(item: dict) -> tuple[int, int, str, int, str]:
+        return (
+            SEVERITY_ORDER.get(normalize_severity(item.get("severity")), 99),
+            -len(item.get("reviewers") or []),
+            str(item.get("file") or ""),
+            int(item.get("line") or 0),
+            str(item.get("title") or ""),
+        )
+
+    combined = [*grouped, *non_file]
+    combined.sort(key=_sort_key)
+    return combined
 
 
 def format_fix_order_lines(reviewers: list[dict], *, max_items: int) -> list[str]:

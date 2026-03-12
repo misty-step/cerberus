@@ -93,16 +93,21 @@ def content_tokens(*values: object) -> set[str]:
                 continue
             if token in STOP_WORDS:
                 continue
-            normalized = token
-            if len(normalized) > 6 and normalized.endswith("ing"):
-                normalized = normalized[:-3]
-            elif len(normalized) > 5 and normalized.endswith("ed"):
-                normalized = normalized[:-1]
-            elif len(normalized) > 5 and normalized.endswith("es"):
-                normalized = normalized[:-2]
-            elif len(normalized) > 5 and normalized.endswith("s"):
-                normalized = normalized[:-1]
-            tokens.add(normalized)
+            if len(token) > 6 and token.endswith("ing"):
+                tokens.add(token[:-3])
+                continue
+            if len(token) > 5 and token.endswith("ed"):
+                root = token[:-2]
+                tokens.add(root)
+                tokens.add(f"{root}e")
+                continue
+            if len(token) > 5 and token.endswith("es"):
+                tokens.add(token[:-2])
+                continue
+            if len(token) > 5 and token.endswith("s"):
+                tokens.add(token[:-1])
+                continue
+            tokens.add(token)
     return tokens
 
 
@@ -138,6 +143,15 @@ def is_equivalent_finding(existing: dict, finding: dict) -> bool:
     candidate_title = norm_key(finding.get("title"))
     if (
         existing_title
+        and candidate_title
+        and existing_title == candidate_title
+        and existing_line > 0
+        and candidate_line > 0
+        and existing_line != candidate_line
+    ):
+        return False
+    if (
+        existing_title
         and existing_title == candidate_title
         and (
             existing_line <= 0
@@ -154,7 +168,7 @@ def is_equivalent_finding(existing: dict, finding: dict) -> bool:
         return False
 
     smaller = min(len(existing_tokens), len(candidate_tokens))
-    return smaller > 0 and (len(overlap) / smaller) >= 0.4
+    return smaller > 0 and (len(overlap) >= 3 or (len(overlap) / smaller) >= 0.4)
 
 
 def split_reviewer_description(value: object) -> tuple[str, str]:
@@ -195,7 +209,7 @@ def group_findings(
     predicate: Callable[[dict, str], bool] | None = None,
     severity_order: dict[str, int] | None = None,
 ) -> list[dict]:
-    """Group and merge findings from multiple reviewers by (file, line, category, title).
+    """Group and merge findings from multiple reviewers.
 
     Deduplicates matching findings, takes the worst severity, and merges text
     fields with best_text. Returns a list of finding dicts with "reviewers" as

@@ -270,6 +270,14 @@ class TestGroupFindings:
         out = group_findings(pairs)
         assert len(out) == 2
 
+    def test_same_title_different_lines_stay_separate(self):
+        pairs = [
+            ("A", [{"severity": "major", "category": "bug", "file": "engine.go", "line": 40, "title": "Shared title"}]),
+            ("B", [{"severity": "minor", "category": "bug", "file": "engine.go", "line": 41, "title": "Shared title"}]),
+        ]
+        out = group_findings(pairs)
+        assert len(out) == 2
+
 
 class TestAsInt:
     def test_none(self):
@@ -317,6 +325,10 @@ class TestNormalizeSeverity:
 class TestSemanticMergeHelpers:
     def test_content_tokens_drop_short_and_stop_words(self):
         assert content_tokens("Use the live cleanup context") == {"live", "cleanup", "context"}
+
+    def test_content_tokens_include_base_form_for_ed_suffix(self):
+        assert "cancel" in content_tokens("canceled")
+        assert "restore" in content_tokens("restored")
 
     def test_is_equivalent_finding_requires_same_file_category_and_overlap(self):
         first = {
