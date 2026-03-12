@@ -37,6 +37,31 @@ def make_env(bin_dir: Path, diff_file: Path) -> dict[str, str]:
     return env
 
 
+def make_env_with_review_run(bin_dir: Path, diff_file: Path, tmp_path: Path) -> dict[str, str]:
+    from lib.review_run_contract import ReviewRunContract, write_review_run_contract
+
+    env = make_env(bin_dir, diff_file)
+    pr_context = tmp_path / "pr-context.json"
+    pr_context.write_text(
+        '{"title":"Title","author":{"login":"reviewer"},"headRefName":"feature","baseRefName":"master","body":"Body"}'
+    )
+    contract_path = tmp_path / "review-run.json"
+    write_review_run_contract(
+        contract_path,
+        ReviewRunContract(
+            repository="misty-step/cerberus",
+            pr_number=323,
+            diff_file=str(diff_file),
+            pr_context_file=str(pr_context),
+            workspace_root=str(REPO_ROOT),
+            temp_dir="/tmp",
+        ),
+    )
+    env.pop("GH_DIFF_FILE", None)
+    env["CERBERUS_REVIEW_RUN"] = str(contract_path)
+    return env
+
+
 def write_stub_pi(path: Path, verdict: str = "PASS") -> None:
     make_executable(
         path,
@@ -175,6 +200,26 @@ def test_binary_diff_file_is_handled(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "parse-input:" in result.stdout
+
+
+def test_review_run_contract_is_handled(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_pi(bin_dir / "pi")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env_with_review_run(bin_dir, diff_file, tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    parse_input_ref = Path("/tmp/security-parse-input")
+    assert parse_input_ref.exists()
 
 
 def test_unknown_perspective_fails_fast(tmp_path: Path) -> None:

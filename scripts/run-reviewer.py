@@ -20,6 +20,7 @@ from typing import Mapping
 
 from lib.defaults_config import ConfigError, load_defaults_config
 from lib.review_prompt import render_review_prompt_file
+from lib.review_run_contract import load_review_run_contract_from_env
 from lib.reviewer_profiles import (
     ReviewerProfilesError,
     RuntimeProfile,
@@ -462,7 +463,13 @@ def main(argv: list[str]) -> int:
         eprint(f"missing {provider_key_var}")
         return 2
 
-    diff_file_raw = os.environ.get("GH_DIFF_FILE", "").strip()
+    review_run = load_review_run_contract_from_env(os.environ)
+    diff_file_raw = ""
+    if review_run is not None:
+        diff_file_raw = review_run.diff_file
+    else:
+        diff_file_raw = os.environ.get("GH_DIFF_FILE", "").strip()
+
     diff_from_env = os.environ.get("GH_DIFF", "")
     if diff_file_raw and Path(diff_file_raw).is_file():
         diff_file = Path(diff_file_raw)
@@ -470,7 +477,7 @@ def main(argv: list[str]) -> int:
         diff_file = cerberus_tmp / "pr.diff"
         write_text(diff_file, diff_from_env)
     else:
-        eprint("missing diff input (GH_DIFF or GH_DIFF_FILE)")
+        eprint("missing diff input (GH_DIFF, GH_DIFF_FILE, or CERBERUS_REVIEW_RUN)")
         return 2
 
     prompt_file = cerberus_tmp / f"{perspective}-review-prompt.md"

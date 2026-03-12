@@ -9,28 +9,18 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+from lib.github_platform import run_gh as platform_run_gh
+
 
 def run_gh(args: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
-    """Run gh."""
-    result = subprocess.run(
-        ["gh", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode,
-            result.args,
-            output=result.stdout,
-            stderr=result.stderr,
-        )
-    return result
+    """Run gh via the shared GitHub platform adapter."""
+
+    return platform_run_gh(args, timeout=timeout)
 
 
 def gh_json(args: list[str], *, timeout: int = 20) -> object:
-    """Gh json."""
+    """Decode JSON returned by gh via the shared platform adapter."""
+
     result = run_gh(args, timeout=timeout)
     try:
         return json.loads(result.stdout)
@@ -80,7 +70,7 @@ def fetch_actor_permissions(repo: str, actors: list[str]) -> dict[str, str]:
         endpoint = f"repos/{repo}/collaborators/{actor}/permission"
         try:
             payload = gh_json(["api", endpoint], timeout=10)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
+        except Exception:
             permissions[actor] = ""
             continue
         permission = ""

@@ -157,6 +157,7 @@ runs:
       id: pr
       shell: bash
       env:
+        CERBERUS_ROOT: ${{ github.action_path }}
         GH_TOKEN: ${{ inputs.github-token }}
         REPO: ${{ github.repository }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -274,6 +275,13 @@ runs:
           exit 1
         fi
 
+        python3 "$CERBERUS_ROOT/scripts/bootstrap-review-run.py" \
+          --repo "$REPO" \
+          --pr "$PR_NUMBER" \
+          --diff-file "$CERBERUS_TMP/pr.diff" \
+          --pr-context-file "$CERBERUS_TMP/pr-context.json" \
+          --output "$CERBERUS_TMP/review-run.json"
+
         echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
     - name: Run review
@@ -298,6 +306,7 @@ runs:
         REVIEW_TIMEOUT: ${{ inputs.timeout }}
         GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
         GH_PR_CONTEXT: ${{ env.CERBERUS_TMP }}/pr-context.json
+        CERBERUS_REVIEW_RUN: ${{ env.CERBERUS_TMP }}/review-run.json
       run: |
         chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
         review_started_at=$(date +%s)

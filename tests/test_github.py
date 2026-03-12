@@ -10,6 +10,7 @@ from lib.github import (
     find_comment_by_marker,
     upsert_pr_comment,
 )
+from lib.github_platform import fetch_issue_comments
 
 
 class TestFindCommentByMarker:
@@ -177,6 +178,21 @@ class TestUpsertPrComment:
             "-F",
             f"body=@{body_file}",
         ]
+
+
+def test_fetch_issue_comments_uses_shared_transport(monkeypatch) -> None:
+    import lib.github_platform as platform
+
+    calls = []
+
+    def mock_gh_json(args, *, timeout=None, max_retries=3, base_delay=1.0):
+        calls.append(args)
+        return [{"id": 1, "body": "x"}]
+
+    monkeypatch.setattr(platform, "gh_json", mock_gh_json)
+    comments = fetch_issue_comments("owner/repo", 42, per_page=100, max_pages=1)
+    assert comments == [{"id": 1, "body": "x"}]
+    assert calls == [["api", "repos/owner/repo/issues/42/comments?per_page=100&page=1"]]
 
     def test_fetch_comments_paginates(self, monkeypatch):
         import json
