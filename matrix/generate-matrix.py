@@ -24,9 +24,11 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+SCRIPTS_DIR = ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-from lib.defaults_config import ConfigError, DefaultsConfig, Reviewer, load_defaults_config
+from lib.defaults_config import ConfigError, DefaultsConfig, Reviewer, load_defaults_config  # noqa: E402
 
 
 TMP_MATRIX_OUTPUT = Path("/tmp/matrix-output.json")
@@ -46,6 +48,7 @@ def split_description(value: object) -> tuple[str, str]:
         left, right = text.split(" - ", 1)
         return (left.strip(), right.strip())
     return (text, "")
+
 
 def _load_config(path: str) -> DefaultsConfig:
     try:
@@ -121,7 +124,10 @@ def generate_matrix(config_path: str) -> None:
     panel_filter = _normalize_panel_filter(os.getenv("PANEL_FILTER", ""))
 
     reviewers = _reviewers_for_wave(cfg, review_wave)
-    matrix = [_build_entry(reviewer, model_tier=model_tier, review_wave=review_wave) for reviewer in reviewers]
+    matrix = [
+        _build_entry(reviewer, model_tier=model_tier, review_wave=review_wave)
+        for reviewer in reviewers
+    ]
 
     if panel_filter:
         filtered = [entry for entry in matrix if entry["perspective"] in panel_filter]

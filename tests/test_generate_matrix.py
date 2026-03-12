@@ -78,8 +78,15 @@ def _write_empty_wave_mapping_config(tmp_path: Path) -> Path:
     return config
 
 
+@pytest.fixture(autouse=True)
+def _matrix_output_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mod, "TMP_MATRIX_OUTPUT", tmp_path / "matrix-output.json")
+    monkeypatch.setattr(mod, "TMP_MATRIX_COUNT", tmp_path / "matrix-count.txt")
+    monkeypatch.setattr(mod, "TMP_MATRIX_NAMES", tmp_path / "matrix-names.txt")
+
+
 def _load_matrix_output() -> dict:
-    return json.loads(Path("/tmp/matrix-output.json").read_text())
+    return json.loads(mod.TMP_MATRIX_OUTPUT.read_text())
 
 
 def test_generate_matrix_includes_model_tier_when_env_set(tmp_path: Path, monkeypatch) -> None:
