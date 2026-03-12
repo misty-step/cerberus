@@ -260,3 +260,26 @@ def test_create_pr_review_posts_json_payload(monkeypatch) -> None:
     }
     assert payload_path is not None
     assert not mod.os.path.exists(payload_path)
+
+
+def test_create_pr_review_cleans_up_temp_file_on_error(monkeypatch) -> None:
+    payload_path: str | None = None
+
+    def fake_run_gh(args, **kwargs):
+        nonlocal payload_path
+        payload_path = args[args.index("--input") + 1]
+        raise mod.TransientGitHubError("boom")
+
+    monkeypatch.setattr(mod, "run_gh", fake_run_gh)
+
+    with pytest.raises(mod.TransientGitHubError, match="boom"):
+        mod.create_pr_review(
+            repo="owner/repo",
+            pr_number=7,
+            commit_id="deadbeef",
+            body="hello",
+            comments=[],
+        )
+
+    assert payload_path is not None
+    assert not mod.os.path.exists(payload_path)

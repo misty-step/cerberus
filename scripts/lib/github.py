@@ -10,6 +10,7 @@ import importlib
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 
 def _ensure_scripts_import_root() -> None:
@@ -82,7 +83,7 @@ def _run_gh(
         raise TransientGitHubError(str(exc)) from exc
 
 
-def _reraise_platform_error(exc: Exception) -> None:
+def _reraise_platform_error(exc: Exception) -> NoReturn:
     """Map platform exceptions onto this module's public exception contract."""
 
     if isinstance(exc, PlatformPermissionError):
