@@ -5,8 +5,8 @@
 This lane replaces the muddled `unverified finding` language with a cleaner contract:
 
 - reviewer prompts now require exact quoted evidence or omission of the finding
-- `parse-review.py` strips legacy unverified markers instead of treating them as a live concept
-- findings rendering ignores legacy unverified metadata
+- `parse-review.py` rejects deprecated unverified/speculative marker fields and title prefixes at validation time
+- findings rendering no longer carries an unverified compatibility path
 - repository docs now define findings, evidence, citations, and verdicts explicitly
 
 ## Before
@@ -18,8 +18,8 @@ This lane replaces the muddled `unverified finding` language with a cleaner cont
 ## After
 
 - all six reviewer prompts now say: quote exact code or omit the finding
-- the parser removes legacy `[unverified]` markers and related metadata from reviewer output
-- the renderer ignores legacy unverified metadata instead of displaying it as a first-class state
+- the parser rejects deprecated `[unverified]` and `[speculative]` title prefixes plus deprecated marker fields
+- the renderer no longer contains dead logic for deprecated unverified metadata
 - the repo now has a dedicated terminology document that defines findings, evidence, citations, verdicts, skips, and triage
 
 ## Verification
@@ -38,4 +38,4 @@ Observed on this branch:
 
 ## Why This Is Better
 
-The old failure mode was not only severity demotion; it was vocabulary drift. This fix makes prompts, parser, renderer, tests, and docs agree on one rule: a finding is a first-class reviewer claim, and evidence supports it without creating a second finding category.
+The old failure mode was not only severity demotion; it was vocabulary drift plus compatibility drag. This fix makes prompts, parser, renderer, tests, and docs agree on one rule: a finding is a first-class reviewer claim, and evidence supports it without creating a second finding category or preserving deprecated aliases.

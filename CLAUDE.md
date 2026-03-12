@@ -131,10 +131,11 @@ Every reviewer must end with a JSON block containing: `reviewer`, `perspective`,
 
 Optional finding fields:
 - `evidence` (string) — exact code quote backing the claim
-- `scope` (string) — set to `defaults-change` when citing unchanged code that became newly-defaulted
+- `scope` (string) — `diff` or `defaults-change`
 - `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative
 
 Findings are first-class review items. Evidence, citations, and scope support the finding; Cerberus should not model separate "verified" vs "unverified" finding types.
+Unsupported root or finding fields fail validation. Deprecated finding-marker fields and title prefixes such as `[unverified]` or `[speculative]` are invalid input, not compatibility aliases.
 
 Optional fields added by the pipeline:
 - `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.

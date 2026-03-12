@@ -14,8 +14,9 @@ Keep Cerberus language small, explicit, and stable.
 2. When editing prompts, docs, issues, PRs, or walkthroughs, prefer the glossary terms over ad hoc synonyms.
 3. Treat a **finding** as a first-class reviewer claim.
 4. Describe support with `evidence`, `citation`, `scope`, and `confidence` instead of inventing extra finding categories.
-5. If a term is missing or overloaded, update `docs/TERMINOLOGY.md` before spreading new wording across the repo.
-6. If terminology changes alter active work, align nearby backlog/issue/PR wording in the same lane.
+5. Delete or reject deprecated terminology aliases instead of preserving them as compatibility shims.
+6. If a term is missing or overloaded, update `docs/TERMINOLOGY.md` before spreading new wording across the repo.
+7. If terminology changes alter active work, align nearby backlog/issue/PR wording in the same lane.
 
 ## Terms To Avoid
 

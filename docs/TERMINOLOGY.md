@@ -16,6 +16,8 @@ It is not "verified" or "unverified" as a separate category. It may carry suppor
 
 If a reviewer cannot support a finding with concrete repository evidence, the reviewer should omit the finding instead of inventing a weaker placeholder category.
 
+Cerberus does not preserve deprecated finding-marker aliases as compatibility shims. Unsupported finding fields or deprecated title prefixes should fail validation instead of being silently translated.
+
 ## Nouns
 
 | Term | Definition |

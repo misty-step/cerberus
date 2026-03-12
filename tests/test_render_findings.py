@@ -233,17 +233,6 @@ def test_render_findings_negative_line_number() -> None:
     assert "[`a.py`]" in lines[0]
 
 
-def test_render_findings_ignores_legacy_unverified_metadata() -> None:
-    lines = render_findings(
-        [{"severity": "minor", "file": "a.py", "line": 1, "title": "ok",
-          "_evidence_unverified": True, "_evidence_reason": "legacy"}],
-        server="https://gh.com",
-        repo="org/repo",
-        sha="abc",
-    )
-    assert "unverified" not in lines[0]
-
-
 def test_render_findings_no_description_no_suggestion() -> None:
     lines = render_findings(
         [{"severity": "minor", "file": "a.py", "line": 1, "title": "ok"}],

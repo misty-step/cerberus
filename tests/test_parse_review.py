@@ -774,8 +774,8 @@ class TestEvidenceNormalization:
         assert "evidence" not in data["findings"][0]
         assert data["verdict"] == "WARN"
 
-    def test_legacy_unverified_markers_are_stripped(self):
-        """Legacy unverified finding markers are removed from parsed output."""
+    def test_deprecated_marker_fields_fail_validation(self):
+        """Deprecated finding marker fields are rejected at validation time."""
         review = self._review(
             {
                 "severity": "major",
@@ -792,17 +792,11 @@ class TestEvidenceNormalization:
             },
             verdict="WARN",
         )
-        code, out, _ = run_parse(self._wrap_json(review))
-        assert code == 0
+        code, out, err = run_parse(self._wrap_json(review))
+        assert code == 1
         data = json.loads(out)
-        finding = data["findings"][0]
-        assert finding["severity"] == "major"
-        assert finding["title"] == "Missing guard"
-        assert "_unverified" not in finding
-        assert "_unverified_reason" not in finding
-        assert "_evidence_unverified" not in finding
-        assert "_evidence_reason" not in finding
-        assert data["verdict"] == "WARN"
+        assert data["verdict"] == "SKIP"
+        assert "deprecated field" in err
 
     def test_evidence_truncated_at_limit(self):
         """Evidence longer than EVIDENCE_MAX_CHARS is truncated with ellipsis."""
@@ -853,8 +847,8 @@ class TestEvidenceNormalization:
         assert "y = 2" in evidence
         assert "z = 3" in evidence
 
-    def test_non_string_evidence_ignored(self):
-        """Non-string evidence (int, null) is left unchanged — not crashed on."""
+    def test_non_string_evidence_fails_validation(self):
+        """Evidence must match the documented string schema."""
         review = self._review(
             {
                 "severity": "major",
@@ -867,10 +861,11 @@ class TestEvidenceNormalization:
                 "suggestion": "fix",
             }
         )
-        code, out, _ = run_parse(self._wrap_json(review))
-        assert code == 0
+        code, out, err = run_parse(self._wrap_json(review))
+        assert code == 1
         data = json.loads(out)
-        assert data["findings"][0]["evidence"] == 42
+        assert data["verdict"] == "SKIP"
+        assert "evidence must be string" in err
 
     def test_fenced_code_block_unwrapped(self):
         """Fenced code blocks in evidence are unwrapped to bare content."""
@@ -894,8 +889,8 @@ class TestEvidenceNormalization:
         assert "x = 1" in evidence
         assert "y = 2" in evidence
 
-    def test_legacy_unverified_titles_do_not_discount_verdict(self):
-        """Legacy unverified titles are treated like ordinary findings for verdict math."""
+    def test_deprecated_title_prefix_fails_validation(self):
+        """Deprecated title prefixes are rejected instead of normalized away."""
         findings = [
             {
                 "severity": "major",
@@ -919,9 +914,9 @@ class TestEvidenceNormalization:
         review = {
             "reviewer": "APOLLO",
             "perspective": "correctness",
-            "verdict": "PASS",
+            "verdict": "WARN",
             "confidence": 0.95,
-            "summary": "Two uncertain issues",
+            "summary": "Deprecated title prefix",
             "findings": findings,
             "stats": {
                 "files_reviewed": 1,
@@ -932,10 +927,11 @@ class TestEvidenceNormalization:
                 "info": 0,
             },
         }
-        code, out, _ = run_parse(self._wrap_json(review))
-        assert code == 0
+        code, out, err = run_parse(self._wrap_json(review))
+        assert code == 1
         data = json.loads(out)
-        assert data["verdict"] == "FAIL"
+        assert data["verdict"] == "SKIP"
+        assert "deprecated title prefix" in err
 
 
 class TestStaleKnowledgeAnnotation:
@@ -1269,8 +1265,8 @@ def test_fallback_default_reviewer():
     assert data["reviewer"] == "UNKNOWN"
 
 
-def test_string_line_coerced_to_int():
-    """String line numbers (e.g. "42") are coerced to int."""
+def test_string_line_rejected():
+    """Line numbers must already be integers in the review JSON."""
     review = json.dumps({
         "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
         "confidence": 0.8, "summary": "ok",
@@ -1281,11 +1277,11 @@ def test_string_line_coerced_to_int():
         "stats": {"files_reviewed": 1, "files_with_issues": 1,
                   "critical": 0, "major": 0, "minor": 0, "info": 1},
     })
-    code, out, _ = run_parse(f"```json\n{review}\n```")
-    assert code == 0
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    assert code == 1
     data = json.loads(out)
-    assert data["findings"][0]["line"] == 42
-    assert isinstance(data["findings"][0]["line"], int)
+    assert data["verdict"] == "SKIP"
+    assert "line must be int" in err
 
 
 def test_non_numeric_line_produces_fallback():
@@ -1300,11 +1296,51 @@ def test_non_numeric_line_produces_fallback():
         "stats": {"files_reviewed": 1, "files_with_issues": 1,
                   "critical": 0, "major": 0, "minor": 0, "info": 1},
     })
-    code, out, _ = run_parse(f"```json\n{review}\n```")
+    code, out, err = run_parse(f"```json\n{review}\n```")
     assert code == 1
     data = json.loads(out)
     assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
     assert data["confidence"] == 0.0
+    assert "line must be int" in err
+
+
+def test_unexpected_finding_field_fails_validation():
+    """Findings must not carry undeclared fields."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok",
+        "findings": [{
+            "severity": "info", "category": "style", "file": "a.py",
+            "line": 42, "title": "t", "description": "d", "suggestion": "s",
+            "extra": "noise",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    assert code == 1
+    data = json.loads(out)
+    assert data["verdict"] == "SKIP"
+    assert "unexpected field" in err
+
+
+def test_unexpected_root_field_fails_validation():
+    """Root JSON must stay within the documented schema."""
+    review = json.dumps({
+        "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+        "confidence": 0.8, "summary": "ok", "notes": "extra",
+        "findings": [{
+            "severity": "info", "category": "style", "file": "a.py",
+            "line": 42, "title": "t", "description": "d", "suggestion": "s",
+        }],
+        "stats": {"files_reviewed": 1, "files_with_issues": 1,
+                  "critical": 0, "major": 0, "minor": 0, "info": 1},
+    })
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    assert code == 1
+    data = json.loads(out)
+    assert data["verdict"] == "SKIP"
+    assert "unexpected root field" in err
 
 
 def test_invalid_finding_severity():

@@ -305,6 +305,11 @@ class TestVerdictSchema:
         for field in ("severity", "category", "file", "line", "title", "description", "suggestion"):
             assert field in required
 
+    def test_finding_optional_scope_enum(self) -> None:
+        scope_schema = mod.VERDICT_SCHEMA["properties"]["findings"]["items"]["properties"]["scope"]
+        assert scope_schema["type"] == "string"
+        assert set(scope_schema["enum"]) == {"diff", "defaults-change"}
+
     def test_stats_required_fields(self) -> None:
         required = mod.VERDICT_SCHEMA["properties"]["stats"]["required"]
         for field in ("files_reviewed", "files_with_issues", "critical", "major", "minor", "info"):

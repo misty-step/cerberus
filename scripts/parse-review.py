@@ -21,10 +21,43 @@ EXIT_NO_JSON_BLOCK = 3  # no ```json block found (transient — caller may retry
 
 EVIDENCE_MAX_CHARS = 2000
 CERBERUS_TMP = Path(os.environ.get("CERBERUS_TMP", tempfile.gettempdir()))
+ROOT_FIELDS = frozenset({
+    "reviewer",
+    "perspective",
+    "verdict",
+    "confidence",
+    "summary",
+    "findings",
+    "stats",
+})
+REQUIRED_FINDING_FIELDS = frozenset({
+    "severity",
+    "category",
+    "file",
+    "line",
+    "title",
+    "description",
+})
+OPTIONAL_FINDING_FIELDS = frozenset({
+    "suggestion",
+    "evidence",
+    "scope",
+    "suggestion_verified",
+})
+FINDING_FIELDS = REQUIRED_FINDING_FIELDS | OPTIONAL_FINDING_FIELDS
+DEPRECATED_FINDING_FIELDS = frozenset({
+    "_unverified",
+    "_unverified_reason",
+    "_evidence_unverified",
+    "_evidence_reason",
+})
+DEPRECATED_FINDING_TITLE_PREFIXES = ("[unverified] ", "[speculative] ")
+VALID_FINDING_SCOPES = frozenset({"diff", "defaults-change"})
 
 # Findings are first-class review items. They may carry supporting fields like
 # evidence or suggestion_verified, but the parser should not invent a second
 # "verified vs unverified finding" state on top of the reviewer output.
+# Deprecated marker variants are invalid input, not aliases to normalize.
 
 
 def resolve_reviewer(cli_reviewer: str | None) -> str:
@@ -483,18 +516,17 @@ def validate(obj: dict) -> None:
     if "perspective" not in obj:
         obj["perspective"] = PERSPECTIVE
 
-    required_root = [
-        "reviewer",
-        "perspective",
-        "verdict",
-        "confidence",
-        "summary",
-        "findings",
-        "stats",
-    ]
-    for key in required_root:
+    for key in ROOT_FIELDS:
         if key not in obj:
             fail(f"missing root field: {key}")
+
+    unexpected_root_fields = sorted(set(obj) - ROOT_FIELDS)
+    if unexpected_root_fields:
+        fail(f"unexpected root field(s): {', '.join(unexpected_root_fields)}")
+
+    for key in ("reviewer", "perspective", "summary"):
+        if not isinstance(obj[key], str):
+            fail(f"{key} must be string")
 
     if obj["verdict"] not in {"PASS", "WARN", "FAIL", "SKIP"}:
         fail("invalid verdict")
@@ -510,14 +542,14 @@ def validate(obj: dict) -> None:
     for idx, finding in enumerate(obj["findings"]):
         if not isinstance(finding, dict):
             fail(f"finding {idx} not object")
-        for fkey in [
-            "severity",
-            "category",
-            "file",
-            "line",
-            "title",
-            "description",
-        ]:
+        deprecated_fields = sorted(set(finding) & DEPRECATED_FINDING_FIELDS)
+        if deprecated_fields:
+            fail(f"finding {idx} uses deprecated field(s): {', '.join(deprecated_fields)}")
+        unexpected_fields = sorted(set(finding) - FINDING_FIELDS)
+        if unexpected_fields:
+            fail(f"finding {idx} has unexpected field(s): {', '.join(unexpected_fields)}")
+
+        for fkey in REQUIRED_FINDING_FIELDS:
             if fkey not in finding:
                 fail(f"finding {idx} missing field: {fkey}")
         # suggestion is optional — backfill so downstream always has the key
@@ -525,13 +557,29 @@ def validate(obj: dict) -> None:
             finding["suggestion"] = ""
         if finding["severity"] not in {"critical", "major", "minor", "info"}:
             fail(f"finding {idx} invalid severity")
+        for fkey in ("category", "file", "title", "description", "suggestion"):
+            if not isinstance(finding[fkey], str):
+                fail(f"finding {idx} field must be string: {fkey}")
+        if finding["title"].startswith(DEPRECATED_FINDING_TITLE_PREFIXES):
+            fail(f"finding {idx} uses deprecated title prefix")
         if not isinstance(finding["line"], int):
-            try:
-                finding["line"] = int(finding["line"])
-            except Exception as exc:
-                fail(f"finding {idx} line not int: {exc}")
+            fail(f"finding {idx} line must be int")
+        evidence = finding.get("evidence")
+        if evidence is not None and not isinstance(evidence, str):
+            fail(f"finding {idx} evidence must be string")
+        scope = finding.get("scope")
+        if scope is not None:
+            if not isinstance(scope, str):
+                fail(f"finding {idx} scope must be string")
+            if scope not in VALID_FINDING_SCOPES:
+                fail(f"finding {idx} invalid scope")
+        suggestion_verified = finding.get("suggestion_verified")
+        if suggestion_verified is not None and not isinstance(suggestion_verified, bool):
+            fail(f"finding {idx} suggestion_verified must be boolean")
 
     stats = obj["stats"]
+    if not isinstance(stats, dict):
+        fail("stats must be object")
     for skey in [
         "files_reviewed",
         "files_with_issues",
@@ -770,36 +818,13 @@ def normalize_evidence_fields(obj: dict) -> None:
         if not isinstance(finding, dict):
             continue
         evidence_raw = finding.get("evidence")
-        if not isinstance(evidence_raw, str):
+        if evidence_raw is None:
             continue
         evidence = _normalize_evidence(evidence_raw)
         if evidence:
             finding["evidence"] = _truncate_evidence_for_output(evidence)
         else:
             finding.pop("evidence", None)
-
-
-def strip_legacy_unverified_markers(obj: dict) -> None:
-    """Remove legacy verified/unverified finding markers from reviewer output."""
-    findings = obj.get("findings", [])
-    if not isinstance(findings, list):
-        return
-
-    for finding in findings:
-        if not isinstance(finding, dict):
-            continue
-
-        title = str(finding.get("title", ""))
-        if title.startswith("[unverified] "):
-            finding["title"] = title.removeprefix("[unverified] ")
-
-        for key in (
-            "_unverified",
-            "_unverified_reason",
-            "_evidence_unverified",
-            "_evidence_reason",
-        ):
-            finding.pop(key, None)
 
 
 def main() -> None:
@@ -955,7 +980,6 @@ def main() -> None:
         validate(obj)
         validate_and_correct_stats(obj)
         normalize_evidence_fields(obj)
-        strip_legacy_unverified_markers(obj)
         annotate_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)
     except Exception as exc:

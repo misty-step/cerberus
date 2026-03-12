@@ -52,6 +52,7 @@ VERDICT_SCHEMA: dict = {
                     "description": {"type": "string"},
                     "suggestion": {"type": "string"},
                     "evidence": {"type": "string"},
+                    "scope": {"type": "string", "enum": ["diff", "defaults-change"]},
                     "suggestion_verified": {"type": "boolean"},
                 },
                 "required": [
