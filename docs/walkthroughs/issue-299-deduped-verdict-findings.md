@@ -17,23 +17,30 @@ This lane reduces review fatigue in the aggregate Cerberus verdict comment by co
   - same category
   - nearby lines
   - at least two meaningful overlapping tokens across title/description
+- Grouped findings keep stable equivalence anchors, so later merges do not change what counts as the original same-root-cause claim.
+- Candidate matching is narrowed by normalized `file + category` buckets before the fuzzy equivalence check runs.
+- Fileless findings using `""` and `N/A` now collapse into the same no-file bucket.
 - Exact-title findings on different lines stay separate.
 - `scripts/lib/render_verdict_comment.py` now renders `Key Findings` from the grouped issue list, so the top-level verdict comment shows reviewer agreement instead of duplicated issue rows.
+- Renderer-side file predicates and merged-finding sort order are centralized instead of duplicated.
 
 ## Why This Shape Is Better
 
 - The fix stays in the render layer, where the UX problem actually lives.
 - Severity disagreements collapse to one actionable item using the highest severity already emitted by reviewers.
 - The merge path is narrow enough to avoid flattening unrelated findings that only happen to mention the same file.
+- The hardening pass keeps equivalence deterministic across reviewer order and removes small duplicated helpers from the renderer.
 
 ## Persistent Verification
 
 - `tests/test_findings.py`
 - `tests/test_render_verdict_comment.py`
+- `make validate`
 
 ## Commands
 
 ```bash
 python3 -m pytest tests/test_findings.py tests/test_render_verdict_comment.py -q
 python3 -m ruff check scripts/lib/findings.py scripts/lib/render_verdict_comment.py tests/test_findings.py tests/test_render_verdict_comment.py
+make validate
 ```

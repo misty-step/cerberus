@@ -535,49 +535,38 @@ def has_raw_output(reviewers: list[dict]) -> bool:
     return False
 
 
-def collect_key_findings(reviewers: list[dict], *, max_total: int) -> list[tuple[str, dict]]:
-    """Collect key findings."""
-    items: list[tuple[str, dict]] = []
+def _labeled_findings(reviewers: list[dict]):
+    """Yield reviewer labels with their findings."""
     for reviewer in reviewers:
-        rname = reviewer_label(reviewer)
-        for finding in findings_for(reviewer):
-            items.append((rname, finding))
+        yield (reviewer_label(reviewer), findings_for(reviewer))
 
-    def _sort_key(item: tuple[str, dict]) -> tuple[int, str, str, str]:
-        rname, finding = item
-        return (
-            SEVERITY_ORDER.get(normalize_severity(finding.get("severity")), 99),
-            str(finding.get("title") or ""),
-            finding_location(finding),
-            rname,
-        )
 
-    return sorted(items, key=_sort_key)[:max_total]
+def _has_file_location(finding: dict) -> bool:
+    """Return True when a finding points at a concrete file location."""
+    file = str(finding.get("file") or "").strip()
+    return bool(file) and file.upper() != "N/A"
+
+
+def _issue_sort_key(item: dict) -> tuple[int, int, str, int, str]:
+    """Sort merged findings by severity, agreement, location, then title."""
+    return (
+        SEVERITY_ORDER.get(normalize_severity(item.get("severity")), 99),
+        -len(item.get("reviewers") or []),
+        str(item.get("file") or ""),
+        int(item.get("line") or 0),
+        str(item.get("title") or ""),
+    )
 
 
 def collect_issue_groups(reviewers: list[dict]) -> list[dict]:
-    """Aggregate duplicate findings across reviewers into 'issues' keyed by (file,line,category,title)."""
-    def _predicate(finding: dict, _rname: str) -> bool:
-        file = str(finding.get("file") or "").strip()
-        return bool(file) and file.upper() != "N/A"
-
+    """Aggregate duplicate file-backed findings across reviewers into top-level issues."""
     out = group_findings(
-        ((reviewer_label(rv), findings_for(rv)) for rv in reviewers),
+        _labeled_findings(reviewers),
         text_fields=("description", "suggestion"),
-        predicate=_predicate,
+        predicate=lambda finding, _rname: _has_file_location(finding),
         severity_order=SEVERITY_ORDER,
     )
-
-    def _sort_key(item: dict) -> tuple[int, int, str, int, str]:
-        return (
-            SEVERITY_ORDER.get(normalize_severity(item.get("severity")), 99),
-            -len(item.get("reviewers") or []),
-            str(item.get("file") or ""),
-            int(item.get("line") or 0),
-            str(item.get("title") or ""),
-        )
-
-    out.sort(key=_sort_key)
+    out.sort(key=_issue_sort_key)
     return out
 
 
@@ -585,26 +574,13 @@ def collect_unique_findings(reviewers: list[dict]) -> list[dict]:
     """Collect unique top-level findings for comment rendering."""
     grouped = collect_issue_groups(reviewers)
     non_file = group_findings(
-        ((reviewer_label(rv), findings_for(rv)) for rv in reviewers),
+        _labeled_findings(reviewers),
         text_fields=("description", "suggestion"),
-        predicate=lambda finding, _rname: not (
-            str(finding.get("file") or "").strip()
-            and str(finding.get("file") or "").strip().upper() != "N/A"
-        ),
+        predicate=lambda finding, _rname: not _has_file_location(finding),
         severity_order=SEVERITY_ORDER,
     )
-
-    def _sort_key(item: dict) -> tuple[int, int, str, int, str]:
-        return (
-            SEVERITY_ORDER.get(normalize_severity(item.get("severity")), 99),
-            -len(item.get("reviewers") or []),
-            str(item.get("file") or ""),
-            int(item.get("line") or 0),
-            str(item.get("title") or ""),
-        )
-
     combined = [*grouped, *non_file]
-    combined.sort(key=_sort_key)
+    combined.sort(key=_issue_sort_key)
     return combined
 
 

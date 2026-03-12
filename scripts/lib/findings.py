@@ -130,6 +130,22 @@ def normalize_finding_file(value: object) -> str:
     return text
 
 
+def finding_bucket_key(file_value: object, category_value: object) -> tuple[str, str]:
+    """Return the coarse bucket key used before fuzzy equivalence checks."""
+    return (normalize_finding_file(file_value), norm_key(category_value))
+
+
+def finding_sort_key(reviewer_name: str, finding: dict) -> tuple[str, str, int, str, str]:
+    """Return a stable processing order for grouping."""
+    line = as_int(finding.get("line")) or 0
+    return (
+        *finding_bucket_key(finding.get("file"), finding.get("category")),
+        max(line, 0),
+        norm_key(finding.get("title")),
+        reviewer_name,
+    )
+
+
 def finding_match_title(finding: dict) -> str:
     """Return the stable title used for equivalence checks."""
     return norm_key(finding.get("_equivalence_title", finding.get("title")))
@@ -247,6 +263,8 @@ def group_findings(
     """
     order = severity_order if severity_order is not None else SEVERITY_ORDER
     grouped: list[dict] = []
+    grouped_by_bucket: dict[tuple[str, str], list[dict]] = {}
+    pending: list[tuple[str, dict]] = []
 
     for rname, findings in findings_by_reviewer:
         for finding in findings:
@@ -254,38 +272,46 @@ def group_findings(
                 continue
             if predicate is not None and not predicate(finding, rname):
                 continue
+            pending.append((rname, finding))
 
-            file = str(finding.get("file") or "").strip()
-            line = as_int(finding.get("line")) or 0
-            if line < 0:
-                line = 0
+    pending.sort(key=lambda item: finding_sort_key(item[0], item[1]))
 
-            severity = normalize_severity(finding.get("severity"), order)
-            category = str(finding.get("category") or "").strip() or "uncategorized"
-            title = str(finding.get("title") or "").strip() or "Untitled finding"
+    for rname, finding in pending:
+        file = normalize_finding_file(finding.get("file"))
+        line = as_int(finding.get("line")) or 0
+        if line < 0:
+            line = 0
 
-            existing = next((item for item in grouped if is_equivalent_finding(item, finding)), None)
-            if existing is None:
-                grouped.append({
-                    "severity": severity,
-                    "category": category,
-                    "file": file,
-                    "line": line,
-                    "title": title,
-                    "reviewers": {rname},
-                    "_equivalence_title": title,
-                    "_equivalence_tokens": content_tokens(title, finding.get("description")),
-                    **{field: str(finding.get(field) or "").strip() for field in text_fields},
-                })
-                continue
+        severity = normalize_severity(finding.get("severity"), order)
+        category = str(finding.get("category") or "").strip() or "uncategorized"
+        title = str(finding.get("title") or "").strip() or "Untitled finding"
+        bucket_key = finding_bucket_key(file, category)
 
-            existing["reviewers"].add(rname)
-            if order.get(severity, 99) < order.get(existing.get("severity"), 99):
-                existing["severity"] = severity
-            existing["line"] = choose_line(existing.get("line"), line)
-            existing["title"] = best_text(existing.get("title"), title)
-            for field in text_fields:
-                existing[field] = best_text(existing.get(field), finding.get(field))
+        bucket = grouped_by_bucket.setdefault(bucket_key, [])
+        existing = next((item for item in bucket if is_equivalent_finding(item, finding)), None)
+        if existing is None:
+            item = {
+                "severity": severity,
+                "category": category,
+                "file": file,
+                "line": line,
+                "title": title,
+                "reviewers": {rname},
+                "_equivalence_title": title,
+                "_equivalence_tokens": content_tokens(title, finding.get("description")),
+                **{field: str(finding.get(field) or "").strip() for field in text_fields},
+            }
+            grouped.append(item)
+            bucket.append(item)
+            continue
+
+        existing["reviewers"].add(rname)
+        if order.get(severity, 99) < order.get(existing.get("severity"), 99):
+            existing["severity"] = severity
+        existing["line"] = choose_line(existing.get("line"), line)
+        existing["title"] = best_text(existing.get("title"), title)
+        for field in text_fields:
+            existing[field] = best_text(existing.get(field), finding.get(field))
 
     out: list[dict] = []
     for item in grouped:

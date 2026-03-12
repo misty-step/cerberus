@@ -1,5 +1,7 @@
 """Tests for lib.findings public API."""
 
+from itertools import permutations
+
 from lib.findings import (
     SEVERITY_ORDER,
     as_int,
@@ -285,6 +287,7 @@ class TestGroupFindings:
         ]
         out = group_findings(pairs)
         assert len(out) == 1
+        assert out[0]["file"] == ""
         assert out[0]["reviewers"] == ["A", "B"]
 
     def test_equivalence_uses_original_group_text(self):
@@ -313,6 +316,35 @@ class TestGroupFindings:
         ]
         out = group_findings(pairs)
         assert len(out) == 2
+
+    def test_grouping_is_invariant_to_reviewer_order(self):
+        pairs = [
+            ("B", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 41,
+                "title": "bounded cleanup context live executor",
+            }]),
+            ("A", [{
+                "severity": "major",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 40,
+                "title": "bounded cleanup context",
+            }]),
+            ("C", [{
+                "severity": "minor",
+                "category": "bug",
+                "file": "engine.go",
+                "line": 42,
+                "title": "live executor reset",
+            }]),
+        ]
+
+        expected = group_findings(pairs)
+        for candidate in permutations(pairs):
+            assert group_findings(candidate) == expected
 
 
 class TestAsInt:
