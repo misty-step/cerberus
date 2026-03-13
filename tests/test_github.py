@@ -346,11 +346,23 @@ def test_fetch_comments_returns_empty_list_on_invalid_payload(monkeypatch):
     import lib.github as mod
 
     def fake_fetch_issue_comments(*args, **kwargs):
-        raise ValueError("bad payload")
+        raise ValueError("invalid JSON from gh command ['api']: bad payload")
 
     monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
     assert mod.fetch_comments("o/r", 5) == []
+
+
+def test_fetch_comments_reraises_non_json_value_errors(monkeypatch):
+    import lib.github as mod
+
+    def fake_fetch_issue_comments(*args, **kwargs):
+        raise ValueError("unexpected comments payload type: dict")
+
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
+
+    with pytest.raises(ValueError, match="unexpected comments payload type: dict"):
+        mod.fetch_comments("o/r", 5)
 
 
 class TestRunGhErrorHandling:
