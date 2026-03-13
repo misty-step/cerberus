@@ -453,6 +453,56 @@ def test_init_discards_escape_sequences_from_interactive_api_key(tmp_path: Path)
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_discards_double_escape_sequences_from_interactive_api_key(
+    tmp_path: Path,
+) -> None:
+    pty = pytest.importorskip("pty")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    stdin_file = tmp_path / "gh-stdin.txt"
+    setup_gh(bin_dir, calls_file=calls_file, stdin_file=stdin_file)
+
+    env = build_env(bin_dir)
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
+    env.pop("OPENROUTER_API_KEY", None)
+
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=env,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+
+    try:
+        prompt = "Enter Cerberus OpenRouter API key (input hidden): "
+        output = read_pty_until(master_fd, proc, prompt)
+        os.write(master_fd, b"typed-secret")
+        os.write(master_fd, b"\x1b\x1b[A")
+        os.write(master_fd, b"-value\n")
+        output += read_pty_output(master_fd, proc)
+        returncode = proc.wait(timeout=10)
+    finally:
+        os.close(master_fd)
+        if proc.poll() is None:
+            proc.kill()
+
+    assert returncode == 0
+    assert "typed-secret-value" not in output
+    assert "[A" not in output
+    assert stdin_file.read_text() == "typed-secret-value"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
 def test_init_fails_when_interactive_input_stream_ends(tmp_path: Path) -> None:
     pty = pytest.importorskip("pty")
     repo = tmp_path / "repo"
@@ -487,6 +537,10 @@ def test_init_fails_when_interactive_input_stream_ends(tmp_path: Path) -> None:
         remaining_stdout, stderr = proc.communicate(timeout=10)
         returncode = proc.returncode
     finally:
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
         if proc.poll() is None:
             proc.kill()
 

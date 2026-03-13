@@ -109,6 +109,9 @@ async function promptApiKeyOnce() {
     const onData = (chunk) => {
       for (const char of Array.from(chunk.toString('utf8'))) {
         if (escapeState === 'esc') {
+          if (char === '\u001b') {
+            continue;
+          }
           if (char === '[' || char === 'O') {
             escapeState = 'sequence';
           } else {
@@ -118,6 +121,10 @@ async function promptApiKeyOnce() {
         }
 
         if (escapeState === 'sequence') {
+          if (char === '\u001b') {
+            escapeState = 'esc';
+            continue;
+          }
           if (isEscapeSequenceTerminator(char)) {
             escapeState = 'none';
           }
