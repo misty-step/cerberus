@@ -73,6 +73,21 @@ Specific Checks
 - Secret source precedence confusion (env vs file vs runtime overrides)
 - Dynamic config loading without authenticity or integrity checks
 
+Indirect Untrusted-Data Re-entry (mandatory)
+Treat trusted-looking metadata and defaults as attacker-controlled whenever they can be set by an untrusted actor upstream.
+Do not downgrade these paths to maintainability or generic correctness when they can carry exploit material.
+- trusted-looking metadata such as titles and branch names reused in prompts, logs, shell calls, templates, or UI output
+- fail-open defaults and default posture changes that silently widen egress, authz, network reach, or secret exposure
+- raw error leakage that exposes internals, prompts, tokens, query text, stack traces, or model/system details
+- async side-effect failure paths where logging, auditing, policy writes, or notifications fail open and hide the broken security state
+- serialization and public-route exposure where internal objects, unsafe fields, or policy state become externally visible
+
+Reasoning pass for these cases:
+1) Name the trusted-looking metadata, default posture, error surface, async side effect, or serialized/public response that can carry hostile input.
+2) Trace the exact input → sink → impact chain.
+3) If the exploit path is real, keep ownership in security even when the code also looks like config, DX, or maintainability work.
+4) Prefer titles and branch names, default posture, and public-response fields as concrete examples when the diff contains them.
+
 Infrastructure Threat Model (mandatory when infra/deployment files change)
 Infrastructure-only PRs are not lower risk than application-code PRs. A Dockerfile, `.dockerignore`, CI, or deployment-config diff can expand blast radius across the whole service.
 When the diff touches `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `fly.toml`, container/build config, or secret-loading config:
