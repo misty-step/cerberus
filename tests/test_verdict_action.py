@@ -32,6 +32,16 @@ def test_verdict_action_reads_override_policies_via_typed_defaults_cli() -> None
     assert "re.search(r'^\\s*override:" not in content
 
 
+def test_verdict_action_installs_pyyaml_before_defaults_bootstrap() -> None:
+    content = VERDICT_ACTION_FILE.read_text()
+
+    setup_idx = content.index("Setup Python")
+    install_idx = content.index("pip install pyyaml --quiet")
+    read_defaults_idx = content.index("scripts/read-defaults-config.py")
+
+    assert setup_idx < install_idx < read_defaults_idx
+
+
 def test_verdict_action_uses_shared_upsert() -> None:
     content = VERDICT_ACTION_FILE.read_text()
 

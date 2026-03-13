@@ -46,6 +46,10 @@ runs:
       with:
         python-version: '3.12'
 
+    - name: Install verdict bootstrap dependencies
+      shell: bash
+      run: pip install pyyaml --quiet
+
     - name: Read reviewer policies from config
       id: policies
       shell: bash
