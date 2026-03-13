@@ -16,7 +16,7 @@ Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
 ## Modules
 
 ### Module 1: Cerberus Review (GitHub Action) — **v1.0**
-**What:** Multi-AI code review. Eight specialist reviewers form the bench; the router selects the most relevant per PR (trace always included, guard required for non-doc/test changes). Synthesizes verdicts into a unified verdict comment and a PR review with inline comments.
+**What:** Multi-AI code review. Six specialist reviewers form the default bench; the router selects a focused subset per PR (trace always included, guard required for non-doc/test changes). Synthesizes verdicts into a unified verdict comment and a PR review with inline comments.
 
 **Status:** Working. Deployed across all Misty Step repos. Needs hardening.
 

@@ -32,17 +32,18 @@ SAMPLE_CONFIG_YML = textwrap.dedent("""\
     routing:
       enabled: true
       model: "openrouter/google/gemini-3-flash-preview"
-      panel_size: 5
+      panel_size: 4
       always_include:
         - trace
       include_if_code_changed:
         - guard
       fallback_panel:
         - trace
-        - atlas
         - guard
-        - craft
+        - atlas
         - proof
+        - fuse
+        - craft
 
     reviewers:
       - name: trace
@@ -231,10 +232,13 @@ class TestLoadConfig:
         assert cfg["guard_names"] == ["guard"]
 
     def test_fallback_names(self, cfg: dict[str, Any]) -> None:
-        assert cfg["fallback_names"] == ["trace", "atlas", "guard", "craft", "proof"]
+        assert cfg["fallback_names"] == ["trace", "guard", "atlas", "proof", "fuse", "craft"]
 
     def test_default_panel_size(self, cfg: dict[str, Any]) -> None:
-        assert cfg["default_panel_size"] == 5
+        assert cfg["default_panel_size"] == 4
+
+    def test_routing_model(self, cfg: dict[str, Any]) -> None:
+        assert cfg["routing_model"] == "openrouter/google/gemini-3-flash-preview"
 
 
 class TestModelTierClassification:
@@ -371,23 +375,28 @@ class TestRequiredPerspectives:
 
 class TestBuildFallbackPanel:
     def test_fallback_panel_size(self, cfg: dict[str, Any]) -> None:
-        panel = route.build_fallback_panel(cfg, 5, code_changed=True)
-        assert len(panel) == 5
+        panel = route.build_fallback_panel(cfg, 4, code_changed=True)
+        assert len(panel) == 4
 
     def test_fallback_includes_required(self, cfg: dict[str, Any]) -> None:
-        panel = route.build_fallback_panel(cfg, 5, code_changed=True)
+        panel = route.build_fallback_panel(cfg, 4, code_changed=True)
         assert "correctness" in panel
         assert "security" in panel
 
     def test_fallback_respects_config(self, cfg: dict[str, Any]) -> None:
-        panel = route.build_fallback_panel(cfg, 5, code_changed=True)
-        assert panel == ["correctness", "security", "architecture", "maintainability", "testing"]
+        panel = route.build_fallback_panel(cfg, 4, code_changed=True)
+        assert panel == ["correctness", "security", "architecture", "testing"]
 
     def test_fallback_smaller_size(self, cfg: dict[str, Any]) -> None:
         panel = route.build_fallback_panel(cfg, 3, code_changed=True)
         assert len(panel) == 3
         assert "correctness" in panel
         assert "security" in panel
+
+    def test_fallback_skips_guard_when_only_docs_or_tests_changed(self, cfg: dict[str, Any]) -> None:
+        panel = route.build_fallback_panel(cfg, 4, code_changed=False)
+        assert "security" not in panel
+        assert panel == ["correctness", "architecture", "testing", "resilience"]
 
 
 # ---------------------------------------------------------------------------
@@ -400,18 +409,19 @@ class TestBuildPrompt:
                     "total_deletions": 2, "total_changed_lines": 12, "code_files": 2,
                     "test_files": 1, "doc_files": 0, "extensions": {".py": 2, ".ts": 1},
                     "files": []}
-        prompt = route.build_prompt(cfg, summary, 5)
+        prompt = route.build_prompt(cfg, summary, 4)
         assert "trace" in prompt
         assert "guard" in prompt
         assert "fuse" in prompt
-        assert "Select EXACTLY 5" in prompt
+        assert "Select EXACTLY 4" in prompt
+        assert "## Output Contract" in prompt
 
     def test_prompt_lists_required(self, cfg: dict[str, Any]) -> None:
         summary = {"code_changed": True, "total_files": 1, "total_additions": 1,
                     "total_deletions": 0, "total_changed_lines": 1, "code_files": 1,
                     "test_files": 0, "doc_files": 0, "extensions": {".py": 1},
                     "files": []}
-        prompt = route.build_prompt(cfg, summary, 5)
+        prompt = route.build_prompt(cfg, summary, 4)
         assert "correctness, security" in prompt
 
     def test_prompt_no_code_skips_guard(self, cfg: dict[str, Any]) -> None:
@@ -419,9 +429,9 @@ class TestBuildPrompt:
                     "total_deletions": 0, "total_changed_lines": 1, "code_files": 0,
                     "test_files": 0, "doc_files": 1, "extensions": {".md": 1},
                     "files": []}
-        prompt = route.build_prompt(cfg, summary, 5)
+        prompt = route.build_prompt(cfg, summary, 4)
         # Required should only be correctness, not security
-        assert "Required perspectives for this PR: correctness\n" in prompt
+        assert "- Include these required perspectives when applicable: correctness" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +573,7 @@ class TestMainIntegration:
             "OPENROUTER_API_KEY": "",
             "CERBERUS_OPENROUTER_API_KEY": "",
         })
-        assert len(result["panel"]) == 5
+        assert len(result["panel"]) == 4
         assert result["routing_used"] is False
         assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
@@ -575,7 +585,7 @@ class TestMainIntegration:
         diff_file: Path,
     ) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","resilience","compatibility"]',
+            '["correctness","security","architecture","resilience"]',
             "google/gemini-3-flash-preview",
         )
         result = self._run_main({
@@ -590,6 +600,7 @@ class TestMainIntegration:
         assert result["routing_used"] is True
         assert mock_call.call_args is not None
         assert mock_call.call_args.args[0] == "highest-key"
+        assert mock_call.call_args.args[1] == "openrouter/google/gemini-3-flash-preview"
 
     @mock.patch("route.call_router")
     def test_prefers_cerberus_openrouter_key_over_legacy_openrouter_key(
@@ -599,7 +610,7 @@ class TestMainIntegration:
         diff_file: Path,
     ) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","resilience","compatibility"]',
+            '["correctness","security","architecture","resilience"]',
             "google/gemini-3-flash-preview",
         )
         result = self._run_main({
@@ -622,7 +633,7 @@ class TestMainIntegration:
         diff_file: Path,
     ) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","resilience","compatibility"]',
+            '["correctness","security","architecture","resilience"]',
             "google/gemini-3-flash-preview",
         )
         result = self._run_main({
@@ -641,7 +652,7 @@ class TestMainIntegration:
     def test_successful_routing(self, mock_call: mock.Mock,
                                  cerberus_root: Path, diff_file: Path) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","resilience","compatibility"]',
+            '["correctness","security","architecture","resilience"]',
             "google/gemini-3-flash-preview",
         )
         result = self._run_main({
@@ -652,7 +663,7 @@ class TestMainIntegration:
             "OPENROUTER_API_KEY": "fake-key",
         })
         assert result["panel"] == [
-            "correctness", "security", "architecture", "resilience", "compatibility"
+            "correctness", "security", "architecture", "resilience"
         ]
         assert result["routing_used"] is True
         assert result["model_tier"] == route.MODEL_TIER_PRO
@@ -669,7 +680,7 @@ class TestMainIntegration:
             "ROUTING": "enabled",
             "OPENROUTER_API_KEY": "fake-key",
         })
-        assert len(result["panel"]) == 5
+        assert len(result["panel"]) == 4
         assert result["routing_used"] is False
         assert result["model_tier"] == route.MODEL_TIER_PRO
 
@@ -688,7 +699,7 @@ class TestMainIntegration:
             "ROUTING": "enabled",
             "OPENROUTER_API_KEY": "fake-key",
         })
-        assert len(result["panel"]) == 5
+        assert len(result["panel"]) == 4
         assert result["routing_used"] is False
         assert result["model_tier"] == route.MODEL_TIER_PRO
 
@@ -697,7 +708,7 @@ class TestMainIntegration:
                                                     cerberus_root: Path, diff_file: Path) -> None:
         # Missing correctness (always required via trace)
         mock_call.return_value = (
-            '["security","architecture","testing","compatibility","resilience"]',
+            '["security","architecture","testing","resilience"]',
             "some-model",
         )
         result = self._run_main({
@@ -723,7 +734,7 @@ class TestMainIntegration:
             "OPENROUTER_API_KEY": "fake-key",
         })
         assert result["routing_used"] is False
-        assert len(result["panel"]) == 5
+        assert len(result["panel"]) == 4
         assert result["model_tier"] == route.MODEL_TIER_PRO
 
     def test_invalid_forced_reviewers_uses_fallback(self, cerberus_root: Path, diff_file: Path) -> None:
@@ -735,7 +746,7 @@ class TestMainIntegration:
             "OPENROUTER_API_KEY": "fake-key",
         })
         assert result["routing_used"] is False
-        assert len(result["panel"]) == 5
+        assert len(result["panel"]) == 4
         assert result["model_tier"] == route.MODEL_TIER_STANDARD
 
     def test_custom_panel_size(self, cerberus_root: Path, diff_file: Path) -> None:
@@ -768,7 +779,7 @@ class TestMainIntegration:
     def test_successful_routing_uses_flash_tier(self, mock_call: mock.Mock,
                                                 cerberus_root: Path, tmp_path: Path) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","resilience","compatibility"]',
+            '["correctness","security","architecture","resilience"]',
             "google/gemini-3-flash-preview",
         )
         doc_diff = tmp_path / "doc.diff"
@@ -786,7 +797,7 @@ class TestMainIntegration:
     def test_successful_routing_uses_pro_tier_for_security_hint(self, mock_call: mock.Mock,
                                                                cerberus_root: Path, tmp_path: Path) -> None:
         mock_call.return_value = (
-            '["correctness","security","architecture","resilience","compatibility"]',
+            '["correctness","security","architecture","resilience"]',
             "google/gemini-3-flash-preview",
         )
         security_diff = tmp_path / "security.diff"

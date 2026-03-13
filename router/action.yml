@@ -17,8 +17,8 @@ inputs:
     description: 'Path to PR diff file'
     required: true
   panel-size:
-    description: 'Number of reviewers to route'
-    default: '5'
+    description: 'Number of reviewers to route (defaults to defaults/config.yml when empty)'
+    default: ''
   routing:
     description: 'Routing mode: enabled or disabled'
     default: 'enabled'

@@ -51,7 +51,7 @@ runs:
 
         if [[ "${PANEL_FILTER:-}" == "" || "${PANEL_FILTER:-}" == "[]" ]]; then
           if [[ "$routing_enabled" == "true" ]]; then
-            echo "::warning::Routing is enabled in defaults/config.yml but no panel was passed to cerberus/matrix. All 8 reviewers will run. To enable reviewer selection, add the route step from templates/consumer-workflow-minimal.yml."
+            echo "::warning::Routing is enabled in defaults/config.yml but no panel was passed to cerberus/matrix. All configured reviewers will run. To enable reviewer selection, add the route step from templates/consumer-workflow-minimal.yml."
           fi
         fi
 
