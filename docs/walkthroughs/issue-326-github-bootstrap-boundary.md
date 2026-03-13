@@ -9,7 +9,7 @@ Cerberus no longer owns raw `gh pr diff` and `gh pr view` bootstrap logic inside
 - Added adapter-backed bootstrap fetches to `scripts/lib/github_platform.py`:
   - `fetch_pr_diff(...)`
   - `fetch_pr_context(...)`
-  - `GitHubAuthError` and `GitHubTimeoutError` for deterministic bootstrap failure classes
+  - `GitHubAuthError`, `GitHubPermissionError`, `TransientGitHubError`, and `GitHubTimeoutError` for deterministic bootstrap failure classes
 - Added `scripts/fetch-pr-bootstrap.py` to write `pr.diff`, `pr-context.json`, and a structured result file for workflow error plumbing.
 - Simplified `action.yml` so the fetch step now delegates bootstrap transport work to the helper and keeps only workflow output plumbing plus remediation text.
 - Updated bootstrap regression tests to lock the thinner workflow shape and the new adapter path.

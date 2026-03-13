@@ -30,24 +30,33 @@ class GitHubTimeoutError(Exception):
 
 DEFAULT_GH_TIMEOUT = 20
 PR_CONTEXT_FIELDS = "title,author,headRefName,baseRefName,body"
+RATE_LIMIT_MARKERS = ("rate limit exceeded", "secondary rate limit", "abuse detection")
 
 
 def classify_gh_failure(stderr: str) -> str:
     """Classify GitHub CLI stderr into a small stable taxonomy."""
 
     lower_stderr = stderr.lower()
+    if any(marker in lower_stderr for marker in RATE_LIMIT_MARKERS):
+        return "transient"
+
+    http_401_markers = ("http 401", "(http 401)", "401 unauthorized", "status 401")
+    http_403_markers = ("http 403", "(http 403)", "403 forbidden", "status 403")
     auth_markers = (
-        "401",
         "bad credentials",
         "authentication failed",
         "invalid api key",
         "incorrect_api_key",
         "not authenticated",
     )
-    if any(marker in lower_stderr for marker in auth_markers):
+    if any(marker in lower_stderr for marker in http_401_markers) or any(
+        marker in lower_stderr for marker in auth_markers
+    ):
         return "auth"
-    permission_markers = ("403", "forbidden", "resource not accessible", "permission denied")
-    if any(marker in lower_stderr for marker in permission_markers) or (
+    permission_markers = ("forbidden", "resource not accessible", "permission denied")
+    if any(marker in lower_stderr for marker in http_403_markers) or any(
+        marker in lower_stderr for marker in permission_markers
+    ) or (
         "missing" in lower_stderr and "permission" in lower_stderr
     ):
         return "permissions"
@@ -265,11 +274,19 @@ def fetch_pr_context(
 
         if result.returncode == 0:
             try:
-                payload = json.loads(result.stdout or "{}")
+                payload = json.loads(result.stdout)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"invalid JSON from gh pr view: {exc}") from exc
             if not isinstance(payload, dict):
                 raise ValueError("invalid PR context payload: expected object")
+            missing_fields = [
+                field for field in PR_CONTEXT_FIELDS.split(",") if field not in payload
+            ]
+            if missing_fields:
+                raise ValueError(
+                    "invalid PR context payload: missing fields "
+                    + ", ".join(missing_fields)
+                )
             return payload
 
         if classify_gh_failure(result.stderr or "") == "auth" and attempt < max_retries:

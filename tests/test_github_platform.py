@@ -84,6 +84,7 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
     [
         ("HTTP 403 Forbidden", "permissions"),
         ("fatal: missing read permission for repository", "permissions"),
+        ("HTTP 403: API rate limit exceeded", "transient"),
         ("gh: HTTP 503: Service Unavailable", "transient"),
         ("gh: something odd happened", "other"),
     ],
@@ -306,7 +307,7 @@ def test_fetch_pr_context_retries_auth_then_succeeds(monkeypatch) -> None:
         return subprocess.CompletedProcess(
             args=args,
             returncode=0,
-            stdout='{"title": "PR", "headRefName": "feature", "baseRefName": "master"}',
+            stdout='{"title": "PR", "author": {"login": "octocat"}, "headRefName": "feature", "baseRefName": "master", "body": ""}',
             stderr="",
         )
 
@@ -395,6 +396,21 @@ def test_fetch_pr_context_rejects_non_object_payload(monkeypatch) -> None:
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
 
     with pytest.raises(ValueError, match="expected object"):
+        mod.fetch_pr_context("owner/repo", 42)
+
+
+def test_fetch_pr_context_rejects_missing_fields(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout='{"title": "PR", "headRefName": "feature", "baseRefName": "master"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="missing fields author, body"):
         mod.fetch_pr_context("owner/repo", 42)
 
 
