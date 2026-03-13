@@ -11,6 +11,7 @@ ADR_004 = ROOT / "docs" / "adr" / "004-review-execution-boundary.md"
 PROTECTED_ENGINE_PATHS = (
     "scripts/bootstrap-review-run.py",
     "scripts/collect-overrides.py",
+    "scripts/non_gha_review_run.py",
     "scripts/post-verdict-review.py",
     "scripts/render-review-prompt.py",
     "scripts/run-reviewer.py",
