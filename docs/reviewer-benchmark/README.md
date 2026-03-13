@@ -8,7 +8,8 @@ Purpose:
 - Turn those findings into prompt, context, architecture, and model experiments.
 
 Latest report:
-- `2026-03-08-org-scorecard.md`
+- `2026-03-13-org-scorecard.md`
+- Prior report: `2026-03-08-org-scorecard.md`
 
 Reusable workflow:
 - Repo-local skill: `.agents/skills/reviewer-benchmark/SKILL.md`
