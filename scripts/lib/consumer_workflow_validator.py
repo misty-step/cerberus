@@ -272,19 +272,19 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                     )
 
             if kind == "draft-check":
-                pr_write = _perm_allows(perms, "pull-requests", "write")
-                if pr_write is False:
+                issues_write = _perm_allows(perms, "issues", "write")
+                if issues_write is False:
                     findings.append(
                         Finding(
                             "error",
-                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post skip comment)",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: issues: write` (required to post skip comment)",
                         )
                     )
-                elif pr_write is None:
+                elif issues_write is None:
                     findings.append(
                         Finding(
                             "warning",
-                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `pull-requests` (set `pull-requests: write` to post skip comment)",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `issues` (set `issues: write` to post skip comment)",
                         )
                     )
 
@@ -331,19 +331,19 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                     )
 
                 if comment_policy != "never":
-                    pr_write = _perm_allows(perms, "pull-requests", "write")
-                    if pr_write is False:
+                    issues_write = _perm_allows(perms, "issues", "write")
+                    if issues_write is False:
                         findings.append(
                             Finding(
                                 "error",
-                                f"{source}: job `{job_name}` will post per-reviewer PR comments (comment policy is not `never`) but lacks `permissions: pull-requests: write`. Fix: set `comment-policy: 'never'` OR grant `pull-requests: write`.",
+                                f"{source}: job `{job_name}` will post per-reviewer PR comments (comment policy is not `never`) but lacks `permissions: issues: write`. Fix: set `comment-policy: 'never'` OR grant `issues: write`.",
                             )
                         )
-                    elif pr_write is None:
+                    elif issues_write is None:
                         findings.append(
                             Finding(
                                 "warning",
-                                f"{source}: job `{job_name}` may post per-reviewer PR comments (comment policy is not `never`) but permissions are not explicit. Ensure `pull-requests: write` OR set `comment-policy: 'never'`.",
+                                f"{source}: job `{job_name}` may post per-reviewer PR comments (comment policy is not `never`) but permissions are not explicit. Ensure `issues: write` OR set `comment-policy: 'never'`.",
                             )
                         )
 
@@ -356,13 +356,28 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                     )
 
             if kind == "verdict":
+                issues_write = _perm_allows(perms, "issues", "write")
                 pr_write = _perm_allows(perms, "pull-requests", "write")
                 contents_read = _perm_allows(perms, "contents", "read")
+                if issues_write is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: issues: write` (required to post verdict comment)",
+                        )
+                    )
+                elif issues_write is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `issues` (set `issues: write`)",
+                        )
+                    )
                 if pr_write is False:
                     findings.append(
                         Finding(
                             "error",
-                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post verdict comment/review)",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: pull-requests: write` (required to post inline verdict review)",
                         )
                     )
                 elif pr_write is None:
@@ -389,8 +404,23 @@ def validate_workflow_dict(workflow: dict[str, Any], *, source: str) -> list[Fin
                     )
 
             if kind == "triage":
+                issues_write = _perm_allows(perms, "issues", "write")
                 pr_write = _perm_allows(perms, "pull-requests", "write")
                 contents_write = _perm_allows(perms, "contents", "write")
+                if issues_write is False:
+                    findings.append(
+                        Finding(
+                            "error",
+                            f"{source}: job `{job_name}` uses `{uses}` but lacks `permissions: issues: write`",
+                        )
+                    )
+                elif issues_write is None:
+                    findings.append(
+                        Finding(
+                            "warning",
+                            f"{source}: job `{job_name}` uses `{uses}` but has no explicit `permissions` for `issues` (set `issues: write`)",
+                        )
+                    )
                 if pr_write is False:
                     findings.append(
                         Finding(

@@ -147,11 +147,11 @@ def test_readme_quick_start_uses_cerberus_openrouter_secret_name() -> None:
 
 
 def test_permission_help_is_present_in_shared_module() -> None:
-    github_module = ROOT / "scripts" / "lib" / "github.py"
+    github_module = ROOT / "scripts" / "lib" / "github_platform.py"
     content = github_module.read_text()
 
-    assert "pull-requests: write" in content
-    assert "github_platform" in content
+    assert "_permission_guidance" in content
+    assert "_permission_message_for_args" in content
 
 
 def test_verdict_action_avoids_heredoc_in_run_block() -> None:

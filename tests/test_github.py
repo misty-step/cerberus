@@ -402,7 +402,7 @@ class TestRunGhErrorHandling:
 
         monkeypatch.setattr(mod.subprocess, "run", mock_subprocess_run)
 
-        with pytest.raises(CommentPermissionError, match="pull-requests: write"):
+        with pytest.raises(CommentPermissionError, match="issues: read"):
             mod._run_gh(["api", "repos/x/y/issues/1/comments"])
 
     def test_insufficient_permission_raises(self, monkeypatch):

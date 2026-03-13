@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      issues: write
     outputs:
       should_run: ${{ steps.preflight.outputs.should_run }}
       skip_reason: ${{ steps.preflight.outputs.skip_reason }}
@@ -252,6 +252,7 @@ jobs:
       needs.review-wave3.result != 'cancelled'
     permissions:
       contents: read
+      issues: write
       pull-requests: write
     runs-on: ubuntu-latest
     steps:

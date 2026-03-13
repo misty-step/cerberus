@@ -9,6 +9,7 @@
 #       types: [opened, synchronize, reopened]
 #   permissions:
 #     contents: read
+#     issues: write
 #     pull-requests: write
 #   jobs:
 #     review:
@@ -59,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      issues: write
     outputs:
       should_run: ${{ steps.preflight.outputs.should_run }}
     steps:
@@ -407,6 +408,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write
       pull-requests: write
     steps:
       - uses: misty-step/cerberus/verdict@master

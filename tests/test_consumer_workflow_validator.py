@@ -117,7 +117,7 @@ def test_invalid_yaml_is_error(tmp_path: Path, bad_yaml: str):
     assert _errors(findings) != []
 
 
-def test_comment_policy_always_requires_pr_write(tmp_path: Path):
+def test_comment_policy_always_requires_issue_write(tmp_path: Path):
     wf = tmp_path / "cerberus.yml"
     wf.write_text(
         """
@@ -140,7 +140,90 @@ jobs:
     )
 
     findings, _ = validate_workflow_file(wf)
-    assert any("comment-policy" in f.message and "pull-requests: write" in f.message for f in _errors(findings))
+    assert any("comment-policy" in f.message and "issues: write" in f.message for f in _errors(findings))
+
+
+def test_draft_check_missing_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  draft-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("issues: write" in f.message and "skip comment" in f.message for f in findings)
+
+
+def test_comment_policy_always_without_explicit_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: correctness
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          comment-policy: 'always'
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("comment policy is not `never`" in f.message and "issues: write" in f.message for f in findings)
+
+
+def test_verdict_missing_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  verdict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("permissions` for `issues`" in f.message and "verdict" in f.message for f in findings)
+
+
+def test_triage_missing_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/triage@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("permissions` for `issues`" in f.message and "triage" in f.message for f in findings)
 
 
 @pytest.mark.parametrize(
@@ -199,11 +282,17 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
     assert "converted_to_draft" in types
 
 
-def test_self_review_workflow_is_opt_in_and_not_always_on() -> None:
+def test_self_review_workflow_is_always_on_for_pr_updates() -> None:
     wf = _load_workflow(ROOT / ".github/workflows/self-review.yml")
 
-    assert wf["on"]["pull_request"]["types"] == ["labeled"]
-    assert wf["jobs"]["review"]["if"] == "github.event.label.name == 'cerberus-review'"
+    assert wf["on"]["pull_request"]["types"] == [
+        "opened",
+        "synchronize",
+        "reopened",
+        "ready_for_review",
+        "converted_to_draft",
+    ]
+    assert "if" not in wf["jobs"]["review"]
 
 
 def _has_skip_gate(wf: dict) -> bool:

@@ -52,17 +52,34 @@ Cloud repo: `https://github.com/misty-step/cerberus-cloud`.
 ## Current Reviewer Hardening Tracks
 
 - `P0` Security/dataflow blind-spot hardening
+  - Tracking: `#333`
+  - Benchmark evidence: `cerberus-cloud#94`, `volume#417`
   - Untrusted-data re-entry checks (titles, branch names, defaulted config, raw error leakage).
   - Fail-open / fail-closed review prompts for auth, quotas, env validation, and network isolation.
 - `P0` Large-PR review reliability
+  - Tracking: `#334`
+  - Benchmark evidence: `gitpulse#184`, `volume#417`
   - Reduce `trace`/`guard` timeout rates on large diffs.
   - Split or re-slice review context before correctness/security lanes skip.
+- `P1` Lifecycle/state-machine challenger lane
+  - Tracking: `#335`
+  - Benchmark evidence: `bitterblossom#477`, `bitterblossom#509` (from `2026-03-08-org-scorecard.md`; no bitterblossom PRs in March 13 window)
+  - Force explicit phase-by-phase reasoning for sticky state, misclassified later handlers, and blocked-work retry loops.
 - `P1` Adjacent-regression detection
+  - Tracking: `#336`
+  - Benchmark evidence: `volume#407`, `volume#418`
   - Catch deleted workflows, weakened CI gates, and non-obvious neighboring-file regressions.
 - `P1` Benchmark loop
+  - Tracking: `#332`
+  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-08-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`
   - Weekly org-wide reviewer scorecard.
   - Durable agent-agnostic skill in `.agents/skills/reviewer-benchmark/`.
   - Hypothesis log plus experiment backlog tied to concrete misses.
+- `P1` Reviewer presence / self-dogfood coverage
+  - Tracking: `#375`
+  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`
+  - Cerberus must run consistently enough on core repos for the benchmark to distinguish absence from recall failure.
+  - Treat low Cerberus presence on `cerberus` and `gitpulse` as an operational reliability issue.
 - `P1` Reviewer context retrieval
   - Pull prior review comments, author fix summaries, and linked acceptance criteria into reviewer context by default.
 - `P1` Terminology and contract alignment
