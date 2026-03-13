@@ -4,7 +4,7 @@ name: Cerberus
 
 on:
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -16,7 +16,6 @@ concurrency:
 
 jobs:
   review:
-    if: github.event.label.name == 'cerberus-review'
     uses: ./.github/workflows/cerberus.yml
     with:
       timeout: 600

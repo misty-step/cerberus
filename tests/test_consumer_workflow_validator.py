@@ -199,11 +199,17 @@ def test_workflows_include_ready_for_review_and_draft_transitions(path: Path):
     assert "converted_to_draft" in types
 
 
-def test_self_review_workflow_is_opt_in_and_not_always_on() -> None:
+def test_self_review_workflow_is_always_on_for_pr_updates() -> None:
     wf = _load_workflow(ROOT / ".github/workflows/self-review.yml")
 
-    assert wf["on"]["pull_request"]["types"] == ["labeled"]
-    assert wf["jobs"]["review"]["if"] == "github.event.label.name == 'cerberus-review'"
+    assert wf["on"]["pull_request"]["types"] == [
+        "opened",
+        "synchronize",
+        "reopened",
+        "ready_for_review",
+        "converted_to_draft",
+    ]
+    assert "if" not in wf["jobs"]["review"]
 
 
 def _has_skip_gate(wf: dict) -> bool:
