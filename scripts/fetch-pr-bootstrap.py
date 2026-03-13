@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from lib import github_platform as platform
+from lib.review_run_bootstrap import fetch_pr_bootstrap, write_pr_bootstrap_files
 
 
 @dataclass(frozen=True)
@@ -42,14 +43,13 @@ def main() -> int:
     result_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        diff_file.parent.mkdir(parents=True, exist_ok=True)
-        pr_context_file.parent.mkdir(parents=True, exist_ok=True)
-
-        diff = platform.fetch_pr_diff(args.repo, args.pr)
-        pr_context = platform.fetch_pr_context(args.repo, args.pr)
-
-        diff_file.write_text(diff, encoding="utf-8")
-        pr_context_file.write_text(json.dumps(pr_context), encoding="utf-8")
+        diff, pr_context = fetch_pr_bootstrap(args.repo, args.pr)
+        write_pr_bootstrap_files(
+            diff_file=diff_file,
+            pr_context_file=pr_context_file,
+            diff=diff,
+            pr_context=pr_context,
+        )
         result = BootstrapResult(ok=True, error_kind="", error_message="")
     except platform.GitHubAuthError as exc:
         result = BootstrapResult(ok=False, error_kind="auth", error_message=str(exc))

@@ -110,6 +110,7 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `templates/consumer-workflow-reusable.yml` - recommended workflow for downstream repositories
 - `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
 - `scripts/fetch-pr-bootstrap.py` - adapter-backed bootstrap fetch for `pr.diff` and `pr-context.json`
+- `scripts/lib/review_run_bootstrap.py` - shared bootstrap module for PR artifact persistence and `review-run.json` assembly
 - `scripts/run-reviewer.sh` - orchestrates one reviewer via `scripts/run-reviewer.py` and Pi runtime
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
