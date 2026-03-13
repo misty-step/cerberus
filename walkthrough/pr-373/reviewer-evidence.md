@@ -13,9 +13,9 @@
 ## What The Video Shows
 
 1. A real PTY run of `node bin/cerberus.js init`
-2. The hidden-input prompt waiting for a secret
-3. The secret being submitted without echoing to the terminal
-4. The happy path completing normally
+2. The same fake secret being sent to `origin/master` and this branch
+3. `origin/master` visibly echoing the typed secret while this branch keeps it hidden
+4. Both happy paths completing normally
 5. The protecting test suite passing on this branch
 
 ## Residual Gap
