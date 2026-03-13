@@ -83,7 +83,9 @@ def run_command(args: list[str], *, env: dict[str, str]) -> subprocess.Completed
     return subprocess.run(args, cwd=str(ROOT), env=env, text=True, capture_output=True, check=False)
 
 
-def load_json(path: Path) -> dict:
+def load_json(path: Path) -> object:
+    """Load JSON from disk. Callers are responsible for validating the shape."""
+
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -160,15 +162,24 @@ def run_reviewer(*, perspective: str, output_dir: Path, base_env: dict[str, str]
     enrich_verdict_metadata(output_dir=output_dir, perspective=perspective)
 
 
-def aggregate_verdicts(*, output_dir: Path, repo: str, pr_number: int, reviewers: list[str]) -> None:
+def aggregate_verdicts(
+    *,
+    output_dir: Path,
+    repo: str,
+    pr_number: int,
+    reviewers: list[str],
+    base_env: dict[str, str],
+) -> None:
     verdict_dir = output_dir / "verdicts"
     verdict_dir.mkdir(parents=True, exist_ok=True)
+    for stale_verdict in verdict_dir.glob("*.json"):
+        stale_verdict.unlink()
     for reviewer in reviewers:
         source = output_dir / f"{reviewer}-verdict.json"
         target = verdict_dir / source.name
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
-    env = dict(os.environ)
+    env = dict(base_env)
     env["CERBERUS_TMP"] = str(output_dir)
     env["GITHUB_REPOSITORY"] = repo
     env["GH_PR_NUMBER"] = str(pr_number)
@@ -229,12 +240,24 @@ def main() -> int:
     try:
         for reviewer in reviewers:
             run_reviewer(perspective=reviewer, output_dir=output_dir, base_env=base_env)
-        aggregate_verdicts(output_dir=output_dir, repo=args.repo, pr_number=args.pr, reviewers=reviewers)
+        aggregate_verdicts(
+            output_dir=output_dir,
+            repo=args.repo,
+            pr_number=args.pr,
+            reviewers=reviewers,
+            base_env=base_env,
+        )
     except RuntimeError as exc:
         print(f"non-gha-review-run: {exc}", file=sys.stderr)
         return 1
 
     verdict_path = output_dir / "verdict.json"
+    if not verdict_path.exists():
+        print(
+            f"non-gha-review-run: aggregate-verdict.py exited 0 but {verdict_path} was not written",
+            file=sys.stderr,
+        )
+        return 1
     print(str(verdict_path))
     return 0
 

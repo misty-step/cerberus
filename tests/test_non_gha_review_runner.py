@@ -1,10 +1,99 @@
+"""Tests for scripts.non_gha_review_run orchestration and failure handling."""
+
 from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from scripts import non_gha_review_run as mod
+
+
+def test_parse_args_accepts_explicit_flags(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "non_gha_review_run.py",
+            "--repo",
+            "misty-step/cerberus",
+            "--pr",
+            "329",
+            "--output-dir",
+            "/tmp/artifacts",
+            "--reviewers",
+            "trace,guard",
+            "--token-env-var",
+            "TEST_TOKEN",
+        ],
+    )
+
+    args = mod.parse_args()
+
+    assert args.repo == "misty-step/cerberus"
+    assert args.pr == 329
+    assert args.output_dir == "/tmp/artifacts"
+    assert args.reviewers == "trace,guard"
+    assert args.token_env_var == "TEST_TOKEN"
+
+
+def test_selected_reviewers_uses_defaults_config_when_empty(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mod,
+        "load_defaults_config",
+        lambda path: SimpleNamespace(
+            reviewers=[SimpleNamespace(name="trace"), SimpleNamespace(name="guard")]
+        ),
+    )
+
+    assert mod.selected_reviewers("") == ["trace", "guard"]
+
+
+def test_run_command_delegates_to_subprocess(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    result = mod.run_command(["python3", "--version"], env={"X": "1"})
+
+    assert result.stdout == "ok"
+    assert seen["args"] == ["python3", "--version"]
+    assert seen["kwargs"] == {
+        "cwd": str(mod.ROOT),
+        "env": {"X": "1"},
+        "text": True,
+        "capture_output": True,
+        "check": False,
+    }
+
+
+def test_enrich_verdict_metadata_records_runtime_model_and_description(monkeypatch, tmp_path: Path) -> None:
+    verdict_path = tmp_path / "trace-verdict.json"
+    verdict_path.write_text(json.dumps({"verdict": "PASS"}), encoding="utf-8")
+    (tmp_path / "trace-runtime-seconds").write_text("12\n", encoding="utf-8")
+    (tmp_path / "trace-model-used").write_text("openrouter/fallback\n", encoding="utf-8")
+    (tmp_path / "trace-primary-model").write_text("openrouter/primary\n", encoding="utf-8")
+    (tmp_path / "trace-configured-model").write_text("openrouter/configured\n", encoding="utf-8")
+    (tmp_path / "trace-reviewer-desc").write_text("Trace reviewer\n", encoding="utf-8")
+    monkeypatch.setenv("MODEL_WAVE", "wave-1")
+
+    mod.enrich_verdict_metadata(output_dir=tmp_path, perspective="trace")
+
+    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    assert verdict["runtime_seconds"] == 12
+    assert verdict["model_used"] == "openrouter/fallback"
+    assert verdict["primary_model"] == "openrouter/primary"
+    assert verdict["configured_model"] == "openrouter/configured"
+    assert verdict["fallback_used"] is True
+    assert verdict["model_wave"] == "wave-1"
+    assert verdict["reviewer_description"] == "Trace reviewer"
 
 
 def test_main_runs_local_review_lane(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -118,6 +207,124 @@ def test_main_runs_local_review_lane(monkeypatch, tmp_path: Path, capsys) -> Non
     assert review_run["head_ref"] == "feature/branch"
     assert review_run["base_ref"] == "master"
     assert commands[-1][1].endswith("aggregate-verdict.py")
+    assert json.loads((tmp_path / "artifacts" / "verdicts" / "trace-verdict.json").read_text())["verdict"] == "PASS"
+    assert json.loads((tmp_path / "artifacts" / "verdicts" / "guard-verdict.json").read_text())["verdict"] == "PASS"
+
+
+def test_run_reviewer_uses_parse_input_override(monkeypatch, tmp_path: Path) -> None:
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    output_dir = tmp_path / "artifacts"
+    output_dir.mkdir(parents=True)
+
+    def fake_run_command(args, *, env):
+        calls.append((args, dict(env)))
+        if args[1].endswith("run-reviewer.sh"):
+            parse_input = output_dir / "override-output.txt"
+            parse_input.write_text("review output", encoding="utf-8")
+            (output_dir / "trace-parse-input").write_text(str(parse_input), encoding="utf-8")
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        if args[1].endswith("parse-review.py"):
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=json.dumps({"verdict": "PASS"}),
+                stderr="",
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(mod, "run_command", fake_run_command)
+    monkeypatch.setattr(mod.time, "time", lambda: 100.0 if not calls else 103.4)
+
+    mod.run_reviewer(
+        perspective="trace",
+        output_dir=output_dir,
+        base_env={"CERBERUS_TMP": str(output_dir), "CERBERUS_ROOT": "/repo"},
+    )
+
+    assert calls[0][1]["PERSPECTIVE"] == "trace"
+    assert calls[1][0][-1] == str(output_dir / "override-output.txt")
+    assert (output_dir / "trace-runtime-seconds").read_text(encoding="utf-8").strip() == "3"
+    assert json.loads((output_dir / "trace-verdict.json").read_text(encoding="utf-8"))["verdict"] == "PASS"
+
+
+def test_aggregate_verdicts_clears_stale_verdict_artifacts(tmp_path: Path, monkeypatch) -> None:
+    output_dir = tmp_path / "artifacts"
+    verdict_dir = output_dir / "verdicts"
+    verdict_dir.mkdir(parents=True)
+    (verdict_dir / "stale-verdict.json").write_text("{}", encoding="utf-8")
+    (output_dir / "trace-verdict.json").write_text("{}", encoding="utf-8")
+
+    seen_env: dict[str, str] = {}
+
+    def fake_run_command(args, *, env):
+        seen_env.update(env)
+        (output_dir / "verdict.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "run_command", fake_run_command)
+
+    mod.aggregate_verdicts(
+        output_dir=output_dir,
+        repo="misty-step/cerberus",
+        pr_number=329,
+        reviewers=["trace"],
+        base_env={"CERBERUS_ROOT": "/repo", "CERBERUS_REVIEW_RUN": "/tmp/review-run.json"},
+    )
+
+    assert not (verdict_dir / "stale-verdict.json").exists()
+    assert (verdict_dir / "trace-verdict.json").exists()
+    assert seen_env["CERBERUS_ROOT"] == "/repo"
+    assert seen_env["CERBERUS_REVIEW_RUN"] == "/tmp/review-run.json"
+
+
+def test_aggregate_verdicts_raises_when_aggregate_verdict_fails(tmp_path: Path, monkeypatch) -> None:
+    output_dir = tmp_path / "artifacts"
+    (output_dir / "trace-verdict.json").parent.mkdir(parents=True, exist_ok=True)
+    (output_dir / "trace-verdict.json").write_text("{}", encoding="utf-8")
+
+    def fake_run_command(args, *, env):
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="bad stdout", stderr="bad stderr")
+
+    monkeypatch.setattr(mod, "run_command", fake_run_command)
+
+    try:
+        mod.aggregate_verdicts(
+            output_dir=output_dir,
+            repo="misty-step/cerberus",
+            pr_number=329,
+            reviewers=["trace"],
+            base_env={"CERBERUS_ROOT": "/repo"},
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected aggregate_verdicts to raise")
+
+    assert "aggregate-verdict failed" in message
+    assert "bad stdout" in message
+    assert "bad stderr" in message
+
+
+def test_main_returns_two_when_no_reviewers(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setattr(
+        mod,
+        "parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {
+                "repo": "misty-step/cerberus",
+                "pr": 329,
+                "output_dir": str(tmp_path / "artifacts"),
+                "reviewers": "",
+                "token_env_var": "GH_TOKEN",
+            },
+        )(),
+    )
+    monkeypatch.setattr(mod, "selected_reviewers", lambda raw: [])
+
+    assert mod.main() == 2
+    assert "no reviewers selected" in capsys.readouterr().err
 
 
 def test_main_returns_two_when_fetch_fails(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -141,3 +348,74 @@ def test_main_returns_two_when_fetch_fails(monkeypatch, tmp_path: Path, capsys) 
 
     assert mod.main() == 2
     assert "failed to fetch PR inputs" in capsys.readouterr().err
+
+
+def test_main_returns_two_when_pr_context_fetch_fails(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setattr(
+        mod,
+        "parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {
+                "repo": "misty-step/cerberus",
+                "pr": 329,
+                "output_dir": str(tmp_path / "artifacts"),
+                "reviewers": "",
+                "token_env_var": "GH_TOKEN",
+            },
+        )(),
+    )
+    monkeypatch.setattr(mod, "selected_reviewers", lambda raw: ["trace"])
+    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
+    monkeypatch.setattr(
+        mod,
+        "fetch_pr_context",
+        lambda repo, pr_number, fields=None: (_ for _ in ()).throw(RuntimeError("context boom")),
+    )
+
+    assert mod.main() == 2
+    assert "failed to fetch PR inputs" in capsys.readouterr().err
+
+
+def test_main_returns_one_when_verdict_file_is_missing(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
+    monkeypatch.setattr(
+        mod,
+        "fetch_pr_context",
+        lambda repo, pr_number, fields=None: {
+            "title": "PR",
+            "author": {"login": "dev"},
+            "headRefName": "feature/branch",
+            "baseRefName": "master",
+            "body": "desc",
+        },
+    )
+
+    def fake_run_reviewer(*, perspective: str, output_dir: Path, base_env: dict[str, str]) -> None:
+        (output_dir / f"{perspective}-verdict.json").write_text("{}", encoding="utf-8")
+
+    def fake_aggregate_verdicts(*, output_dir: Path, repo: str, pr_number: int, reviewers: list[str], base_env: dict[str, str]) -> None:
+        return None
+
+    monkeypatch.setattr(mod, "run_reviewer", fake_run_reviewer)
+    monkeypatch.setattr(mod, "aggregate_verdicts", fake_aggregate_verdicts)
+    monkeypatch.setattr(mod, "selected_reviewers", lambda raw: ["trace"])
+    monkeypatch.setattr(
+        mod,
+        "parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {
+                "repo": "misty-step/cerberus",
+                "pr": 329,
+                "output_dir": str(tmp_path / "artifacts"),
+                "reviewers": "",
+                "token_env_var": "GH_TOKEN",
+            },
+        )(),
+    )
+
+    assert mod.main() == 1
+    assert "verdict.json" in capsys.readouterr().err
