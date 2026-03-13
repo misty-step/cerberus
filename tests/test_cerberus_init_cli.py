@@ -503,6 +503,54 @@ def test_init_discards_double_escape_sequences_from_interactive_api_key(
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_escape_prefix_still_allows_submit(tmp_path: Path) -> None:
+    pty = pytest.importorskip("pty")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_gh(bin_dir, calls_file=calls_file)
+
+    env = build_env(bin_dir)
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
+    env.pop("OPENROUTER_API_KEY", None)
+
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=env,
+        stdin=slave_fd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+
+    try:
+        prompt = b"Enter Cerberus OpenRouter API key (input hidden): "
+        stdout = read_fd_until(proc.stdout.fileno(), prompt)
+        os.write(master_fd, b"\x1b\r")
+        remaining_stdout, stderr = proc.communicate(timeout=10)
+        returncode = proc.returncode
+    finally:
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        if proc.poll() is None:
+            proc.kill()
+
+    assert returncode != 0
+    assert prompt in (stdout + remaining_stdout)
+    assert "No API key entered." in stderr.decode()
+    assert not calls_file.exists()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
 def test_init_fails_when_interactive_input_stream_ends(tmp_path: Path) -> None:
     pty = pytest.importorskip("pty")
     repo = tmp_path / "repo"

@@ -108,6 +108,15 @@ async function promptApiKeyOnce() {
 
     const onData = (chunk) => {
       for (const char of Array.from(chunk.toString('utf8'))) {
+        if (char === '\u0003' || char === '\u0004') {
+          finish(new Error('No API key entered.'));
+          return;
+        }
+        if (char === '\r' || char === '\n') {
+          finish();
+          return;
+        }
+
         if (escapeState === 'esc') {
           if (char === '\u001b') {
             continue;
@@ -131,14 +140,6 @@ async function promptApiKeyOnce() {
           continue;
         }
 
-        if (char === '\u0003' || char === '\u0004') {
-          finish(new Error('No API key entered.'));
-          return;
-        }
-        if (char === '\r' || char === '\n') {
-          finish();
-          return;
-        }
         if (char === '\u007f' || char === '\b') {
           value = value.slice(0, -1);
           continue;
