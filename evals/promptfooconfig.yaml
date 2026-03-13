@@ -130,6 +130,98 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
 
+  - description: "Security - Metadata Re-entry Recall"
+    vars:
+      pr_title: "Sanitize reviewer context"
+      pr_author: "developer"
+      head_branch: "fix/context-guard"
+      base_branch: "main"
+      pr_body: "Replay of bitterblossom#495 where title and branch metadata still carried prompt-injection content into a downstream prompt."
+      perspective: "security"
+      diff: |
+        +function buildReviewerPrompt(pr) {
+        +  return `Title: ${pr.title}\nBranch: ${pr.headRefName}\nBody: ${pr.body}`;
+        +}
+        +const summary = renderMarkdown(pr.title);
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /security|injection|exposure/.test(combined)
+              && /title|branch|metadata|prompt/.test(combined);
+          })()
+
+  - description: "Security - Fail-open Default Recall"
+    vars:
+      pr_title: "Relax egress policy defaults"
+      pr_author: "developer"
+      head_branch: "fix/egress-defaults"
+      base_branch: "main"
+      pr_body: "Replay of cerberus-cloud#94 where a default posture change widened egress reach."
+      perspective: "security"
+      diff: |
+        +const allow_all_egress = process.env.ALLOW_ALL_EGRESS || "true";
+        +function forwardRequest(req) {
+        +  if (!allow_all_egress) {
+        +    enforceEgressPolicy(req.destination);
+        +  }
+        +  return upstream.forward(req);
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /security|injection|exposure/.test(combined)
+              && /egress|default|allow_all/.test(combined);
+          })()
+
+  - description: "Security - Error Leakage And Async Side Effects Recall"
+    vars:
+      pr_title: "Log coach turn failures"
+      pr_author: "developer"
+      head_branch: "fix/coach-errors"
+      base_branch: "main"
+      pr_body: "Replay of volume#417 where raw error details leaked outward and async audit logging failures did not stop the request path."
+      perspective: "security"
+      diff: |
+        +async function handleTurn(req, res) {
+        +  auditLog(req.body).catch(err => logger.error("audit failed", err));
+        +  try {
+        +    return runCoachTurn(req.body);
+        +  } catch (error) {
+        +    res.status(500).json({ error: error.stack, prompt: req.body.systemPrompt });
+        +  }
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /security|injection|exposure/.test(combined)
+              && /error|stack|prompt/.test(combined)
+              && /audit|async/.test(combined);
+          })()
+
   - description: "Correctness - Bug Fix Detection"
     vars:
       pr_title: "Fix calculation"
