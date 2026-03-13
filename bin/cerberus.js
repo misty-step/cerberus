@@ -72,6 +72,9 @@ async function promptApiKeyOnce() {
   return await new Promise((resolve, reject) => {
     const originalRawMode = input.isRaw;
     let value = '';
+    let escapeState = 'none';
+
+    const isEscapeSequenceTerminator = (char) => char >= '@' && char <= '~';
 
     const cleanup = () => {
       input.removeListener('data', onData);
@@ -95,6 +98,22 @@ async function promptApiKeyOnce() {
 
     const onData = (chunk) => {
       for (const char of Array.from(chunk.toString('utf8'))) {
+        if (escapeState === 'esc') {
+          if (char === '[' || char === 'O') {
+            escapeState = 'sequence';
+          } else {
+            escapeState = isEscapeSequenceTerminator(char) ? 'none' : 'sequence';
+          }
+          continue;
+        }
+
+        if (escapeState === 'sequence') {
+          if (isEscapeSequenceTerminator(char)) {
+            escapeState = 'none';
+          }
+          continue;
+        }
+
         if (char === '\u0003' || char === '\u0004') {
           finish(new Error('No API key entered.'));
           return;
@@ -108,6 +127,10 @@ async function promptApiKeyOnce() {
           continue;
         }
         if (char === '\u001b') {
+          escapeState = 'esc';
+          continue;
+        }
+        if (char < ' ') {
           continue;
         }
         value += char;

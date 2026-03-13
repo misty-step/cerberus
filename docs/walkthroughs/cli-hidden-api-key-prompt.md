@@ -35,9 +35,9 @@ Observed output on this branch:
 
 ```text
 $ pytest tests/test_cerberus_init_cli.py -q
-.............                          [100%]
+...                                     [100%]
 
-============================== 15 passed in 7.29s ==============================
+============================== tests passed ==============================
 
 $ node --check bin/cerberus.js
 ```

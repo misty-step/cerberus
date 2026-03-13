@@ -1,8 +1,8 @@
 """Behavior tests for the cerberus init CLI."""
 
+import errno
 import json
 import os
-import pty
 import re
 import select
 import shutil
@@ -33,13 +33,19 @@ def setup_gh(
     bin_dir: Path,
     *,
     calls_file: Path | None = None,
+    stdin_file: Path | None = None,
     stderr_message: str | None = None,
 ) -> None:
     secret_handler = "echo \"unexpected gh args: $*\" >&2\nexit 1\n"
     if calls_file is not None:
+        secret_stdin = "  cat >/dev/null\n"
+        if stdin_file is not None:
+            secret_stdin = f"  cat > {str(stdin_file)!r}\n"
+
         secret_handler = (
             "if [[ \"${3:-}\" == \"CERBERUS_OPENROUTER_API_KEY\" || \"${3:-}\" == \"OPENROUTER_API_KEY\" ]]; then\n"
             f"  printf '%s\\n' \"$*\" >> {str(calls_file)!r}\n"
+            f"{secret_stdin}"
             "  exit 0\n"
             "fi\n"
             "echo \"unexpected gh args: $*\" >&2\n"
@@ -74,6 +80,15 @@ def build_env(bin_dir: Path, extra: dict[str, str] | None = None) -> dict[str, s
     return env
 
 
+def read_pty_chunk(fd: int) -> bytes:
+    try:
+        return os.read(fd, 4096)
+    except OSError as exc:
+        if exc.errno in (errno.EIO, errno.EBADF):
+            return b""
+        raise
+
+
 def read_pty_output(fd: int, proc: subprocess.Popen[bytes], timeout: float = 10.0) -> str:
     chunks: list[bytes] = []
     deadline = time.time() + timeout
@@ -81,21 +96,18 @@ def read_pty_output(fd: int, proc: subprocess.Popen[bytes], timeout: float = 10.
     while time.time() < deadline:
         ready, _, _ = select.select([fd], [], [], 0.1)
         if ready:
-            chunk = os.read(fd, 4096)
+            chunk = read_pty_chunk(fd)
             if not chunk:
                 break
             chunks.append(chunk)
             continue
 
         if proc.poll() is not None:
-            try:
-                while True:
-                    chunk = os.read(fd, 4096)
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-            except OSError:
-                pass
+            while True:
+                chunk = read_pty_chunk(fd)
+                if not chunk:
+                    break
+                chunks.append(chunk)
             break
 
     return b"".join(chunks).decode(errors="replace")
@@ -114,7 +126,7 @@ def read_pty_until(
     while time.time() < deadline:
         ready, _, _ = select.select([fd], [], [], 0.1)
         if ready:
-            chunk = os.read(fd, 4096)
+            chunk = read_pty_chunk(fd)
             if not chunk:
                 break
             chunks.append(chunk)
@@ -123,6 +135,13 @@ def read_pty_until(
             continue
 
         if proc.poll() is not None:
+            while True:
+                chunk = read_pty_chunk(fd)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if marker_bytes in b"".join(chunks):
+                    return b"".join(chunks).decode(errors="replace")
             break
 
     raise AssertionError(f"Did not receive PTY marker: {marker!r}")
@@ -317,6 +336,7 @@ def test_init_requires_key_when_non_interactive_and_env_missing(tmp_path: Path) 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
 def test_init_hides_typed_api_key_in_interactive_prompt(tmp_path: Path) -> None:
+    pty = pytest.importorskip("pty")
     repo = tmp_path / "repo"
     repo.mkdir()
     init_git_repo(repo)
@@ -324,7 +344,8 @@ def test_init_hides_typed_api_key_in_interactive_prompt(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     calls_file = tmp_path / "gh-calls.txt"
-    setup_gh(bin_dir, calls_file=calls_file)
+    stdin_file = tmp_path / "gh-stdin.txt"
+    setup_gh(bin_dir, calls_file=calls_file, stdin_file=stdin_file)
 
     env = build_env(bin_dir)
     env.pop("CERBERUS_OPENROUTER_API_KEY", None)
@@ -360,6 +381,56 @@ def test_init_hides_typed_api_key_in_interactive_prompt(tmp_path: Path) -> None:
     gh_call = calls_file.read_text()
     assert "secret set CERBERUS_OPENROUTER_API_KEY" in gh_call
     assert "typed-secret-value" not in gh_call
+    assert stdin_file.read_text() == "typed-secret-value"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_discards_escape_sequences_from_interactive_api_key(tmp_path: Path) -> None:
+    pty = pytest.importorskip("pty")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    stdin_file = tmp_path / "gh-stdin.txt"
+    setup_gh(bin_dir, calls_file=calls_file, stdin_file=stdin_file)
+
+    env = build_env(bin_dir)
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
+    env.pop("OPENROUTER_API_KEY", None)
+
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=env,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+
+    try:
+        prompt = "Enter Cerberus OpenRouter API key (input hidden): "
+        output = read_pty_until(master_fd, proc, prompt)
+        os.write(master_fd, b"typed-secret")
+        os.write(master_fd, b"\x1b[D")
+        os.write(master_fd, b"-value\n")
+        output += read_pty_output(master_fd, proc)
+        returncode = proc.wait(timeout=10)
+    finally:
+        os.close(master_fd)
+        if proc.poll() is None:
+            proc.kill()
+
+    assert returncode == 0
+    assert "typed-secret-value" not in output
+    assert "[D" not in output
+    assert "Configured CERBERUS_OPENROUTER_API_KEY as GitHub Actions secret." in output
+    assert stdin_file.read_text() == "typed-secret-value"
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
