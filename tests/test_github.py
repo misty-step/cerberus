@@ -77,8 +77,8 @@ class TestFindCommentUrlByMarker:
         assert find_comment_url_by_marker(comments, "<!-- cerberus:council -->") is None
 
 
-def test_find_item_by_marker_skips_non_dict_entries() -> None:
-    from lib.github import _find_item_by_marker
+def test_iter_items_by_marker_skips_non_dict_entries() -> None:
+    from lib.github import _iter_items_by_marker
 
     items = [
         "skip-me",
@@ -86,7 +86,18 @@ def test_find_item_by_marker_skips_non_dict_entries() -> None:
         {"id": 3, "body": "<!-- marker -->"},
     ]
 
-    assert _find_item_by_marker(items, "<!-- marker -->") == {"id": 3, "body": "<!-- marker -->"}
+    assert list(_iter_items_by_marker(items, "<!-- marker -->")) == [
+        {"id": 3, "body": "<!-- marker -->"}
+    ]
+
+
+def test_find_comment_by_marker_continues_after_non_integer_match() -> None:
+    comments = [
+        {"id": "IC_abc123", "body": "<!-- cerberus:council -->\nFirst"},
+        {"id": 200, "body": "<!-- cerberus:council -->\nSecond"},
+    ]
+
+    assert find_comment_by_marker(comments, "<!-- cerberus:council -->") == 200
 
 
 class TestUpsertPrComment:

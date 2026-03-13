@@ -22,6 +22,18 @@ def test_find_review_id_by_marker() -> None:
     )
 
 
+def test_find_review_id_by_marker_continues_after_non_integer_match() -> None:
+    reviews = [
+        {"id": "RV_x", "body": "<!-- cerberus:council-review sha=abc -->\nfirst"},
+        {"id": 2, "body": "<!-- cerberus:council-review sha=abc -->\nsecond"},
+    ]
+
+    assert (
+        find_review_id_by_marker(reviews, "<!-- cerberus:council-review sha=abc -->")
+        == 2
+    )
+
+
 def test_list_pr_reviews_parses_json_list(monkeypatch) -> None:
     calls: list[tuple[str, int]] = []
 

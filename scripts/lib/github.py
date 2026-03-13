@@ -132,22 +132,21 @@ def fetch_comments(
         _reraise_platform_error(exc)
 
 
-def _find_item_by_marker(items: list[dict], marker: str) -> dict | None:
-    """Return the first dict item whose body contains the given marker."""
+def _iter_items_by_marker(items: list[dict], marker: str):
+    """Yield dict items whose body contains the given marker."""
 
     for item in items:
         if not isinstance(item, dict):
             continue
         body = str(item.get("body", "") or "")
         if marker in body:
-            return item
-    return None
+            yield item
 
 
 def find_comment_by_marker(comments: list[dict], marker: str) -> int | None:
     """Find the first comment containing the marker, return its numeric ID."""
-    comment = _find_item_by_marker(comments, marker)
-    if comment is not None:
+
+    for comment in _iter_items_by_marker(comments, marker):
         comment_id = comment.get("id")
         if isinstance(comment_id, int):
             return comment_id
@@ -156,8 +155,8 @@ def find_comment_by_marker(comments: list[dict], marker: str) -> int | None:
 
 def find_comment_url_by_marker(comments: list[dict], marker: str) -> str | None:
     """Find the first comment containing the marker, return its html_url if present."""
-    comment = _find_item_by_marker(comments, marker)
-    if comment is not None:
+
+    for comment in _iter_items_by_marker(comments, marker):
         url = comment.get("html_url")
         return url if isinstance(url, str) and url.strip() else None
     return None
@@ -215,8 +214,7 @@ def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
 def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
     """Find the first review containing the marker, return its numeric ID."""
 
-    review = _find_item_by_marker(reviews, marker)
-    if review is not None:
+    for review in _iter_items_by_marker(reviews, marker):
         review_id = review.get("id")
         if isinstance(review_id, int):
             return review_id
