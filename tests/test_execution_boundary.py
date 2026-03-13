@@ -16,7 +16,6 @@ PROTECTED_ENGINE_PATHS = (
     "scripts/render-review-prompt.py",
     "scripts/run-reviewer.py",
     "scripts/lib/github.py",
-    "scripts/lib/github_reviews.py",
     "scripts/lib/review_run_contract.py",
     "scripts/lib/runtime_facade.py",
 )

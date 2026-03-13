@@ -1,7 +1,7 @@
-"""GitHub PR comment utilities.
+"""GitHub review-path utilities built on the shared platform adapter.
 
-Provides idempotent comment upsert using HTML markers for identification.
-Used by per-reviewer comments, verdict, and triage diagnosis.
+Provides idempotent comment upsert using HTML markers plus PR review/file helpers.
+Used by per-reviewer comments, verdict review UX, and triage diagnosis.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import argparse
 import importlib
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
@@ -180,6 +181,73 @@ def upsert_pr_comment(
             update_issue_comment(repo=repo, comment_id=existing_id, body_file=body_file)
         else:
             create_issue_comment(repo=repo, number=pr_number, body_file=body_file)
+    except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
+        _reraise_platform_error(exc)
+
+
+@dataclass(frozen=True)
+class ReviewComment:
+    """PR review inline comment payload."""
+
+    path: str
+    position: int
+    body: str
+
+
+def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
+    """List PR reviews via the shared platform adapter."""
+
+    try:
+        return _github_platform.list_pr_reviews(repo, pr_number)
+    except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
+        _reraise_platform_error(exc)
+
+
+def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
+    """Find the first review containing the marker, return its numeric ID."""
+
+    for review in reviews:
+        if not isinstance(review, dict):
+            continue
+        body = str(review.get("body", "") or "")
+        if marker not in body:
+            continue
+        review_id = review.get("id")
+        if isinstance(review_id, int):
+            return review_id
+    return None
+
+
+def list_pr_files(repo: str, pr_number: int) -> list[dict]:
+    """List changed PR files via the shared platform adapter."""
+
+    try:
+        return _github_platform.list_pr_files(repo, pr_number)
+    except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
+        _reraise_platform_error(exc)
+
+
+def create_pr_review(
+    *,
+    repo: str,
+    pr_number: int,
+    commit_id: str,
+    body: str,
+    comments: list[ReviewComment],
+) -> dict:
+    """Create a PR review with optional inline comments."""
+
+    try:
+        return _github_platform.create_pr_review(
+            repo=repo,
+            pr_number=pr_number,
+            commit_id=commit_id,
+            body=body,
+            comments=[
+                {"path": comment.path, "position": comment.position, "body": comment.body}
+                for comment in comments
+            ],
+        )
     except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
         _reraise_platform_error(exc)
 

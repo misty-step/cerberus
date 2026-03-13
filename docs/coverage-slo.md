@@ -56,8 +56,7 @@ These modules produce user-visible output or mediate GitHub API calls. Bugs are 
 | `render_verdict_comment.py` | `scripts/lib/render_verdict_comment.py` | Renders the verdict PR comment; incorrect rendering causes confusing output but not wrong verdicts. |
 | `render_findings.py` | `scripts/lib/render_findings.py` | Renders findings markdown; consumed by PR comments. |
 | `findings.py` | `scripts/lib/findings.py` | Finding normalization, grouping, and reviewer-list formatting; feeds rendering pipeline. |
-| `github.py` | `scripts/lib/github.py` | Idempotent comment upsert via HTML markers; used by all comment writers. |
-| `github_reviews.py` | `scripts/lib/github_reviews.py` | PR review creation and listing; thin wrapper around GitHub API. |
+| `github.py` | `scripts/lib/github.py` | Review-path GitHub helpers for comment upsert, PR review creation/listing, and PR file reads. |
 | `defaults_config.py` | `scripts/lib/defaults_config.py` | Typed loader for `defaults/config.yml`; incorrect parsing propagates to all reviewer config consumers. |
 | `consumer_workflow_validator.py` | `scripts/lib/consumer_workflow_validator.py` | Validates consumer workflow YAML; misconfig detection. |
 | `collect-overrides.py` | `scripts/collect-overrides.py` | Collects override comments; feeds `aggregate-verdict.py`. |
@@ -104,7 +103,7 @@ Low-complexity entrypoints, tooling scripts, and infrastructure helpers. Failure
 | Tier | Line target | Branch target | Modules |
 |------|-------------|---------------|---------|
 | 1 — Critical | 90% | 85% | `parse-review.py`, `aggregate-verdict.py`, `lib/overrides.py`, `lib/prompt_sanitize.py`, `lib/diff_positions.py` |
-| 2 — Important | 80% | 75% | `post-verdict-review.py`, `triage.py`, `lib/render_verdict_comment.py`, `lib/render_findings.py`, `lib/findings.py`, `lib/github.py`, `lib/github_reviews.py`, `lib/defaults_config.py`, `lib/consumer_workflow_validator.py`, `collect-overrides.py`, `matrix/generate-matrix.py` |
+| 2 — Important | 80% | 75% | `post-verdict-review.py`, `triage.py`, `lib/render_verdict_comment.py`, `lib/render_findings.py`, `lib/findings.py`, `lib/github.py`, `lib/defaults_config.py`, `lib/consumer_workflow_validator.py`, `collect-overrides.py`, `matrix/generate-matrix.py` |
 | 3 — Supporting | 70% | 65% | `render-verdict-comment.py`, `render-findings.py`, `render-review-prompt.py`, `read-defaults-config.py`, `validate-consumer-workflow.py`, `quality-report.py`, `lib/review_prompt.py`, `lib/markdown.py`, `sitecustomize.py` |
 
 ---

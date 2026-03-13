@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from lib.github_reviews import (
+from lib.github import (
     ReviewComment,
     create_pr_review,
     find_review_id_by_marker,
@@ -90,7 +90,7 @@ def test_create_pr_review_posts_json_payload(monkeypatch) -> None:
 
 def test_list_pr_reviews_translates_permission_errors(monkeypatch) -> None:
     import lib.github_platform as platform
-    import lib.github_reviews as mod
+    import lib.github as mod
 
     def fake_list_pr_reviews(repo: str, pr_number: int):
         raise platform.GitHubPermissionError("no permission")
@@ -103,7 +103,7 @@ def test_list_pr_reviews_translates_permission_errors(monkeypatch) -> None:
 
 def test_list_pr_reviews_translates_transient_errors(monkeypatch) -> None:
     import lib.github_platform as platform
-    import lib.github_reviews as mod
+    import lib.github as mod
 
     def fake_list_pr_reviews(repo: str, pr_number: int):
         raise platform.TransientGitHubError("temporary")
@@ -116,7 +116,7 @@ def test_list_pr_reviews_translates_transient_errors(monkeypatch) -> None:
 
 def test_list_pr_files_translates_permission_errors(monkeypatch) -> None:
     import lib.github_platform as platform
-    import lib.github_reviews as mod
+    import lib.github as mod
 
     def fake_list_pr_files(repo: str, pr_number: int):
         raise platform.GitHubPermissionError("no permission")
@@ -129,7 +129,7 @@ def test_list_pr_files_translates_permission_errors(monkeypatch) -> None:
 
 def test_list_pr_files_translates_transient_errors(monkeypatch) -> None:
     import lib.github_platform as platform
-    import lib.github_reviews as mod
+    import lib.github as mod
 
     def fake_list_pr_files(repo: str, pr_number: int):
         raise platform.TransientGitHubError("temporary")
@@ -142,7 +142,7 @@ def test_list_pr_files_translates_transient_errors(monkeypatch) -> None:
 
 def test_create_pr_review_translates_permission_errors(monkeypatch) -> None:
     import lib.github_platform as platform
-    import lib.github_reviews as mod
+    import lib.github as mod
 
     def fake_create_pr_review(**kwargs):
         raise platform.GitHubPermissionError("no permission")
@@ -161,7 +161,7 @@ def test_create_pr_review_translates_permission_errors(monkeypatch) -> None:
 
 def test_create_pr_review_translates_transient_errors(monkeypatch) -> None:
     import lib.github_platform as platform
-    import lib.github_reviews as mod
+    import lib.github as mod
 
     def fake_create_pr_review(**kwargs):
         raise platform.TransientGitHubError("temporary")

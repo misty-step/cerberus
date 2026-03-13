@@ -88,7 +88,7 @@ surface for the GitHub lane is:
 - If a new review-path feature needs direct GitHub CLI or GitHub API transport, extend `scripts/lib/github_platform.py`.
 - If a change belongs to fetch/bootstrap setup before the engine runs, extend the GitHub workflow bootstrap.
 - The supported non-GitHub-Actions runner must fetch PR inputs through `github_platform` and pass execution through the review-run contract.
-- Do not add raw `gh` transport directly to engine-path modules such as `run-reviewer.py`, `non_gha_review_run.py`, `review_run_contract.py`, `runtime_facade.py`, `github.py`, `github_reviews.py`, or their review-path callers.
+- Do not add raw `gh` transport directly to engine-path modules such as `run-reviewer.py`, `non_gha_review_run.py`, `review_run_contract.py`, `runtime_facade.py`, `github.py`, or their review-path callers.
 - Compatibility wrappers may preserve caller-visible contracts, but their transport must still route through `github_platform`.
 
 ## Alternatives Considered
