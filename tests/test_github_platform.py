@@ -83,6 +83,7 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
     ("stderr", "expected"),
     [
         ("HTTP 403 Forbidden", "permissions"),
+        ("fatal: missing read permission for repository", "permissions"),
         ("gh: HTTP 503: Service Unavailable", "transient"),
         ("gh: something odd happened", "other"),
     ],

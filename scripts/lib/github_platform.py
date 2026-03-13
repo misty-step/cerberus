@@ -46,7 +46,10 @@ def classify_gh_failure(stderr: str) -> str:
     )
     if any(marker in lower_stderr for marker in auth_markers):
         return "auth"
-    if any(marker in lower_stderr for marker in ("403", "forbidden", "resource not accessible", "missing permission", "permission denied")):
+    permission_markers = ("403", "forbidden", "resource not accessible", "permission denied")
+    if any(marker in lower_stderr for marker in permission_markers) or (
+        "missing" in lower_stderr and "permission" in lower_stderr
+    ):
         return "permissions"
     if is_transient_error(stderr):
         return "transient"
