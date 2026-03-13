@@ -25,6 +25,51 @@ def test_run_gh_raises_permission_error_for_403(monkeypatch) -> None:
         mod.run_gh(["api", "repos/o/r/issues/1/comments"])
 
 
+def test_permission_message_for_issue_comment_write_post() -> None:
+    message = mod._permission_message_for_args(
+        ["api", "repos/o/r/issues/1/comments", "-F", "body=@/tmp/comment.md"]
+    )
+    assert "issues: write" in message
+    assert "post PR comment" in message
+
+
+def test_permission_message_for_issue_comment_patch_with_missing_method_value() -> None:
+    message = mod._permission_message_for_args(
+        ["api", "repos/o/r/issues/comments/11", "-X"]
+    )
+    assert "issues: read" in message
+    assert "read PR comments" in message
+
+
+def test_permission_message_for_pr_review_write() -> None:
+    message = mod._permission_message_for_args(
+        ["api", "-X", "POST", "repos/o/r/pulls/7/reviews", "--input", "/tmp/review.json"]
+    )
+    assert "pull-requests: write" in message
+    assert "post PR review" in message
+
+
+def test_permission_message_for_pr_review_read() -> None:
+    message = mod._permission_message_for_args(
+        ["api", "repos/o/r/pulls/7/reviews"]
+    )
+    assert "pull-requests: read" in message
+    assert "read PR reviews" in message
+
+
+def test_permission_message_for_pr_files_read() -> None:
+    message = mod._permission_message_for_args(
+        ["api", "repos/o/r/pulls/7/files?per_page=100"]
+    )
+    assert "pull-requests: read" in message
+    assert "read PR files" in message
+
+
+def test_permission_message_for_unknown_endpoint_falls_back_to_generic_help() -> None:
+    message = mod._permission_message_for_args(["api", "repos/o/r/branches/master/protection"])
+    assert "required workflow permission" in message
+
+
 def test_run_gh_retries_transient_errors_then_succeeds(monkeypatch) -> None:
     calls = 0
     sleeps: list[float] = []

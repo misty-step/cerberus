@@ -143,6 +143,89 @@ jobs:
     assert any("comment-policy" in f.message and "issues: write" in f.message for f in _errors(findings))
 
 
+def test_draft_check_missing_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  draft-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/draft-check@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("issues: write" in f.message and "skip comment" in f.message for f in findings)
+
+
+def test_comment_policy_always_without_explicit_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus@v2
+        with:
+          perspective: correctness
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          comment-policy: 'always'
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("comment policy is not `never`" in f.message and "issues: write" in f.message for f in findings)
+
+
+def test_verdict_missing_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  verdict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/verdict@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("permissions` for `issues`" in f.message and "verdict" in f.message for f in findings)
+
+
+def test_triage_missing_issue_permission_emits_warning(tmp_path: Path):
+    wf = tmp_path / "cerberus.yml"
+    wf.write_text(
+        """
+name: Cerberus
+on: pull_request
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/triage@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+""".lstrip()
+    )
+
+    findings, _ = validate_workflow_file(wf)
+    assert any("permissions` for `issues`" in f.message and "triage" in f.message for f in findings)
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
