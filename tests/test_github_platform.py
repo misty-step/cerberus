@@ -110,6 +110,7 @@ def test_fetch_issue_comments_stops_on_marker(monkeypatch) -> None:
         endpoint = args[1]
         if "page=1" in endpoint:
             return [
+                "skip-me",
                 {"id": 1, "body": "plain"},
                 {"id": 2, "body": "<!-- marker -->"},
                 {"id": 3, "body": "after-marker"},
