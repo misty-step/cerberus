@@ -18,6 +18,8 @@ from lib.review_run_contract import GitHubExecutionContext, ReviewRunContract, w
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONTEXT_FIELDS = ["title", "author", "headRefName", "baseRefName", "body"]
+DEFAULT_REVIEW_TIMEOUT_SECONDS = 660
+DEFAULT_HELPER_TIMEOUT_SECONDS = 120
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +56,17 @@ def selected_reviewers(raw: str) -> list[str]:
     return [reviewer.name for reviewer in cfg.reviewers]
 
 
+def positive_int_from_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def build_review_run(
     *,
     repo: str,
@@ -79,8 +92,25 @@ def build_review_run(
     )
 
 
-def run_command(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=str(ROOT), env=env, text=True, capture_output=True, check=False)
+def run_command(
+    args: list[str],
+    *,
+    env: dict[str, str],
+    timeout_seconds: int,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            args,
+            cwd=str(ROOT),
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        command = " ".join(args)
+        raise RuntimeError(f"command timed out after {timeout_seconds}s: {command}") from exc
 
 
 def load_json(path: Path) -> object:
@@ -131,7 +161,11 @@ def run_reviewer(*, perspective: str, output_dir: Path, base_env: dict[str, str]
     env["PERSPECTIVE"] = perspective
 
     started_at = time.time()
-    result = run_command(["bash", str(ROOT / "scripts" / "run-reviewer.sh"), perspective], env=env)
+    result = run_command(
+        ["bash", str(ROOT / "scripts" / "run-reviewer.sh"), perspective],
+        env=env,
+        timeout_seconds=positive_int_from_env("REVIEW_TIMEOUT", DEFAULT_REVIEW_TIMEOUT_SECONDS),
+    )
     runtime_seconds = int(time.time() - started_at)
     (output_dir / f"{perspective}-runtime-seconds").write_text(f"{runtime_seconds}\n", encoding="utf-8")
 
@@ -145,11 +179,18 @@ def run_reviewer(*, perspective: str, output_dir: Path, base_env: dict[str, str]
     parse_input = output_dir / f"{perspective}-output.txt"
     parse_input_override = output_dir / f"{perspective}-parse-input"
     if parse_input_override.exists():
-        parse_input = Path(parse_input_override.read_text(encoding="utf-8").strip())
+        raw_override = parse_input_override.read_text(encoding="utf-8").strip()
+        if not raw_override:
+            raise RuntimeError(f"empty parse input override for {perspective}")
+        candidate = Path(raw_override)
+        parse_input = candidate if candidate.is_absolute() else (output_dir / candidate).resolve()
+        if not parse_input.is_file():
+            raise RuntimeError(f"parse input not found for {perspective}: {parse_input}")
 
     parse_result = run_command(
         ["python3", str(ROOT / "scripts" / "parse-review.py"), str(parse_input)],
         env=env,
+        timeout_seconds=DEFAULT_HELPER_TIMEOUT_SECONDS,
     )
     if parse_result.returncode != 0:
         raise RuntimeError(
@@ -188,6 +229,7 @@ def aggregate_verdicts(
     result = run_command(
         ["python3", str(ROOT / "scripts" / "aggregate-verdict.py"), str(verdict_dir)],
         env=env,
+        timeout_seconds=DEFAULT_HELPER_TIMEOUT_SECONDS,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -247,7 +289,7 @@ def main() -> int:
             reviewers=reviewers,
             base_env=base_env,
         )
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         print(f"non-gha-review-run: {exc}", file=sys.stderr)
         return 1
 

@@ -61,7 +61,7 @@ def test_run_command_delegates_to_subprocess(monkeypatch) -> None:
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
 
-    result = mod.run_command(["python3", "--version"], env={"X": "1"})
+    result = mod.run_command(["python3", "--version"], env={"X": "1"}, timeout_seconds=45)
 
     assert result.stdout == "ok"
     assert seen["args"] == ["python3", "--version"]
@@ -71,7 +71,25 @@ def test_run_command_delegates_to_subprocess(monkeypatch) -> None:
         "text": True,
         "capture_output": True,
         "check": False,
+        "timeout": 45,
     }
+
+
+def test_run_command_raises_runtime_error_on_timeout(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args, timeout=30)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    try:
+        mod.run_command(["python3", "--version"], env={"X": "1"}, timeout_seconds=30)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected run_command to raise")
+
+    assert "command timed out after 30s" in message
+    assert "python3 --version" in message
 
 
 def test_enrich_verdict_metadata_records_runtime_model_and_description(monkeypatch, tmp_path: Path) -> None:
@@ -110,10 +128,10 @@ def test_main_runs_local_review_lane(monkeypatch, tmp_path: Path, capsys) -> Non
         },
     )
 
-    commands: list[list[str]] = []
+    commands: list[tuple[list[str], int]] = []
 
-    def fake_run_command(args, *, env):
-        commands.append(args)
+    def fake_run_command(args, *, env, timeout_seconds):
+        commands.append((args, timeout_seconds))
         output_dir = Path(env["CERBERUS_TMP"])
 
         if args[1].endswith("run-reviewer.sh"):
@@ -206,22 +224,25 @@ def test_main_runs_local_review_lane(monkeypatch, tmp_path: Path, capsys) -> Non
     assert review_run["pr_number"] == 329
     assert review_run["head_ref"] == "feature/branch"
     assert review_run["base_ref"] == "master"
-    assert commands[-1][1].endswith("aggregate-verdict.py")
+    assert commands[0][1] == mod.DEFAULT_REVIEW_TIMEOUT_SECONDS
+    assert commands[-1][0][1].endswith("aggregate-verdict.py")
+    assert commands[-1][1] == mod.DEFAULT_HELPER_TIMEOUT_SECONDS
     assert json.loads((tmp_path / "artifacts" / "verdicts" / "trace-verdict.json").read_text())["verdict"] == "PASS"
     assert json.loads((tmp_path / "artifacts" / "verdicts" / "guard-verdict.json").read_text())["verdict"] == "PASS"
 
 
 def test_run_reviewer_uses_parse_input_override(monkeypatch, tmp_path: Path) -> None:
-    calls: list[tuple[list[str], dict[str, str]]] = []
+    calls: list[tuple[list[str], dict[str, str], int]] = []
     output_dir = tmp_path / "artifacts"
     output_dir.mkdir(parents=True)
 
-    def fake_run_command(args, *, env):
-        calls.append((args, dict(env)))
+    def fake_run_command(args, *, env, timeout_seconds):
+        calls.append((args, dict(env), timeout_seconds))
         if args[1].endswith("run-reviewer.sh"):
-            parse_input = output_dir / "override-output.txt"
+            parse_input = output_dir / "nested" / "override-output.txt"
+            parse_input.parent.mkdir(parents=True, exist_ok=True)
             parse_input.write_text("review output", encoding="utf-8")
-            (output_dir / "trace-parse-input").write_text(str(parse_input), encoding="utf-8")
+            (output_dir / "trace-parse-input").write_text("nested/override-output.txt", encoding="utf-8")
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         if args[1].endswith("parse-review.py"):
             return subprocess.CompletedProcess(
@@ -242,7 +263,9 @@ def test_run_reviewer_uses_parse_input_override(monkeypatch, tmp_path: Path) -> 
     )
 
     assert calls[0][1]["PERSPECTIVE"] == "trace"
-    assert calls[1][0][-1] == str(output_dir / "override-output.txt")
+    assert calls[0][2] == mod.DEFAULT_REVIEW_TIMEOUT_SECONDS
+    assert calls[1][0][-1] == str((output_dir / "nested" / "override-output.txt").resolve())
+    assert calls[1][2] == mod.DEFAULT_HELPER_TIMEOUT_SECONDS
     assert (output_dir / "trace-runtime-seconds").read_text(encoding="utf-8").strip() == "3"
     assert json.loads((output_dir / "trace-verdict.json").read_text(encoding="utf-8"))["verdict"] == "PASS"
 
@@ -256,7 +279,7 @@ def test_aggregate_verdicts_clears_stale_verdict_artifacts(tmp_path: Path, monke
 
     seen_env: dict[str, str] = {}
 
-    def fake_run_command(args, *, env):
+    def fake_run_command(args, *, env, timeout_seconds):
         seen_env.update(env)
         (output_dir / "verdict.json").write_text("{}", encoding="utf-8")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
@@ -282,7 +305,7 @@ def test_aggregate_verdicts_raises_when_aggregate_verdict_fails(tmp_path: Path, 
     (output_dir / "trace-verdict.json").parent.mkdir(parents=True, exist_ok=True)
     (output_dir / "trace-verdict.json").write_text("{}", encoding="utf-8")
 
-    def fake_run_command(args, *, env):
+    def fake_run_command(args, *, env, timeout_seconds):
         return subprocess.CompletedProcess(args=args, returncode=1, stdout="bad stdout", stderr="bad stderr")
 
     monkeypatch.setattr(mod, "run_command", fake_run_command)
@@ -419,3 +442,67 @@ def test_main_returns_one_when_verdict_file_is_missing(monkeypatch, tmp_path: Pa
 
     assert mod.main() == 1
     assert "verdict.json" in capsys.readouterr().err
+
+
+def test_main_returns_one_when_run_reviewer_raises_value_error(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
+    monkeypatch.setattr(
+        mod,
+        "fetch_pr_context",
+        lambda repo, pr_number, fields=None: {
+            "title": "PR",
+            "author": {"login": "dev"},
+            "headRefName": "feature/branch",
+            "baseRefName": "master",
+            "body": "desc",
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "run_reviewer",
+        lambda *, perspective, output_dir, base_env: (_ for _ in ()).throw(ValueError("bad verdict payload")),
+    )
+    monkeypatch.setattr(mod, "selected_reviewers", lambda raw: ["trace"])
+    monkeypatch.setattr(
+        mod,
+        "parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {
+                "repo": "misty-step/cerberus",
+                "pr": 329,
+                "output_dir": str(tmp_path / "artifacts"),
+                "reviewers": "",
+                "token_env_var": "GH_TOKEN",
+            },
+        )(),
+    )
+
+    assert mod.main() == 1
+    assert "bad verdict payload" in capsys.readouterr().err
+
+
+def test_run_reviewer_rejects_empty_parse_input_override(monkeypatch, tmp_path: Path) -> None:
+    output_dir = tmp_path / "artifacts"
+    output_dir.mkdir(parents=True)
+    (output_dir / "trace-parse-input").write_text("\n", encoding="utf-8")
+
+    def fake_run_command(args, *, env, timeout_seconds):
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "run_command", fake_run_command)
+    monkeypatch.setattr(mod.time, "time", lambda: 100.0)
+
+    try:
+        mod.run_reviewer(
+            perspective="trace",
+            output_dir=output_dir,
+            base_env={"CERBERUS_TMP": str(output_dir), "CERBERUS_ROOT": "/repo"},
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected run_reviewer to raise")
+
+    assert "empty parse input override for trace" in message
