@@ -73,6 +73,26 @@ Three waves with flash → standard → pro model escalation.
 - Architecture: `docs/ARCHITECTURE.md`
 - Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
 
+## Local Non-GHA Review Path
+
+Cerberus now ships one supported non-GitHub-Actions runner for maintainers and
+future self-hosted orchestrators:
+
+```bash
+python3 scripts/non_gha_review_run.py \
+  --repo misty-step/cerberus \
+  --pr 329 \
+  --output-dir /tmp/cerberus-review
+```
+
+Requirements:
+- authenticated `gh`
+- the same model API key env vars already used by `scripts/run-reviewer.py`
+
+The command writes `pr.diff`, `pr-context.json`, `review-run.json`, per-reviewer
+verdict JSON, and the final `verdict.json` into `--output-dir` while reusing the
+existing runner, parser, and aggregator contracts.
+
 ## Workflow Architecture
 - **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@master`
 - **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`

@@ -43,6 +43,28 @@ The current action maps cleanly onto the contract:
 4. `scripts/parse-review.py` and later verdict steps continue consuming artifacts
    from `temp_dir` without needing raw GitHub bootstrap envs.
 
+## Supported Non-GitHub-Actions Path
+
+Maintainers can run the same engine path from a checkout without GitHub Actions:
+
+```bash
+python3 scripts/non_gha_review_run.py \
+  --repo misty-step/cerberus \
+  --pr 329 \
+  --output-dir /tmp/cerberus-review
+```
+
+This runner:
+
+1. fetches `pr.diff` and `pr-context.json` through `scripts/lib/github_platform.py`
+2. writes `review-run.json`
+3. runs the configured reviewers through `scripts/run-reviewer.sh`
+4. parses each reviewer verdict with `scripts/parse-review.py`
+5. aggregates the final verdict with `scripts/aggregate-verdict.py`
+
+Output artifacts land in `--output-dir`, including `review-run.json`, per-reviewer
+`*-verdict.json`, and the final `verdict.json`.
+
 ## Compatibility
 
 - Preferred path: `CERBERUS_REVIEW_RUN=/path/to/review-run.json`

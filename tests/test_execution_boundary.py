@@ -11,6 +11,7 @@ ADR_004 = ROOT / "docs" / "adr" / "004-review-execution-boundary.md"
 PROTECTED_ENGINE_PATHS = (
     "scripts/bootstrap-review-run.py",
     "scripts/collect-overrides.py",
+    "scripts/non_gha_review_run.py",
     "scripts/post-verdict-review.py",
     "scripts/render-review-prompt.py",
     "scripts/run-reviewer.py",
@@ -56,6 +57,7 @@ def test_protected_engine_paths_do_not_embed_raw_gh_transport() -> None:
 
 
 def test_adr_004_names_the_allowed_extension_points() -> None:
+    assert ADR_004.exists(), f"ADR 004 is missing: {ADR_004}"
     text = ADR_004.read_text(encoding="utf-8")
     lowered = text.lower()
 

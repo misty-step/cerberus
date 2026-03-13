@@ -92,7 +92,6 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
 def test_classify_gh_failure_maps_expected_buckets(stderr: str, expected: str) -> None:
     assert mod.classify_gh_failure(stderr) == expected
 
-
 def test_fetch_issue_comments_paginates(monkeypatch) -> None:
     calls: list[list[str]] = []
 
