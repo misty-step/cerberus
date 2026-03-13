@@ -147,7 +147,16 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "Array.isArray(output.findings) && output.findings.some(f => ['security', 'prompt-injection', 'data-exposure'].includes(String(f?.category || '').toLowerCase()) || /title|branch|metadata|prompt/i.test(`${f?.title || ''} ${f?.description || ''}`))"
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /security|injection|exposure/.test(combined)
+              && /title|branch|metadata|prompt/.test(combined);
+          })()
 
   - description: "Security - Fail-open Default Recall"
     vars:
@@ -155,18 +164,30 @@ tests:
       pr_author: "developer"
       head_branch: "fix/egress-defaults"
       base_branch: "main"
-      pr_body: "Replay of cerberus-cloud#94 where a default posture change widened egress and left SQL interpolation reachable."
+      pr_body: "Replay of cerberus-cloud#94 where a default posture change widened egress reach."
       perspective: "security"
       diff: |
         +const allow_all_egress = process.env.ALLOW_ALL_EGRESS || "true";
-        +function buildQuery(accountId) {
-        +  return "SELECT * FROM audit_logs WHERE account_id = " + accountId;
+        +function forwardRequest(req) {
+        +  if (!allow_all_egress) {
+        +    enforceEgressPolicy(req.destination);
+        +  }
+        +  return upstream.forward(req);
         +}
     assert:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "Array.isArray(output.findings) && output.findings.some(f => String(f?.category || '').toLowerCase().includes('security') || /egress|default|sql|injection/i.test(`${f?.title || ''} ${f?.description || ''}`))"
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /security|injection|exposure/.test(combined)
+              && /egress|default|allow_all/.test(combined);
+          })()
 
   - description: "Security - Error Leakage And Async Side Effects Recall"
     vars:
@@ -189,7 +210,17 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
       - type: javascript
-        value: "Array.isArray(output.findings) && output.findings.some(f => String(f?.category || '').toLowerCase().includes('security') || /error|stack|audit|async|prompt/i.test(`${f?.title || ''} ${f?.description || ''}`))"
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /security|injection|exposure/.test(combined)
+              && /error|stack|prompt/.test(combined)
+              && /audit|async/.test(combined);
+          })()
 
   - description: "Correctness - Bug Fix Detection"
     vars:
