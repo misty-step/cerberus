@@ -5,7 +5,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const readline = require('node:readline');
 
 const TEMPLATE_PATH = path.join(__dirname, '../templates/consumer-workflow-reusable.yml');
 const DEST_PATH = path.join('.github', 'workflows', 'cerberus.yml');
@@ -63,24 +62,63 @@ function readApiKeySource() {
 }
 
 async function promptApiKeyOnce() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true,
-  });
+  const prompt = 'Enter Cerberus OpenRouter API key (input hidden): ';
+  const input = process.stdin;
 
-  try {
-    const value = await new Promise((resolve) => {
-      rl.question('Enter Cerberus OpenRouter API key: ', resolve);
-    });
-
-    if (!value || !value.trim()) {
-      fail('No API key entered.');
-    }
-    return value.trim();
-  } finally {
-    rl.close();
+  if (typeof input.setRawMode !== 'function') {
+    fail('Interactive API key prompt requires a TTY that supports hidden input.');
   }
+
+  return await new Promise((resolve, reject) => {
+    const originalRawMode = input.isRaw;
+    let value = '';
+
+    const cleanup = () => {
+      input.removeListener('data', onData);
+      input.setRawMode(originalRawMode);
+      input.pause();
+    };
+
+    const finish = (error) => {
+      process.stdout.write('\n');
+      cleanup();
+      if (error) {
+        reject(error);
+        return;
+      }
+      if (!value.trim()) {
+        reject(new Error('No API key entered.'));
+        return;
+      }
+      resolve(value.trim());
+    };
+
+    const onData = (chunk) => {
+      for (const char of Array.from(chunk.toString('utf8'))) {
+        if (char === '\u0003' || char === '\u0004') {
+          finish(new Error('No API key entered.'));
+          return;
+        }
+        if (char === '\r' || char === '\n') {
+          finish();
+          return;
+        }
+        if (char === '\u007f' || char === '\b') {
+          value = value.slice(0, -1);
+          continue;
+        }
+        if (char === '\u001b') {
+          continue;
+        }
+        value += char;
+      }
+    };
+
+    input.setRawMode(true);
+    input.resume();
+    input.on('data', onData);
+    process.stdout.write(prompt);
+  });
 }
 
 async function readTemplate() {
