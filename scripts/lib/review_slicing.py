@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -152,7 +153,7 @@ def classify_file(path: str) -> tuple[bool, bool, bool]:
         return (doc, test, False)
     if ext in CODE_EXTENSIONS or ext == "":
         return (False, False, True)
-    return (False, False, True)
+    return (False, False, False)
 
 
 def classify_size_bucket(total_changed_lines: int) -> str:
@@ -179,6 +180,25 @@ def _finalize_chunk(path: str, raw_lines: list[str], additions: int, deletions: 
     )
 
 
+def _normalize_diff_path(raw_path: str) -> str:
+    path = raw_path.strip()
+    if len(path) >= 2 and path[0] == path[-1] and path[0] in {'"', "'"}:
+        path = path[1:-1]
+    if path.startswith(("a/", "b/")) and len(path) > 2:
+        path = path[2:]
+    return "" if path == "/dev/null" else path
+
+
+def _parse_diff_git_path(line: str) -> str:
+    try:
+        parts = shlex.split(line)
+    except ValueError:
+        parts = line.split()
+    if len(parts) < 4:
+        return ""
+    return _normalize_diff_path(parts[3])
+
+
 def parse_diff_chunks(diff_file: Path) -> list[DiffChunk]:
     text = diff_file.read_text(encoding="utf-8", errors="replace")
     chunks: list[DiffChunk] = []
@@ -191,10 +211,7 @@ def parse_diff_chunks(diff_file: Path) -> list[DiffChunk]:
         if line.startswith("diff --git "):
             if current_path is not None:
                 chunks.append(_finalize_chunk(current_path, current_lines, additions, deletions))
-            parts = line.split()
-            current_path = ""
-            if len(parts) >= 4:
-                current_path = parts[3][2:] if parts[3].startswith("b/") else parts[3]
+            current_path = _parse_diff_git_path(line)
             current_lines = [line]
             additions = 0
             deletions = 0
@@ -204,14 +221,14 @@ def parse_diff_chunks(diff_file: Path) -> list[DiffChunk]:
             continue
 
         if line.startswith("rename to "):
-            renamed = line[len("rename to ") :].strip()
+            renamed = _normalize_diff_path(line[len("rename to ") :])
             if renamed:
                 current_path = renamed
 
         if line.startswith("+++ "):
-            plus_path = line[4:].strip()
-            if plus_path.startswith("b/") and len(plus_path) > 2:
-                current_path = plus_path[2:]
+            plus_path = _normalize_diff_path(line[4:])
+            if plus_path:
+                current_path = plus_path
 
         if line.startswith("+") and not line.startswith("+++"):
             additions += 1
@@ -291,7 +308,7 @@ def plan_review_slice(diff_file: Path, *, perspective: str) -> ReviewSlicePlan:
         if len(selected) >= MAX_SLICE_FILES:
             break
         if selected and selected_changed_lines + chunk.changed_lines > MAX_SLICE_CHANGED_LINES:
-            break
+            continue
         selected.append(chunk)
         selected_changed_lines += chunk.changed_lines
 

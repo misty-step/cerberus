@@ -396,6 +396,29 @@ def test_review_telemetry_records_timeout_bucket_and_slice_usage(tmp_path: Path)
     assert '"slice_applied": true' in payload
 
 
+def test_successful_run_clears_stale_timeout_telemetry(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_pi(bin_dir / "pi")
+    Path("/tmp/security-timeout-context.json").write_text('{"is_timeout": true}\n', encoding="utf-8")
+
+    diff_file = tmp_path / "diff.patch"
+    write_simple_diff(diff_file)
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    telemetry = Path("/tmp/security-review-telemetry.json")
+    assert telemetry.exists()
+    assert '"timed_out": false' in telemetry.read_text(encoding="utf-8")
+
+
 def test_unknown_perspective_fails_fast(tmp_path: Path) -> None:
     diff_file = tmp_path / "diff.patch"
     write_simple_diff(diff_file)

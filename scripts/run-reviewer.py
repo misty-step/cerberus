@@ -11,6 +11,7 @@ import json
 import os
 import random
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -73,6 +74,19 @@ def sanitize_model(value: str | None) -> str:
     return s.strip()
 
 
+def parse_diff_git_path(line: str) -> str:
+    try:
+        parts = shlex.split(line)
+    except ValueError:
+        parts = line.split()
+    if len(parts) < 4:
+        return ""
+    path = parts[3]
+    if path.startswith("b/") and len(path) > 2:
+        return path[2:]
+    return path
+
+
 def normalize_tier(value: str | None) -> str:
     tier = (value or "standard").strip().lower()
     return tier or "standard"
@@ -126,12 +140,7 @@ def extract_diff_files(diff_file: Path) -> list[str]:
     for line in read_text(diff_file).splitlines():
         if not line.startswith("diff --git "):
             continue
-        parts = line.strip().split()
-        if len(parts) < 4:
-            continue
-        path_b = parts[3]
-        if path_b.startswith("b/"):
-            path_b = path_b[2:]
+        path_b = parse_diff_git_path(line)
         if path_b and path_b not in seen:
             seen.add(path_b)
             files.append(path_b)
@@ -506,6 +515,9 @@ def main(argv: list[str]) -> int:
         return 2
 
     review_slice_plan = plan_review_slice(diff_file, perspective=perspective)
+    timeout_context_file = cerberus_tmp / f"{perspective}-timeout-context.json"
+    timeout_context_file.unlink(missing_ok=True)
+    timed_out = False
     review_diff_file = diff_file
     if review_slice_plan.slice_applied:
         review_diff_file = cerberus_tmp / f"{perspective}-review-slice.diff"
@@ -835,11 +847,12 @@ def main(argv: list[str]) -> int:
     parse_input: Path
 
     if exit_code == 124:
+        timed_out = True
         # Write timeout context sidecar so parse-review.py can classify the SKIP
         # reason as timeout-derived rather than generic parse failure, even when
         # partial model output is used as parse_input (no timeout marker present).
         write_text(
-            cerberus_tmp / f"{perspective}-timeout-context.json",
+            timeout_context_file,
             json.dumps({"is_timeout": True, "timeout_seconds": review_timeout}),
         )
 
@@ -948,9 +961,7 @@ def main(argv: list[str]) -> int:
         path=cerberus_tmp / f"{perspective}-review-telemetry.json",
         perspective=perspective,
         plan=review_slice_plan,
-        timed_out=(read_text(cerberus_tmp / f"{perspective}-timeout-context.json") != "")
-        if (cerberus_tmp / f"{perspective}-timeout-context.json").exists()
-        else False,
+        timed_out=timed_out,
         review_timeout=review_timeout,
     )
     print_tail(parse_input)

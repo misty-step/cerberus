@@ -183,7 +183,7 @@ Plain gap callout: this lane improves review bootstrap and timeout salvage, but 
 ## Merge Confidence
 
 - Confidence level: high
-- Strongest evidence: `31` targeted slice/runtime tests plus `make validate` (`1695 passed, 1 skipped`)
+- Strongest evidence: `35` targeted slice/runtime tests plus `make validate` (`1699 passed, 1 skipped`)
 - Remaining uncertainty: the slice planner can still miss an unexpected risky file shape on a very broad PR
 - What could still go wrong after merge: future benchmark misses may require refining the slice scoring inputs or widening the bounded slice size
 
