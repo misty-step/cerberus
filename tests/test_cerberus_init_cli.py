@@ -147,6 +147,25 @@ def read_pty_until(
     raise AssertionError(f"Did not receive PTY marker: {marker!r}")
 
 
+def read_fd_until(fd: int, marker: bytes, timeout: float = 10.0) -> bytes:
+    chunks: list[bytes] = []
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        ready, _, _ = select.select([fd], [], [], 0.1)
+        if not ready:
+            continue
+
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        if marker in b"".join(chunks):
+            return b"".join(chunks)
+
+    raise AssertionError(f"Did not receive fd marker: {marker!r}")
+
+
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
 def test_help_output() -> None:
     result = subprocess.run(
@@ -431,6 +450,50 @@ def test_init_discards_escape_sequences_from_interactive_api_key(tmp_path: Path)
     assert "[D" not in output
     assert "Configured CERBERUS_OPENROUTER_API_KEY as GitHub Actions secret." in output
     assert stdin_file.read_text() == "typed-secret-value"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required")
+def test_init_fails_when_interactive_input_stream_ends(tmp_path: Path) -> None:
+    pty = pytest.importorskip("pty")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls_file = tmp_path / "gh-calls.txt"
+    setup_gh(bin_dir, calls_file=calls_file)
+
+    env = build_env(bin_dir)
+    env.pop("CERBERUS_OPENROUTER_API_KEY", None)
+    env.pop("OPENROUTER_API_KEY", None)
+
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        ["node", str(CLI), "init"],
+        cwd=repo,
+        env=env,
+        stdin=slave_fd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+
+    try:
+        prompt = b"Enter Cerberus OpenRouter API key (input hidden): "
+        stdout = read_fd_until(proc.stdout.fileno(), prompt)
+        os.close(master_fd)
+        remaining_stdout, stderr = proc.communicate(timeout=10)
+        returncode = proc.returncode
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+    assert returncode != 0
+    assert prompt in (stdout + remaining_stdout)
+    assert "No API key entered." in stderr.decode()
+    assert not calls_file.exists()
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is required")
