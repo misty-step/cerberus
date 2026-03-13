@@ -27,11 +27,15 @@ from lib.findings import (
 )
 from lib.github import (
     CommentPermissionError,
+    ReviewComment,
     TransientGitHubError,
+    create_pr_review,
     fetch_comments,
     find_comment_url_by_marker,
+    find_review_id_by_marker,
+    list_pr_files,
+    list_pr_reviews,
 )
-from lib.github_reviews import ReviewComment, create_pr_review, find_review_id_by_marker, list_pr_files, list_pr_reviews
 from lib.markdown import severity_icon
 
 MAX_INLINE_COMMENTS = 30
