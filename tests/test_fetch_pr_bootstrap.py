@@ -124,3 +124,91 @@ def test_main_writes_auth_failure_result(monkeypatch, tmp_path, capsys) -> None:
         "error_message": "HTTP 401 Bad credentials",
     }
     assert "fetch-pr-bootstrap:" in capsys.readouterr().err
+
+
+def test_main_writes_permission_failure_result(monkeypatch, tmp_path, capsys) -> None:
+    mod = _import_script()
+    diff_file = tmp_path / "review.diff"
+    context_file = tmp_path / "pr-context.json"
+    result_file = tmp_path / "result.json"
+
+    monkeypatch.setattr(mod.platform, "fetch_pr_diff", lambda repo, pr: "diff --git a")
+    monkeypatch.setattr(
+        mod.platform,
+        "fetch_pr_context",
+        lambda repo, pr: (_ for _ in ()).throw(
+            mod.platform.GitHubPermissionError("missing pull-requests: read")
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fetch-pr-bootstrap.py",
+            "--repo",
+            "misty-step/cerberus",
+            "--pr",
+            "326",
+            "--diff-file",
+            str(diff_file),
+            "--pr-context-file",
+            str(context_file),
+            "--result-file",
+            str(result_file),
+        ],
+    )
+
+    assert mod.main() == 1
+    assert json.loads(result_file.read_text(encoding="utf-8")) == {
+        "ok": False,
+        "error_kind": "permissions",
+        "error_message": "missing pull-requests: read",
+    }
+    assert "missing pull-requests: read" in capsys.readouterr().err
+
+
+def test_main_writes_other_failure_result_for_oserror(monkeypatch, tmp_path, capsys) -> None:
+    mod = _import_script()
+    diff_file = tmp_path / "review.diff"
+    context_file = tmp_path / "pr-context.json"
+    result_file = tmp_path / "result.json"
+    original_write_text = mod.Path.write_text
+
+    monkeypatch.setattr(mod.platform, "fetch_pr_diff", lambda repo, pr: "diff --git a")
+    monkeypatch.setattr(
+        mod.platform,
+        "fetch_pr_context",
+        lambda repo, pr: {"title": "PR", "headRefName": "feature", "baseRefName": "master"},
+    )
+
+    def fake_write_text(path_obj, text, *args, **kwargs):
+        if path_obj == diff_file:
+            raise OSError("disk full")
+        return original_write_text(path_obj, text, *args, **kwargs)
+
+    monkeypatch.setattr(mod.Path, "write_text", fake_write_text)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fetch-pr-bootstrap.py",
+            "--repo",
+            "misty-step/cerberus",
+            "--pr",
+            "326",
+            "--diff-file",
+            str(diff_file),
+            "--pr-context-file",
+            str(context_file),
+            "--result-file",
+            str(result_file),
+        ],
+    )
+
+    assert mod.main() == 1
+    assert json.loads(result_file.read_text(encoding="utf-8")) == {
+        "ok": False,
+        "error_kind": "other",
+        "error_message": "disk full",
+    }
+    assert "disk full" in capsys.readouterr().err
