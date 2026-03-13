@@ -1,3 +1,5 @@
+import re
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -7,6 +9,7 @@ ROOT = Path(__file__).parent.parent
 EVAL_CONFIG = ROOT / "evals" / "promptfooconfig.yaml"
 
 
+@lru_cache(maxsize=1)
 def _load_tests() -> list[dict]:
     config = yaml.safe_load(EVAL_CONFIG.read_text(encoding="utf-8"))
     return config["tests"]
@@ -34,8 +37,8 @@ def test_eval_config_contains_cerberus_cloud_fail_open_fixture() -> None:
     assert fixture["vars"]["perspective"] == "security"
     assert "cerberus-cloud#94" in fixture["vars"]["pr_body"]
     diff = fixture["vars"]["diff"]
-    assert "allow_all" in diff.lower() or "allow-all" in diff.lower()
-    assert "SELECT" in diff or "select" in diff
+    assert re.search(r"allow_all", diff, re.IGNORECASE)
+    assert re.search(r"select", diff, re.IGNORECASE)
 
 
 def test_eval_config_contains_volume_error_leakage_fixture() -> None:

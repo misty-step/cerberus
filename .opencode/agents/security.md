@@ -133,7 +133,7 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Logging quality → craft (skip it)
 - Performance of security mechanisms → flux (skip it)
 - Missing security test coverage → proof (skip it)
-- Fail-open/fail-closed policy under outage → fuse (skip it)
+- Fail-open/fail-closed policy under outage (circuit-breaker or resilience decisions) → fuse (skip it)
 - Security change that breaks client API contract → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 

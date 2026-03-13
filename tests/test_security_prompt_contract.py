@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 
@@ -6,8 +7,16 @@ SECURITY_AGENT = ROOT / ".opencode" / "agents" / "security.md"
 SECURITY_SKILL = ROOT / "pi" / "skills" / "security-review" / "SKILL.md"
 
 
-def test_security_agent_has_indirect_reentry_section() -> None:
-    text = SECURITY_AGENT.read_text(encoding="utf-8")
+@pytest.fixture(scope="module")
+def security_prompt_texts() -> tuple[str, str]:
+    return (
+        SECURITY_AGENT.read_text(encoding="utf-8"),
+        SECURITY_SKILL.read_text(encoding="utf-8"),
+    )
+
+
+def test_security_agent_has_indirect_reentry_section(security_prompt_texts: tuple[str, str]) -> None:
+    text, _ = security_prompt_texts
 
     assert "Indirect Untrusted-Data Re-entry" in text
     assert "titles and branch names" in text
@@ -17,16 +26,19 @@ def test_security_agent_has_indirect_reentry_section() -> None:
     assert "serialization and public-route exposure" in text
 
 
-def test_security_agent_requires_attack_path_for_metadata_and_defaults() -> None:
-    text = SECURITY_AGENT.read_text(encoding="utf-8")
+def test_security_agent_requires_attack_path_for_metadata_and_defaults(
+    security_prompt_texts: tuple[str, str]
+) -> None:
+    text, _ = security_prompt_texts
 
     assert "trusted-looking metadata" in text
+    assert "Reasoning pass for these cases" in text
     assert "input → sink → impact" in text
     assert "default posture" in text
 
 
-def test_security_skill_mirrors_indirect_reentry_checklist() -> None:
-    text = SECURITY_SKILL.read_text(encoding="utf-8")
+def test_security_skill_mirrors_indirect_reentry_checklist(security_prompt_texts: tuple[str, str]) -> None:
+    _, text = security_prompt_texts
 
     assert "trusted-looking metadata" in text
     assert "titles and branch names" in text
