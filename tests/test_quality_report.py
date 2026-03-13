@@ -199,14 +199,14 @@ class TestCostFieldsInQualityReport:
         assert reviewer["completion_tokens"] is None
 
     def test_cost_computed_from_real_tokens(self):
-        # kimi-k2.5: (0.15, 0.60) per million tokens
-        # 1000 prompt + 500 completion = 0.00015 + 0.0003 = 0.00045
+        # kimi-k2.5: (0.45, 2.20) per million tokens
+        # 1000 prompt + 500 completion = 0.00045 + 0.0011 = 0.00155
         v = _verdict_with_extraction_usage(
             model="moonshotai/kimi-k2.5", prompt_tokens=1000, completion_tokens=500
         )
         report = generate_quality_report([v], {"verdict": "PASS"}, [])
         reviewer = report["reviewers"][0]
-        expected = round((1000 / 1_000_000) * 0.15 + (500 / 1_000_000) * 0.60, 8)
+        expected = round((1000 / 1_000_000) * 0.45 + (500 / 1_000_000) * 2.20, 8)
         assert reviewer["cost_usd"] == expected
         assert reviewer["prompt_tokens"] == 1000
         assert reviewer["completion_tokens"] == 500

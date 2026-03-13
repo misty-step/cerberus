@@ -2,7 +2,7 @@
 
 Multi-agent AI code review for GitHub PRs.
 
-Cerberus has an 8-reviewer bench, but uses smart routing so most PRs run a focused 5-reviewer panel instead of all 8.
+Cerberus ships a 6-reviewer bench and routes most PRs to a focused 4-reviewer panel instead of running the full bench every time.
 
 ## Quick Start (Reusable Workflow)
 Copy this into `.github/workflows/cerberus.yml`:
@@ -23,15 +23,16 @@ jobs:
 ```
 
 Then set one repository secret: `CERBERUS_OPENROUTER_API_KEY`.
-Leave `with:` unset to run the full default Cerberus configuration.
+Leave `with:` unset to run the default cost-controlled Cerberus configuration.
 
 Prefer scaffolding? Run `npx @misty-step/cerberus init` to install the same reusable template and prompt for the secret.
 
-## Smart Routing (Why 5 reviewers, not 8)
-Cerberus routes each PR to the most relevant panel (default size: 5):
+## Smart Routing (Why 4 reviewers, not 6)
+Cerberus routes each PR to the most relevant panel (default size: 4):
 
 - `trace` (correctness) always runs
 - `guard` (security) is required when non-doc/non-test code changes
+- router is enabled by default in the reusable workflow
 ## Reviewers
 
 Six reviewers in three fixed waves — escalating model strength:
@@ -54,11 +55,12 @@ Six reviewers in three fixed waves — escalating model strength:
 The gate between waves is a hard check: wave2 only runs when wave1 passes cleanly (no critical or major findings). Wave3 only runs when wave2 passes. This keeps cost proportional to signal.
 
 ## Cost Snapshot
-Three waves with flash → standard → pro model escalation.
+Three waves with flash → standard → pro model escalation, but routing is the first cost-control gate.
 
 - Wave1 (flash, 3 reviewers) runs on every PR — lowest cost
 - Wave2 (standard, 3 reviewers) only on clean wave1 exit
 - Wave3 (pro, 3 reviewers) only on clean wave2 exit; flash-tier PRs (docs-only) stop at wave2
+- Default model set is restricted to: `kimi-k2.5`, `minimax-m2.5`, `glm-5`, `gemini-3-flash-preview`, `grok-4.1-fast`, `grok-4.20-beta`, `grok-4.20-multi-agent-beta`, and `mercury-2`
 - Practical monthly spend is typically below a single CodeRabbit seat for small/medium teams
 - Exact spend depends on PR volume, diff size, and escalation rate
 
@@ -79,7 +81,7 @@ Three waves with flash → standard → pro model escalation.
 - **Optional:** add `templates/triage-workflow.yml` for automated failure triage
 
 ## How It Works
-1. Each reviewer runs as a parallel matrix job
+1. Cerberus routes the PR to a focused reviewer subset, then runs that matrix in parallel
 2. Pi CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
    - Default reviewer tools omit shell execution; if `bash` is enabled for a profile, guardrails still block destructive and network-egress command patterns.
    - File-modifying tools are restricted to `/tmp` paths, and reviewer max-step caps are enforced at runtime.
@@ -203,9 +205,9 @@ matrix:
 By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
 Cerberus now runs cascading review waves:
-- `wave1`: cheap/high-throughput pool
-- `wave2`: mid-tier depth pool
-- `wave3`: premium final pool
+- `wave1`: `grok-4.1-fast`, `mercury-2`, `minimax-m2.5`
+- `wave2`: `kimi-k2.5`, `gemini-3-flash-preview`, `glm-5`
+- `wave3`: `grok-4.20-beta`, `grok-4.20-multi-agent-beta`, `kimi-k2.5`
 
 Escalation is deterministic. Cerberus advances to the next wave only when the current wave has no blocking findings under `waves.gate` in `defaults/config.yml`.
 
@@ -223,7 +225,7 @@ matrix:
     - { reviewer: trace, perspective: correctness, model: 'openrouter/moonshotai/kimi-k2.5' }
     - { reviewer: atlas, perspective: architecture, model: 'openrouter/z-ai/glm-5' }
     - { reviewer: guard, perspective: security, model: 'openrouter/minimax/minimax-m2.5' }
-    - { reviewer: flux, perspective: performance, model: 'openrouter/google/gemini-3-flash-preview' }
+    - { reviewer: fuse, perspective: resilience, model: 'openrouter/x-ai/grok-4.1-fast' }
     - { reviewer: craft, perspective: maintainability, model: 'openrouter/moonshotai/kimi-k2.5' }
     - { reviewer: proof, perspective: testing, model: 'openrouter/google/gemini-3-flash-preview' }
 ```

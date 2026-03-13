@@ -24,14 +24,14 @@ PARSE_FAILURE_PREFIX = "Review output could not be parsed"
 
 # OpenRouter pricing: (input_usd_per_million, output_usd_per_million)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
-    "google/gemini-3-flash-preview": (0.075, 0.30),
-    "moonshotai/kimi-k2.5": (0.15, 0.60),
-    "openrouter/moonshotai/kimi-k2.5": (0.15, 0.60),
-    "z-ai/glm-5": (0.07, 0.28),
-    "anthropic/claude-haiku-4.5": (0.80, 4.00),
-    "minimax/minimax-m2.5": (0.30, 1.10),
-    "openai/gpt-5.3-codex": (3.00, 15.00),
-    "google/gemini-3.1-pro-preview": (1.25, 5.00),
+    "google/gemini-3-flash-preview": (0.50, 3.00),
+    "moonshotai/kimi-k2.5": (0.45, 2.20),
+    "z-ai/glm-5": (0.72, 2.30),
+    "minimax/minimax-m2.5": (0.27, 0.95),
+    "x-ai/grok-4.1-fast": (0.20, 0.50),
+    "x-ai/grok-4.20-beta": (2.00, 6.00),
+    "x-ai/grok-4.20-multi-agent-beta": (2.00, 6.00),
+    "inception/mercury-2": (0.25, 0.75),
 }
 DEFAULT_PRICING: tuple[float, float] = (0.50, 1.50)
 KNOWN_LARGE_RUNTIME_DEPENDENCIES = {

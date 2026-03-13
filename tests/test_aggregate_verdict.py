@@ -2519,8 +2519,8 @@ def test_extraction_usage_flows_into_quality_report(tmp_path):
     reviewer = qr["reviewers"][0]
     assert reviewer["prompt_tokens"] == 2000
     assert reviewer["completion_tokens"] == 800
-    # kimi-k2.5: input=0.15/M, output=0.60/M
-    expected_cost = round((2000 / 1_000_000) * 0.15 + (800 / 1_000_000) * 0.60, 8)
+    # kimi-k2.5: input=0.45/M, output=2.20/M
+    expected_cost = round((2000 / 1_000_000) * 0.45 + (800 / 1_000_000) * 2.20, 8)
     assert reviewer["cost_usd"] == expected_cost
     assert qr["summary"]["total_cost_usd"] == expected_cost
 
@@ -2541,7 +2541,7 @@ def test_multi_wave_reviewer_costs_not_collapsed(tmp_path):
     }
     wave3_trace = {
         "reviewer": "trace", "perspective": "correctness", "verdict": "PASS",
-        "confidence": 0.85, "summary": "ok", "model_used": "openai/gpt-5.3-codex",
+        "confidence": 0.85, "summary": "ok", "model_used": "x-ai/grok-4.20-beta",
         "model_wave": "wave3",
         "_extraction_usage": {"prompt_tokens": 5000, "completion_tokens": 1000},
     }
@@ -2553,10 +2553,10 @@ def test_multi_wave_reviewer_costs_not_collapsed(tmp_path):
 
     qr = json.loads((cerberus_tmp / "quality-report.json").read_text())
 
-    # wave1: gemini-flash (0.075/M in, 0.30/M out) × (1000 prompt, 200 completion)
-    wave1_cost = round((1000 / 1e6) * 0.075 + (200 / 1e6) * 0.30, 8)
-    # wave3: gpt-5.3-codex (3.00/M in, 15.00/M out) × (5000 prompt, 1000 completion)
-    wave3_cost = round((5000 / 1e6) * 3.00 + (1000 / 1e6) * 15.00, 8)
+    # wave1: gemini-flash (0.50/M in, 3.00/M out) × (1000 prompt, 200 completion)
+    wave1_cost = round((1000 / 1e6) * 0.50 + (200 / 1e6) * 3.00, 8)
+    # wave3: grok-4.20-beta (2.00/M in, 6.00/M out) × (5000 prompt, 1000 completion)
+    wave3_cost = round((5000 / 1e6) * 2.00 + (1000 / 1e6) * 6.00, 8)
 
     # Both waves should have distinct (non-zero, non-collapsed) costs.
     assert qr["waves"]["wave1"]["total_cost_usd"] == pytest.approx(wave1_cost)
