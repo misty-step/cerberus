@@ -214,11 +214,12 @@ def fetch_issue_comments(
             raise ValueError(f"unexpected comments payload type: {type(payload).__name__}")
         if not payload:
             break
-        comments.extend([entry for entry in payload if isinstance(entry, dict)])
-        if stop_on_marker is not None:
-            for entry in payload:
-                if isinstance(entry, dict) and stop_on_marker in str(entry.get("body", "")):
-                    return comments
+        for entry in payload:
+            if not isinstance(entry, dict):
+                continue
+            comments.append(entry)
+            if stop_on_marker is not None and stop_on_marker in str(entry.get("body", "")):
+                return comments
         if len(payload) < per_page:
             break
         page += 1

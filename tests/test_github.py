@@ -268,6 +268,30 @@ def test_fetch_comments_without_stop_on_marker_fetches_all(monkeypatch):
     assert [c.get("id") for c in comments] == [1, 2, 3]
     assert seen == [("o/r", 5, 2, 20, None)]
 
+
+def test_fetch_comments_translates_permission_errors(monkeypatch):
+    import lib.github as mod
+
+    def fake_fetch(*args, **kwargs):
+        raise mod.PlatformPermissionError("no permission")
+
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch)
+
+    with pytest.raises(mod.CommentPermissionError, match="no permission"):
+        mod.fetch_comments("o/r", 5)
+
+
+def test_fetch_comments_translates_transient_errors(monkeypatch):
+    import lib.github as mod
+
+    def fake_fetch(*args, **kwargs):
+        raise mod.PlatformTransientGitHubError("temporary")
+
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch)
+
+    with pytest.raises(mod.TransientGitHubError, match="temporary"):
+        mod.fetch_comments("o/r", 5)
+
 def test_multiple_markers_dont_conflict(monkeypatch, tmp_path):
     body_file = tmp_path / "body.md"
     body_file.write_text("Body for council")
@@ -318,18 +342,26 @@ def test_permission_denied_raises(monkeypatch, tmp_path):
             body_file=str(body_file),
             comments=[],
         )
-
-
-def test_fetch_comments_translates_platform_transient_error(monkeypatch):
+def test_fetch_comments_returns_empty_list_on_invalid_payload(monkeypatch):
     import lib.github as mod
-    import lib.github_platform as platform
 
     def fake_fetch_issue_comments(*args, **kwargs):
-        raise platform.TransientGitHubError("temporary")
+        raise ValueError("invalid JSON from gh command ['api']: bad payload")
 
     monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
 
-    with pytest.raises(mod.TransientGitHubError, match="temporary"):
+    assert mod.fetch_comments("o/r", 5) == []
+
+
+def test_fetch_comments_reraises_non_json_value_errors(monkeypatch):
+    import lib.github as mod
+
+    def fake_fetch_issue_comments(*args, **kwargs):
+        raise ValueError("unexpected comments payload type: dict")
+
+    monkeypatch.setattr(mod, "fetch_issue_comments", fake_fetch_issue_comments)
+
+    with pytest.raises(ValueError, match="unexpected comments payload type: dict"):
         mod.fetch_comments("o/r", 5)
 
 

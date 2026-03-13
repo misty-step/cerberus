@@ -123,6 +123,10 @@ def fetch_comments(
             max_pages=max_pages,
             stop_on_marker=stop_on_marker,
         )
+    except ValueError as exc:
+        if str(exc).startswith("invalid JSON from gh command"):
+            return []
+        raise
     except (PlatformPermissionError, PlatformTransientGitHubError) as exc:
         _reraise_platform_error(exc)
 
