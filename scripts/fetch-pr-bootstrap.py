@@ -39,36 +39,32 @@ def main() -> int:
     diff_file = Path(args.diff_file)
     pr_context_file = Path(args.pr_context_file)
     result_file = Path(args.result_file)
+    result_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         diff_file.parent.mkdir(parents=True, exist_ok=True)
         pr_context_file.parent.mkdir(parents=True, exist_ok=True)
-        result_file.parent.mkdir(parents=True, exist_ok=True)
 
         diff = platform.fetch_pr_diff(args.repo, args.pr)
         pr_context = platform.fetch_pr_context(args.repo, args.pr)
 
         diff_file.write_text(diff, encoding="utf-8")
         pr_context_file.write_text(json.dumps(pr_context), encoding="utf-8")
-        write_result(result_file, BootstrapResult(ok=True, error_kind="", error_message=""))
+        result = BootstrapResult(ok=True, error_kind="", error_message="")
     except platform.GitHubAuthError as exc:
-        write_result(result_file, BootstrapResult(ok=False, error_kind="auth", error_message=str(exc)))
+        result = BootstrapResult(ok=False, error_kind="auth", error_message=str(exc))
     except platform.GitHubPermissionError as exc:
-        write_result(
-            result_file,
-            BootstrapResult(ok=False, error_kind="permissions", error_message=str(exc)),
-        )
+        result = BootstrapResult(ok=False, error_kind="permissions", error_message=str(exc))
     except (platform.GitHubTimeoutError, platform.TransientGitHubError, ValueError, subprocess.CalledProcessError) as exc:
-        write_result(result_file, BootstrapResult(ok=False, error_kind="other", error_message=str(exc)))
+        result = BootstrapResult(ok=False, error_kind="other", error_message=str(exc))
     except OSError as exc:
-        write_result(result_file, BootstrapResult(ok=False, error_kind="other", error_message=str(exc)))
-    else:
+        result = BootstrapResult(ok=False, error_kind="other", error_message=str(exc))
+
+    write_result(result_file, result)
+    if result.ok:
         return 0
 
-    print(
-        f"fetch-pr-bootstrap: {json.loads(result_file.read_text(encoding='utf-8'))['error_message']}",
-        file=sys.stderr,
-    )
+    print(f"fetch-pr-bootstrap: {result.error_message}", file=sys.stderr)
     return 1
 
 

@@ -183,8 +183,13 @@ runs:
           --diff-file "$CERBERUS_TMP/pr.diff" \
           --pr-context-file "$CERBERUS_TMP/pr-context.json" \
           --result-file "$CERBERUS_TMP/pr-bootstrap-result.json"; then
-          pr_view_error_kind="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_kind\", \"other\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
-          pr_view_error_text="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_message\", \"\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
+          if [[ -f "$CERBERUS_TMP/pr-bootstrap-result.json" ]]; then
+            pr_view_error_kind="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_kind\", \"other\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
+            pr_view_error_text="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_message\", \"\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
+          else
+            pr_view_error_kind="other"
+            pr_view_error_text="Bootstrap helper failed before writing pr-bootstrap-result.json."
+          fi
           echo "pr-context-error-kind=${pr_view_error_kind}" >> "$GITHUB_OUTPUT"
           # Keep a larger log breadcrumb, then compress output value.
           pr_view_error_text="$(echo "$pr_view_error_text" | sed -E 's/[[:space:]]+/ /g')"

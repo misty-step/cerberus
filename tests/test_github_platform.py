@@ -242,9 +242,21 @@ def test_fetch_pr_diff_uses_explicit_repo(monkeypatch) -> None:
 def test_fetch_pr_context_retries_auth_then_succeeds(monkeypatch) -> None:
     calls = 0
     sleeps: list[int] = []
+    expected_args = [
+        "gh",
+        "pr",
+        "view",
+        "42",
+        "--repo",
+        "owner/repo",
+        "--json",
+        mod.PR_CONTEXT_FIELDS,
+    ]
 
     def fake_run(args, **kwargs):
         nonlocal calls
+        assert args == expected_args
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
         calls += 1
         if calls == 1:
             return subprocess.CompletedProcess(
@@ -272,6 +284,17 @@ def test_fetch_pr_context_retries_auth_then_succeeds(monkeypatch) -> None:
 
 def test_fetch_pr_context_raises_auth_error_after_retry_budget(monkeypatch) -> None:
     def fake_run(args, **kwargs):
+        assert args == [
+            "gh",
+            "pr",
+            "view",
+            "42",
+            "--repo",
+            "owner/repo",
+            "--json",
+            mod.PR_CONTEXT_FIELDS,
+        ]
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
         return subprocess.CompletedProcess(
             args=args,
             returncode=1,
@@ -288,6 +311,17 @@ def test_fetch_pr_context_raises_auth_error_after_retry_budget(monkeypatch) -> N
 
 def test_fetch_pr_context_raises_timeout_error(monkeypatch) -> None:
     def fake_run(args, **kwargs):
+        assert args == [
+            "gh",
+            "pr",
+            "view",
+            "42",
+            "--repo",
+            "owner/repo",
+            "--json",
+            mod.PR_CONTEXT_FIELDS,
+        ]
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
         raise subprocess.TimeoutExpired(cmd=args, timeout=kwargs["timeout"])
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)

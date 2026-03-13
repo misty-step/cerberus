@@ -26,12 +26,21 @@ def test_main_writes_diff_context_and_success_result(monkeypatch, tmp_path) -> N
     diff_file = tmp_path / "review.diff"
     context_file = tmp_path / "pr-context.json"
     result_file = tmp_path / "result.json"
+    seen: list[tuple[str, str, int]] = []
 
-    monkeypatch.setattr(mod.platform, "fetch_pr_diff", lambda repo, pr: "diff --git a")
+    def fake_fetch_pr_diff(repo: str, pr: int) -> str:
+        seen.append(("diff", repo, pr))
+        return "diff --git a"
+
+    def fake_fetch_pr_context(repo: str, pr: int) -> dict[str, str]:
+        seen.append(("context", repo, pr))
+        return {"title": "PR", "headRefName": "feature", "baseRefName": "master"}
+
+    monkeypatch.setattr(mod.platform, "fetch_pr_diff", fake_fetch_pr_diff)
     monkeypatch.setattr(
         mod.platform,
         "fetch_pr_context",
-        lambda repo, pr: {"title": "PR", "headRefName": "feature", "baseRefName": "master"},
+        fake_fetch_pr_context,
     )
     monkeypatch.setattr(
         sys,
@@ -52,6 +61,10 @@ def test_main_writes_diff_context_and_success_result(monkeypatch, tmp_path) -> N
     )
 
     assert mod.main() == 0
+    assert seen == [
+        ("diff", "misty-step/cerberus", 326),
+        ("context", "misty-step/cerberus", 326),
+    ]
     assert diff_file.read_text(encoding="utf-8") == "diff --git a"
     assert json.loads(context_file.read_text(encoding="utf-8"))["headRefName"] == "feature"
     assert json.loads(result_file.read_text(encoding="utf-8")) == {
@@ -66,12 +79,21 @@ def test_main_writes_auth_failure_result(monkeypatch, tmp_path, capsys) -> None:
     diff_file = tmp_path / "review.diff"
     context_file = tmp_path / "pr-context.json"
     result_file = tmp_path / "result.json"
+    seen: list[tuple[str, str, int]] = []
 
-    monkeypatch.setattr(mod.platform, "fetch_pr_diff", lambda repo, pr: "diff --git a")
+    def fake_fetch_pr_diff(repo: str, pr: int) -> str:
+        seen.append(("diff", repo, pr))
+        return "diff --git a"
+
+    def fake_fetch_pr_context(repo: str, pr: int) -> dict[str, str]:
+        seen.append(("context", repo, pr))
+        raise mod.platform.GitHubAuthError("HTTP 401 Bad credentials")
+
+    monkeypatch.setattr(mod.platform, "fetch_pr_diff", fake_fetch_pr_diff)
     monkeypatch.setattr(
         mod.platform,
         "fetch_pr_context",
-        lambda repo, pr: (_ for _ in ()).throw(mod.platform.GitHubAuthError("HTTP 401 Bad credentials")),
+        fake_fetch_pr_context,
     )
     monkeypatch.setattr(
         sys,
@@ -92,6 +114,10 @@ def test_main_writes_auth_failure_result(monkeypatch, tmp_path, capsys) -> None:
     )
 
     assert mod.main() == 1
+    assert seen == [
+        ("diff", "misty-step/cerberus", 326),
+        ("context", "misty-step/cerberus", 326),
+    ]
     assert json.loads(result_file.read_text(encoding="utf-8")) == {
         "ok": False,
         "error_kind": "auth",

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import NoReturn
 
 
 class GitHubPermissionError(Exception):
@@ -164,7 +165,7 @@ def _raise_for_bootstrap_failure(
     result: subprocess.CompletedProcess[str],
     *,
     permission_message: str,
-) -> None:
+) -> NoReturn:
     """Raise a deterministic exception for a bootstrap fetch failure."""
 
     kind = classify_gh_failure(result.stderr or "")

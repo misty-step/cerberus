@@ -33,43 +33,53 @@ def _find_step(steps: list, name_pattern: str) -> dict | None:
     return None
 
 
+def _fetch_step() -> dict:
+    action = _load_action()
+    steps = action["runs"]["steps"]
+    fetch_step = _find_step(steps, r"fetch pr context")
+    assert fetch_step is not None, "Fetch PR context step not found in action.yml"
+    return fetch_step
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap helper wiring
 # ---------------------------------------------------------------------------
 
 
 def test_fetch_step_uses_bootstrap_helper_script() -> None:
-    content = _action_content()
-    assert 'scripts/fetch-pr-bootstrap.py' in content, (
+    fetch_step = _fetch_step()
+    assert 'scripts/fetch-pr-bootstrap.py' in fetch_step["run"], (
         "Fetch step must delegate PR bootstrap to the helper script"
     )
 
 
 def test_fetch_step_passes_explicit_repo_and_pr_to_helper() -> None:
-    content = _action_content()
-    assert 'REPO: ${{ github.repository }}' in content, (
+    fetch_step = _fetch_step()
+    fetch_env = fetch_step["env"]
+    fetch_run = fetch_step["run"]
+    assert fetch_env["REPO"] == "${{ github.repository }}", (
         "Fetch step must expose github.repository as REPO for helper invocation"
     )
-    assert 'PR_NUMBER: ${{ github.event.pull_request.number }}' in content, (
+    assert fetch_env["PR_NUMBER"] == "${{ github.event.pull_request.number }}", (
         "Fetch step must expose the PR number for helper invocation"
     )
-    assert '--repo "$REPO"' in content, (
+    assert '--repo "$REPO"' in fetch_run, (
         "Bootstrap helper must receive the explicit repository"
     )
-    assert '--pr "$PR_NUMBER"' in content, (
+    assert '--pr "$PR_NUMBER"' in fetch_run, (
         "Bootstrap helper must receive the pull request number"
     )
 
 
 def test_fetch_step_passes_output_paths_to_helper() -> None:
-    content = _action_content()
-    assert '--diff-file "$CERBERUS_TMP/pr.diff"' in content, (
+    fetch_run = _fetch_step()["run"]
+    assert '--diff-file "$CERBERUS_TMP/pr.diff"' in fetch_run, (
         "Fetch step must pass the diff output path to the helper"
     )
-    assert '--pr-context-file "$CERBERUS_TMP/pr-context.json"' in content, (
+    assert '--pr-context-file "$CERBERUS_TMP/pr-context.json"' in fetch_run, (
         "Fetch step must pass the PR context output path to the helper"
     )
-    assert '--result-file "$CERBERUS_TMP/pr-bootstrap-result.json"' in content, (
+    assert '--result-file "$CERBERUS_TMP/pr-bootstrap-result.json"' in fetch_run, (
         "Fetch step must pass a structured result path to the helper"
     )
 
@@ -80,26 +90,26 @@ def test_fetch_step_passes_output_paths_to_helper() -> None:
 
 
 def test_fetch_step_emits_error_kind_output() -> None:
-    content = _action_content()
-    assert "pr-context-error-kind" in content, (
+    fetch_run = _fetch_step()["run"]
+    assert "pr-context-error-kind" in fetch_run, (
         "Fetch step must emit pr-context-error-kind to GITHUB_OUTPUT"
     )
 
 
 def test_fetch_step_emits_error_message_output() -> None:
-    content = _action_content()
-    assert "pr-context-error-message" in content, (
+    fetch_run = _fetch_step()["run"]
+    assert "pr-context-error-message" in fetch_run, (
         "Fetch step must emit pr-context-error-message to GITHUB_OUTPUT"
     )
 
 
 def test_fetch_step_initialises_outputs_to_empty() -> None:
-    content = _action_content()
+    fetch_run = _fetch_step()["run"]
     # Blank-init guard: empty string emitted at step start before any failure
-    assert "pr-context-error-kind=" in content, (
+    assert "pr-context-error-kind=" in fetch_run, (
         "Step must initialise pr-context-error-kind to empty string before any failure"
     )
-    assert "pr-context-error-message=" in content, (
+    assert "pr-context-error-message=" in fetch_run, (
         "Step must initialise pr-context-error-message to empty string before any failure"
     )
 
@@ -110,17 +120,17 @@ def test_fetch_step_initialises_outputs_to_empty() -> None:
 
 
 def test_error_message_output_is_truncated() -> None:
-    content = _action_content()
+    fetch_run = _fetch_step()["run"]
     # Output bound: at most 1000 chars for step output variable
-    assert "cut -c1-1000" in content, (
+    assert "cut -c1-1000" in fetch_run, (
         "Error message written to GITHUB_OUTPUT must be truncated to 1000 chars"
     )
 
 
 def test_log_breadcrumb_is_truncated() -> None:
-    content = _action_content()
+    fetch_run = _fetch_step()["run"]
     # Log bound: at most 4000 chars for the larger log breadcrumb
-    assert "cut -c1-4000" in content, (
+    assert "cut -c1-4000" in fetch_run, (
         "Error detail echoed to log must be truncated to 4000 chars"
     )
 
@@ -131,12 +141,22 @@ def test_log_breadcrumb_is_truncated() -> None:
 
 
 def test_fetch_step_reads_error_kind_from_result_file() -> None:
-    content = _action_content()
-    assert "pr-bootstrap-result.json" in content, (
+    fetch_run = _fetch_step()["run"]
+    assert "pr-bootstrap-result.json" in fetch_run, (
         "Fetch step must read helper failures from the structured result file"
     )
-    assert "pr-context-error-kind" in content, (
+    assert "pr-context-error-kind" in fetch_run, (
         "Fetch step must map helper failure kind into pr-context-error-kind"
+    )
+
+
+def test_fetch_step_handles_missing_result_file() -> None:
+    fetch_run = _fetch_step()["run"]
+    assert 'if [[ -f "$CERBERUS_TMP/pr-bootstrap-result.json" ]]; then' in fetch_run, (
+        "Fetch step must guard reads from the structured result file"
+    )
+    assert 'pr_view_error_text="Bootstrap helper failed before writing pr-bootstrap-result.json."' in fetch_run, (
+        "Fetch step must preserve a diagnostic fallback when the helper exits before writing the result file"
     )
 
 
