@@ -74,6 +74,7 @@ async function promptApiKeyOnce() {
     let value = '';
     let escapeState = 'none';
     let settled = false;
+    let inputEnded = false;
 
     const isEscapeSequenceTerminator = (char) => char >= '@' && char <= '~';
 
@@ -81,7 +82,9 @@ async function promptApiKeyOnce() {
       input.removeListener('data', onData);
       input.removeListener('end', onEnd);
       input.removeListener('close', onEnd);
-      input.setRawMode(originalRawMode);
+      if (!inputEnded) {
+        input.setRawMode(originalRawMode);
+      }
       input.pause();
     };
 
@@ -145,6 +148,7 @@ async function promptApiKeyOnce() {
     };
 
     const onEnd = () => {
+      inputEnded = true;
       finish(new Error('No API key entered.'));
     };
 
