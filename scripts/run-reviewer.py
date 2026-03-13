@@ -21,6 +21,7 @@ from typing import Mapping
 from lib.defaults_config import ConfigError, load_defaults_config
 from lib.review_prompt import render_review_prompt_file
 from lib.review_run_contract import load_review_run_contract_from_env
+from lib.review_slicing import plan_review_slice
 from lib.reviewer_profiles import (
     ReviewerProfilesError,
     RuntimeProfile,
@@ -269,6 +270,29 @@ def print_tail(path: Path, *, lines: int = 40) -> None:
     print("--- end output ---")
 
 
+def write_review_telemetry(
+    *,
+    path: Path,
+    perspective: str,
+    plan,
+    timed_out: bool,
+    review_timeout: int,
+) -> None:
+    payload = {
+        "perspective": perspective,
+        "size_bucket": plan.size_bucket,
+        "total_changed_lines": plan.total_changed_lines,
+        "total_files": plan.total_files,
+        "code_files": plan.code_files,
+        "slice_applied": plan.slice_applied,
+        "selected_files": plan.selected_files,
+        "deprioritized_files": plan.deprioritized_files,
+        "timed_out": timed_out,
+        "review_timeout_seconds": review_timeout,
+    }
+    write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
 def try_structured_extraction(
     *,
     cerberus_root: Path,
@@ -481,12 +505,35 @@ def main(argv: list[str]) -> int:
         eprint("missing diff input (GH_DIFF, GH_DIFF_FILE, or CERBERUS_REVIEW_RUN)")
         return 2
 
+    review_slice_plan = plan_review_slice(diff_file, perspective=perspective)
+    review_diff_file = diff_file
+    if review_slice_plan.slice_applied:
+        review_diff_file = cerberus_tmp / f"{perspective}-review-slice.diff"
+        write_text(review_diff_file, review_slice_plan.slice_diff)
+    write_text(
+        cerberus_tmp / f"{perspective}-review-slice.json",
+        json.dumps(
+            {
+                "perspective": perspective,
+                "size_bucket": review_slice_plan.size_bucket,
+                "slice_applied": review_slice_plan.slice_applied,
+                "selected_files": review_slice_plan.selected_files,
+                "deprioritized_files": review_slice_plan.deprioritized_files,
+                "total_changed_lines": review_slice_plan.total_changed_lines,
+                "total_files": review_slice_plan.total_files,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+    )
+
     prompt_file = cerberus_tmp / f"{perspective}-review-prompt.md"
     try:
         render_review_prompt_file(
             cerberus_root=cerberus_root,
             env=os.environ,
-            diff_file=str(diff_file),
+            diff_file=str(review_diff_file),
             perspective=perspective,
             output_path=prompt_file,
         )
@@ -814,7 +861,9 @@ def main(argv: list[str]) -> int:
             parse_input = stdout_file
             print("parse-input: stdout (timeout, partial review)")
         else:
-            diff_files = extract_diff_files(diff_file)
+            diff_files = (
+                review_slice_plan.selected_files if review_slice_plan.slice_applied else extract_diff_files(diff_file)
+            )
             fast_path_attempted = "no"
 
             if fast_path_budget > 0:
@@ -825,8 +874,8 @@ def main(argv: list[str]) -> int:
                         "Primary review timed out with no output. "
                         f"Running fast-path fallback ({fast_path_budget}s)..."
                     )
-                    diff_content = diff_file.read_bytes()[:51200].decode("utf-8", errors="replace")
-                    diff_byte_count = diff_file.stat().st_size
+                    diff_content = review_diff_file.read_bytes()[:51200].decode("utf-8", errors="replace")
+                    diff_byte_count = review_diff_file.stat().st_size
                     if diff_byte_count > 51200:
                         diff_content += f"\n... (truncated, {diff_byte_count} bytes total)"
 
@@ -895,6 +944,15 @@ def main(argv: list[str]) -> int:
             print("parse-input: stdout (fallback)")
 
     write_text(cerberus_tmp / f"{perspective}-parse-input", str(parse_input))
+    write_review_telemetry(
+        path=cerberus_tmp / f"{perspective}-review-telemetry.json",
+        perspective=perspective,
+        plan=review_slice_plan,
+        timed_out=(read_text(cerberus_tmp / f"{perspective}-timeout-context.json") != "")
+        if (cerberus_tmp / f"{perspective}-timeout-context.json").exists()
+        else False,
+        review_timeout=review_timeout,
+    )
     print_tail(parse_input)
 
     write_text(cerberus_tmp / f"{perspective}-exitcode", str(exit_code))

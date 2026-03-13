@@ -92,6 +92,10 @@ def cleanup_tmp_outputs() -> None:
         "stderr.log",
         "exitcode",
         "review.md",
+        "review-prompt.md",
+        "review-slice.diff",
+        "review-slice.json",
+        "review-telemetry.json",
         "timeout-marker.txt",
         "fast-path-prompt.md",
         "fast-path-output.txt",
@@ -220,6 +224,176 @@ def test_review_run_contract_is_handled(tmp_path: Path) -> None:
     assert result.returncode == 0
     parse_input_ref = Path("/tmp/security-parse-input")
     assert parse_input_ref.exists()
+
+
+def test_large_security_review_uses_prioritized_slice_prompt(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_stub_pi(bin_dir / "pi")
+
+    diff_file = tmp_path / "large.diff"
+    diff_file.write_text(
+        "\n".join(
+            [
+                "diff --git a/docs/notes.md b/docs/notes.md",
+                "--- a/docs/notes.md",
+                "+++ b/docs/notes.md",
+                "@@ -1 +1,2 @@",
+                "+doc line",
+                "diff --git a/src/auth/session.py b/src/auth/session.py",
+                "--- a/src/auth/session.py",
+                "+++ b/src/auth/session.py",
+                "@@ -1 +1,160 @@",
+                *["+token = load_token()" for _ in range(160)],
+                "diff --git a/.github/workflows/review.yml b/.github/workflows/review.yml",
+                "--- a/.github/workflows/review.yml",
+                "+++ b/.github/workflows/review.yml",
+                "@@ -1 +1,140 @@",
+                *["+permissions: write-all" for _ in range(140)],
+                "diff --git a/tests/test_auth.py b/tests/test_auth.py",
+                "--- a/tests/test_auth.py",
+                "+++ b/tests/test_auth.py",
+                "@@ -1 +1,80 @@",
+                *["+assert True" for _ in range(80)],
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=make_env(bin_dir, diff_file),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    prompt_file = Path("/tmp/security-review-prompt.md")
+    slice_file = Path("/tmp/security-review-slice.diff")
+    metadata_file = Path("/tmp/security-review-slice.json")
+    assert prompt_file.exists()
+    assert slice_file.exists()
+    assert metadata_file.exists()
+    assert str(slice_file) in prompt_file.read_text(encoding="utf-8")
+    slice_text = slice_file.read_text(encoding="utf-8")
+    assert "src/auth/session.py" in slice_text
+    assert ".github/workflows/review.yml" in slice_text
+    assert "docs/notes.md" not in slice_text
+    assert '"slice_applied": true' in metadata_file.read_text(encoding="utf-8")
+
+
+def test_timeout_fast_path_uses_prioritized_slice_diff(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempt_counter = tmp_path / "attempt-count"
+    attempt_counter.write_text("0", encoding="utf-8")
+    make_executable(
+        bin_dir / "pi",
+        (
+            "#!/usr/bin/env bash\n"
+            f"count=$(cat '{attempt_counter}')\n"
+            "count=$((count + 1))\n"
+            f"printf '%s' \"$count\" > '{attempt_counter}'\n"
+            "if [[ \"$count\" -eq 2 ]]; then\n"
+            "  cat <<'REVIEW'\n"
+            "```json\n"
+            '{"reviewer":"STUB","perspective":"security","verdict":"WARN",'
+              '"confidence":0.82,"summary":"Fast path salvage",'
+              '"findings":[],"stats":{"files_reviewed":2,"files_with_issues":0,'
+              '"critical":0,"major":0,"minor":0,"info":0}}\n'
+            "```\n"
+            "REVIEW\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 124\n"
+        ),
+    )
+
+    diff_file = tmp_path / "large.diff"
+    diff_file.write_text(
+        "\n".join(
+            [
+                "diff --git a/docs/notes.md b/docs/notes.md",
+                "--- a/docs/notes.md",
+                "+++ b/docs/notes.md",
+                "@@ -1 +1,2 @@",
+                "+doc line",
+                "diff --git a/src/auth/session.py b/src/auth/session.py",
+                "--- a/src/auth/session.py",
+                "+++ b/src/auth/session.py",
+                "@@ -1 +1,180 @@",
+                *["+token = load_token()" for _ in range(180)],
+                "diff --git a/src/runtime/router.py b/src/runtime/router.py",
+                "--- a/src/runtime/router.py",
+                "+++ b/src/runtime/router.py",
+                "@@ -1 +1,170 @@",
+                *["+route = compute_route()" for _ in range(170)],
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    env = make_env(bin_dir, diff_file)
+    env["REVIEW_TIMEOUT"] = "301"
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    fast_prompt = Path("/tmp/security-fast-path-prompt.md")
+    assert fast_prompt.exists()
+    fast_prompt_text = fast_prompt.read_text(encoding="utf-8")
+    assert "src/auth/session.py" in fast_prompt_text
+    assert "src/runtime/router.py" in fast_prompt_text
+    assert "docs/notes.md" not in fast_prompt_text
+    assert "parse-input: fast-path output" in result.stdout
+
+
+def test_review_telemetry_records_timeout_bucket_and_slice_usage(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    make_executable(bin_dir / "pi", "#!/usr/bin/env bash\nexit 124\n")
+
+    diff_file = tmp_path / "large.diff"
+    diff_file.write_text(
+        "\n".join(
+            [
+                "diff --git a/src/auth/session.py b/src/auth/session.py",
+                "--- a/src/auth/session.py",
+                "+++ b/src/auth/session.py",
+                "@@ -1 +1,520 @@",
+                *["+token = load_token()" for _ in range(520)],
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    env = make_env(bin_dir, diff_file)
+    env["REVIEW_TIMEOUT"] = "5"
+
+    result = subprocess.run(
+        [str(RUN_REVIEWER), "security"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    telemetry = Path("/tmp/security-review-telemetry.json")
+    assert telemetry.exists()
+    payload = telemetry.read_text(encoding="utf-8")
+    assert '"perspective": "security"' in payload
+    assert '"size_bucket": "large"' in payload or '"size_bucket": "xlarge"' in payload
+    assert '"timed_out": true' in payload
+    assert '"slice_applied": true' in payload
 
 
 def test_unknown_perspective_fails_fast(tmp_path: Path) -> None:
