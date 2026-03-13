@@ -117,7 +117,7 @@ def test_invalid_yaml_is_error(tmp_path: Path, bad_yaml: str):
     assert _errors(findings) != []
 
 
-def test_comment_policy_always_requires_pr_write(tmp_path: Path):
+def test_comment_policy_always_requires_issue_write(tmp_path: Path):
     wf = tmp_path / "cerberus.yml"
     wf.write_text(
         """
@@ -140,7 +140,7 @@ jobs:
     )
 
     findings, _ = validate_workflow_file(wf)
-    assert any("comment-policy" in f.message and "pull-requests: write" in f.message for f in _errors(findings))
+    assert any("comment-policy" in f.message and "issues: write" in f.message for f in _errors(findings))
 
 
 @pytest.mark.parametrize(

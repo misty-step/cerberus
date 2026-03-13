@@ -33,6 +33,73 @@ PR_CONTEXT_FIELDS = "title,author,headRefName,baseRefName,body"
 RATE_LIMIT_MARKERS = ("rate limit exceeded", "secondary rate limit", "abuse detection")
 
 
+def _permission_guidance(*, resource: str, permission: str, action: str) -> str:
+    return (
+        f"Unable to {action}: token lacks {resource}: {permission} permission.\n"
+        "Add this to your workflow:\n"
+        "permissions:\n"
+        "  contents: read\n"
+        f"  {resource}: {permission}"
+    )
+
+
+def _permission_message_for_args(args: list[str]) -> str:
+    endpoint = next(
+        (
+            arg
+            for arg in args
+            if isinstance(arg, str) and arg.startswith("repos/")
+        ),
+        "",
+    )
+    method = "GET"
+    if "-X" in args:
+        try:
+            method = str(args[args.index("-X") + 1]).upper()
+        except IndexError:
+            method = "GET"
+    elif any(arg == "--input" or str(arg).startswith("body=@") for arg in args):
+        method = "POST"
+
+    if "/issues/" in endpoint and "/comments" in endpoint:
+        if method in {"POST", "PATCH", "PUT"}:
+            return _permission_guidance(
+                resource="issues",
+                permission="write",
+                action="post PR comment",
+            )
+        return _permission_guidance(
+            resource="issues",
+            permission="read",
+            action="read PR comments",
+        )
+
+    if "/pulls/" in endpoint and endpoint.endswith("/reviews"):
+        if method in {"POST", "PATCH", "PUT"}:
+            return _permission_guidance(
+                resource="pull-requests",
+                permission="write",
+                action="post PR review",
+            )
+        return _permission_guidance(
+            resource="pull-requests",
+            permission="read",
+            action="read PR reviews",
+        )
+
+    if "/pulls/" in endpoint and endpoint.endswith("/files?per_page=100"):
+        return _permission_guidance(
+            resource="pull-requests",
+            permission="read",
+            action="read PR files",
+        )
+
+    return (
+        "Unable to access GitHub API resource: token lacks the required workflow permission.\n"
+        "Check the workflow `permissions:` block for the endpoint this step is calling."
+    )
+
+
 def classify_gh_failure(stderr: str) -> str:
     """Classify GitHub CLI stderr into a small stable taxonomy."""
 
@@ -109,13 +176,7 @@ def run_gh(
 
         stderr = (result.stderr or "").lower()
         if any(s in stderr for s in ("403", "resource not accessible", "insufficient")):
-            raise GitHubPermissionError(
-                "Unable to post PR comment: token lacks pull-requests: write permission.\n"
-                "Add this to your workflow:\n"
-                "permissions:\n"
-                "  contents: read\n"
-                "  pull-requests: write"
-            )
+            raise GitHubPermissionError(_permission_message_for_args(args))
 
         if is_transient_error(result.stderr or ""):
             if attempt < max_retries - 1:

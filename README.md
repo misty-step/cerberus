@@ -14,6 +14,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 jobs:
   review:
@@ -241,7 +242,7 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
 ## Requirements
 - GitHub repository with Actions enabled
 - One secret: `CERBERUS_OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
-- Permissions: `pull-requests: read` on review jobs, `pull-requests: write` on verdict job only
+- Permissions: `pull-requests: read` on review jobs, `issues: write` on PR-thread comment jobs, and both `issues: write` plus `pull-requests: write` on verdict jobs
 
 ## License
 Apache-2.0 (see [LICENSE](LICENSE))

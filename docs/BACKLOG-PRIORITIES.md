@@ -63,7 +63,7 @@ Cloud repo: `https://github.com/misty-step/cerberus-cloud`.
   - Split or re-slice review context before correctness/security lanes skip.
 - `P1` Lifecycle/state-machine challenger lane
   - Tracking: `#335`
-  - Benchmark evidence: `bitterblossom#477`, `bitterblossom#509`
+  - Benchmark evidence: `bitterblossom#477`, `bitterblossom#509` (from `2026-03-08-org-scorecard.md`; no bitterblossom PRs in March 13 window)
   - Force explicit phase-by-phase reasoning for sticky state, misclassified later handlers, and blocked-work retry loops.
 - `P1` Adjacent-regression detection
   - Tracking: `#336`
@@ -76,6 +76,7 @@ Cloud repo: `https://github.com/misty-step/cerberus-cloud`.
   - Durable agent-agnostic skill in `.agents/skills/reviewer-benchmark/`.
   - Hypothesis log plus experiment backlog tied to concrete misses.
 - `P1` Reviewer presence / self-dogfood coverage
+  - Tracking: `#375`
   - Benchmark evidence: `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`
   - Cerberus must run consistently enough on core repos for the benchmark to distinguish absence from recall failure.
   - Treat low Cerberus presence on `cerberus` and `gitpulse` as an operational reliability issue.

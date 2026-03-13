@@ -21,6 +21,7 @@
 #       uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
 #       permissions:
 #         contents: read
+#         issues: write
 #         pull-requests: write
 #       with:
 #         context: "Single-user personal finance app. Data bounded to ~500 tx/year."
@@ -45,6 +46,7 @@ jobs:
     uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
     permissions:
       contents: read
+      issues: write
       pull-requests: write
     secrets:
       api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}

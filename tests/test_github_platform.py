@@ -21,7 +21,7 @@ def test_run_gh_raises_permission_error_for_403(monkeypatch) -> None:
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
 
-    with pytest.raises(mod.GitHubPermissionError, match="pull-requests: write"):
+    with pytest.raises(mod.GitHubPermissionError, match="issues: read"):
         mod.run_gh(["api", "repos/o/r/issues/1/comments"])
 
 

@@ -35,7 +35,7 @@ update_issue_comment = _github_platform.update_issue_comment
 
 
 class CommentPermissionError(Exception):
-    """Token lacks pull-requests: write permission."""
+    """Token lacks the required GitHub permission for the comment/review action."""
 
 
 class TransientGitHubError(Exception):
@@ -66,7 +66,7 @@ def _run_gh(
         CompletedProcess result from the gh command
 
     Raises:
-        CommentPermissionError: Token lacks pull-requests: write permission
+        CommentPermissionError: Token lacks the required GitHub permission.
         TransientGitHubError: GitHub API returned 5xx after all retries
         subprocess.CalledProcessError: Other gh CLI failures
     """
@@ -166,7 +166,7 @@ def upsert_pr_comment(
     If comments is provided, searches that list instead of fetching from API.
 
     Raises:
-        CommentPermissionError: Token lacks pull-requests: write permission.
+        CommentPermissionError: Token lacks the required GitHub permission.
         TransientGitHubError: GitHub API returned 5xx after retries.
         subprocess.CalledProcessError: Other gh CLI failures.
     """

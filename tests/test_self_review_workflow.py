@@ -20,4 +20,6 @@ def test_self_review_workflow_runs_on_normal_pr_activity() -> None:
         "ready_for_review",
         "converted_to_draft",
     ]
+    assert workflow["permissions"]["issues"] == "write"
+    assert workflow["permissions"]["pull-requests"] == "write"
     assert "if" not in workflow["jobs"]["review"]

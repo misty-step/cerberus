@@ -58,6 +58,7 @@ jobs:
     uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
     permissions:
       contents: read
+      issues: write
       pull-requests: write
     secrets:
       api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}

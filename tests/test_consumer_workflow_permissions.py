@@ -4,13 +4,14 @@ Two consumer templates, two permission models:
 
 1. consumer-workflow-reusable.yml (reusable workflow caller):
    - Single `review` job delegates to the Cerberus reusable workflow
-   - Job-level permissions: contents: read + pull-requests: write
+   - Job-level permissions: contents: read + issues: write + pull-requests: write
    - No workflow-level pull-requests: write
 
 2. consumer-workflow-minimal.yml (decomposed pipeline):
    - Explicit review/verdict jobs with least-privilege per job
    - review jobs: read-only (no pull-requests: write)
-   - verdict job: pull-requests: write
+   - preflight job: issues: write
+   - verdict job: issues: write + pull-requests: write
    - review jobs: comment-policy: 'never'
 """
 
@@ -53,9 +54,13 @@ def test_reusable_consumer_review_job_has_required_permissions():
     block = review_block.group(0)
 
     assert re.search(r"contents:\s*read", block), "review job must have contents: read"
+    assert re.search(r"issues:\s*write", block), (
+        "review job calling the reusable workflow must have issues: write "
+        "(required for preflight/verdict PR-thread comments inside the reusable workflow)"
+    )
     assert re.search(r"pull-requests:\s*write", block), (
         "review job calling the reusable workflow must have pull-requests: write "
-        "(required for preflight and verdict jobs inside the reusable workflow)"
+        "(required for inline verdict reviews inside the reusable workflow)"
     )
 
 
@@ -97,9 +102,23 @@ def test_decomposed_verdict_job_has_write_permissions():
     assert verdict_block is not None, "verdict job not found in consumer-workflow-minimal.yml"
     block = verdict_block.group(0)
 
+    assert re.search(r"issues:\s*write", block), (
+        "verdict job must have issues: write"
+    )
     assert re.search(r"pull-requests:\s*write", block), (
         "verdict job must have pull-requests: write"
     )
+
+
+def test_decomposed_preflight_job_has_issue_comment_permissions():
+    content = _read_decomposed()
+    preflight_block = re.search(
+        rf"^  preflight:\n(.*?){JOB_BOUNDARY}", content, re.MULTILINE | re.DOTALL
+    )
+    assert preflight_block is not None, "preflight job not found in consumer-workflow-minimal.yml"
+    block = preflight_block.group(0)
+
+    assert re.search(r"issues:\s*write", block), "preflight job must have issues: write"
 
 
 def test_decomposed_review_job_disables_post_comment():
