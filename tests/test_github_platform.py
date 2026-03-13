@@ -79,6 +79,20 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
         mod.gh_json(["api", "repos/o/r/issues/1/comments"])
 
 
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        ("HTTP 403 Forbidden", "permissions"),
+        ("fatal: missing read permission for repository", "permissions"),
+        ("HTTP 403: API rate limit exceeded", "transient"),
+        ("gh: HTTP 503: Service Unavailable", "transient"),
+        ("gh: something odd happened", "other"),
+    ],
+)
+def test_classify_gh_failure_maps_expected_buckets(stderr: str, expected: str) -> None:
+    assert mod.classify_gh_failure(stderr) == expected
+
+
 def test_fetch_issue_comments_paginates(monkeypatch) -> None:
     calls: list[list[str]] = []
 
@@ -226,6 +240,183 @@ def test_list_pr_files_flattens_paginated_pages(monkeypatch) -> None:
     files = mod.list_pr_files("owner/repo", 5)
 
     assert [f.get("filename") for f in files] == ["a.py", "b.py"]
+
+
+def test_fetch_pr_diff_uses_explicit_repo(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        assert args == ["gh", "pr", "diff", "42", "--repo", "owner/repo"]
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="diff --git", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    assert mod.fetch_pr_diff("owner/repo", 42) == "diff --git"
+
+
+def test_fetch_pr_diff_raises_timeout_error(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(mod.GitHubTimeoutError, match="gh pr diff timed out after 20s"):
+        mod.fetch_pr_diff("owner/repo", 42)
+
+
+def test_fetch_pr_diff_raises_permission_error(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="HTTP 403 Resource not accessible by integration",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(mod.GitHubPermissionError, match="pull-requests: read"):
+        mod.fetch_pr_diff("owner/repo", 42)
+
+
+def test_fetch_pr_context_retries_auth_then_succeeds(monkeypatch) -> None:
+    calls = 0
+    sleeps: list[int] = []
+    expected_args = [
+        "gh",
+        "pr",
+        "view",
+        "42",
+        "--repo",
+        "owner/repo",
+        "--json",
+        mod.PR_CONTEXT_FIELDS,
+    ]
+
+    def fake_run(args, **kwargs):
+        nonlocal calls
+        assert args == expected_args
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
+        calls += 1
+        if calls == 1:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="HTTP 401 Bad credentials",
+            )
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout='{"title": "PR", "author": {"login": "octocat"}, "headRefName": "feature", "baseRefName": "master", "body": ""}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.time, "sleep", sleeps.append)
+
+    payload = mod.fetch_pr_context("owner/repo", 42)
+
+    assert payload["title"] == "PR"
+    assert calls == 2
+    assert sleeps == [2]
+
+
+def test_fetch_pr_context_raises_auth_error_after_retry_budget(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        assert args == [
+            "gh",
+            "pr",
+            "view",
+            "42",
+            "--repo",
+            "owner/repo",
+            "--json",
+            mod.PR_CONTEXT_FIELDS,
+        ]
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="HTTP 401 Bad credentials",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(mod.GitHubAuthError, match="Bad credentials"):
+        mod.fetch_pr_context("owner/repo", 42, max_retries=2)
+
+
+def test_fetch_pr_context_raises_timeout_error(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        assert args == [
+            "gh",
+            "pr",
+            "view",
+            "42",
+            "--repo",
+            "owner/repo",
+            "--json",
+            mod.PR_CONTEXT_FIELDS,
+        ]
+        assert kwargs["timeout"] == mod.DEFAULT_GH_TIMEOUT
+        raise subprocess.TimeoutExpired(cmd=args, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(mod.GitHubTimeoutError, match="timed out after 20s"):
+        mod.fetch_pr_context("owner/repo", 42)
+
+
+def test_fetch_pr_context_raises_value_error_for_invalid_json(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="{bad",
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="invalid JSON from gh pr view"):
+        mod.fetch_pr_context("owner/repo", 42)
+
+
+def test_fetch_pr_context_rejects_non_object_payload(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout='["not", "an", "object"]',
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="expected object"):
+        mod.fetch_pr_context("owner/repo", 42)
+
+
+def test_fetch_pr_context_rejects_missing_fields(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout='{"title": "PR", "headRefName": "feature", "baseRefName": "master"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="missing fields author, body"):
+        mod.fetch_pr_context("owner/repo", 42)
+
+
+def test_fetch_pr_context_zero_retry_budget_raises_runtime_error() -> None:
+    with pytest.raises(RuntimeError, match="retry loop exited unexpectedly"):
+        mod.fetch_pr_context("owner/repo", 42, max_retries=0)
 
 
 def test_create_pr_review_posts_json_payload(monkeypatch) -> None:

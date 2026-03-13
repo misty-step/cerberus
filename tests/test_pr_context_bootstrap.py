@@ -1,15 +1,12 @@
-"""Tests for PR context fetch retry and fallback logic in action.yml (#211).
+"""Tests for PR context bootstrap and fallback wiring in action.yml.
 
 Covers:
-- Retry loop capped at max_pr_view_retries=3
-- Per-attempt timeout (pr_view_timeout_seconds=20)
-- Exponential backoff only on auth errors
-- Error classification (auth / permissions / other)
+- Bootstrap fetch delegated to helper script
+- Explicit repo/PR plumbing into the helper
 - Bounded step output (error message truncation)
 - Parse fallback content generation via printf (YAML-safe, no heredoc)
 - Parse step runs on pr step failure (if: always())
 - Step outputs: pr-context-error-kind, pr-context-error-message
-- Timeout exit code (124) captured before branching
 """
 
 import re
@@ -36,93 +33,54 @@ def _find_step(steps: list, name_pattern: str) -> dict | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Retry configuration
-# ---------------------------------------------------------------------------
-
-
-def test_fetch_step_caps_retries_at_three() -> None:
-    content = _action_content()
-    assert "max_pr_view_retries=3" in content, (
-        "gh pr view retry cap must be exactly 3 to bound flake retry cost"
-    )
-
-
-def test_fetch_step_uses_per_attempt_timeout() -> None:
-    content = _action_content()
-    assert "pr_view_timeout_seconds=20" in content, (
-        "Each gh pr view attempt must have a 20-second timeout to prevent stalls"
-    )
-    assert 'timeout "$pr_view_timeout_seconds" gh pr view' in content, (
-        "timeout must wrap each gh pr view attempt, not just the loop"
-    )
-
-
-def test_fetch_step_passes_explicit_repo_to_gh_cli() -> None:
-    content = _action_content()
-    assert 'REPO: ${{ github.repository }}' in content, (
-        "Fetch step must expose github.repository as REPO for gh commands"
-    )
-    assert 'gh pr diff "$PR_NUMBER" --repo "$REPO"' in content, (
-        "gh pr diff must pass --repo so it works without a checked-out git repo"
-    )
-    assert 'gh pr view "$PR_NUMBER" --repo "$REPO"' in content, (
-        "gh pr view must pass --repo so it works without a checked-out git repo"
-    )
-
-
-def test_fetch_step_applies_exponential_backoff_on_auth_error() -> None:
-    content = _action_content()
-    # Backoff: wait_seconds = attempt * 2
-    assert "wait_seconds=$((pr_view_attempt * 2))" in content, (
-        "Exponential backoff must multiply attempt count by 2 for auth retries"
-    )
-    assert "sleep" in content and "wait_seconds" in content, (
-        "Backoff sleep must use wait_seconds variable"
-    )
-
-
-def test_fetch_step_only_retries_on_auth_errors() -> None:
-    content = _action_content()
-    # backoff/retry on auth, not permissions/other
-    assert (
-        'if [[ "$pr_view_error_kind" == "auth" ]]' in content
-        or "pr_view_error_kind" in content
-    ), "Retry branch must be conditional on error kind == auth"
+def _fetch_step() -> dict:
+    action = _load_action()
+    steps = action["runs"]["steps"]
+    fetch_step = _find_step(steps, r"fetch pr context")
+    assert fetch_step is not None, "Fetch PR context step not found in action.yml"
+    return fetch_step
 
 
 # ---------------------------------------------------------------------------
-# Error classification
+# Bootstrap helper wiring
 # ---------------------------------------------------------------------------
 
 
-def test_classify_function_present() -> None:
-    content = _action_content()
-    assert "classify_pr_view_error()" in content, (
-        "classify_pr_view_error() helper must be defined in action.yml"
+def test_fetch_step_uses_bootstrap_helper_script() -> None:
+    fetch_step = _fetch_step()
+    assert 'scripts/fetch-pr-bootstrap.py' in fetch_step["run"], (
+        "Fetch step must delegate PR bootstrap to the helper script"
     )
 
 
-def test_classify_401_bad_credentials_as_auth() -> None:
-    content = _action_content()
-    # The classify function regex should include both 401 and bad credentials
-    assert "401" in content and "bad credentials" in content.lower(), (
-        "Classifier must match HTTP 401 and 'bad credentials' text as auth errors"
+def test_fetch_step_passes_explicit_repo_and_pr_to_helper() -> None:
+    fetch_step = _fetch_step()
+    fetch_env = fetch_step["env"]
+    fetch_run = fetch_step["run"]
+    assert fetch_env["REPO"] == "${{ github.repository }}", (
+        "Fetch step must expose github.repository as REPO for helper invocation"
+    )
+    assert fetch_env["PR_NUMBER"] == "${{ github.event.pull_request.number }}", (
+        "Fetch step must expose the PR number for helper invocation"
+    )
+    assert '--repo "$REPO"' in fetch_run, (
+        "Bootstrap helper must receive the explicit repository"
+    )
+    assert '--pr "$PR_NUMBER"' in fetch_run, (
+        "Bootstrap helper must receive the pull request number"
     )
 
 
-def test_classify_403_forbidden_as_permissions() -> None:
-    content = _action_content()
-    assert "403" in content and (
-        "forbidden" in content.lower() or "permission denied" in content.lower()
-    ), "Classifier must match 403 / forbidden as permissions errors"
-
-
-def test_classify_fallthrough_is_other() -> None:
-    content = _action_content()
-    # Non-auth, non-permissions errors fall through to "other"
-    assert '"other"' in content, (
-        "Classifier must produce 'other' for non-auth/non-permissions failures"
+def test_fetch_step_passes_output_paths_to_helper() -> None:
+    fetch_run = _fetch_step()["run"]
+    assert '--diff-file "$CERBERUS_TMP/pr.diff"' in fetch_run, (
+        "Fetch step must pass the diff output path to the helper"
+    )
+    assert '--pr-context-file "$CERBERUS_TMP/pr-context.json"' in fetch_run, (
+        "Fetch step must pass the PR context output path to the helper"
+    )
+    assert '--result-file "$CERBERUS_TMP/pr-bootstrap-result.json"' in fetch_run, (
+        "Fetch step must pass a structured result path to the helper"
     )
 
 
@@ -132,26 +90,26 @@ def test_classify_fallthrough_is_other() -> None:
 
 
 def test_fetch_step_emits_error_kind_output() -> None:
-    content = _action_content()
-    assert "pr-context-error-kind" in content, (
+    fetch_run = _fetch_step()["run"]
+    assert "pr-context-error-kind" in fetch_run, (
         "Fetch step must emit pr-context-error-kind to GITHUB_OUTPUT"
     )
 
 
 def test_fetch_step_emits_error_message_output() -> None:
-    content = _action_content()
-    assert "pr-context-error-message" in content, (
+    fetch_run = _fetch_step()["run"]
+    assert "pr-context-error-message" in fetch_run, (
         "Fetch step must emit pr-context-error-message to GITHUB_OUTPUT"
     )
 
 
 def test_fetch_step_initialises_outputs_to_empty() -> None:
-    content = _action_content()
+    fetch_run = _fetch_step()["run"]
     # Blank-init guard: empty string emitted at step start before any failure
-    assert "pr-context-error-kind=" in content, (
+    assert "pr-context-error-kind=" in fetch_run, (
         "Step must initialise pr-context-error-kind to empty string before any failure"
     )
-    assert "pr-context-error-message=" in content, (
+    assert "pr-context-error-message=" in fetch_run, (
         "Step must initialise pr-context-error-message to empty string before any failure"
     )
 
@@ -162,35 +120,43 @@ def test_fetch_step_initialises_outputs_to_empty() -> None:
 
 
 def test_error_message_output_is_truncated() -> None:
-    content = _action_content()
+    fetch_run = _fetch_step()["run"]
     # Output bound: at most 1000 chars for step output variable
-    assert "cut -c1-1000" in content, (
+    assert "cut -c1-1000" in fetch_run, (
         "Error message written to GITHUB_OUTPUT must be truncated to 1000 chars"
     )
 
 
 def test_log_breadcrumb_is_truncated() -> None:
-    content = _action_content()
+    fetch_run = _fetch_step()["run"]
     # Log bound: at most 4000 chars for the larger log breadcrumb
-    assert "cut -c1-4000" in content, (
+    assert "cut -c1-4000" in fetch_run, (
         "Error detail echoed to log must be truncated to 4000 chars"
     )
 
 
 # ---------------------------------------------------------------------------
-# Timeout exit code capture
+# Result-file handling
 # ---------------------------------------------------------------------------
 
 
-def test_timeout_exit_code_captured_before_branch() -> None:
-    content = _action_content()
-    # pr_view_rc must be assigned from $? immediately after timeout call
-    # and the timeout check uses -eq 124 against that variable
-    assert "pr_view_rc=$?" in content, (
-        "timeout exit code must be captured into pr_view_rc immediately after the command"
+def test_fetch_step_reads_error_kind_from_result_file() -> None:
+    fetch_run = _fetch_step()["run"]
+    assert "pr-bootstrap-result.json" in fetch_run, (
+        "Fetch step must read helper failures from the structured result file"
     )
-    assert '"$pr_view_rc" -eq 124' in content or "pr_view_rc\" -eq 124" in content, (
-        "Timeout branch must check pr_view_rc == 124, not re-read $?"
+    assert "pr-context-error-kind" in fetch_run, (
+        "Fetch step must map helper failure kind into pr-context-error-kind"
+    )
+
+
+def test_fetch_step_handles_missing_result_file() -> None:
+    fetch_run = _fetch_step()["run"]
+    assert 'if [[ -f "$CERBERUS_TMP/pr-bootstrap-result.json" ]]; then' in fetch_run, (
+        "Fetch step must guard reads from the structured result file"
+    )
+    assert 'pr_view_error_text="Bootstrap helper failed before writing pr-bootstrap-result.json."' in fetch_run, (
+        "Fetch step must preserve a diagnostic fallback when the helper exits before writing the result file"
     )
 
 

@@ -9,17 +9,60 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import NoReturn
 
 
 class GitHubPermissionError(Exception):
     """Token lacks permission for the requested GitHub write."""
 
 
+class GitHubAuthError(Exception):
+    """GitHub authentication failed for the requested operation."""
+
+
 class TransientGitHubError(Exception):
     """GitHub API returned a transient error after retries."""
 
 
+class GitHubTimeoutError(Exception):
+    """GitHub command timed out."""
+
+
 DEFAULT_GH_TIMEOUT = 20
+PR_CONTEXT_FIELDS = "title,author,headRefName,baseRefName,body"
+RATE_LIMIT_MARKERS = ("rate limit exceeded", "secondary rate limit", "abuse detection")
+
+
+def classify_gh_failure(stderr: str) -> str:
+    """Classify GitHub CLI stderr into a small stable taxonomy."""
+
+    lower_stderr = stderr.lower()
+    if any(marker in lower_stderr for marker in RATE_LIMIT_MARKERS):
+        return "transient"
+
+    http_401_markers = ("http 401", "(http 401)", "401 unauthorized", "status 401")
+    http_403_markers = ("http 403", "(http 403)", "403 forbidden", "status 403")
+    auth_markers = (
+        "bad credentials",
+        "authentication failed",
+        "invalid api key",
+        "incorrect_api_key",
+        "not authenticated",
+    )
+    if any(marker in lower_stderr for marker in http_401_markers) or any(
+        marker in lower_stderr for marker in auth_markers
+    ):
+        return "auth"
+    permission_markers = ("forbidden", "resource not accessible", "permission denied")
+    if any(marker in lower_stderr for marker in http_403_markers) or any(
+        marker in lower_stderr for marker in permission_markers
+    ) or (
+        "missing" in lower_stderr and "permission" in lower_stderr
+    ):
+        return "permissions"
+    if is_transient_error(stderr):
+        return "transient"
+    return "other"
 
 
 def is_transient_error(stderr: str) -> bool:
@@ -118,6 +161,40 @@ def gh_json(
         raise ValueError(f"invalid JSON from gh command {args!r}: {exc}") from exc
 
 
+def _run_gh_capture(args: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+    """Run gh and capture stdout/stderr for bootstrap-style flows."""
+
+    return subprocess.run(
+        ["gh", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
+    )
+
+
+def _raise_for_bootstrap_failure(
+    result: subprocess.CompletedProcess[str],
+    *,
+    permission_message: str,
+) -> NoReturn:
+    """Raise a deterministic exception for a bootstrap fetch failure."""
+
+    kind = classify_gh_failure(result.stderr or "")
+    if kind == "auth":
+        raise GitHubAuthError((result.stderr or "").strip() or "GitHub authentication failed")
+    if kind == "permissions":
+        raise GitHubPermissionError(permission_message)
+    if kind == "transient":
+        raise TransientGitHubError((result.stderr or "").strip() or "GitHub transient failure")
+    raise subprocess.CalledProcessError(
+        result.returncode,
+        result.args,
+        result.stdout,
+        result.stderr,
+    )
+
+
 def fetch_issue_comments(
     repo: str,
     number: int,
@@ -146,6 +223,88 @@ def fetch_issue_comments(
             break
         page += 1
     return comments
+
+
+def fetch_pr_diff(repo: str, pr_number: int, *, timeout: int = DEFAULT_GH_TIMEOUT) -> str:
+    """Fetch a pull-request diff without assuming a checked-out repository."""
+
+    try:
+        result = _run_gh_capture(["pr", "diff", str(pr_number), "--repo", repo], timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise GitHubTimeoutError(f"gh pr diff timed out after {timeout}s") from exc
+    if result.returncode == 0:
+        return result.stdout
+    _raise_for_bootstrap_failure(
+        result,
+        permission_message=(
+            "Unable to read pull request diff: token lacks pull-requests: read permission.\n"
+            "Add this to your workflow:\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "  pull-requests: read"
+        ),
+    )
+
+
+def fetch_pr_context(
+    repo: str,
+    pr_number: int,
+    *,
+    timeout: int = DEFAULT_GH_TIMEOUT,
+    max_retries: int = 3,
+) -> dict:
+    """Fetch core pull-request metadata for bootstrap scaffolding."""
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = _run_gh_capture(
+                [
+                    "pr",
+                    "view",
+                    str(pr_number),
+                    "--repo",
+                    repo,
+                    "--json",
+                    PR_CONTEXT_FIELDS,
+                ],
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitHubTimeoutError(f"gh pr view timed out after {timeout}s") from exc
+
+        if result.returncode == 0:
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid JSON from gh pr view: {exc}") from exc
+            if not isinstance(payload, dict):
+                raise ValueError("invalid PR context payload: expected object")
+            missing_fields = [
+                field for field in PR_CONTEXT_FIELDS.split(",") if field not in payload
+            ]
+            if missing_fields:
+                raise ValueError(
+                    "invalid PR context payload: missing fields "
+                    + ", ".join(missing_fields)
+                )
+            return payload
+
+        if classify_gh_failure(result.stderr or "") == "auth" and attempt < max_retries:
+            time.sleep(attempt * 2)
+            continue
+
+        _raise_for_bootstrap_failure(
+            result,
+            permission_message=(
+                "Unable to read pull request context: token lacks pull-requests: read permission.\n"
+                "Add this to your workflow:\n"
+                "permissions:\n"
+                "  contents: read\n"
+                "  pull-requests: read"
+            ),
+        )
+
+    raise RuntimeError("fetch_pr_context retry loop exited unexpectedly")
 
 
 def create_issue_comment(*, repo: str, number: int, body_file: str) -> subprocess.CompletedProcess[str]:

@@ -169,23 +169,6 @@ runs:
         echo "pr-context-error-kind=" >> "$GITHUB_OUTPUT"
         echo "pr-context-error-message=" >> "$GITHUB_OUTPUT"
 
-        # Classify GitHub auth failures vs permission problems.
-        classify_pr_view_error() {
-          local text="$1"
-          if echo "$text" | grep -qiE "(401|bad credentials|authentication failed|invalid api key|incorrect_api_key|not authenticated)"; then
-            echo "auth"
-          elif echo "$text" | grep -qiE "(403|forbidden|resource not accessible|missing.*permission|permission denied)"; then
-            echo "permissions"
-          else
-            echo "other"
-          fi
-        }
-
-        cleanup_pr_fetch_temp_files() {
-          [[ -f "$1" ]] && rm -f "$1"
-          [[ -f "$2" ]] && rm -f "$2"
-        }
-
         if [[ -z "$PR_NUMBER" ]]; then
           echo "::error::This action must be triggered by a pull_request event"
           echo "pr-context-error-kind=other" >> "$GITHUB_OUTPUT"
@@ -194,61 +177,19 @@ runs:
         fi
         # Deterministic bootstrap only: prompt scaffolding data.
         # Semantic context (issues/comments/acceptance criteria) is fetched in-runtime via github_read.
-        if ! gh pr diff "$PR_NUMBER" --repo "$REPO" > "$CERBERUS_TMP/pr.diff"; then
-          echo "::error::Failed to fetch PR diff via gh pr diff."
-          echo "pr-context-error-kind=other" >> "$GITHUB_OUTPUT"
-          echo "pr-context-error-message=Unable to fetch PR diff via GitHub CLI (gh pr diff)." >> "$GITHUB_OUTPUT"
-          echo "Likely cause: missing workflow job permissions (pull-requests: read, contents: read) or incorrect github-token."
-          echo ""
-          echo "Fix (recommended):"
-          echo "permissions:"
-          echo "  contents: read"
-          echo "  pull-requests: read"
-          exit 1
-        fi
-        : > "$CERBERUS_TMP/pr-context.json"
-        max_pr_view_retries=3
-        pr_view_timeout_seconds=20
-        pr_view_attempt=1
-        pr_context_exit=1
-        pr_view_error_text=""
-        while [[ "$pr_view_attempt" -le "$max_pr_view_retries" ]]; do
-          pr_view_stdout="$(mktemp "${CERBERUS_TMP}/cerberus-pr-view-stdout.XXXXXX")"
-          pr_view_stderr="$(mktemp "${CERBERUS_TMP}/cerberus-pr-view-stderr.XXXXXX")"
-          timeout "$pr_view_timeout_seconds" gh pr view "$PR_NUMBER" --repo "$REPO" --json title,author,headRefName,baseRefName,body \
-            > "$pr_view_stdout" 2> "$pr_view_stderr"
-          pr_view_rc=$?
-          if [[ "$pr_view_rc" -eq 0 ]]; then
-            mv "$pr_view_stdout" "$CERBERUS_TMP/pr-context.json"
-            cleanup_pr_fetch_temp_files "$pr_view_stdout" "$pr_view_stderr"
-            echo "pr-context-error-kind=" >> "$GITHUB_OUTPUT"
-            echo "pr-context-error-message=" >> "$GITHUB_OUTPUT"
-            pr_context_exit=0
-            break
-          elif [[ "$pr_view_rc" -eq 124 ]]; then
-            pr_view_error_text="gh pr view timed out after ${pr_view_timeout_seconds}s"
-            cleanup_pr_fetch_temp_files "$pr_view_stdout" "$pr_view_stderr"
+        if ! python3 "$CERBERUS_ROOT/scripts/fetch-pr-bootstrap.py" \
+          --repo "$REPO" \
+          --pr "$PR_NUMBER" \
+          --diff-file "$CERBERUS_TMP/pr.diff" \
+          --pr-context-file "$CERBERUS_TMP/pr-context.json" \
+          --result-file "$CERBERUS_TMP/pr-bootstrap-result.json"; then
+          if [[ -f "$CERBERUS_TMP/pr-bootstrap-result.json" ]]; then
+            pr_view_error_kind="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_kind\", \"other\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
+            pr_view_error_text="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_message\", \"\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
+          else
             pr_view_error_kind="other"
-            break
+            pr_view_error_text="Bootstrap helper failed before writing pr-bootstrap-result.json."
           fi
-
-          pr_view_error_text="$(cat "$pr_view_stdout" "$pr_view_stderr" 2>/dev/null | tr '\n' ' ')"
-          cleanup_pr_fetch_temp_files "$pr_view_stdout" "$pr_view_stderr"
-
-          if [[ "$pr_view_attempt" -lt "$max_pr_view_retries" ]]; then
-            pr_view_error_kind="$(classify_pr_view_error "$pr_view_error_text")"
-            if [[ "$pr_view_error_kind" == "auth" ]]; then
-              wait_seconds=$((pr_view_attempt * 2))
-              echo "Retrying gh pr view on auth error (attempt ${pr_view_attempt}/${max_pr_view_retries}) after ${wait_seconds}s"
-              sleep "$wait_seconds"
-              pr_view_attempt=$((pr_view_attempt + 1))
-              continue
-            fi
-          fi
-          pr_view_error_kind="$(classify_pr_view_error "$pr_view_error_text")"
-          break
-        done
-        if [[ "$pr_context_exit" -ne 0 ]]; then
           echo "pr-context-error-kind=${pr_view_error_kind}" >> "$GITHUB_OUTPUT"
           # Keep a larger log breadcrumb, then compress output value.
           pr_view_error_text="$(echo "$pr_view_error_text" | sed -E 's/[[:space:]]+/ /g')"

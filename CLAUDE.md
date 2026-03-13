@@ -109,10 +109,11 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
 - `templates/consumer-workflow-reusable.yml` - recommended workflow for downstream repositories
 - `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
+- `scripts/fetch-pr-bootstrap.py` - adapter-backed bootstrap fetch for `pr.diff` and `pr-context.json`
 - `scripts/run-reviewer.sh` - orchestrates one reviewer via `scripts/run-reviewer.py` and Pi runtime
 - `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
 - `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
-- `scripts/lib/github_platform.py` - GitHub review-path adapter for shared `gh` transport, PR comments, review reads/writes, and PR file metadata
+- `scripts/lib/github_platform.py` - GitHub adapter for shared `gh` transport, bootstrap PR reads, PR comments, review reads/writes, and PR file metadata
 - `scripts/lib/github.py` - comment marker/idempotency helpers layered on the GitHub platform adapter
 - `scripts/lib/github_reviews.py` - compatibility layer for PR review helpers backed by the GitHub platform adapter
 - `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes aggregated verdict
