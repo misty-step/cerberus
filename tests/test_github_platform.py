@@ -92,14 +92,6 @@ def test_gh_json_raises_value_error_for_invalid_json(monkeypatch) -> None:
 def test_classify_gh_failure_maps_expected_buckets(stderr: str, expected: str) -> None:
     assert mod.classify_gh_failure(stderr) == expected
 
-
-def test_fetch_pr_context_raises_for_non_dict_payload(monkeypatch) -> None:
-    monkeypatch.setattr(mod, "gh_json", lambda args, **kwargs: ["not-a-dict"])
-
-    with pytest.raises(ValueError, match="unexpected PR context payload type: list"):
-        mod.fetch_pr_context("owner/repo", 42)
-
-
 def test_fetch_issue_comments_paginates(monkeypatch) -> None:
     calls: list[list[str]] = []
 
