@@ -25,6 +25,7 @@ graph TD
 ## What Changed
 
 - Moved `ReviewComment`, `list_pr_reviews`, `find_review_id_by_marker`, `list_pr_files`, and `create_pr_review` into `scripts/lib/github.py`.
+- Collapsed the duplicated marker-scan logic behind a new private `_find_item_by_marker(...)` helper after review feedback.
 - Updated `scripts/post-verdict-review.py` to use one review-path helper module.
 - Deleted `scripts/lib/github_reviews.py`.
 - Updated the execution-boundary test and current-state docs so they describe the new seam instead of the removed wrapper.
@@ -47,14 +48,14 @@ graph TD
 
 ```text
 $ python3 -m pytest tests/test_github.py tests/test_github_reviews.py tests/test_post_verdict_review.py tests/test_execution_boundary.py -q
-79 passed in 0.26s
+80 passed in 0.16s
 ```
 
 ### Full repo gate
 
 ```text
 $ make validate
-1668 passed, 1 skipped in 58.24s
+1686 passed, 1 skipped in 60.67s
 All checks passed!
 ✓ All validation checks passed
 ```
@@ -69,4 +70,4 @@ All checks passed!
 
 ## Merge Case
 
-This branch removes one whole compatibility module without changing runtime behavior, keeps the adapter boundary intact, and makes the verdict review path cheaper to understand and extend.
+This branch removes one whole compatibility module without changing runtime behavior, keeps the adapter boundary intact, addresses the one concrete review note raised so far, and makes the verdict review path cheaper to understand and extend.

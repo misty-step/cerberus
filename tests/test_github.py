@@ -77,6 +77,18 @@ class TestFindCommentUrlByMarker:
         assert find_comment_url_by_marker(comments, "<!-- cerberus:council -->") is None
 
 
+def test_find_item_by_marker_skips_non_dict_entries() -> None:
+    from lib.github import _find_item_by_marker
+
+    items = [
+        "skip-me",
+        {"id": 2, "body": "nope"},
+        {"id": 3, "body": "<!-- marker -->"},
+    ]
+
+    assert _find_item_by_marker(items, "<!-- marker -->") == {"id": 3, "body": "<!-- marker -->"}
+
+
 class TestUpsertPrComment:
     def test_creates_comment_when_none_exists(self, monkeypatch, tmp_path):
         body_file = tmp_path / "body.md"

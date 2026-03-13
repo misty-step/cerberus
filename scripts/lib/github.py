@@ -132,23 +132,32 @@ def fetch_comments(
         _reraise_platform_error(exc)
 
 
+def _find_item_by_marker(items: list[dict], marker: str) -> dict | None:
+    """Return the first dict item whose body contains the given marker."""
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        body = str(item.get("body", "") or "")
+        if marker in body:
+            return item
+    return None
+
+
 def find_comment_by_marker(comments: list[dict], marker: str) -> int | None:
     """Find the first comment containing the marker, return its numeric ID."""
-    for comment in comments:
-        body = str(comment.get("body", ""))
-        if marker in body:
-            comment_id = comment.get("id")
-            if isinstance(comment_id, int):
-                return comment_id
+    comment = _find_item_by_marker(comments, marker)
+    if comment is not None:
+        comment_id = comment.get("id")
+        if isinstance(comment_id, int):
+            return comment_id
     return None
 
 
 def find_comment_url_by_marker(comments: list[dict], marker: str) -> str | None:
     """Find the first comment containing the marker, return its html_url if present."""
-    for comment in comments:
-        body = str(comment.get("body", ""))
-        if marker not in body:
-            continue
+    comment = _find_item_by_marker(comments, marker)
+    if comment is not None:
         url = comment.get("html_url")
         return url if isinstance(url, str) and url.strip() else None
     return None
@@ -206,12 +215,8 @@ def list_pr_reviews(repo: str, pr_number: int) -> list[dict]:
 def find_review_id_by_marker(reviews: list[dict], marker: str) -> int | None:
     """Find the first review containing the marker, return its numeric ID."""
 
-    for review in reviews:
-        if not isinstance(review, dict):
-            continue
-        body = str(review.get("body", "") or "")
-        if marker not in body:
-            continue
+    review = _find_item_by_marker(reviews, marker)
+    if review is not None:
         review_id = review.get("id")
         if isinstance(review_id, int):
             return review_id
