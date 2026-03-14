@@ -518,9 +518,11 @@ def validate(obj: dict) -> None:
     if not isinstance(obj["confidence"], (int, float)):
         fail("confidence must be number")
     confidence = obj["confidence"]
+    # Safety-net for the raw-text fallback path. Structured extraction already
+    # constrains confidence to [0, 1], but fenced JSON parsed directly here can
+    # still contain whole-number percentages such as 100.
     if (
-        isinstance(confidence, (int, float))
-        and confidence > 1
+        confidence > 1
         and confidence <= 100
         and float(confidence).is_integer()
     ):

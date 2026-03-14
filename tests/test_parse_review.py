@@ -6,6 +6,8 @@ import sys
 import uuid
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).parent.parent / "scripts" / "parse-review.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -218,18 +220,26 @@ class TestParseErrors:
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
-    def test_confidence_percent_is_normalized(self):
+    @pytest.mark.parametrize(
+        ("raw_confidence", "expected_confidence"),
+        [
+            (100, 1.0),
+            (80, 0.8),
+            (2, 0.02),
+        ],
+    )
+    def test_confidence_percent_is_normalized(self, raw_confidence, expected_confidence):
         percent_confidence = json.dumps({
             "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
-            "confidence": 100, "summary": "test", "findings": [],
+            "confidence": raw_confidence, "summary": "test", "findings": [],
             "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
         })
         code, out, err = run_parse(f"```json\n{percent_confidence}\n```")
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "PASS"
-        assert data["confidence"] == 1.0
-        assert "normalized confidence percentage 100" in err.lower()
+        assert data["confidence"] == expected_confidence
+        assert f"normalized confidence percentage {raw_confidence}" in err.lower()
 
     def test_uses_last_json_block(self):
         """When multiple json blocks exist, should use the last one."""
