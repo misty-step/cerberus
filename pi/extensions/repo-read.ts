@@ -100,14 +100,45 @@ function requireRelativePath(rawPath: string | undefined, fieldName: string): st
 	return value;
 }
 
+function pathEscapesRoot(rootPath: string, candidatePath: string): boolean {
+	const relative = path.relative(rootPath, candidatePath);
+	return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+
 function resolveWorkspacePath(workspaceRoot: string, relativePath: string): string {
 	const resolvedRoot = path.resolve(workspaceRoot);
 	const candidate = path.resolve(resolvedRoot, relativePath);
-	const relative = path.relative(resolvedRoot, candidate);
-	if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+	if (pathEscapesRoot(resolvedRoot, candidate)) {
 		throw new Error("path escapes workspace root");
 	}
-	return candidate;
+
+	const realRoot = fs.realpathSync(resolvedRoot);
+	const realCandidate = fs.realpathSync(candidate);
+	if (pathEscapesRoot(realRoot, realCandidate)) {
+		throw new Error("path escapes workspace root");
+	}
+	return realCandidate;
+}
+
+function parseHeaderPaths(header: string): { oldPath: string; newPath: string } | null {
+	const prefix = "diff --git a/";
+	if (!header.startsWith(prefix)) {
+		return null;
+	}
+	const rest = header.slice(prefix.length);
+	let offset = 0;
+	while (true) {
+		const separatorIndex = rest.indexOf(" b/", offset);
+		if (separatorIndex === -1) {
+			return null;
+		}
+		const oldPath = rest.slice(0, separatorIndex);
+		const newPath = rest.slice(separatorIndex + 3);
+		if (oldPath === newPath) {
+			return { oldPath, newPath };
+		}
+		offset = separatorIndex + 1;
+	}
 }
 
 function parseChangedFiles(diffText: string): ChangedFile[] {
@@ -118,13 +149,13 @@ function parseChangedFiles(diffText: string): ChangedFile[] {
 		const text = `diff --git ${chunk}`;
 		const lines = text.split("\n");
 		const header = lines[0] || "";
-		const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(header);
-		if (!match) {
+		const headerPaths = parseHeaderPaths(header);
+		if (!headerPaths) {
 			continue;
 		}
 
-		let oldPath = match[1];
-		let newPath = match[2];
+		let oldPath = headerPaths.oldPath;
+		let newPath = headerPaths.newPath;
 		let status: ChangedFile["status"] = "modified";
 		let additions = 0;
 		let deletions = 0;
@@ -139,6 +170,10 @@ function parseChangedFiles(diffText: string): ChangedFile[] {
 				oldPath = line.slice("rename from ".length).trim();
 			} else if (line.startsWith("rename to ")) {
 				newPath = line.slice("rename to ".length).trim();
+			} else if (line.startsWith("--- a/")) {
+				oldPath = line.slice("--- a/".length).trim();
+			} else if (line.startsWith("+++ b/")) {
+				newPath = line.slice("+++ b/".length).trim();
 			} else if (line.startsWith("+") && !line.startsWith("+++")) {
 				additions += 1;
 			} else if (line.startsWith("-") && !line.startsWith("---")) {
@@ -176,8 +211,11 @@ function buildFileSlice(
 	const text = readTextFile(filePath);
 	const lines = text.split("\n");
 	const startLine = Math.max(1, Math.trunc(Number(startLineRaw ?? 1)));
+	if (startLine > lines.length) {
+		throw new Error(`startLine ${startLine} exceeds file length (${lines.length} lines)`);
+	}
 	const requestedEndLine = Math.trunc(Number(endLineRaw ?? startLine + MAX_FILE_LINES - 1));
-	const endLine = Math.min(lines.length, Math.max(startLine, requestedEndLine, startLine));
+	const endLine = Math.min(lines.length, Math.max(startLine, requestedEndLine));
 	if (endLine - startLine + 1 > MAX_FILE_LINES) {
 		throw new Error(`read_file may return at most ${MAX_FILE_LINES} lines`);
 	}
@@ -260,7 +298,9 @@ function searchRepo(
 }
 
 function repoRelativePath(workspaceRoot: string, absolutePath: string): string {
-	return path.relative(path.resolve(workspaceRoot), absolutePath).split(path.sep).join("/");
+	const realRoot = fs.realpathSync(path.resolve(workspaceRoot));
+	const realPath = fs.realpathSync(absolutePath);
+	return path.relative(realRoot, realPath).split(path.sep).join("/");
 }
 
 export default function repoReadExtension(pi: ExtensionAPI) {
@@ -329,19 +369,20 @@ export default function repoReadExtension(pi: ExtensionAPI) {
 					const searchRoot = params.pathPrefix
 						? resolveWorkspacePath(
 								reviewRun.workspace_root,
-								requireRelativePath(params.pathPrefix, "pathPrefix"),
-							)
-						: path.resolve(reviewRun.workspace_root);
-					const results: Array<{ path: string; line: number; excerpt: string }> = [];
-					searchRepo(searchRoot, query, limit, results);
-					const payload = {
-						results: results.map((result) => ({
-							path: repoRelativePath(reviewRun.workspace_root, result.path),
-							line: result.line,
-							excerpt: result.excerpt,
-						})),
-						truncated: results.length >= limit,
-					};
+					requireRelativePath(params.pathPrefix, "pathPrefix"),
+								)
+							: path.resolve(reviewRun.workspace_root);
+						const results: Array<{ path: string; line: number; excerpt: string }> = [];
+						searchRepo(searchRoot, query, limit + 1, results);
+						const truncated = results.length > limit;
+						const payload = {
+							results: results.slice(0, limit).map((result) => ({
+								path: repoRelativePath(reviewRun.workspace_root, result.path),
+								line: result.line,
+								excerpt: result.excerpt,
+							})),
+							truncated,
+						};
 					return {
 						content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
 						details: payload,

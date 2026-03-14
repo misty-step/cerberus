@@ -132,6 +132,48 @@ function createReviewRunFixture() {
 	};
 }
 
+function createWeirdPathDiffFixture() {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "cerberus-repo-read-weird-"));
+	const workspaceRoot = path.join(root, "workspace");
+	const weirdDir = path.join(workspaceRoot, "docs", "foo b");
+	fs.mkdirSync(weirdDir, { recursive: true });
+	fs.writeFileSync(path.join(weirdDir, "bar.md"), "odd path\n", "utf8");
+	const diffPath = path.join(root, "pr.diff");
+	fs.writeFileSync(
+		diffPath,
+		[
+			"diff --git a/docs/foo b/bar.md b/docs/foo b/bar.md",
+			"index 1111111..2222222 100644",
+			"--- a/docs/foo b/bar.md",
+			"+++ b/docs/foo b/bar.md",
+			"@@ -1 +1 @@",
+			"-before",
+			"+after",
+			"",
+		].join("\n"),
+		"utf8",
+	);
+	const reviewRunPath = path.join(root, "review-run.json");
+	fs.writeFileSync(
+		reviewRunPath,
+		JSON.stringify(
+			{
+				diff_file: diffPath,
+				workspace_root: workspaceRoot,
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	return {
+		reviewRunPath,
+		cleanup() {
+			fs.rmSync(root, { recursive: true, force: true });
+		},
+	};
+}
+
 test("list_changed_files returns parsed diff metadata", async () => {
 	const tool = await createRegisteredTool();
 	const fixture = createReviewRunFixture();
@@ -177,6 +219,25 @@ test("read_file returns bounded file slices", async () => {
 	}
 });
 
+test("read_file rejects start lines beyond the file length", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createReviewRunFixture();
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const result = await tool.execute("call-2b", {
+			action: "read_file",
+			path: "docs/notes.md",
+			startLine: 10,
+		});
+		assert.equal(result.isError, true);
+		assert.match(String(result.details.error), /startLine 10 exceeds file length \(4 lines\)/);
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
 test("read_diff can filter to one file", async () => {
 	const tool = await createRegisteredTool();
 	const fixture = createReviewRunFixture();
@@ -191,6 +252,30 @@ test("read_diff can filter to one file", async () => {
 		assert.equal(result.details.files.length, 1);
 		assert.equal(result.details.files[0].path, "docs/notes.md");
 		assert.match(result.details.files[0].diff, /new file mode 100644/);
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
+test("list_changed_files and read_diff handle paths containing b-slash tokens", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createWeirdPathDiffFixture();
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const listed = await tool.execute("call-3b", { action: "list_changed_files" });
+		assert.equal(listed.isError, undefined);
+		assert.deepEqual(listed.details.files, [
+			{ path: "docs/foo b/bar.md", status: "modified", oldPath: undefined, additions: 1, deletions: 1 },
+		]);
+
+		const diff = await tool.execute("call-3c", {
+			action: "read_diff",
+			path: "docs/foo b/bar.md",
+		});
+		assert.equal(diff.isError, undefined);
+		assert.equal(diff.details.files[0].path, "docs/foo b/bar.md");
 	} finally {
 		restoreEnv();
 		fixture.cleanup();
@@ -221,6 +306,32 @@ test("search_repo scopes hits to the workspace", async () => {
 				excerpt: "    # guard rail",
 			},
 		]);
+		assert.equal(result.details.truncated, false);
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
+test("search_repo respects pathPrefix scoping", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createReviewRunFixture();
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const result = await tool.execute("call-4b", {
+			action: "search_repo",
+			query: "line",
+			pathPrefix: "docs",
+			limit: 10,
+		});
+		assert.equal(result.isError, undefined);
+		assert.deepEqual(result.details.results, [
+			{ path: "docs/notes.md", line: 1, excerpt: "line one" },
+			{ path: "docs/notes.md", line: 2, excerpt: "line two" },
+			{ path: "docs/notes.md", line: 3, excerpt: "line three" },
+		]);
+		assert.equal(result.details.truncated, false);
 	} finally {
 		restoreEnv();
 		fixture.cleanup();
@@ -243,6 +354,26 @@ test("repo_read rejects missing envs and escaping paths", async () => {
 		});
 		assert.equal(escaped.isError, true);
 		assert.match(String(escaped.details.error), /path escapes workspace root/);
+
+		const outsideDir = path.join(path.dirname(fixture.reviewRunPath), "outside");
+		fs.mkdirSync(outsideDir, { recursive: true });
+		fs.writeFileSync(path.join(outsideDir, "secret.txt"), "classified\n", "utf8");
+		fs.symlinkSync(outsideDir, path.join(path.dirname(fixture.reviewRunPath), "workspace", "escape-dir"));
+
+		const escapedSymlinkFile = await tool.execute("call-7", {
+			action: "read_file",
+			path: "escape-dir/secret.txt",
+		});
+		assert.equal(escapedSymlinkFile.isError, true);
+		assert.match(String(escapedSymlinkFile.details.error), /path escapes workspace root/);
+
+		const escapedSymlinkSearch = await tool.execute("call-8", {
+			action: "search_repo",
+			query: "classified",
+			pathPrefix: "escape-dir",
+		});
+		assert.equal(escapedSymlinkSearch.isError, true);
+		assert.match(String(escapedSymlinkSearch.details.error), /path escapes workspace root/);
 	} finally {
 		restoreEnv();
 		fixture.cleanup();

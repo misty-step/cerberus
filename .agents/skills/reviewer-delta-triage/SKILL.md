@@ -10,7 +10,7 @@ Analyze one PR review surface and convert reviewer disagreement into a clear Cer
 
 ## Workflow
 
-1. Collect the PR review surface with `scripts/collect_pr_review_surface.py`.
+1. Collect the PR review surface with `.agents/skills/reviewer-delta-triage/scripts/collect_pr_review_surface.py`.
 2. Read both issue comments and review bodies.
 3. Identify the Cerberus lane first:
    - `PASS`
@@ -91,4 +91,4 @@ python3 .agents/skills/reviewer-delta-triage/scripts/collect_pr_review_surface.p
 
 ## Resource
 
-- Collector: `scripts/collect_pr_review_surface.py`
+- Collector: `.agents/skills/reviewer-delta-triage/scripts/collect_pr_review_surface.py`
