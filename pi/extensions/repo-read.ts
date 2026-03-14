@@ -127,13 +127,17 @@ function parseHeaderPaths(header: string): { oldPath: string; newPath: string } 
 	}
 	const rest = header.slice(prefix.length);
 	let offset = 0;
+	let fallback: { oldPath: string; newPath: string } | null = null;
 	while (true) {
 		const separatorIndex = rest.indexOf(" b/", offset);
 		if (separatorIndex === -1) {
-			return null;
+			return fallback;
 		}
 		const oldPath = rest.slice(0, separatorIndex);
 		const newPath = rest.slice(separatorIndex + 3);
+		if (!fallback) {
+			fallback = { oldPath, newPath };
+		}
 		if (oldPath === newPath) {
 			return { oldPath, newPath };
 		}

@@ -174,6 +174,44 @@ function createWeirdPathDiffFixture() {
 	};
 }
 
+function createRenameDiffFixture() {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "cerberus-repo-read-rename-"));
+	const workspaceRoot = path.join(root, "workspace");
+	fs.mkdirSync(path.join(workspaceRoot, "docs"), { recursive: true });
+	fs.writeFileSync(path.join(workspaceRoot, "docs", "new.md"), "renamed\n", "utf8");
+	const diffPath = path.join(root, "pr.diff");
+	fs.writeFileSync(
+		diffPath,
+		[
+			"diff --git a/docs/old.md b/docs/new.md",
+			"similarity index 100%",
+			"rename from docs/old.md",
+			"rename to docs/new.md",
+			"",
+		].join("\n"),
+		"utf8",
+	);
+	const reviewRunPath = path.join(root, "review-run.json");
+	fs.writeFileSync(
+		reviewRunPath,
+		JSON.stringify(
+			{
+				diff_file: diffPath,
+				workspace_root: workspaceRoot,
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	return {
+		reviewRunPath,
+		cleanup() {
+			fs.rmSync(root, { recursive: true, force: true });
+		},
+	};
+}
+
 test("list_changed_files returns parsed diff metadata", async () => {
 	const tool = await createRegisteredTool();
 	const fixture = createReviewRunFixture();
@@ -276,6 +314,31 @@ test("list_changed_files and read_diff handle paths containing b-slash tokens", 
 		});
 		assert.equal(diff.isError, undefined);
 		assert.equal(diff.details.files[0].path, "docs/foo b/bar.md");
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
+test("list_changed_files preserves renamed files", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createRenameDiffFixture();
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const listed = await tool.execute("call-3d", { action: "list_changed_files" });
+		assert.equal(listed.isError, undefined);
+		assert.deepEqual(listed.details.files, [
+			{ path: "docs/new.md", status: "renamed", oldPath: "docs/old.md", additions: 0, deletions: 0 },
+		]);
+
+		const diff = await tool.execute("call-3e", {
+			action: "read_diff",
+			path: "docs/old.md",
+		});
+		assert.equal(diff.isError, undefined);
+		assert.equal(diff.details.files[0].path, "docs/new.md");
+		assert.equal(diff.details.files[0].oldPath, "docs/old.md");
 	} finally {
 		restoreEnv();
 		fixture.cleanup();
