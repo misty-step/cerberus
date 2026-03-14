@@ -134,20 +134,23 @@ def test_eval_config_contains_blocked_retry_loop_fixture() -> None:
 
 
 def test_lifecycle_recall_fixtures_assert_correctness_findings() -> None:
-    descriptions = [
-        "Correctness - Sticky Flag Downgrade Recall",
-        "Correctness - Blocked Retry Loop Recall",
-    ]
+    sticky = _fixture("Correctness - Sticky Flag Downgrade Recall")
+    sticky_js = _javascript_assertions(sticky)
+    assert any("output.verdict === 'FAIL'" in v for v in sticky_js), (
+        "Sticky Flag fixture must assert FAIL verdict"
+    )
+    assert any(
+        "flag" in v.lower() or "sticky" in v.lower() or "downgrad" in v.lower()
+        for v in sticky_js
+    ), "Sticky Flag fixture must assert flag/sticky/downgrade signal in findings"
 
-    for description in descriptions:
-        fixture = _fixture(description)
-        js = _javascript_assertions(fixture)
-        assert any("output.verdict === 'FAIL'" in v for v in js), (
-            f"{description} must assert FAIL verdict"
-        )
-        assert any(
-            "flag" in v.lower() or "sticky" in v.lower()
-            or "loop" in v.lower() or "retry" in v.lower()
-            or "downgrad" in v.lower() or "lifecycle" in v.lower()
-            for v in js
-        ), f"{description} must assert lifecycle-related signal in findings"
+    retry = _fixture("Correctness - Blocked Retry Loop Recall")
+    retry_js = _javascript_assertions(retry)
+    assert any("output.verdict === 'FAIL'" in v for v in retry_js), (
+        "Blocked Retry Loop fixture must assert FAIL verdict"
+    )
+    assert any(
+        "loop" in v.lower() or "retry" in v.lower() or "requeue" in v.lower()
+        or "unbounded" in v.lower() or "infinite" in v.lower()
+        for v in retry_js
+    ), "Blocked Retry Loop fixture must assert loop/retry signal in findings"
