@@ -517,7 +517,21 @@ def validate(obj: dict) -> None:
 
     if not isinstance(obj["confidence"], (int, float)):
         fail("confidence must be number")
-    if obj["confidence"] < 0 or obj["confidence"] > 1:
+    confidence = obj["confidence"]
+    if (
+        isinstance(confidence, (int, float))
+        and confidence > 1
+        and confidence <= 100
+        and float(confidence).is_integer()
+    ):
+        normalized_confidence = float(confidence) / 100.0
+        print(
+            f"parse-review: normalized confidence percentage {int(confidence)} to {normalized_confidence:.2f}",
+            file=sys.stderr,
+        )
+        obj["confidence"] = normalized_confidence
+        confidence = normalized_confidence
+    if confidence < 0 or confidence > 1:
         fail("confidence out of range")
 
     if not isinstance(obj["findings"], list):

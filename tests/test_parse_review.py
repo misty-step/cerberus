@@ -218,6 +218,19 @@ class TestParseErrors:
         assert data["verdict"] == "SKIP"  # Parse failures are non-blocking
         assert data["confidence"] == 0.0
 
+    def test_confidence_percent_is_normalized(self):
+        percent_confidence = json.dumps({
+            "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+            "confidence": 100, "summary": "test", "findings": [],
+            "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, err = run_parse(f"```json\n{percent_confidence}\n```")
+        assert code == 0
+        data = json.loads(out)
+        assert data["verdict"] == "PASS"
+        assert data["confidence"] == 1.0
+        assert "normalized confidence percentage 100" in err.lower()
+
     def test_uses_last_json_block(self):
         """When multiple json blocks exist, should use the last one."""
         first = json.dumps({"not": "valid"})
