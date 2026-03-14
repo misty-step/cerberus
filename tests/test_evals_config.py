@@ -143,6 +143,9 @@ def test_lifecycle_recall_fixtures_assert_correctness_findings() -> None:
         "flag" in v.lower() or "sticky" in v.lower() or "downgrad" in v.lower()
         for v in sticky_js
     ), "Sticky Flag fixture must assert flag/sticky/downgrade signal in findings"
+    assert any(
+        "failure|error|later" in v for v in sticky_js
+    ), "Sticky Flag fixture must also assert failure/error/later context in findings"
 
     retry = _fixture("Correctness - Blocked Retry Loop Recall")
     retry_js = _javascript_assertions(retry)
@@ -154,3 +157,6 @@ def test_lifecycle_recall_fixtures_assert_correctness_findings() -> None:
         or "unbounded" in v.lower() or "infinite" in v.lower()
         for v in retry_js
     ), "Blocked Retry Loop fixture must assert loop/retry signal in findings"
+    assert any(
+        "block|stuck|never" in v for v in retry_js
+    ), "Blocked Retry Loop fixture must also assert block/stuck/never context in findings"

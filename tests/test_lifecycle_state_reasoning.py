@@ -61,7 +61,6 @@ def test_correctness_prompt_covers_phase_gate_reevaluation() -> None:
 def test_correctness_prompt_lifecycle_section_includes_named_patterns() -> None:
     """The section should include concrete named patterns — not just abstract guidance."""
     text = _correctness_text()
-    # At least two concrete pattern descriptions
     lifecycle_section = _extract_section(text, "Lifecycle State Reasoning")
     assert lifecycle_section, "Could not find Lifecycle State Reasoning section"
     # Should have at least pattern recognition examples
