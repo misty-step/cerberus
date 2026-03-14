@@ -34,6 +34,7 @@ const MAX_FILE_LIMIT = 100;
 const MAX_RESULTS_LIMIT = 100;
 const MAX_FILE_LINES = 200;
 const MAX_DIFF_FILES = 20;
+const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
 const IGNORED_DIRECTORIES = new Set([
 	".git",
 	".hg",
@@ -154,16 +155,13 @@ function parseChangedFiles(diffText: string): ChangedFile[] {
 		const lines = text.split("\n");
 		const header = lines[0] || "";
 		const headerPaths = parseHeaderPaths(header);
-		if (!headerPaths) {
-			continue;
-		}
-
-		let oldPath = headerPaths.oldPath;
-		let newPath = headerPaths.newPath;
+		let oldPath = headerPaths?.oldPath;
+		let newPath = headerPaths?.newPath;
 		let status: ChangedFile["status"] = "modified";
 		let additions = 0;
 		let deletions = 0;
 
+		// Treat structured diff markers as the source of truth and keep header parsing as fallback.
 		for (const line of lines.slice(1)) {
 			if (line.startsWith("new file mode ")) {
 				status = "added";
@@ -183,6 +181,9 @@ function parseChangedFiles(diffText: string): ChangedFile[] {
 			} else if (line.startsWith("-") && !line.startsWith("---")) {
 				deletions += 1;
 			}
+		}
+		if (!oldPath || !newPath) {
+			continue;
 		}
 
 		files.push({
@@ -219,6 +220,9 @@ function buildFileSlice(
 		throw new Error(`startLine ${startLine} exceeds file length (${lines.length} lines)`);
 	}
 	const requestedEndLine = Math.trunc(Number(endLineRaw ?? startLine + MAX_FILE_LINES - 1));
+	if (endLineRaw !== undefined && requestedEndLine < startLine) {
+		throw new Error(`endLine ${requestedEndLine} must be >= startLine ${startLine}`);
+	}
 	const endLine = Math.min(lines.length, Math.max(startLine, requestedEndLine));
 	if (endLine - startLine + 1 > MAX_FILE_LINES) {
 		throw new Error(`read_file may return at most ${MAX_FILE_LINES} lines`);
@@ -264,17 +268,29 @@ function searchRepo(
 		if (results.length >= limit) {
 			return;
 		}
+		if (entry.isSymbolicLink()) {
+			continue;
+		}
+		const absolutePath = path.join(rootPath, entry.name);
 		if (entry.isDirectory()) {
 			if (shouldIgnoreEntry(entry.name)) {
 				continue;
 			}
-			searchRepo(path.join(rootPath, entry.name), query, limit, results);
+			searchRepo(absolutePath, query, limit, results);
 			continue;
 		}
 		if (!entry.isFile()) {
 			continue;
 		}
-		const absolutePath = path.join(rootPath, entry.name);
+		let stats: fs.Stats;
+		try {
+			stats = fs.statSync(absolutePath);
+		} catch {
+			continue;
+		}
+		if (stats.size > MAX_SEARCH_FILE_BYTES) {
+			continue;
+		}
 		let text = "";
 		try {
 			text = fs.readFileSync(absolutePath, "utf8");
@@ -373,20 +389,20 @@ export default function repoReadExtension(pi: ExtensionAPI) {
 					const searchRoot = params.pathPrefix
 						? resolveWorkspacePath(
 								reviewRun.workspace_root,
-					requireRelativePath(params.pathPrefix, "pathPrefix"),
-								)
-							: path.resolve(reviewRun.workspace_root);
-						const results: Array<{ path: string; line: number; excerpt: string }> = [];
-						searchRepo(searchRoot, query, limit + 1, results);
-						const truncated = results.length > limit;
-						const payload = {
-							results: results.slice(0, limit).map((result) => ({
-								path: repoRelativePath(reviewRun.workspace_root, result.path),
-								line: result.line,
-								excerpt: result.excerpt,
-							})),
-							truncated,
-						};
+								requireRelativePath(params.pathPrefix, "pathPrefix"),
+							)
+						: path.resolve(reviewRun.workspace_root);
+					const results: Array<{ path: string; line: number; excerpt: string }> = [];
+					searchRepo(searchRoot, query, limit + 1, results);
+					const truncated = results.length > limit;
+					const payload = {
+						results: results.slice(0, limit).map((result) => ({
+							path: repoRelativePath(reviewRun.workspace_root, result.path),
+							line: result.line,
+							excerpt: result.excerpt,
+						})),
+						truncated,
+					};
 					return {
 						content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
 						details: payload,

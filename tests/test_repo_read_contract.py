@@ -45,6 +45,7 @@ def test_read_file_contract_is_bounded_and_repo_relative() -> None:
     assert "repository-relative" in TEXT
     assert "path escapes workspace root" in TEXT
     assert "read_file may return at most " in TEXT
+    assert "must be >= startLine" in TEXT
 
 
 def test_list_changed_files_and_diff_contract_use_diff_artifact() -> None:
@@ -57,6 +58,8 @@ def test_search_repo_contract_requires_query_and_path_prefix_guardrails() -> Non
     assert 'throw new Error("query is required for search_repo")' in TEXT
     assert 'pathPrefix' in TEXT
     assert "IGNORED_DIRECTORIES" in TEXT
+    assert "entry.isSymbolicLink()" in TEXT
+    assert "MAX_SEARCH_FILE_BYTES" in TEXT
 
 
 def test_error_payload_contract() -> None:

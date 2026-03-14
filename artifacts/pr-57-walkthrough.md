@@ -17,7 +17,7 @@ Give reviewer runtimes a typed, read-only local repo context broker so they can 
   - `read_file`
   - `read_diff`
   - `search_repo`
-- The broker now rejects out-of-bounds `read_file` slices, blocks symlink escapes under `workspace_root`, preserves diff paths containing the token ` b/`, and keeps rename headers in the changed-file set.
+- The broker now rejects out-of-bounds `read_file` ranges on both ends, skips symlinked entries during repo search, bounds search reads to smaller text files, preserves diff paths containing the token ` b/`, and keeps rename headers in the changed-file set.
 - `defaults/reviewer-profiles.yml` now loads `repo_read` alongside `github_read` in the shared reviewer runtime contract.
 - `templates/review-prompt.md` now tells reviewers to use `repo_read` for local context and `github_read` for GitHub discussion context.
 - Contract tests lock the extension surface and the profile/prompt wiring.
@@ -31,7 +31,7 @@ Give reviewer runtimes a typed, read-only local repo context broker so they can 
   - Outcome before the final lint fix: `F541 f-string without any placeholders` in `tests/test_repo_read_contract.py`
 - GREEN:
   - `npx -y tsx --test tests/extensions/github-read.test.ts tests/extensions/repo-read.test.ts`
-  - Outcome: `15 tests, 15 passed`
+  - Outcome: `18 tests, 18 passed`
   - `python3 -m pytest tests/test_reviewer_profiles.py tests/test_github_platform.py tests/test_review_prompt_project_context.py -q`
   - Outcome: `66 passed`
   - `python3 -m pytest tests/test_repo_read_contract.py tests/test_reviewer_profiles.py tests/test_review_prompt_project_context.py -q`

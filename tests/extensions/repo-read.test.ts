@@ -174,19 +174,19 @@ function createWeirdPathDiffFixture() {
 	};
 }
 
-function createRenameDiffFixture() {
+function createRenameDiffFixture(oldPath = "docs/old.md", newPath = "docs/new.md") {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "cerberus-repo-read-rename-"));
 	const workspaceRoot = path.join(root, "workspace");
-	fs.mkdirSync(path.join(workspaceRoot, "docs"), { recursive: true });
-	fs.writeFileSync(path.join(workspaceRoot, "docs", "new.md"), "renamed\n", "utf8");
+	fs.mkdirSync(path.join(workspaceRoot, path.dirname(newPath)), { recursive: true });
+	fs.writeFileSync(path.join(workspaceRoot, newPath), "renamed\n", "utf8");
 	const diffPath = path.join(root, "pr.diff");
 	fs.writeFileSync(
 		diffPath,
 		[
-			"diff --git a/docs/old.md b/docs/new.md",
+			`diff --git a/${oldPath} b/${newPath}`,
 			"similarity index 100%",
-			"rename from docs/old.md",
-			"rename to docs/new.md",
+			`rename from ${oldPath}`,
+			`rename to ${newPath}`,
 			"",
 		].join("\n"),
 		"utf8",
@@ -345,6 +345,31 @@ test("list_changed_files preserves renamed files", async () => {
 	}
 });
 
+test("list_changed_files preserves renamed files whose paths contain b-slash tokens", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createRenameDiffFixture("docs/foo b/old.md", "docs/foo b/new.md");
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const listed = await tool.execute("call-3f", { action: "list_changed_files" });
+		assert.equal(listed.isError, undefined);
+		assert.deepEqual(listed.details.files, [
+			{ path: "docs/foo b/new.md", status: "renamed", oldPath: "docs/foo b/old.md", additions: 0, deletions: 0 },
+		]);
+
+		const diff = await tool.execute("call-3g", {
+			action: "read_diff",
+			path: "docs/foo b/old.md",
+		});
+		assert.equal(diff.isError, undefined);
+		assert.equal(diff.details.files[0].path, "docs/foo b/new.md");
+		assert.equal(diff.details.files[0].oldPath, "docs/foo b/old.md");
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
 test("search_repo scopes hits to the workspace", async () => {
 	const tool = await createRegisteredTool();
 	const fixture = createReviewRunFixture();
@@ -401,6 +426,26 @@ test("search_repo respects pathPrefix scoping", async () => {
 	}
 });
 
+test("read_file rejects endLine values below startLine", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createReviewRunFixture();
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const result = await tool.execute("call-4c", {
+			action: "read_file",
+			path: "docs/notes.md",
+			startLine: 3,
+			endLine: 2,
+		});
+		assert.equal(result.isError, true);
+		assert.match(String(result.details.error), /endLine 2 must be >= startLine 3/);
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
 test("repo_read rejects missing envs and escaping paths", async () => {
 	const tool = await createRegisteredTool();
 
@@ -437,6 +482,44 @@ test("repo_read rejects missing envs and escaping paths", async () => {
 		});
 		assert.equal(escapedSymlinkSearch.isError, true);
 		assert.match(String(escapedSymlinkSearch.details.error), /path escapes workspace root/);
+	} finally {
+		restoreEnv();
+		fixture.cleanup();
+	}
+});
+
+test("search_repo skips nested symlinks and oversized files", async () => {
+	const tool = await createRegisteredTool();
+	const fixture = createReviewRunFixture();
+	const restoreEnv = withEnv({ CERBERUS_REVIEW_RUN: fixture.reviewRunPath });
+
+	try {
+		const workspaceRoot = path.join(path.dirname(fixture.reviewRunPath), "workspace");
+		const outsideDir = path.join(path.dirname(fixture.reviewRunPath), "outside");
+		fs.mkdirSync(outsideDir, { recursive: true });
+		fs.writeFileSync(path.join(outsideDir, "secret.txt"), "classified\n", "utf8");
+		fs.symlinkSync(path.join(outsideDir, "secret.txt"), path.join(workspaceRoot, "docs", "linked-secret.txt"));
+		fs.writeFileSync(
+			path.join(workspaceRoot, "docs", "huge.txt"),
+			`${"A".repeat(1024 * 1024)} oversized-token\n`,
+			"utf8",
+		);
+
+		const symlinkResult = await tool.execute("call-9", {
+			action: "search_repo",
+			query: "classified",
+			limit: 10,
+		});
+		assert.equal(symlinkResult.isError, undefined);
+		assert.deepEqual(symlinkResult.details.results, []);
+
+		const largeFileResult = await tool.execute("call-10", {
+			action: "search_repo",
+			query: "oversized-token",
+			limit: 10,
+		});
+		assert.equal(largeFileResult.isError, undefined);
+		assert.deepEqual(largeFileResult.details.results, []);
 	} finally {
 		restoreEnv();
 		fixture.cleanup();
