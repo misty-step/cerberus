@@ -33,26 +33,29 @@ def test_correctness_prompt_has_lifecycle_state_reasoning_section() -> None:
 def test_correctness_prompt_requires_phase_flag_audit() -> None:
     """The prompt must force the reviewer to ask what flags become sticky after
     each milestone and whether later handlers can misclassify because of them."""
-    text = _correctness_text()
-    assert "flag" in text.lower() or "boolean" in text.lower()
-    assert "later" in text.lower() or "downstream" in text.lower()
-    assert "misclassif" in text.lower() or "downgrad" in text.lower()
+    section = _extract_section(_correctness_text(), "Lifecycle State Reasoning")
+    assert section, "Could not find Lifecycle State Reasoning section"
+    assert "flag" in section.lower() or "boolean" in section.lower()
+    assert "later" in section.lower() or "downstream" in section.lower()
+    assert "misclassif" in section.lower() or "downgrad" in section.lower()
 
 
 def test_correctness_prompt_covers_retry_requeue_loops() -> None:
     """The prompt must flag loops that re-queue blocked work forever when a
     phase gate never transitions."""
-    text = _correctness_text()
-    assert "re-queue" in text.lower() or "requeue" in text.lower() or "retry loop" in text.lower()
-    assert "forever" in text.lower() or "infinite" in text.lower() or "unbounded" in text.lower()
+    section = _extract_section(_correctness_text(), "Lifecycle State Reasoning")
+    assert section, "Could not find Lifecycle State Reasoning section"
+    assert "re-queue" in section.lower() or "requeue" in section.lower() or "retry loop" in section.lower()
+    assert "forever" in section.lower() or "infinite" in section.lower() or "unbounded" in section.lower()
 
 
 def test_correctness_prompt_covers_phase_gate_reevaluation() -> None:
     """Phase gates that evaluate once and cache the result must be flagged when
     the underlying condition can change."""
-    text = _correctness_text()
-    assert "phase" in text.lower()
-    assert "re-evaluat" in text.lower() or "stale" in text.lower()
+    section = _extract_section(_correctness_text(), "Lifecycle State Reasoning")
+    assert section, "Could not find Lifecycle State Reasoning section"
+    assert "phase" in section.lower()
+    assert "re-evaluat" in section.lower() or "stale" in section.lower()
 
 
 def test_correctness_prompt_includes_cross_language_lifecycle_examples() -> None:
