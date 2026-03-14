@@ -1236,7 +1236,8 @@ def test_unknown_error_with_scratchpad_only_skips(tmp_path: Path) -> None:
         text=True,
         timeout=30,
     )
-    # Scratchpad content = evidence of API interaction -> should SKIP.
+    # Scratchpad content = evidence of API interaction -> should SKIP after the full retry budget.
+    assert retry_counter.read_text() == "4"
     assert result.returncode == 0
     assert "Unknown API/runtime error detected. Writing error verdict." in result.stdout
 

@@ -688,15 +688,14 @@ def main(argv: list[str]) -> int:
                 run_completed = True
                 break
 
-            max_for_type = MAX_RETRIES
-            if detected_error_type in {"transient", "unknown"} and retry_count < max_for_type:
+            if detected_error_type in {"transient", "unknown"} and retry_count < MAX_RETRIES:
                 retry_count += 1
                 wait_seconds = default_backoff_seconds(retry_count)
                 if detected_error_class == "rate_limit" and detected_retry_after and detected_retry_after > 0:
                     wait_seconds = detected_retry_after
                 print(
                     f"Retrying {detected_error_type} error "
-                    f"(class={detected_error_class}) attempt {retry_count}/{max_for_type}; wait={wait_seconds}s"
+                    f"(class={detected_error_class}) attempt {retry_count}/{MAX_RETRIES}; wait={wait_seconds}s"
                 )
                 maybe_sleep(wait_seconds)
                 continue
