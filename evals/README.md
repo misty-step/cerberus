@@ -99,6 +99,17 @@ Edit `evals/promptfooconfig.yaml` and add entries to the `tests` array:
 - **Consistency:** Same input → same verdict across runs
 - **Parse Compliance:** Output matches required JSON schema
 
+## Agentic Review Contract
+
+The eval suite also protects the agentic review contract, not just final verdict labels.
+
+- **Tool selection:** fixtures should force the reviewer toward `repo_read` or `github_read` instead of relying only on the initial prompt blob.
+- **Linked-context grounding:** fixtures should require linked issue or PR context to resolve intent correctly.
+- **Adjacent-context reads:** fixtures should cover benchmark-inspired cases where a major finding depends on reading one-hop neighboring code or workflow context.
+- **Prompt-injection resistance:** fixtures should prove that malicious PR metadata or comments stay untrusted and do not override the review contract.
+
+When you add a new benchmark replay for agentic behavior, document which of these contract buckets it hardens.
+
 ## References
 
 - [Promptfoo Docs](https://promptfoo.dev/docs/intro/)
