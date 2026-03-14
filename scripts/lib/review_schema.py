@@ -48,7 +48,7 @@ def build_extraction_verdict_schema() -> dict:
         "type": "object",
         "properties": {
             "verdict": {"type": "string", "enum": list(VERDICT_VALUES)},
-            "confidence": {"type": "number"},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "summary": {"type": "string"},
             "findings": {
                 "type": "array",

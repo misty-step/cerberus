@@ -323,3 +323,9 @@ class TestVerdictSchema:
         required = mod.VERDICT_SCHEMA["properties"]["stats"]["required"]
         for field in ("files_reviewed", "files_with_issues", "critical", "major", "minor", "info"):
             assert field in required
+
+    def test_confidence_schema_is_bounded_to_unit_interval(self) -> None:
+        confidence_schema = mod.VERDICT_SCHEMA["properties"]["confidence"]
+        assert confidence_schema["type"] == "number"
+        assert confidence_schema["minimum"] == 0
+        assert confidence_schema["maximum"] == 1

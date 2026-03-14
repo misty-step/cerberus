@@ -40,6 +40,7 @@ def test_backlog_tracks_current_benchmark_workstreams() -> None:
         "`P1` Adjacent-regression detection": "#336",
         "`P1` Benchmark loop": "#332",
         "`P1` Reviewer presence / self-dogfood coverage": "#375",
+        "`P1` Reviewer context retrieval": "#57",
     }
 
     section_pattern = re.compile(
