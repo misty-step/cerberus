@@ -71,16 +71,20 @@ Cloud repo: `https://github.com/misty-step/cerberus-cloud`.
   - Catch deleted workflows, weakened CI gates, and non-obvious neighboring-file regressions.
 - `P1` Benchmark loop
   - Tracking: `#332`
-  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-08-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`
+  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-08-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-14-org-scorecard.md`
   - Weekly org-wide reviewer scorecard.
   - Durable agent-agnostic skill in `.agents/skills/reviewer-benchmark/`.
   - Hypothesis log plus experiment backlog tied to concrete misses.
 - `P1` Reviewer presence / self-dogfood coverage
   - Tracking: `#375`
-  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`
+  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-14-org-scorecard.md`
   - Cerberus must run consistently enough on core repos for the benchmark to distinguish absence from recall failure.
   - Treat low Cerberus presence on `cerberus` and `gitpulse` as an operational reliability issue.
 - `P1` Reviewer context retrieval
+  - Tracking: `#57`
+  - Benchmark evidence: `cerberus#383`, `docs/reviewer-benchmark/2026-03-14-org-scorecard.md`
+  - Typed local and GitHub context retrieval must improve reviewer quality without weakening workspace/security boundaries.
+  - Keep `repo_read` / `github_read` explicit and bounded.
   - Pull prior review comments, author fix summaries, and linked acceptance criteria into reviewer context by default.
 - `P1` Terminology and contract alignment
   - Keep one canonical vocabulary for review objects in `docs/TERMINOLOGY.md`.
