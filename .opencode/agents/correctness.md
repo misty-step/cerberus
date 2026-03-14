@@ -176,7 +176,7 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Security bug that is also a logic bug → yours (flag the logic aspect)
 - Security exploit without logic bug → guard (skip it)
 - Missing test for a correctness bug → proof (skip it)
-- Failure-path logic for dependency outages → fuse (skip it)
+- Failure-path logic for dependency outages → fuse (skip it); exception: unbounded retry/requeue loops with no max-attempt bound are correctness bugs (infinite loop) and belong here
 - Backward-compat break without logic bug → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 
