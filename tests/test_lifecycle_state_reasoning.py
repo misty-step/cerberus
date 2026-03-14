@@ -89,18 +89,41 @@ def test_resilience_prompt_covers_blocked_work_retry_storms() -> None:
 
 
 def _extract_section(text: str, heading: str) -> str:
-    """Extract the content of a markdown section by heading name."""
+    """Extract content between ``heading`` and the next top-level heading.
+
+    correctness.md uses plain-text headings (no ``#`` prefix).  A new section
+    starts on any line that exactly matches a known heading from the prompt.
+    """
+    _known_headings = {
+        "Identity",
+        "Primary Focus (always check)",
+        "Sentinel Error Tracing",
+        "Lifecycle State Reasoning",
+        "Secondary Focus (check if relevant)",
+        "Infrastructure Configuration Cross-Check (mandatory when deployment/config files change)",
+        "Consumer/Producer Data-Flow (mandatory when PR changes a consumer of shared data)",
+        "Error Propagation Chains (mandatory when a failing call is logged but execution continues)",
+        "Anti-Patterns (Do Not Flag)",
+        "Knowledge Boundaries",
+        "Deconfliction",
+        "Verdict Criteria",
+        "Review Discipline",
+        "Evidence (mandatory)",
+        "Output Format",
+        "Few-Shot Examples",
+        "JSON Schema",
+    }
+
     lines = text.split("\n")
     in_section = False
     section_lines: list[str] = []
     for line in lines:
-        if heading in line and line.strip().startswith("#") or heading in line and not in_section:
+        stripped = line.strip()
+        if stripped == heading:
             in_section = True
             continue
         if in_section:
-            # Stop at the next same-level or higher heading
-            stripped = line.strip()
-            if stripped.startswith("#") and not stripped.startswith("###"):
+            if stripped in _known_headings:
                 break
             section_lines.append(line)
     return "\n".join(section_lines)
