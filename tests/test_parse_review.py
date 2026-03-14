@@ -238,8 +238,21 @@ class TestParseErrors:
         assert code == 0
         data = json.loads(out)
         assert data["verdict"] == "PASS"
-        assert data["confidence"] == expected_confidence
+        assert data["confidence"] == pytest.approx(expected_confidence)
         assert f"normalized confidence percentage {raw_confidence}" in err.lower()
+
+    def test_confidence_percent_above_100_is_rejected(self):
+        percent_confidence = json.dumps({
+            "reviewer": "TEST", "perspective": "test", "verdict": "PASS",
+            "confidence": 101, "summary": "test", "findings": [],
+            "stats": {"files_reviewed": 1, "files_with_issues": 0, "critical": 0, "major": 0, "minor": 0, "info": 0}
+        })
+        code, out, err = run_parse(f"```json\n{percent_confidence}\n```")
+        assert code == 1
+        data = json.loads(out)
+        assert data["verdict"] == "SKIP"
+        assert data["confidence"] == 0.0
+        assert "confidence out of range" in err.lower()
 
     def test_uses_last_json_block(self):
         """When multiple json blocks exist, should use the last one."""
