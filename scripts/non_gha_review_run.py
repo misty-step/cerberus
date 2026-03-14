@@ -12,12 +12,14 @@ import time
 from pathlib import Path
 
 from lib.defaults_config import load_defaults_config
-from lib.github_platform import fetch_pr_context, fetch_pr_diff
-from lib.review_run_contract import GitHubExecutionContext, ReviewRunContract, write_review_run_contract
+from lib.review_run_bootstrap import (
+    fetch_pr_bootstrap,
+    write_pr_bootstrap_files,
+    write_review_run_bootstrap,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONTEXT_FIELDS = ["title", "author", "headRefName", "baseRefName", "body"]
 DEFAULT_REVIEW_TIMEOUT_SECONDS = 660
 DEFAULT_HELPER_TIMEOUT_SECONDS = 120
 
@@ -65,31 +67,6 @@ def positive_int_from_env(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
-
-
-def build_review_run(
-    *,
-    repo: str,
-    pr_number: int,
-    diff_path: Path,
-    pr_context_path: Path,
-    output_dir: Path,
-    token_env_var: str,
-) -> ReviewRunContract:
-    payload = json.loads(pr_context_path.read_text(encoding="utf-8"))
-    head_ref = str(payload.get("headRefName") or "").strip()
-    base_ref = str(payload.get("baseRefName") or "").strip()
-    return ReviewRunContract(
-        repository=repo,
-        pr_number=pr_number,
-        diff_file=str(diff_path),
-        pr_context_file=str(pr_context_path),
-        workspace_root=str(Path.cwd()),
-        temp_dir=str(output_dir),
-        head_ref=head_ref,
-        base_ref=base_ref,
-        github=GitHubExecutionContext(repo=repo, pr_number=pr_number, token_env_var=token_env_var),
-    )
 
 
 def run_command(
@@ -250,8 +227,7 @@ def main() -> int:
         return 2
 
     try:
-        diff = fetch_pr_diff(args.repo, args.pr)
-        pr_context = fetch_pr_context(args.repo, args.pr, fields=DEFAULT_CONTEXT_FIELDS)
+        diff, pr_context = fetch_pr_bootstrap(args.repo, args.pr)
     except Exception as exc:  # pragma: no cover - focused by unit tests through helpers
         print(f"non-gha-review-run: failed to fetch PR inputs: {exc}", file=sys.stderr)
         return 2
@@ -260,18 +236,20 @@ def main() -> int:
     pr_context_path = output_dir / "pr-context.json"
     review_run_path = output_dir / "review-run.json"
 
-    diff_path.write_text(diff, encoding="utf-8")
-    write_json(pr_context_path, pr_context)
-    write_review_run_contract(
-        review_run_path,
-        build_review_run(
-            repo=args.repo,
-            pr_number=args.pr,
-            diff_path=diff_path,
-            pr_context_path=pr_context_path,
-            output_dir=output_dir,
-            token_env_var=args.token_env_var,
-        ),
+    write_pr_bootstrap_files(
+        diff_file=diff_path,
+        pr_context_file=pr_context_path,
+        diff=diff,
+        pr_context=pr_context,
+    )
+    write_review_run_bootstrap(
+        output=review_run_path,
+        repo=args.repo,
+        pr_number=args.pr,
+        diff_file=diff_path,
+        pr_context_file=pr_context_path,
+        token_env_var=args.token_env_var,
+        pr_context=pr_context,
     )
 
     base_env = dict(os.environ)

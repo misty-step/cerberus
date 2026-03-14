@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
 
-from lib.review_run_contract import GitHubExecutionContext, ReviewRunContract, write_review_run_contract
+from lib.review_run_bootstrap import (
+    require_existing_file,
+    write_review_run_bootstrap,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,29 +28,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def require_existing_file(path: Path, label: str) -> None:
-    if not path.is_file():
-        raise FileNotFoundError(f"{label} file not found: {path}")
-
-
-def load_branch_refs(pr_context_file: Path) -> tuple[str, str]:
-    """Read head/base refs from the fetched PR context JSON."""
-
-    try:
-        payload = json.loads(pr_context_file.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise OSError(f"unable to read PR context file {pr_context_file}: {exc}") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid JSON in PR context file {pr_context_file}: {exc}") from exc
-
-    if not isinstance(payload, dict):
-        raise ValueError(f"invalid PR context file {pr_context_file}: expected object")
-
-    head_ref = str(payload.get("headRefName") or "").strip()
-    base_ref = str(payload.get("baseRefName") or "").strip()
-    return head_ref, base_ref
-
-
 def main() -> int:
     args = parse_args()
     diff_file = Path(args.diff_file)
@@ -59,23 +37,14 @@ def main() -> int:
     try:
         require_existing_file(diff_file, "diff")
         require_existing_file(pr_context_file, "PR context")
-        head_ref, base_ref = load_branch_refs(pr_context_file)
-        contract = ReviewRunContract(
-            repository=args.repo,
+        write_review_run_bootstrap(
+            output=output,
+            repo=args.repo,
             pr_number=args.pr,
-            diff_file=str(diff_file),
-            pr_context_file=str(pr_context_file),
-            workspace_root=os.getcwd(),
-            temp_dir=str(output.parent),
-            head_ref=head_ref,
-            base_ref=base_ref,
-            github=GitHubExecutionContext(
-                repo=args.repo,
-                pr_number=args.pr,
-                token_env_var=args.token_env_var,
-            ),
+            diff_file=diff_file,
+            pr_context_file=pr_context_file,
+            token_env_var=args.token_env_var,
         )
-        write_review_run_contract(output, contract)
     except (OSError, ValueError) as exc:
         print(f"bootstrap-review-run: {exc}", file=sys.stderr)
         return 2

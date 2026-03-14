@@ -35,8 +35,8 @@ bootstrap env wiring.
 
 The current action maps cleanly onto the contract:
 
-1. `action.yml` invokes `scripts/fetch-pr-bootstrap.py`, which fetches `pr.diff` and `pr-context.json` through `scripts/lib/github_platform.py`.
-2. `scripts/bootstrap-review-run.py` writes `review-run.json`.
+1. `action.yml` invokes `scripts/fetch-pr-bootstrap.py`, which fetches `pr.diff` and `pr-context.json` through `scripts/lib/github_platform.py` and persists them through `scripts/lib/review_run_bootstrap.py`.
+2. `scripts/bootstrap-review-run.py` writes `review-run.json` through the same shared bootstrap module.
 3. `scripts/run-reviewer.py` loads the contract, reads diff/context from it, and
    reconstructs GitHub runtime env for the isolated Pi process from
    `github.repo`, `github.pr_number`, and `github.token_env_var`.
@@ -57,7 +57,7 @@ python3 scripts/non_gha_review_run.py \
 This runner:
 
 1. fetches `pr.diff` and `pr-context.json` through `scripts/lib/github_platform.py`
-2. writes `review-run.json`
+2. writes `pr.diff`, `pr-context.json`, and `review-run.json` through `scripts/lib/review_run_bootstrap.py`
 3. runs the configured reviewers through `scripts/run-reviewer.sh`
 4. parses each reviewer verdict with `scripts/parse-review.py`
 5. aggregates the final verdict with `scripts/aggregate-verdict.py`

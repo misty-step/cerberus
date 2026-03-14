@@ -115,17 +115,19 @@ def test_enrich_verdict_metadata_records_runtime_model_and_description(monkeypat
 
 
 def test_main_runs_local_review_lane(monkeypatch, tmp_path: Path, capsys) -> None:
-    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
     monkeypatch.setattr(
         mod,
-        "fetch_pr_context",
-        lambda repo, pr_number, fields=None: {
-            "title": "PR",
-            "author": {"login": "dev"},
-            "headRefName": "feature/branch",
-            "baseRefName": "master",
-            "body": "desc",
-        },
+        "fetch_pr_bootstrap",
+        lambda repo, pr_number: (
+            "diff --git a b\n",
+            {
+                "title": "PR",
+                "author": {"login": "dev"},
+                "headRefName": "feature/branch",
+                "baseRefName": "master",
+                "body": "desc",
+            },
+        ),
     )
 
     commands: list[tuple[list[str], int]] = []
@@ -367,7 +369,11 @@ def test_main_returns_two_when_fetch_fails(monkeypatch, tmp_path: Path, capsys) 
         )(),
     )
     monkeypatch.setattr(mod, "selected_reviewers", lambda raw: ["trace"])
-    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        mod,
+        "fetch_pr_bootstrap",
+        lambda repo, pr_number: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     assert mod.main() == 2
     assert "failed to fetch PR inputs" in capsys.readouterr().err
@@ -390,11 +396,10 @@ def test_main_returns_two_when_pr_context_fetch_fails(monkeypatch, tmp_path: Pat
         )(),
     )
     monkeypatch.setattr(mod, "selected_reviewers", lambda raw: ["trace"])
-    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
     monkeypatch.setattr(
         mod,
-        "fetch_pr_context",
-        lambda repo, pr_number, fields=None: (_ for _ in ()).throw(RuntimeError("context boom")),
+        "fetch_pr_bootstrap",
+        lambda repo, pr_number: (_ for _ in ()).throw(RuntimeError("context boom")),
     )
 
     assert mod.main() == 2
@@ -402,17 +407,19 @@ def test_main_returns_two_when_pr_context_fetch_fails(monkeypatch, tmp_path: Pat
 
 
 def test_main_returns_one_when_verdict_file_is_missing(monkeypatch, tmp_path: Path, capsys) -> None:
-    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
     monkeypatch.setattr(
         mod,
-        "fetch_pr_context",
-        lambda repo, pr_number, fields=None: {
-            "title": "PR",
-            "author": {"login": "dev"},
-            "headRefName": "feature/branch",
-            "baseRefName": "master",
-            "body": "desc",
-        },
+        "fetch_pr_bootstrap",
+        lambda repo, pr_number: (
+            "diff --git a b\n",
+            {
+                "title": "PR",
+                "author": {"login": "dev"},
+                "headRefName": "feature/branch",
+                "baseRefName": "master",
+                "body": "desc",
+            },
+        ),
     )
 
     def fake_run_reviewer(*, perspective: str, output_dir: Path, base_env: dict[str, str]) -> None:
@@ -445,17 +452,19 @@ def test_main_returns_one_when_verdict_file_is_missing(monkeypatch, tmp_path: Pa
 
 
 def test_main_returns_one_when_run_reviewer_raises_value_error(monkeypatch, tmp_path: Path, capsys) -> None:
-    monkeypatch.setattr(mod, "fetch_pr_diff", lambda repo, pr_number: "diff --git a b\n")
     monkeypatch.setattr(
         mod,
-        "fetch_pr_context",
-        lambda repo, pr_number, fields=None: {
-            "title": "PR",
-            "author": {"login": "dev"},
-            "headRefName": "feature/branch",
-            "baseRefName": "master",
-            "body": "desc",
-        },
+        "fetch_pr_bootstrap",
+        lambda repo, pr_number: (
+            "diff --git a b\n",
+            {
+                "title": "PR",
+                "author": {"login": "dev"},
+                "headRefName": "feature/branch",
+                "baseRefName": "master",
+                "body": "desc",
+            },
+        ),
     )
     monkeypatch.setattr(
         mod,
