@@ -732,6 +732,94 @@ tests:
       - type: javascript
         value: "output.verdict === 'FAIL'"
 
+  - description: "Correctness - Sticky Flag Downgrade Recall"
+    vars:
+      pr_title: "Handle builder handoff cleanup"
+      pr_author: "developer"
+      head_branch: "fix/handoff-cleanup"
+      base_branch: "main"
+      pr_body: "Replay of bitterblossom#509 where builder_handoff_recorded could downgrade later real failures into cleanup warnings."
+      perspective: "correctness"
+      diff: |
+        +class BuildPipeline:
+        +    def __init__(self):
+        +        self.handoff_recorded = False
+        +
+        +    def record_handoff(self, builder_id):
+        +        self.handoff_recorded = True
+        +        self.builder_id = builder_id
+        +
+        +    def handle_build_failure(self, error):
+        +        if self.handoff_recorded:
+        +            # Treat as cleanup warning since handoff already succeeded
+        +            logger.warning(f"Post-handoff cleanup issue: {error}")
+        +            return {"status": "warning", "message": str(error)}
+        +        else:
+        +            logger.error(f"Build failed: {error}")
+        +            raise BuildError(error)
+        +
+        +    def run_phase(self, phase):
+        +        try:
+        +            result = phase.execute()
+        +            if phase.name == "handoff":
+        +                self.record_handoff(result.builder_id)
+        +            return result
+        +        except Exception as e:
+        +            return self.handle_build_failure(e)
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /flag|sticky|handoff|downgrad/.test(combined)
+              && /failure|error|later/.test(combined);
+          })()
+
+  - description: "Correctness - Blocked Retry Loop Recall"
+    vars:
+      pr_title: "Add blocked issue retry"
+      pr_author: "developer"
+      head_branch: "fix/blocked-retry"
+      base_branch: "main"
+      pr_body: "Replay of bitterblossom#477 where a blocked-issue retry loop could run forever when the blocking condition never resolves."
+      perspective: "correctness"
+      diff: |
+        +async function processBlockedIssues(queue) {
+        +    while (true) {
+        +        const issues = await queue.getBlocked();
+        +        for (const issue of issues) {
+        +            const deps = await checkDependencies(issue);
+        +            if (deps.allResolved) {
+        +                await queue.unblock(issue);
+        +            } else {
+        +                // Re-queue for next cycle
+        +                await queue.requeue(issue);
+        +            }
+        +        }
+        +        await sleep(5000);
+        +    }
+        +}
+    assert:
+      - type: javascript
+        value: "output.verdict === 'FAIL'"
+      - type: javascript
+        value: >-
+          (() => {
+            const findings = Array.isArray(output.findings) ? output.findings : [];
+            const combined = findings
+              .map(f => `${f?.category || ''} ${f?.title || ''} ${f?.description || ''}`)
+              .join(' ')
+              .toLowerCase();
+            return /loop|retry|requeue|unbounded|infinite|forever/.test(combined)
+              && /block|stuck|never/.test(combined);
+          })()
+
   - description: "Clean Code - No Issues"
     vars:
       pr_title: "Add simple function"

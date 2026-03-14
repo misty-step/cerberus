@@ -101,3 +101,53 @@ def test_async_side_effect_fixture_requires_both_leakage_and_async_signals() -> 
 
     assert "error|stack|prompt" in javascript
     assert "audit|async" in javascript
+
+
+# --- Lifecycle state reasoning recall cases (issue #335) ---
+
+
+def test_eval_config_contains_sticky_flag_downgrade_fixture() -> None:
+    """bitterblossom#509: builder_handoff_recorded could downgrade later real
+    failures into cleanup warnings."""
+    fixture = _fixture("Correctness - Sticky Flag Downgrade Recall")
+
+    assert fixture["vars"]["perspective"] == "correctness"
+    assert "bitterblossom#509" in fixture["vars"]["pr_body"]
+    diff = fixture["vars"]["diff"]
+    assert "handoff" in diff.lower() or "flag" in diff.lower()
+
+    js = _javascript_assertions(fixture)
+    assert any("output.verdict === 'FAIL'" in v for v in js)
+
+
+def test_eval_config_contains_blocked_retry_loop_fixture() -> None:
+    """bitterblossom#477: blocked-issue retry loop runs forever."""
+    fixture = _fixture("Correctness - Blocked Retry Loop Recall")
+
+    assert fixture["vars"]["perspective"] == "correctness"
+    assert "bitterblossom#477" in fixture["vars"]["pr_body"]
+    diff = fixture["vars"]["diff"]
+    assert "retry" in diff.lower() or "requeue" in diff.lower() or "loop" in diff.lower()
+
+    js = _javascript_assertions(fixture)
+    assert any("output.verdict === 'FAIL'" in v for v in js)
+
+
+def test_lifecycle_recall_fixtures_assert_correctness_findings() -> None:
+    descriptions = [
+        "Correctness - Sticky Flag Downgrade Recall",
+        "Correctness - Blocked Retry Loop Recall",
+    ]
+
+    for description in descriptions:
+        fixture = _fixture(description)
+        js = _javascript_assertions(fixture)
+        assert any("output.verdict === 'FAIL'" in v for v in js), (
+            f"{description} must assert FAIL verdict"
+        )
+        assert any(
+            "flag" in v.lower() or "sticky" in v.lower()
+            or "loop" in v.lower() or "retry" in v.lower()
+            or "downgrad" in v.lower() or "lifecycle" in v.lower()
+            for v in js
+        ), f"{description} must assert lifecycle-related signal in findings"
