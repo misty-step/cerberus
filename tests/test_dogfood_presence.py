@@ -87,15 +87,11 @@ def test_presence_check_script_exists() -> None:
 
 def test_presence_check_script_is_importable() -> None:
     """The script should define a classify_pr function we can test."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "check_dogfood_presence",
-        ROOT / "scripts" / "check-dogfood-presence.py",
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _import_script()
     assert hasattr(mod, "classify_pr"), "Script must define classify_pr()"
     assert hasattr(mod, "load_config"), "Script must define load_config()"
+    assert hasattr(mod, "classify_pr_from_checks"), "Script must define classify_pr_from_checks()"
+    assert hasattr(mod, "summarize_presence"), "Script must define summarize_presence()"
 
 
 def test_classify_pr_absent() -> None:
@@ -202,6 +198,34 @@ def test_classify_from_checks_missing_rollup_key() -> None:
     mod = _import_script()
     pr = {"number": 6}
     assert mod.classify_pr_from_checks(pr) == "absent"
+
+
+def test_classify_from_checks_null_rollup() -> None:
+    mod = _import_script()
+    pr = {"number": 7, "statusCheckRollup": None}
+    assert mod.classify_pr_from_checks(pr) == "absent"
+
+
+def test_classify_from_checks_cerberus_ran_but_no_reviewers() -> None:
+    """Cerberus ran (preflight succeeded) but no wave checks → skipped."""
+    mod = _import_script()
+    pr = {"number": 8, "statusCheckRollup": [
+        {"name": "review / Cerberus · preflight", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus", "conclusion": "SUCCESS"},
+    ]}
+    assert mod.classify_pr_from_checks(pr) == "skipped"
+
+
+def test_classify_pr_zero_reviewers_is_skipped() -> None:
+    """When Cerberus ran but total_reviewers=0, classify as skipped."""
+    mod = _import_script()
+    result = mod.classify_pr(
+        cerberus_workflow_ran=True,
+        preflight_skipped=False,
+        reviewer_skips=0,
+        total_reviewers=0,
+    )
+    assert result == "skipped"
 
 
 # --- summarize_presence tests ---

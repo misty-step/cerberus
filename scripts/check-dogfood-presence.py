@@ -46,6 +46,8 @@ def classify_pr(
         return "absent"
     if preflight_skipped:
         return "skipped"
+    if total_reviewers == 0:
+        return "skipped"
     if reviewer_skips > 0:
         return "present_with_skips"
     return "present_clean"
@@ -66,7 +68,7 @@ def _gh_json(args: list[str]) -> Any:  # pragma: no cover
 
 def classify_pr_from_checks(pr: dict[str, Any]) -> str:
     """Classify a single PR dict (with statusCheckRollup) into a presence bucket."""
-    checks = pr.get("statusCheckRollup", [])
+    checks = pr.get("statusCheckRollup") or []
 
     cerberus_checks = [
         c for c in checks
@@ -134,15 +136,20 @@ def check_repo_presence(  # pragma: no cover
     repo: str,
     window_days: int,
 ) -> dict[str, Any]:
-    """Check Cerberus presence on recent PRs for a repo.
+    """Check Cerberus presence on recent merged PRs for a repo.
 
-    Fetches PR data from GitHub and delegates to summarize_presence.
+    Fetches merged PRs from GitHub within the window and delegates to
+    summarize_presence.
     """
+    from datetime import datetime, timedelta, timezone
+
+    since = (datetime.now(timezone.utc) - timedelta(days=window_days)).strftime("%Y-%m-%d")
     prs = _gh_json([
         "pr", "list",
         "--repo", repo,
-        "--state", "all",
-        "--limit", "50",
+        "--state", "merged",
+        "--search", f"merged:>={since}",
+        "--limit", "100",
         "--json", "number,title,mergedAt,statusCheckRollup",
     ])
     return summarize_presence(repo, prs)
@@ -165,29 +172,19 @@ def main() -> None:  # pragma: no cover
         repo = entry["repo"]
         min_presence = entry["min_presence"]
 
-        try:
-            result = check_repo_presence(repo, window)
-            result["min_presence"] = min_presence
-            result["meets_target"] = result["presence_rate"] >= min_presence
-            results.append(result)
+        result = check_repo_presence(repo, window)
+        result["min_presence"] = min_presence
+        result["meets_target"] = result["presence_rate"] >= min_presence
+        results.append(result)
 
-            if not result["meets_target"]:
-                below_target.append(result)
-        except Exception as e:
-            results.append({
-                "repo": repo,
-                "error": str(e),
-                "meets_target": False,
-            })
-            below_target.append(results[-1])
+        if not result["meets_target"]:
+            below_target.append(result)
 
     if args.json:
-        print(json.dumps({"results": results, "all_meet_target": len(below_target) == 0}, indent=2))
+        output = {"results": results, "all_meet_target": len(below_target) == 0}
+        print(json.dumps(output, indent=2))
     else:
         for r in results:
-            if "error" in r:
-                print(f"  ERROR {r['repo']}: {r['error']}")
-                continue
             status = "OK" if r["meets_target"] else "BELOW TARGET"
             print(
                 f"  {status:>12}  {r['repo']:<35} "
@@ -196,11 +193,12 @@ def main() -> None:  # pragma: no cover
                 f"{r['total_prs']} PRs)"
             )
 
-        if below_target:
+    if below_target:
+        if not args.json:
             print(f"\n{len(below_target)} repo(s) below presence target.")
-            sys.exit(1)
-        else:
-            print("\nAll core repos meet presence targets.")
+        sys.exit(1)
+    elif not args.json:
+        print("\nAll core repos meet presence targets.")
 
 
 if __name__ == "__main__":
