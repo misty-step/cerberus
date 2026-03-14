@@ -132,20 +132,53 @@ jobs:
             patch-coverage.md
           retention-days: 30
 
+  elixir:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cerberus-elixir
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.19.5'
+          otp-version: '28.0'
+
+      - name: Cache mix artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            cerberus-elixir/deps
+            cerberus-elixir/_build
+          key: ${{ runner.os }}-elixir-${{ hashFiles('cerberus-elixir/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-elixir-
+
+      - name: Fetch Elixir deps
+        run: mix deps.get
+
+      - name: Compile scaffold
+        run: mix compile
+
+      - name: Run Elixir tests
+        run: mix test
+
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   merge-gate:
     name: merge-gate
-    needs: [lint, test]
+    needs: [lint, test, elixir]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: All checks passed
         run: |
           if [[ "${{ needs.lint.result }}" == "success" && \
-                "${{ needs.test.result }}" == "success" ]]; then
+                "${{ needs.test.result }}" == "success" && \
+                "${{ needs.elixir.result }}" == "success" ]]; then
             echo "merge-gate green"
           else
-            echo "merge-gate red (lint=${{ needs.lint.result }}, test=${{ needs.test.result }})"
+            echo "merge-gate red (lint=${{ needs.lint.result }}, test=${{ needs.test.result }}, elixir=${{ needs.elixir.result }})"
             exit 1
           fi
 

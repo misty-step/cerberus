@@ -1,7 +1,7 @@
 # Cerberus Makefile
 # Quality gates and common tasks
 
-.PHONY: setup test lint shellcheck validate help
+.PHONY: setup test lint shellcheck elixir-test validate help
 
 # Default target
 help:
@@ -14,7 +14,8 @@ help:
 	@echo "  make test       Run pytest suite"
 	@echo "  make lint       Run ruff on all Python files"
 	@echo "  make shellcheck Run shellcheck on all scripts"
-	@echo "  make validate   Run test + lint + shellcheck"
+	@echo "  make elixir-test Run the cerberus-elixir scaffold checks"
+	@echo "  make validate   Run test + lint + shellcheck + elixir-test"
 
 # One-command install for git hooks
 setup:
@@ -45,6 +46,16 @@ shellcheck:
 		exit 1; \
 	fi
 
-# Full local validation (test + lint + shellcheck)
-validate: test lint shellcheck
+# Run Elixir scaffold verification
+elixir-test:
+	@if command -v mix >/dev/null 2>&1; then \
+		echo "🔍 Running cerberus-elixir checks..."; \
+		cd cerberus-elixir && mix deps.get && mix compile && mix test; \
+	else \
+		echo "⚠ mix not installed. Install Elixir to validate cerberus-elixir"; \
+		exit 1; \
+	fi
+
+# Full local validation (test + lint + shellcheck + elixir-test)
+validate: test lint shellcheck elixir-test
 	@echo "✓ All validation checks passed"
