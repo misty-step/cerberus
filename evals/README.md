@@ -44,14 +44,14 @@ promptfoo eval --config evals/promptfooconfig.yaml --no-cache --max-concurrency 
 
 ## Test Cases
 
-The eval includes 31 test cases across 6 perspectives:
+The eval currently includes 40 test cases across 6 perspectives:
 
 | Perspective | Count | Description |
 |------------|-------|-------------|
-| security   | 5     | SQL injection, XSS, secrets, etc. |
-| correctness| 6     | Bugs, null pointers, logic errors |
+| security   | 9     | SQL injection, XSS, secrets, prompt injection, and fail-open defaults |
+| correctness| 9     | Bugs, null pointers, logic errors, linked-context grounding, and adjacent-context evidence paths |
 | performance| 5     | N+1 queries, memory leaks, I/O |
-| architecture| 5    | Coupling, interfaces, layering |
+| architecture| 7    | Coupling, interfaces, layering, workflow regressions, and tool-selection failures |
 | maintainability| 5 | Duplication, naming, docs |
 | testing    | 5     | Coverage, mocks, assertions |
 
@@ -98,6 +98,17 @@ Edit `evals/promptfooconfig.yaml` and add entries to the `tests` array:
 - **False Positive Rate:** Does clean code pass without findings?
 - **Consistency:** Same input → same verdict across runs
 - **Parse Compliance:** Output matches required JSON schema
+
+## Agentic Review Contract
+
+The eval suite also protects the agentic review contract, not just final verdict labels.
+
+- **Tool selection:** fixtures should force the reviewer toward `repo_read` or `github_read` instead of relying only on the initial prompt blob.
+- **Linked-context grounding:** fixtures should require linked issue or PR context to resolve intent correctly.
+- **Adjacent-context reads:** fixtures should cover benchmark-inspired cases where a major finding depends on reading one-hop neighboring code or workflow context.
+- **Prompt-injection resistance:** fixtures should prove that malicious PR metadata or comments stay untrusted and do not override the review contract.
+
+When you add a new benchmark replay for agentic behavior, document which of these contract buckets it hardens.
 
 ## References
 
