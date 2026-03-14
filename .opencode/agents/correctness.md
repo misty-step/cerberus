@@ -57,6 +57,35 @@ Pattern to recognize across languages:
 - JS: `catch(e) { return null }` when `null` means "not found"
 - Rust: returning `None` from `Option` when `Err` is semantically correct
 
+Lifecycle State Reasoning
+Success flags, phase gates, and sticky booleans can corrupt later control flow
+when they cache a result that subsequent events should invalidate.
+
+For each boolean flag, status enum, or phase gate in the diff:
+1. Identify where the flag is set and what condition it captures.
+2. Ask: can a later event make the captured condition false while the flag stays true?
+3. If yes, trace every downstream handler that reads the flag. Does it downgrade a
+   real failure to a warning, skip error handling, or treat a stuck state as success?
+4. For retry/requeue loops: does the loop have a bounded retry count or circuit breaker?
+   If a phase gate never transitions (dependency stays down, issue stays blocked),
+   can the loop run unbounded or infinite?
+5. For phase gates evaluated once and cached: is the underlying condition truly stable,
+   or can it change while the cached result becomes stale? Flag stale phase gates that
+   prevent re-evaluation of conditions that may have changed.
+
+Patterns to recognize:
+- Sticky boolean set on first success, never cleared on later failure: later handlers
+  misclassify real errors as cleanup/warning because the flag says "handoff succeeded."
+- Retry loop re-queues blocked work with no max-attempt bound: if the blocking condition
+  never resolves, the loop runs forever.
+- Phase gate checks a condition once at startup, caches the result, and never re-evaluates
+  even though the condition can change during execution.
+
+Do not flag correctly cached phase results where the underlying condition is genuinely
+immutable for the lifetime of the operation (e.g., compile-time constants, config loaded
+once at startup for a short-lived process). Only flag when the cached value can become
+stale and the code does not re-evaluate.
+
 Secondary Focus (check if relevant)
 - Logic inversions, wrong comparators, inverted boolean flags
 - Incorrect default values, missing initialization, stale state
@@ -147,7 +176,7 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Security bug that is also a logic bug → yours (flag the logic aspect)
 - Security exploit without logic bug → guard (skip it)
 - Missing test for a correctness bug → proof (skip it)
-- Failure-path logic for dependency outages → fuse (skip it)
+- Failure-path logic for dependency outages → fuse (skip it); exception: unbounded retry/requeue loops with no max-attempt bound are correctness bugs (infinite loop) and belong here
 - Backward-compat break without logic bug → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
 

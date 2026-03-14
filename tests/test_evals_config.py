@@ -101,3 +101,62 @@ def test_async_side_effect_fixture_requires_both_leakage_and_async_signals() -> 
 
     assert "error|stack|prompt" in javascript
     assert "audit|async" in javascript
+
+
+# --- Lifecycle state reasoning recall cases (issue #335) ---
+
+
+def test_eval_config_contains_sticky_flag_downgrade_fixture() -> None:
+    """bitterblossom#509: builder_handoff_recorded could downgrade later real
+    failures into cleanup warnings."""
+    fixture = _fixture("Correctness - Sticky Flag Downgrade Recall")
+
+    assert fixture["vars"]["perspective"] == "correctness"
+    assert "bitterblossom#509" in fixture["vars"]["pr_body"]
+    diff = fixture["vars"]["diff"]
+    assert "handoff" in diff.lower() or "flag" in diff.lower()
+
+    js = _javascript_assertions(fixture)
+    assert any("output.verdict === 'FAIL'" in v for v in js)
+
+
+def test_eval_config_contains_blocked_retry_loop_fixture() -> None:
+    """bitterblossom#477: blocked-issue retry loop runs forever."""
+    fixture = _fixture("Correctness - Blocked Retry Loop Recall")
+
+    assert fixture["vars"]["perspective"] == "correctness"
+    assert "bitterblossom#477" in fixture["vars"]["pr_body"]
+    diff = fixture["vars"]["diff"]
+    assert "retry" in diff.lower() or "requeue" in diff.lower() or "loop" in diff.lower()
+
+    js = _javascript_assertions(fixture)
+    assert any("output.verdict === 'FAIL'" in v for v in js)
+
+
+def test_lifecycle_recall_fixtures_assert_correctness_findings() -> None:
+    sticky = _fixture("Correctness - Sticky Flag Downgrade Recall")
+    sticky_js = _javascript_assertions(sticky)
+    assert any("output.verdict === 'FAIL'" in v for v in sticky_js), (
+        "Sticky Flag fixture must assert FAIL verdict"
+    )
+    assert any(
+        "flag" in v.lower() or "sticky" in v.lower() or "downgrad" in v.lower()
+        for v in sticky_js
+    ), "Sticky Flag fixture must assert flag/sticky/downgrade signal in findings"
+    assert any(
+        "failure|error|later" in v for v in sticky_js
+    ), "Sticky Flag fixture must also assert failure/error/later context in findings"
+
+    retry = _fixture("Correctness - Blocked Retry Loop Recall")
+    retry_js = _javascript_assertions(retry)
+    assert any("output.verdict === 'FAIL'" in v for v in retry_js), (
+        "Blocked Retry Loop fixture must assert FAIL verdict"
+    )
+    assert any(
+        "loop" in v.lower() or "retry" in v.lower() or "requeue" in v.lower()
+        or "unbounded" in v.lower() or "infinite" in v.lower()
+        for v in retry_js
+    ), "Blocked Retry Loop fixture must assert loop/retry signal in findings"
+    assert any(
+        "block|stuck|never" in v for v in retry_js
+    ), "Blocked Retry Loop fixture must also assert block/stuck/never context in findings"
