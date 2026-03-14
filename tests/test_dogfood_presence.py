@@ -149,6 +149,107 @@ def test_load_config_returns_core_repos() -> None:
     assert len(config["core_repos"]) >= 3
 
 
+# --- classify_pr_from_checks tests ---
+
+
+def test_classify_from_checks_no_cerberus() -> None:
+    mod = _import_script()
+    pr = {"number": 1, "statusCheckRollup": [
+        {"name": "lint", "conclusion": "SUCCESS"},
+        {"name": "test", "conclusion": "SUCCESS"},
+    ]}
+    assert mod.classify_pr_from_checks(pr) == "absent"
+
+
+def test_classify_from_checks_preflight_skipped() -> None:
+    mod = _import_script()
+    pr = {"number": 2, "statusCheckRollup": [
+        {"name": "review / Cerberus · preflight", "conclusion": "SKIPPED"},
+    ]}
+    assert mod.classify_pr_from_checks(pr) == "skipped"
+
+
+def test_classify_from_checks_clean_run() -> None:
+    mod = _import_script()
+    pr = {"number": 3, "statusCheckRollup": [
+        {"name": "review / Cerberus · preflight", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus · wave1 · Correctness", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus · wave1 · Security", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus · gate wave1", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus", "conclusion": "SUCCESS"},
+    ]}
+    assert mod.classify_pr_from_checks(pr) == "present_clean"
+
+
+def test_classify_from_checks_with_skips() -> None:
+    mod = _import_script()
+    pr = {"number": 4, "statusCheckRollup": [
+        {"name": "review / Cerberus · preflight", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus · wave1 · Correctness", "conclusion": "SUCCESS"},
+        {"name": "review / Cerberus · wave1 · Security", "conclusion": "SKIPPED"},
+        {"name": "review / Cerberus · wave1 · Testing", "conclusion": "SUCCESS"},
+    ]}
+    assert mod.classify_pr_from_checks(pr) == "present_with_skips"
+
+
+def test_classify_from_checks_empty_rollup() -> None:
+    mod = _import_script()
+    pr = {"number": 5, "statusCheckRollup": []}
+    assert mod.classify_pr_from_checks(pr) == "absent"
+
+
+def test_classify_from_checks_missing_rollup_key() -> None:
+    mod = _import_script()
+    pr = {"number": 6}
+    assert mod.classify_pr_from_checks(pr) == "absent"
+
+
+# --- summarize_presence tests ---
+
+
+def test_summarize_presence_mixed() -> None:
+    mod = _import_script()
+    prs = [
+        {"number": 1, "statusCheckRollup": []},  # absent
+        {"number": 2, "statusCheckRollup": [
+            {"name": "review / Cerberus · preflight", "conclusion": "SUCCESS"},
+            {"name": "review / Cerberus · wave1 · Correctness", "conclusion": "SUCCESS"},
+        ]},  # present_clean
+        {"number": 3, "statusCheckRollup": [
+            {"name": "review / Cerberus · preflight", "conclusion": "SUCCESS"},
+            {"name": "review / Cerberus · wave1 · Correctness", "conclusion": "SKIPPED"},
+        ]},  # present_with_skips
+    ]
+    result = mod.summarize_presence("test/repo", prs)
+    assert result["repo"] == "test/repo"
+    assert result["total_prs"] == 3
+    assert result["presence_rate"] == 0.667
+    assert result["classifications"]["absent"] == 1
+    assert result["classifications"]["present_clean"] == 1
+    assert result["classifications"]["present_with_skips"] == 1
+
+
+def test_summarize_presence_empty() -> None:
+    mod = _import_script()
+    result = mod.summarize_presence("test/repo", [])
+    assert result["total_prs"] == 0
+    assert result["presence_rate"] == 0.0
+
+
+def test_summarize_presence_all_present() -> None:
+    mod = _import_script()
+    prs = [
+        {"number": i, "statusCheckRollup": [
+            {"name": "review / Cerberus · preflight", "conclusion": "SUCCESS"},
+            {"name": "review / Cerberus · wave1 · Correctness", "conclusion": "SUCCESS"},
+        ]}
+        for i in range(1, 6)
+    ]
+    result = mod.summarize_presence("test/repo", prs)
+    assert result["presence_rate"] == 1.0
+    assert result["classifications"]["present_clean"] == 5
+
+
 # --- Helpers ---
 
 

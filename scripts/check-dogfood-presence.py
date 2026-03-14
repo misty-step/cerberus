@@ -51,7 +51,7 @@ def classify_pr(
     return "present_clean"
 
 
-def _gh_json(args: list[str]) -> Any:
+def _gh_json(args: list[str]) -> Any:  # pragma: no cover
     """Run a gh CLI command and parse JSON output."""
     result = subprocess.run(
         ["gh", *args],
@@ -64,23 +64,48 @@ def _gh_json(args: list[str]) -> Any:
     return json.loads(result.stdout)
 
 
-def check_repo_presence(
-    repo: str,
-    window_days: int,
-) -> dict[str, Any]:
-    """Check Cerberus presence on recent merged PRs for a repo.
+def classify_pr_from_checks(pr: dict[str, Any]) -> str:
+    """Classify a single PR dict (with statusCheckRollup) into a presence bucket."""
+    checks = pr.get("statusCheckRollup", [])
 
-    Returns a summary with per-PR classification and overall presence rate.
+    cerberus_checks = [
+        c for c in checks
+        if c.get("name", "").startswith("review / Cerberus")
+    ]
+    cerberus_ran = len(cerberus_checks) > 0
+
+    preflight = [
+        c for c in cerberus_checks
+        if "preflight" in c.get("name", "")
+    ]
+    preflight_skipped = (
+        len(preflight) > 0
+        and all(c.get("conclusion") == "SKIPPED" for c in preflight)
+    )
+
+    reviewer_checks = [
+        c for c in cerberus_checks
+        if "wave" in c.get("name", "") and "gate" not in c.get("name", "")
+    ]
+    skips = sum(
+        1 for c in reviewer_checks
+        if c.get("conclusion") == "SKIPPED"
+    )
+
+    return classify_pr(
+        cerberus_workflow_ran=cerberus_ran,
+        preflight_skipped=preflight_skipped,
+        reviewer_skips=skips,
+        total_reviewers=len(reviewer_checks),
+    )
+
+
+def summarize_presence(repo: str, prs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize Cerberus presence across a list of PR dicts.
+
+    Pure function — no IO. Takes the repo name and a list of PR dicts
+    with statusCheckRollup and returns classification summary.
     """
-    # Fetch recent closed PRs
-    prs = _gh_json([
-        "pr", "list",
-        "--repo", repo,
-        "--state", "all",
-        "--limit", "50",
-        "--json", "number,title,mergedAt,statusCheckRollup",
-    ])
-
     classifications: dict[str, list[int]] = {
         "absent": [],
         "skipped": [],
@@ -89,43 +114,8 @@ def check_repo_presence(
     }
 
     for pr in prs:
-        pr_num = pr["number"]
-        checks = pr.get("statusCheckRollup", [])
-
-        # Detect Cerberus workflow run from check names
-        cerberus_checks = [
-            c for c in checks
-            if c.get("name", "").startswith("review / Cerberus")
-        ]
-        cerberus_ran = len(cerberus_checks) > 0
-
-        # Detect preflight skip from check conclusions
-        preflight = [
-            c for c in cerberus_checks
-            if "preflight" in c.get("name", "")
-        ]
-        preflight_skipped = (
-            len(preflight) > 0
-            and all(c.get("conclusion") == "SKIPPED" for c in preflight)
-        )
-
-        # Count reviewer skips
-        reviewer_checks = [
-            c for c in cerberus_checks
-            if "wave" in c.get("name", "") and "gate" not in c.get("name", "")
-        ]
-        skips = sum(
-            1 for c in reviewer_checks
-            if c.get("conclusion") == "SKIPPED"
-        )
-
-        bucket = classify_pr(
-            cerberus_workflow_ran=cerberus_ran,
-            preflight_skipped=preflight_skipped,
-            reviewer_skips=skips,
-            total_reviewers=len(reviewer_checks),
-        )
-        classifications[bucket].append(pr_num)
+        bucket = classify_pr_from_checks(pr)
+        classifications[bucket].append(pr["number"])
 
     total = len(prs)
     present = len(classifications["present_clean"]) + len(classifications["present_with_skips"])
@@ -140,7 +130,25 @@ def check_repo_presence(
     }
 
 
-def main() -> None:
+def check_repo_presence(  # pragma: no cover
+    repo: str,
+    window_days: int,
+) -> dict[str, Any]:
+    """Check Cerberus presence on recent PRs for a repo.
+
+    Fetches PR data from GitHub and delegates to summarize_presence.
+    """
+    prs = _gh_json([
+        "pr", "list",
+        "--repo", repo,
+        "--state", "all",
+        "--limit", "50",
+        "--json", "number,title,mergedAt,statusCheckRollup",
+    ])
+    return summarize_presence(repo, prs)
+
+
+def main() -> None:  # pragma: no cover
     parser = argparse.ArgumentParser(description="Check Cerberus dogfood presence")
     parser.add_argument("--window", type=int, help="Override window days")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
