@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reviewer Delta Triage"
+  short_description: "Compare Cerberus with PR reviewers"
+  default_prompt: "Use $reviewer-delta-triage to compare Cerberus with the other AI reviewers on this pull request."

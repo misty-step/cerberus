@@ -35,6 +35,8 @@ def test_project_context_omitted_when_empty() -> None:
     )
     assert "{{PROJECT_CONTEXT_SECTION}}" not in rendered
     assert "## Project Context" not in rendered
+    assert "`repo_read`" in rendered
+    assert "`github_read`" in rendered
 
 
 def test_project_context_injected_and_escaped() -> None:

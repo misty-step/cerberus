@@ -72,6 +72,14 @@ Review context boundary:
 - Semantic context (acceptance criteria, issue intent, scope discussion) must be fetched by reviewer agents via `github_read`.
 - Do not add regex/keyword extraction stages for linked-issue inference in workflow glue code.
 
+### 5. Default Companion Skills
+For most Cerberus work, also apply these three skills as the default frame:
+- `context-engineering` for prompt quality, retrieval boundaries, instruction hierarchy, and memory hygiene
+- `llm-infrastructure` for model currency, prompt-as-code discipline, evals, routing, and trace review
+- `harness-engineering` for fast feedback loops, mechanical enforcement, and agent-friendly repo ergonomics
+
+If one of these does not apply to the current task, say why briefly instead of silently skipping it.
+
 ---
 
 ## Quality Gates

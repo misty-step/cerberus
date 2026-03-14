@@ -20,6 +20,7 @@ base:
   extensions:
     - pi/extensions/reviewer-guard.ts
     - pi/extensions/runtime-telemetry.ts
+    - pi/extensions/repo-read.ts
     - pi/extensions/github-read.ts
   # Skills are loaded explicitly by runtime orchestration (no ambient discovery).
   skills:

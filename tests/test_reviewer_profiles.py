@@ -13,7 +13,7 @@ from lib.reviewer_profiles import (
 
 def write_config(tmp_path: Path, content: str) -> Path:
     p = tmp_path / "reviewer-profiles.yml"
-    p.write_text(content)
+    p.write_text(content, encoding="utf-8")
     return p
 
 
@@ -247,3 +247,10 @@ perspectives:
         merged = cfg.merged_for_perspective("security")
         assert merged.extensions == ["a", "b", "c"]
         assert merged.skills == ["s1", "s2", "s3"]
+
+    def test_repo_and_github_read_extensions_are_in_base_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        cfg = load_reviewer_profiles(root / "defaults" / "reviewer-profiles.yml")
+
+        assert "pi/extensions/repo-read.ts" in cfg.base.extensions
+        assert "pi/extensions/github-read.ts" in cfg.base.extensions
