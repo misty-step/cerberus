@@ -44,14 +44,14 @@ promptfoo eval --config evals/promptfooconfig.yaml --no-cache --max-concurrency 
 
 ## Test Cases
 
-The eval includes 31 test cases across 6 perspectives:
+The eval currently includes 40 test cases across 6 perspectives:
 
 | Perspective | Count | Description |
 |------------|-------|-------------|
-| security   | 5     | SQL injection, XSS, secrets, etc. |
-| correctness| 6     | Bugs, null pointers, logic errors |
+| security   | 9     | SQL injection, XSS, secrets, prompt injection, and fail-open defaults |
+| correctness| 9     | Bugs, null pointers, logic errors, linked-context grounding, and adjacent-context evidence paths |
 | performance| 5     | N+1 queries, memory leaks, I/O |
-| architecture| 5    | Coupling, interfaces, layering |
+| architecture| 7    | Coupling, interfaces, layering, workflow regressions, and tool-selection failures |
 | maintainability| 5 | Duplication, naming, docs |
 | testing    | 5     | Coverage, mocks, assertions |
 
