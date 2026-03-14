@@ -34,6 +34,15 @@ Semantic review context must be retrieved by reviewer agents through the read-on
 
 Do not reintroduce regex/keyword linked-issue inference or acceptance-criteria injection in action glue code.
 
+## Default Operating Frame
+
+For most Cerberus work, use these companion frames by default:
+- `context-engineering` for prompt/instruction quality, retrieval boundaries, and memory hygiene
+- `llm-infrastructure` for model currency, prompt discipline, eval coverage, routing, and trace review
+- `harness-engineering` for feedback loops, mechanical enforcement, and agent-friendly repo ergonomics
+
+If one of these frames does not apply to a task, say why briefly instead of silently skipping it.
+
 ## Architecture
 
 ```text
