@@ -38,7 +38,6 @@ from lib.runtime_facade import (
 
 BASE_DEFAULT_MODEL = "openrouter/moonshotai/kimi-k2.5"
 MAX_RETRIES = 3
-MAX_UNKNOWN_RETRIES = 1
 MAX_PARSE_RETRIES = 2
 
 
@@ -689,7 +688,7 @@ def main(argv: list[str]) -> int:
                 run_completed = True
                 break
 
-            max_for_type = MAX_RETRIES if detected_error_type == "transient" else MAX_UNKNOWN_RETRIES
+            max_for_type = MAX_RETRIES
             if detected_error_type in {"transient", "unknown"} and retry_count < max_for_type:
                 retry_count += 1
                 wait_seconds = default_backoff_seconds(retry_count)

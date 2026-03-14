@@ -978,7 +978,7 @@ def test_empty_output_on_exit_zero_triggers_retry(tmp_path: Path) -> None:
     assert "pi exited 0 but produced no output" in result.stdout
 
 
-def test_unknown_error_retries_once(tmp_path: Path) -> None:
+def test_unknown_error_retries_to_full_budget(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     retry_counter = tmp_path / "retry-count"
@@ -991,7 +991,7 @@ def test_unknown_error_retries_once(tmp_path: Path) -> None:
             f"count=$(cat '{retry_counter}')\n"
             "count=$((count + 1))\n"
             f"printf '%s' \"$count\" > '{retry_counter}'\n"
-            "if [[ \"$count\" -eq 1 ]]; then\n"
+            "if [[ \"$count\" -lt 4 ]]; then\n"
             "  exit 1\n"  # exit 1 without specific error message -> class=unknown
             "fi\n"
             "cat <<'REVIEW'\n"
@@ -1031,7 +1031,7 @@ def test_unknown_error_retries_once(tmp_path: Path) -> None:
         timeout=30,
     )
     assert result.returncode == 0
-    assert retry_counter.read_text() == "2"
+    assert retry_counter.read_text() == "4"
     assert "Retrying unknown error" in result.stdout
 
 
@@ -1135,8 +1135,8 @@ def test_unknown_error_exhausts_retries(tmp_path: Path) -> None:
         timeout=30,
     )
     # Unknown with no output = infrastructure failure -> should NOT SKIP.
-    # Still retries once (retry_count < 1), then exhausts.
-    assert retry_counter.read_text() == "2"
+    # It should still consume the full retry budget before failing the job.
+    assert retry_counter.read_text() == "4"
     assert "Retrying unknown error" in result.stdout
     assert "Unknown error type (exit=1). Trying next model if available..." in result.stdout
     # No SKIP verdict: exit non-zero surfaces the infrastructure failure.
@@ -1185,8 +1185,8 @@ def test_unknown_error_with_output_skips(tmp_path: Path) -> None:
         text=True,
         timeout=30,
     )
-    # Unknown with output = unclassified API issue -> should SKIP.
-    assert retry_counter.read_text() == "2"
+    # Unknown with output = unclassified API issue -> should SKIP after the full retry budget.
+    assert retry_counter.read_text() == "4"
     assert "Retrying unknown error" in result.stdout
     assert result.returncode == 0
     # Verify SKIP verdict was written.
@@ -1248,8 +1248,8 @@ def test_unknown_error_fallback_model_succeeds(tmp_path: Path) -> None:
     attempt_counter = tmp_path / "attempt-count"
     attempt_counter.write_text("0")
 
-    # Attempts 1-2: exit 1 with no specific error (unknown), no output.
-    # Attempt 3+: succeed on fallback model.
+    # Attempts 1-4: exit 1 with no specific error (unknown), no output.
+    # Attempt 5+: succeed on fallback model.
     make_executable(
         bin_dir / "pi",
         (
@@ -1257,7 +1257,7 @@ def test_unknown_error_fallback_model_succeeds(tmp_path: Path) -> None:
             f"count=$(cat '{attempt_counter}')\n"
             "count=$((count + 1))\n"
             f"printf '%s' \"$count\" > '{attempt_counter}'\n"
-            "if [[ \"$count\" -le 2 ]]; then\n"
+            "if [[ \"$count\" -le 4 ]]; then\n"
             "  exit 1\n"
             "fi\n"
             "cat <<'REVIEW'\n"
@@ -1296,10 +1296,10 @@ def test_unknown_error_fallback_model_succeeds(tmp_path: Path) -> None:
         text=True,
         timeout=40,
     )
-    # Primary model: attempt 1 (unknown) -> retry -> attempt 2 (unknown, exhausted) -> advance.
-    # Fallback model: attempt 3 -> success.
+    # Primary model: attempts 1-4 exhaust the unknown retry budget, then fallback succeeds.
+    # Fallback model: attempt 5 -> success.
     assert result.returncode == 0
-    assert attempt_counter.read_text() == "3"
+    assert attempt_counter.read_text() == "5"
     assert "Retrying unknown error" in result.stdout
     model_used = Path("/tmp/security-model-used").read_text().strip()
     assert model_used == "openrouter/fallback-model"
