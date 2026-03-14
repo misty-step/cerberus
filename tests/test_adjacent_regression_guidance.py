@@ -5,8 +5,8 @@ import yaml
 
 ROOT = Path(__file__).parent.parent
 REVIEW_PROMPT = ROOT / "templates" / "review-prompt.md"
-ARCHITECTURE_AGENT = ROOT / ".opencode" / "agents" / "architecture.md"
-MAINTAINABILITY_AGENT = ROOT / ".opencode" / "agents" / "maintainability.md"
+ARCHITECTURE_AGENT = ROOT / "pi" / "agents" / "architecture.md"
+MAINTAINABILITY_AGENT = ROOT / "pi" / "agents" / "maintainability.md"
 EVAL_CONFIG = ROOT / "evals" / "promptfooconfig.yaml"
 
 

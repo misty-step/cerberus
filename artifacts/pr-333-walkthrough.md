@@ -9,7 +9,7 @@ Cerberus now treats indirect security/dataflow re-entry paths as first-class gua
 Before this branch, the security reviewer contract emphasized classic exploit classes but did not explicitly force reasoning over trusted-looking metadata, fail-open defaults, raw error leakage, async side-effect failures, or serialization/public-route exposure. The benchmark already showed those gaps in `bitterblossom#495`, `cerberus-cloud#94`, and `volume#417`.
 
 After this branch:
-- `.opencode/agents/security.md` contains a mandatory indirect re-entry pass
+- `pi/agents/security.md` contains a mandatory indirect re-entry pass
 - `pi/skills/security-review/SKILL.md` mirrors the same categories
 - `evals/promptfooconfig.yaml` contains replay-style security cases for all three benchmark misses
 - tests lock the contract so future prompt drift fails locally
@@ -43,7 +43,7 @@ After this branch:
 
 ## Files To Review
 
-- `.opencode/agents/security.md`
+- `pi/agents/security.md`
 - `pi/skills/security-review/SKILL.md`
 - `evals/promptfooconfig.yaml`
 - `tests/test_security_prompt_contract.py`

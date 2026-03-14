@@ -58,7 +58,7 @@ The eval currently includes 40 test cases across 6 perspectives:
 ## CI Integration
 
 ### Smoke Eval
-- **Trigger:** PR changes to `evals/**`, `templates/**`, `.opencode/agents/**`
+- **Trigger:** PR changes to `evals/**`, `templates/**`, `pi/agents/**`
 - **Threshold:** 75% pass rate
 - **Output:** PR comment with summary
 

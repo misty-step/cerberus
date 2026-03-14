@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parent.parent
-CORRECTNESS_PROMPT = ROOT / ".opencode" / "agents" / "correctness.md"
+CORRECTNESS_PROMPT = ROOT / "pi" / "agents" / "correctness.md"
 
 
 def _prompt_text() -> str:

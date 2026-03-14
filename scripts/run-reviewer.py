@@ -389,7 +389,7 @@ def main(argv: list[str]) -> int:
         pass
 
     config_file = cerberus_root / "defaults" / "config.yml"
-    agent_file = cerberus_root / ".opencode" / "agents" / f"{perspective}.md"
+    agent_file = cerberus_root / "pi" / "agents" / f"{perspective}.md"
 
     if not agent_file.is_file():
         eprint(f"missing agent file: {agent_file}")

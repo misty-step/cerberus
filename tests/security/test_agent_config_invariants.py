@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-AGENTS_DIR = Path(__file__).parent.parent.parent / ".opencode" / "agents"
+AGENTS_DIR = Path(__file__).parent.parent.parent / "pi" / "agents"
 AGENT_FILES = sorted(AGENTS_DIR.glob("*.md"))
 
 # Sanity: ensure we actually found agent files.

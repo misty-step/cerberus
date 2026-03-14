@@ -15,7 +15,7 @@ Reviewer benchmark work showed Cerberus missing phase-spanning correctness bugs 
 
 ## What changed
 
-- Added a `Sentinel Error Tracing` section to [.opencode/agents/correctness.md](/Users/phaedrus/.codex/worktrees/62ae/cerberus/.opencode/agents/correctness.md) that requires:
+- Added a `Sentinel Error Tracing` section to [pi/agents/correctness.md](/Users/phaedrus/.codex/worktrees/62ae/cerberus/pi/agents/correctness.md) that requires:
   - enumerating sentinel return sites
   - separating legitimate empty/done paths from real failure paths
   - tracing caller behavior like loop termination, skipped retries, and bad state-machine advancement

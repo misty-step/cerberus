@@ -94,7 +94,7 @@ Before any change is committed to the gate:
 ## Source-of-Truth Hierarchy
 
 1. `defaults/config.yml` (Model pools, wave definitions, verdict thresholds).
-2. `.opencode/agents/*.md` (Reviewer system prompts).
+2. `pi/agents/*.md` (Reviewer system prompts).
 3. `CLAUDE.md` (Project overview and commands).
 4. `README.md` (Usage and architecture).
 

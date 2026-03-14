@@ -4,8 +4,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parent.parent
-CORRECTNESS_AGENT = ROOT / ".opencode" / "agents" / "correctness.md"
-SECURITY_AGENT = ROOT / ".opencode" / "agents" / "security.md"
+CORRECTNESS_AGENT = ROOT / "pi" / "agents" / "correctness.md"
+SECURITY_AGENT = ROOT / "pi" / "agents" / "security.md"
 PARSE_REVIEW = ROOT / "scripts" / "parse-review.py"
 
 

@@ -4,7 +4,7 @@ import yaml
 
 
 ROOT = Path(__file__).parent.parent
-CORRECTNESS_AGENT = ROOT / ".opencode" / "agents" / "correctness.md"
+CORRECTNESS_AGENT = ROOT / "pi" / "agents" / "correctness.md"
 EVAL_CONFIG = ROOT / "evals" / "promptfooconfig.yaml"
 CORRECTNESS_TEXT = CORRECTNESS_AGENT.read_text(encoding="utf-8")
 

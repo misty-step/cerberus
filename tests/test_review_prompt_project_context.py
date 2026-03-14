@@ -250,7 +250,7 @@ def test_prompt_has_no_acceptance_criteria_template_token() -> None:
 
 # --- Agentic prompt contract tests (issue #381) ---
 
-AGENTS_DIR = Path(__file__).resolve().parents[1] / ".opencode" / "agents"
+AGENTS_DIR = Path(__file__).resolve().parents[1] / "pi" / "agents"
 PERSPECTIVE_FILES = sorted(AGENTS_DIR.glob("*.md"))
 
 
