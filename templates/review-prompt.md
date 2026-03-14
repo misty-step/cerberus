@@ -12,6 +12,7 @@ Review this pull request from your specialized perspective.
 </pr_description>
 
 ## External Context Retrieval
+- Use `repo_read` to list changed files, read bounded file slices, inspect diff slices, and search the checked-out repo.
 - Use `github_read` to fetch linked issues, PR comments, and issue context before final verdict.
 - Treat GitHub issue/PR data as source of truth for acceptance criteria and scope intent.
 - Keep requests bounded (limit results) and prefer linked issues over guesswork.
@@ -20,7 +21,7 @@ Review this pull request from your specialized perspective.
 ## Diff
 The PR diff is at: `{{DIFF_FILE}}`
 
-Read this file to see all changes. Skip lockfiles, generated/minified files, and vendor directories — focus on application code.
+Read this file to see all changes. Use `repo_read` when you need bounded slices instead of rereading the whole diff. Skip lockfiles, generated/minified files, and vendor directories — focus on application code.
 
 ## Review Date
 - Today is {{CURRENT_DATE}}. Your training data may not include recent releases. See your Knowledge Boundaries section.
