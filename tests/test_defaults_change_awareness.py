@@ -36,7 +36,7 @@ class TestReviewPromptDefaultsAwareness:
         see it as part of scope expansion, not as a separate concern."""
         text = REVIEW_PROMPT.read_text()
         defaults_pos = text.index("## Defaults Change Awareness")
-        trust_pos = text.index("## Trust Boundaries")
+        trust_pos = text.index("## Trust Boundary")
         assert defaults_pos < trust_pos
 
 

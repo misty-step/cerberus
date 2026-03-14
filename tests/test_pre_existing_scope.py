@@ -36,9 +36,9 @@ class TestReviewPromptPreExistingScope:
         """Pre-existing conditions guidance must be within scope rules,
         before evidence rules."""
         text = REVIEW_PROMPT.read_text()
-        scope_pos = text.index("## Scope Rules")
+        scope_pos = text.index("## Scope Boundary")
         pre_existing_pos = text.index("### Pre-Existing Conditions")
-        evidence_pos = text.index("## Evidence Rules")
+        evidence_pos = text.index("## Evidence Bar")
         assert scope_pos < pre_existing_pos < evidence_pos
 
 
