@@ -1,0 +1,41 @@
+# Cerberus self-dogfood presence targets
+#
+# Core repos where Cerberus must run consistently to produce
+# honest benchmark scorecards. Absence here weakens recall
+# claims because "never ran" is indistinguishable from "missed."
+
+core_repos:
+  - repo: misty-step/cerberus
+    min_presence: 0.80
+  - repo: misty-step/cerberus-cloud
+    min_presence: 0.90
+  - repo: misty-step/volume
+    min_presence: 0.80
+  - repo: misty-step/gitpulse
+    min_presence: 0.70
+
+# Presence classification taxonomy
+#
+# Every PR in the benchmark window falls into exactly one bucket.
+# Scorecards must classify each PR before drawing recall conclusions.
+classification:
+  absent: >-
+    Cerberus workflow did not run. Causes: workflow not installed,
+    secrets missing, fork PR (no secret access), or trigger mismatch.
+    Not a recall signal — purely operational.
+  skipped: >-
+    Cerberus workflow ran but preflight skipped the review. Causes:
+    draft PR, missing API key detected at runtime, or explicit skip
+    condition. Partially operational — draft skips are expected,
+    key-missing skips are bugs.
+  present_clean: >-
+    Cerberus ran all reviewers to completion with no skips. Findings
+    (or lack thereof) are genuine recall signal.
+  present_with_skips: >-
+    Cerberus ran but one or more reviewers skipped (timeout, parse
+    failure, model error). Recall signal is partial — findings from
+    completed reviewers count, but missing perspectives weaken the
+    overall claim.
+
+# Benchmark window for presence checks (rolling days)
+window_days: 7
