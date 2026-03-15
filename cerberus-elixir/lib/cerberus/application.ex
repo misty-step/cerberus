@@ -5,12 +5,11 @@ defmodule Cerberus.Application do
 
   @impl true
   def start(_type, _args) do
-    {:ok, loaded_config} = Cerberus.Config.load()
-
     children = [
+      Cerberus.Config,
       {Cerberus.Store, database_path: Cerberus.database_path()},
       Cerberus.ReviewSupervisor,
-      {Cerberus.Router, config: loaded_config},
+      Cerberus.Router,
       Cerberus.Telemetry
     ]
 
