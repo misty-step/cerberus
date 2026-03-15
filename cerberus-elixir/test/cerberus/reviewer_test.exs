@@ -575,6 +575,50 @@ defmodule Cerberus.ReviewerTest do
 
       :telemetry.detach("test-reviewer-error")
     end
+
+    test "emits actual model used on fallback, not primary" do
+      %{config: config} = setup_config()
+      test_pid = self()
+
+      :telemetry.attach(
+        "test-reviewer-fallback-model",
+        [:cerberus, :reviewer, :complete],
+        fn event, measurements, metadata, _ ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      fallback_llm = fn params ->
+        if params.model == "primary-model" do
+          {:error, :transient}
+        else
+          {:ok,
+           %{
+             content: valid_verdict_json(),
+             tool_calls: [],
+             usage: %{prompt_tokens: 100, completion_tokens: 50}
+           }}
+        end
+      end
+
+      {:ok, pid} =
+        Reviewer.start_link(
+          perspective: :correctness,
+          model: "primary-model",
+          fallback_models: ["fallback-model"],
+          config_server: config,
+          call_llm: fallback_llm,
+          repo_root: @repo_root
+        )
+
+      {:ok, _} = Reviewer.review(pid, pr_context())
+
+      assert_receive {:telemetry, [:cerberus, :reviewer, :complete], _measurements, metadata}
+      assert metadata.model == "fallback-model"
+
+      :telemetry.detach("test-reviewer-fallback-model")
+    end
   end
 
   # --- Token usage accumulation ---

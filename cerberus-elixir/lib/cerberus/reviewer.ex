@@ -134,7 +134,7 @@ defmodule Cerberus.Reviewer do
 
   defp try_with_fallback([model | rest], messages, tools, state) do
     case try_model(model, messages, tools, state, 0) do
-      {:ok, _} = success -> success
+      {:ok, result} -> {:ok, Map.put(result, :model, model)}
       {:error, {:permanent, _}} = error -> error
       {:error, _} -> try_with_fallback(rest, messages, tools, state)
     end
@@ -264,7 +264,7 @@ defmodule Cerberus.Reviewer do
 
   # --- Telemetry ---
 
-  defp emit_telemetry({:ok, %{usage: usage}}, elapsed_ms, state) do
+  defp emit_telemetry({:ok, %{usage: usage} = result}, elapsed_ms, state) do
     :telemetry.execute(
       [:cerberus, :reviewer, :complete],
       %{
@@ -272,7 +272,7 @@ defmodule Cerberus.Reviewer do
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens
       },
-      %{perspective: state.perspective, model: state.model}
+      %{perspective: state.perspective, model: Map.get(result, :model, state.model)}
     )
   end
 
