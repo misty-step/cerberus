@@ -145,3 +145,10 @@ reviewers:
     override: pr_author
     tools:
       shell: false
+
+# Canary observability integration
+# Reports health-check transitions and error-tracking alerts to a Canary instance.
+# Env vars: CANARY_ENDPOINT (base URL), CANARY_API_KEY (Bearer token).
+canary:
+  enabled: false
+  service: "cerberus"
