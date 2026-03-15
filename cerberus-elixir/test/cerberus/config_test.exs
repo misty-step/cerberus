@@ -119,6 +119,17 @@ defmodule Cerberus.ConfigTest do
       routing = Config.routing(server)
       assert Enum.sort(routing.fallback_panel) == ~w(atlas craft fuse guard proof trace)
     end
+
+    test "includes routing model from config", %{server: server} do
+      routing = Config.routing(server)
+      assert is_binary(routing.model)
+      assert String.contains?(routing.model, "openrouter/")
+    end
+
+    test "includes enabled flag", %{server: server} do
+      routing = Config.routing(server)
+      assert routing.enabled == true
+    end
   end
 
   describe "reload/1" do
