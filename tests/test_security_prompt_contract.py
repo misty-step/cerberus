@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parent.parent
-SECURITY_AGENT = ROOT / ".opencode" / "agents" / "security.md"
+SECURITY_AGENT = ROOT / "pi" / "agents" / "security.md"
 SECURITY_SKILL = ROOT / "pi" / "skills" / "security-review" / "SKILL.md"
 
 

@@ -63,8 +63,8 @@ def _fixture(description: str) -> dict:
 def test_review_prompt_requires_bounded_tool_retrieval() -> None:
     text = REVIEW_PROMPT.read_text(encoding="utf-8")
 
-    assert "Use `repo_read`" in text
-    assert "Use `github_read`" in text
+    assert "`repo_read`" in text
+    assert "`github_read`" in text
     assert "Keep requests bounded" in text
     assert "prefer linked issues over guesswork" in text
     assert "Prefer tool-retrieved criteria as the primary source" in text

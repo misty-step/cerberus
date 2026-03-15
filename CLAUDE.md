@@ -84,7 +84,7 @@ consumer workflow (.github/workflows/cerberus.yml)
 
 The consumer defines the reviewer matrix in its own workflow. This repository provides only the reusable actions and support files.
 
-Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `.opencode/agents/`, `templates/`, `defaults/`).
+Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `pi/agents/`, `templates/`, `defaults/`).
 
 ### The Six Reviewers (3 per wave)
 
@@ -113,7 +113,7 @@ Shell/bash access is denied per agent via `permission` in the agent markdown fro
 - `triage/action.yml` - triage composite action entrypoint
 - `validate/action.yml` - consumer workflow validator (misconfig guardrail)
 - `defaults/config.yml` - verdict settings, reviewer list, verdict thresholds, override rules
-- `.opencode/agents/<perspective>.md` - perspective system prompts (YAML frontmatter + body)
+- `pi/agents/<perspective>.md` - perspective system prompts (YAML frontmatter + body)
 - `defaults/reviewer-profiles.yml` - Pi runtime profile settings (provider/model/tools/extensions/skills)
 - `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
 - `templates/consumer-workflow-reusable.yml` - recommended workflow for downstream repositories
@@ -160,7 +160,7 @@ Optional fields added by the pipeline:
 
 - Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool`/`model.tiers` each run.
 - Env vars: `CERBERUS_OPENROUTER_API_KEY` (preferred), `OPENROUTER_API_KEY` (legacy)
-- Perspective prompt: `.opencode/agents/<perspective>.md` (frontmatter ignored, body used as trusted system prompt)
+- Perspective prompt: `pi/agents/<perspective>.md` (frontmatter ignored, body used as trusted system prompt)
 - Runtime profile config: `defaults/reviewer-profiles.yml`
 - Invocation path: `scripts/run-reviewer.sh` -> `scripts/run-reviewer.py` -> `scripts/lib/runtime_facade.py` (Pi CLI `--print` mode)
 - Runtime executes in isolated HOME and emits telemetry to `${CERBERUS_TMP}/<perspective>-runtime-telemetry.ndjson`

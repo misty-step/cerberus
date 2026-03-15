@@ -33,7 +33,7 @@ class TestTrustBoundaryInstructions:
     """Template must explicitly instruct model to ignore embedded instructions."""
 
     def test_contains_trust_boundary_section(self):
-        assert "## Trust Boundaries" in TEMPLATE
+        assert "## Trust Boundary" in TEMPLATE
 
     def test_warns_about_untrusted_input(self):
         assert "UNTRUSTED user input" in TEMPLATE

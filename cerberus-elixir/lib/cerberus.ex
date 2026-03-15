@@ -15,7 +15,7 @@ defmodule Cerberus do
 
   @spec prompt_glob() :: String.t()
   def prompt_glob do
-    Application.get_env(:cerberus_elixir, :prompt_glob, ".opencode/agents/*.md")
+    Application.get_env(:cerberus_elixir, :prompt_glob, "pi/agents/*.md")
   end
 
   @spec prompts_path() :: String.t()

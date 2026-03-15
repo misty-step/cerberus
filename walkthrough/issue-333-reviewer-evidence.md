@@ -8,7 +8,7 @@
 
 ## Fast Review Path
 
-1. Read the new indirect re-entry section in `.opencode/agents/security.md`.
+1. Read the new indirect re-entry section in `pi/agents/security.md`.
 2. Confirm the repo-level checklist alignment in `pi/skills/security-review/SKILL.md`.
 3. Inspect the three new replay fixtures in `evals/promptfooconfig.yaml`.
 4. Verify the locking tests in `tests/test_security_prompt_contract.py` and `tests/test_evals_config.py`.

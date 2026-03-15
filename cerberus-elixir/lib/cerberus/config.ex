@@ -30,7 +30,7 @@ defmodule Cerberus.Config do
   end
 
   defp load_prompts(repo_root) do
-    prompt_glob = Application.get_env(:cerberus_elixir, :prompt_glob, ".opencode/agents/*.md")
+    prompt_glob = Application.get_env(:cerberus_elixir, :prompt_glob, "pi/agents/*.md")
 
     prompts =
       repo_root

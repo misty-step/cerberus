@@ -17,7 +17,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 RUN_REVIEWER = REPO_ROOT / "scripts" / "run-reviewer.sh"
-AGENTS_DIR = REPO_ROOT / ".opencode" / "agents"
+AGENTS_DIR = REPO_ROOT / "pi" / "agents"
 
 
 def _make_executable(path: Path, content: str) -> None:

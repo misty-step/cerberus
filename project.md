@@ -49,7 +49,7 @@ Canonical source: `docs/TERMINOLOGY.md`
 
 ## Patterns to Follow
 
-### Reviewer prompt structure (in .opencode/agents/*.md)
+### Reviewer prompt structure (in pi/agents/*.md)
 YAML frontmatter (ignored), then body is the system prompt trusted by Pi runtime.
 
 ### Error classification in run-reviewer.py

@@ -22,7 +22,7 @@ def _write_fake_root(
     root = tmp_path / "cerberus-root"
     (root / "defaults").mkdir(parents=True)
     (root / "templates").mkdir(parents=True)
-    (root / ".opencode" / "agents").mkdir(parents=True)
+    (root / "pi" / "agents").mkdir(parents=True)
 
     if config_yml is None:
         config_yml = "- name: SENTINEL\n  perspective: security\n"
@@ -37,7 +37,7 @@ perspectives:
 """
     )
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
-    (root / ".opencode" / "agents" / "security.md").write_text(agent_content)
+    (root / "pi" / "agents" / "security.md").write_text(agent_content)
     return root
 
 

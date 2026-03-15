@@ -5,7 +5,7 @@ on:
     paths:
       - 'evals/**'
       - 'templates/**'
-      - '.opencode/agents/**'
+      - 'pi/agents/**'
   workflow_dispatch:
 
 jobs:

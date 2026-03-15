@@ -9,8 +9,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parent.parent
-CORRECTNESS_PROMPT = ROOT / ".opencode" / "agents" / "correctness.md"
-RESILIENCE_PROMPT = ROOT / ".opencode" / "agents" / "resilience.md"
+CORRECTNESS_PROMPT = ROOT / "pi" / "agents" / "correctness.md"
+RESILIENCE_PROMPT = ROOT / "pi" / "agents" / "resilience.md"
 
 
 def _correctness_text() -> str:

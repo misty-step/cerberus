@@ -132,7 +132,7 @@ def write_fake_cerberus_root(
     (root / "defaults").mkdir(parents=True)
     (root / "templates").mkdir(parents=True)
     (root / "scripts" / "lib").mkdir(parents=True)
-    (root / ".opencode" / "agents").mkdir(parents=True)
+    (root / "pi" / "agents").mkdir(parents=True)
 
     if config_yml is None:
         config_yml = "\n".join(["- name: SENTINEL", f"  perspective: {perspective}", ""])
@@ -156,7 +156,7 @@ def write_fake_cerberus_root(
     (root / "scripts" / "lib" / "prompt_sanitize.py").write_text(
         (REPO_ROOT / "scripts" / "lib" / "prompt_sanitize.py").read_text()
     )
-    (root / ".opencode" / "agents" / f"{perspective}.md").write_text("AGENT BODY\n")
+    (root / "pi" / "agents" / f"{perspective}.md").write_text("AGENT BODY\n")
 
 
 def test_empty_diff_file_is_handled(tmp_path: Path) -> None:

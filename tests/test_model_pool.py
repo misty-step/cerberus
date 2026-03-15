@@ -39,7 +39,7 @@ def write_fake_cerberus_root(root: Path, *, config_yml: str, perspective: str = 
     (root / "defaults").mkdir(parents=True)
     (root / "templates").mkdir(parents=True)
     (root / "scripts" / "lib").mkdir(parents=True)
-    (root / ".opencode" / "agents").mkdir(parents=True)
+    (root / "pi" / "agents").mkdir(parents=True)
 
     (root / "defaults" / "config.yml").write_text(config_yml)
     (root / "templates" / "review-prompt.md").write_text("{{DIFF_FILE}}\n{{PERSPECTIVE}}\n")
@@ -55,7 +55,7 @@ def write_fake_cerberus_root(root: Path, *, config_yml: str, perspective: str = 
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text((REPO_ROOT / rel).read_text())
 
-    (root / ".opencode" / "agents" / f"{perspective}.md").write_text("AGENT BODY\n")
+    (root / "pi" / "agents" / f"{perspective}.md").write_text("AGENT BODY\n")
 
 
 def make_env(

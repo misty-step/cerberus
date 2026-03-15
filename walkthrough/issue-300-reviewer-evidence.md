@@ -19,7 +19,7 @@ Cerberus was hiding actionable dependency hygiene findings when reviewers called
 - `scripts/aggregate-verdict.py` now promotes unused runtime dependency findings to `minor` for a known set of non-trivial packages.
 - The same aggregation pass promotes repeated unused-dependency findings when multiple reviewers agree on the same package/file pair and annotates the finding description with cross-reviewer agreement.
 - Reviewer stats are recomputed after promotion so the artifact stays internally consistent.
-- `.opencode/agents/maintainability.md` now tells `craft` to classify non-trivial unused runtime dependencies as `minor`.
+- `pi/agents/maintainability.md` now tells `craft` to classify non-trivial unused runtime dependencies as `minor`.
 
 ## After
 

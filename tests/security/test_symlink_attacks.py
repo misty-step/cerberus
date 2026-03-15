@@ -80,11 +80,11 @@ def test_workspace_opencode_json_symlink_is_untouched(tmp_path: Path) -> None:
 
 def test_workspace_agent_symlink_is_untouched(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    (workspace / ".opencode" / "agents").mkdir(parents=True)
+    (workspace / "pi" / "agents").mkdir(parents=True)
 
     target = tmp_path / "evil-agent.md"
     target.write_text("evil\n")
-    link = workspace / ".opencode" / "agents" / "security.md"
+    link = workspace / "pi" / "agents" / "security.md"
     link.symlink_to(target)
 
     bin_dir = tmp_path / "bin"

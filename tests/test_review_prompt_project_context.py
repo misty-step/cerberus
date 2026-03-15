@@ -229,7 +229,7 @@ def test_render_review_prompt_from_env_outputs_prompt(tmp_path: Path) -> None:
     assert "The PR diff is at: `/tmp/pr.diff`" in rendered
 
 
-def test_prompt_instructs_external_context_retrieval() -> None:
+def test_prompt_instructs_tool_posture() -> None:
     rendered = render_review_prompt_text(
         template_text=TEMPLATE,
         pr_context=_base_pr_context(),
@@ -238,7 +238,7 @@ def test_prompt_instructs_external_context_retrieval() -> None:
         current_date="2026-03-03",
     )
 
-    assert "## External Context Retrieval" in rendered
+    assert "## Tool Posture" in rendered
     assert "`github_read`" in rendered
     assert "linked issues" in rendered
     assert "Prefer tool-retrieved criteria as the primary source" in rendered
@@ -246,3 +246,79 @@ def test_prompt_instructs_external_context_retrieval() -> None:
 
 def test_prompt_has_no_acceptance_criteria_template_token() -> None:
     assert "{{ACCEPTANCE_CRITERIA_SECTION}}" not in TEMPLATE
+
+
+# --- Agentic prompt contract tests (issue #381) ---
+
+AGENTS_DIR = Path(__file__).resolve().parents[1] / "pi" / "agents"
+PERSPECTIVE_FILES = sorted(AGENTS_DIR.glob("*.md"))
+
+
+class TestTemplateContract:
+    """Verify the shared template centers on contract sections, not procedure."""
+
+    def test_has_objective_section(self) -> None:
+        assert "## Objective" in TEMPLATE
+
+    def test_has_tool_posture_section(self) -> None:
+        assert "## Tool Posture" in TEMPLATE
+
+    def test_has_evidence_bar_section(self) -> None:
+        assert "## Evidence Bar" in TEMPLATE
+
+    def test_has_output_contract_section(self) -> None:
+        assert "## Output Contract" in TEMPLATE
+
+    def test_has_scope_boundary_section(self) -> None:
+        assert "## Scope Boundary" in TEMPLATE
+
+    def test_has_trust_boundary_section(self) -> None:
+        assert "## Trust Boundary" in TEMPLATE
+
+    def test_no_review_workflow_procedure(self) -> None:
+        """The old step-by-step 'Review Workflow' section is removed."""
+        assert "## Review Workflow" not in TEMPLATE
+
+    def test_no_step_by_step_instructions_section(self) -> None:
+        """The old 'Instructions' numbered procedure is removed."""
+        assert "## Instructions" not in TEMPLATE
+
+    def test_tool_posture_authorizes_exploration(self) -> None:
+        assert "repo_read" in TEMPLATE
+        assert "github_read" in TEMPLATE
+
+    def test_tool_posture_marks_pr_content_untrusted(self) -> None:
+        assert 'trust="UNTRUSTED"' in TEMPLATE
+
+
+class TestPerspectivePromptContracts:
+    """Verify each perspective prompt has role, objective, evidence, and output contract."""
+
+    @pytest.fixture(params=[p.stem for p in PERSPECTIVE_FILES], ids=[p.stem for p in PERSPECTIVE_FILES])
+    def perspective_text(self, request: pytest.FixtureRequest) -> str:
+        path = AGENTS_DIR / f"{request.param}.md"
+        text = path.read_text(encoding="utf-8")
+        # Strip YAML frontmatter
+        if text.startswith("---"):
+            end = text.index("---", 3)
+            text = text[end + 3 :].strip()
+        return text
+
+    def test_has_role_section(self, perspective_text: str) -> None:
+        assert "## Role" in perspective_text
+
+    def test_has_objective_section(self, perspective_text: str) -> None:
+        assert "## Objective" in perspective_text
+
+    def test_has_evidence_section(self, perspective_text: str) -> None:
+        assert "## Evidence" in perspective_text
+
+    def test_has_output_contract_section(self, perspective_text: str) -> None:
+        assert "## Output Contract" in perspective_text
+
+    def test_no_review_discipline_section(self, perspective_text: str) -> None:
+        """The old procedural 'Review Discipline' section is removed."""
+        assert "## Review Discipline" not in perspective_text
+
+    def test_untrusted_input_declaration(self, perspective_text: str) -> None:
+        assert "untrusted" in perspective_text.lower()

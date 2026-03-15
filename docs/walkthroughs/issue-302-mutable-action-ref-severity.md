@@ -23,13 +23,13 @@ This lane fixes a security-review blind spot in the `guard` prompt. Cerberus alr
 ## AC Verification Report (#302)
 
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@master` with a sibling `secrets:` block passing any secret, when reviewed by `guard`, then a finding with severity `minor` or higher is emitted with category `supply-chain` or `security`.
-  Evidence: `.opencode/agents/security.md` now requires mutable third-party refs to report at least `minor`, and `tests/test_infra_prompt_guidance.py` locks that language. This is prompt-contract evidence rather than a live LLM replay.
+  Evidence: `pi/agents/security.md` now requires mutable third-party refs to report at least `minor`, and `tests/test_infra_prompt_guidance.py` locks that language. This is prompt-contract evidence rather than a live LLM replay.
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@master` with `secrets: api-key: ${{ secrets.SOME_API_KEY }}`, when reviewed by `guard`, then severity is `major`.
-  Evidence: `.opencode/agents/security.md` now explicitly says to escalate to `major` when forwarded reusable credentials reach the mutable third-party action via `env:` or `with:` on an action step, or via reusable-workflow `secrets:` blocks, and the regression test locks that clause.
+  Evidence: `pi/agents/security.md` now explicitly says to escalate to `major` when forwarded reusable credentials reach the mutable third-party action via `env:` or `with:` on an action step, or via reusable-workflow `secrets:` blocks, and the regression test locks that clause.
 - ⚠️ PARTIAL: Given a PR diff containing `uses: owner/repo@v1.2.3`, when reviewed by `guard`, then no supply-chain finding is emitted.
-  Evidence: `.opencode/agents/security.md` now declares full SHAs and full stable third-party release tags such as `@v1.2.3` acceptable refs, while keeping partial semver refs such as `@v1` and `@v1.2` and prerelease refs such as `@v1.2.3-beta` out of the safe set, and `tests/test_infra_prompt_guidance.py` asserts that text is present.
+  Evidence: `pi/agents/security.md` now declares full SHAs and full stable third-party release tags such as `@v1.2.3` acceptable refs, while keeping partial semver refs such as `@v1` and `@v1.2` and prerelease refs such as `@v1.2.3-beta` out of the safe set, and `tests/test_infra_prompt_guidance.py` asserts that text is present.
 - ⚠️ PARTIAL: Given a PR diff with `uses: actions/checkout@v4`, when reviewed by `guard`, then no supply-chain finding is emitted.
-  Evidence: `.opencode/agents/security.md` now explicitly exempts GitHub-owned semver-style refs such as `actions/checkout@v4` as a lower-risk policy carveout rather than an immutability claim, and the regression test locks that example.
+  Evidence: `pi/agents/security.md` now explicitly exempts GitHub-owned semver-style refs such as `actions/checkout@v4` as a lower-risk policy carveout rather than an immutability claim, and the regression test locks that example.
 
 Additional review hardening applied during `/pr-fix`:
 
