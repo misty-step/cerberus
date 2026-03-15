@@ -7,6 +7,7 @@ defmodule Cerberus.ApplicationTest do
       |> Supervisor.which_children()
       |> Enum.map(fn {id, _pid, _type, _modules} -> id end)
 
+    assert Cerberus.Config in children
     assert Cerberus.Store in children
     assert Cerberus.ReviewSupervisor in children
     assert Cerberus.Router in children
