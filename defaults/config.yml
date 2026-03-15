@@ -27,33 +27,37 @@ model:
   max_steps: 25                       # Max agentic steps per reviewer
   timeout: 600                        # Seconds per reviewer
 
+# Waves are disabled — all routed reviewers run in a single parallel dispatch.
+# Wave definitions are retained for backward compatibility with custom consumer
+# workflows that still pass wave= to the matrix action. New workflows should
+# omit the wave parameter entirely; model selection uses tier_pools via MODEL_TIER.
 waves:
-  enabled: true
+  enabled: false
   order:
     - wave1
     - wave2
     - wave3
   max_for_tier:
-    flash: 2      # docs-only PRs stop at wave2
+    flash: 2
     standard: 3
     pro: 3
   gate:
     block_on_critical: true
     block_on_major: true
     block_on_skip: true
-    skip_tolerance: 1           # allow up to 1 skip per wave before blocking (3-reviewer pools)
+    skip_tolerance: 1
   definitions:
-    wave1:                            # "Does it work and is it safe?" — flash models
+    wave1:
       reviewers:
         - trace
         - guard
         - proof
-    wave2:                            # "Is it well-designed?" — standard models
+    wave2:
       reviewers:
         - atlas
         - fuse
         - craft
-    wave3:                            # "Deep audit of highest stakes" — pro models
+    wave3:
       reviewers:
         - trace
         - guard
