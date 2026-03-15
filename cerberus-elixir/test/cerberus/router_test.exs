@@ -223,6 +223,48 @@ defmodule Cerberus.RouterTest do
     end
   end
 
+  describe "parse_diff with deleted files" do
+    test "preserves original path when +++ /dev/null" do
+      diff = """
+      diff --git a/lib/old.ex b/lib/old.ex
+      --- a/lib/old.ex
+      +++ /dev/null
+      @@ -1,3 +0,0 @@
+      -defmodule Old do
+      -  def gone, do: :bye
+      -end
+      """
+
+      summary = Router.parse_diff(diff)
+      assert summary.total_files == 1
+      [file] = summary.files
+      assert file.path == "lib/old.ex"
+      assert file.deletions == 3
+    end
+
+    test "handles multiple deleted files without collision" do
+      diff = """
+      diff --git a/lib/a.ex b/lib/a.ex
+      --- a/lib/a.ex
+      +++ /dev/null
+      @@ -1,2 +0,0 @@
+      -defmodule A do
+      -end
+      diff --git a/lib/b.ex b/lib/b.ex
+      --- a/lib/b.ex
+      +++ /dev/null
+      @@ -1,2 +0,0 @@
+      -defmodule B do
+      -end
+      """
+
+      summary = Router.parse_diff(diff)
+      assert summary.total_files == 2
+      paths = Enum.map(summary.files, & &1.path) |> Enum.sort()
+      assert paths == ["lib/a.ex", "lib/b.ex"]
+    end
+  end
+
   # --- route/3 (integration with Config) ---
 
   describe "route/3" do
@@ -230,16 +272,11 @@ defmodule Cerberus.RouterTest do
       config_name = :"config_router_#{System.unique_integer([:positive])}"
       {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
 
-      # Mock LLM that returns a valid panel
+      # Deterministic mock that always returns required perspectives first
+      preferred = ["correctness", "security", "architecture", "testing"]
+
       mock_llm = fn params ->
-        panel_size = params.panel_size
-        perspectives = params.all_perspectives
-
-        panel =
-          perspectives
-          |> Enum.take(panel_size)
-
-        {:ok, panel}
+        {:ok, Enum.take(preferred, params.panel_size)}
       end
 
       router_name = :"router_#{System.unique_integer([:positive])}"
@@ -393,6 +430,66 @@ defmodule Cerberus.RouterTest do
       {:ok, result} = Router.route(@doc_only_diff, [], router)
       assert result.model_tier == :flash
       assert result.size_bucket == :small
+    end
+  end
+
+  describe "route/3 with routing disabled" do
+    setup do
+      config_name = :"config_disabled_#{System.unique_integer([:positive])}"
+      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+
+      # LLM that should never be called
+      spy_llm = fn _params -> raise "LLM should not be called when routing disabled" end
+
+      router_name = :"router_disabled_#{System.unique_integer([:positive])}"
+
+      {:ok, _router_pid} =
+        Router.start_link(
+          name: router_name,
+          config_server: config_name,
+          call_llm: spy_llm
+        )
+
+      # Patch config to disable routing
+      :sys.replace_state(config_name, fn state ->
+        Map.update!(state, :routing, &Map.put(&1, :enabled, false))
+      end)
+
+      %{router: router_name}
+    end
+
+    test "skips LLM and uses fallback when routing disabled", %{router: router} do
+      {:ok, result} = Router.route(@simple_diff, [], router)
+      assert result.routing_used == false
+      assert length(result.panel) == 4
+      assert "correctness" in result.panel
+    end
+  end
+
+  describe "route/3 when LLM raises" do
+    setup do
+      config_name = :"config_raise_#{System.unique_integer([:positive])}"
+      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+
+      # LLM that raises an exception
+      raising_llm = fn _params -> raise RuntimeError, "connection timeout" end
+
+      router_name = :"router_raise_#{System.unique_integer([:positive])}"
+
+      {:ok, _router_pid} =
+        Router.start_link(
+          name: router_name,
+          config_server: config_name,
+          call_llm: raising_llm
+        )
+
+      %{router: router_name}
+    end
+
+    test "catches exception and falls back gracefully", %{router: router} do
+      {:ok, result} = Router.route(@simple_diff, [], router)
+      assert result.routing_used == false
+      assert length(result.panel) == 4
     end
   end
 end

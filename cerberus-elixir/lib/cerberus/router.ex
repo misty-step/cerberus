@@ -75,7 +75,11 @@ defmodule Cerberus.Router do
     router_model = routing[:model] || @default_router_model
 
     {panel, routing_used} =
-      try_llm_routing(state.call_llm, personas, summary, panel_size, required, all_perspectives, metadata, router_model)
+      if Map.get(routing, :enabled, true) do
+        try_llm_routing(state.call_llm, personas, summary, panel_size, required, all_perspectives, metadata, router_model)
+      else
+        {[], false}
+      end
 
     {panel, routing_used} =
       if panel == [] do
@@ -116,8 +120,8 @@ defmodule Cerberus.Router do
         %{record | extension: ext, is_doc: is_doc, is_test: is_test, is_code: is_code}
       end)
 
-    total_add = Enum.sum(Enum.map(file_list, & &1.additions))
-    total_del = Enum.sum(Enum.map(file_list, & &1.deletions))
+    total_add = Enum.sum_by(file_list, & &1.additions)
+    total_del = Enum.sum_by(file_list, & &1.deletions)
 
     %{
       files: file_list,
@@ -143,6 +147,9 @@ defmodule Cerberus.Router do
 
       String.starts_with?(line, "+++ ") and current != nil ->
         case extract_b_path(line) do
+          {:ok, "/dev/null"} ->
+            {files, current}
+
           {:ok, new_path} when new_path != current ->
             record = Map.get(files, current, new_file_record(new_path))
             {files |> Map.delete(current) |> Map.put(new_path, %{record | path: new_path}), new_path}
@@ -151,10 +158,10 @@ defmodule Cerberus.Router do
             {files, current}
         end
 
-      String.starts_with?(line, "+") and not String.starts_with?(line, "+++") and current != nil ->
+      String.starts_with?(line, "+") and not String.starts_with?(line, "+++ ") and current != nil ->
         {Map.update!(files, current, &%{&1 | additions: &1.additions + 1}), current}
 
-      String.starts_with?(line, "-") and not String.starts_with?(line, "---") and current != nil ->
+      String.starts_with?(line, "-") and not String.starts_with?(line, "--- ") and current != nil ->
         {Map.update!(files, current, &%{&1 | deletions: &1.deletions + 1}), current}
 
       true ->
@@ -283,13 +290,23 @@ defmodule Cerberus.Router do
       all_perspectives: all_perspectives
     }
 
-    case call_llm.(params) do
-      {:ok, panel} when is_list(panel) ->
-        validated = validate_panel(panel, required, all_perspectives, panel_size)
-        if validated != [], do: {validated, true}, else: {[], false}
+    try do
+      case call_llm.(params) do
+        {:ok, panel} when is_list(panel) ->
+          validated = validate_panel(panel, required, all_perspectives, panel_size)
+          if validated != [], do: {validated, true}, else: {[], false}
 
-      {:error, reason} ->
-        Logger.warning("Router LLM call failed: #{inspect(reason)}")
+        {:error, reason} ->
+          Logger.warning("Router LLM call failed: #{inspect(reason)}")
+          {[], false}
+
+        other ->
+          Logger.warning("Router LLM returned unexpected payload: #{inspect(other)}")
+          {[], false}
+      end
+    rescue
+      e ->
+        Logger.warning("Router LLM call raised: #{Exception.message(e)}")
         {[], false}
     end
   end
@@ -423,10 +440,17 @@ defmodule Cerberus.Router do
           name: "cerberus_panel",
           strict: true,
           schema: %{
-            type: "array",
-            items: %{type: "string"},
-            minItems: params.panel_size,
-            maxItems: params.panel_size
+            type: "object",
+            properties: %{
+              panel: %{
+                type: "array",
+                items: %{type: "string"},
+                minItems: params.panel_size,
+                maxItems: params.panel_size
+              }
+            },
+            required: ["panel"],
+            additionalProperties: false
           }
         }
       }
@@ -458,14 +482,18 @@ defmodule Cerberus.Router do
          message when is_map(message) <- hd(choices)["message"],
          content when is_binary(content) <- message["content"],
          {:ok, parsed} <- Jason.decode(content),
-         true <- is_list(parsed) do
-      {:ok, Enum.map(parsed, &to_string/1)}
+         panel when is_list(panel) <- extract_panel(parsed) do
+      {:ok, Enum.map(panel, &to_string/1)}
     else
       _ -> {:error, :invalid_response}
     end
   end
 
   defp parse_llm_response(_), do: {:error, :invalid_response}
+
+  defp extract_panel(%{"panel" => panel}) when is_list(panel), do: panel
+  defp extract_panel(list) when is_list(list), do: list
+  defp extract_panel(_), do: nil
 
   # --- Helpers ---
 
