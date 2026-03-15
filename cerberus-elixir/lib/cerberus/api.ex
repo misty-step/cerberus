@@ -33,8 +33,6 @@ defmodule Cerberus.API do
 
   # --- Auth ---
 
-  defp check_auth(%Plug.Conn{path_info: []} = conn, _opts), do: conn
-
   defp check_auth(conn, _opts) do
     expected = conn.private[:api_key] || api_key_from_env()
 

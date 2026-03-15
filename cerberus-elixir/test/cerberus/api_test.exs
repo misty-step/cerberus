@@ -82,6 +82,16 @@ defmodule Cerberus.APITest do
       assert conn.status == 422
     end
 
+    test "rejects empty string repo", %{store: store} do
+      conn = json_post("/api/reviews", %{repo: "", pr_number: 1, head_sha: "abc123"}, store)
+      assert conn.status == 422
+    end
+
+    test "rejects empty string head_sha", %{store: store} do
+      conn = json_post("/api/reviews", %{repo: "org/repo", pr_number: 1, head_sha: ""}, store)
+      assert conn.status == 422
+    end
+
     test "rejects non-integer pr_number", %{store: store} do
       conn = json_post("/api/reviews", %{repo: "org/repo", pr_number: "abc", head_sha: "abc123"}, store)
       assert conn.status == 422
@@ -112,6 +122,11 @@ defmodule Cerberus.APITest do
       assert body["error"] == "not_found"
     end
 
+    test "returns 404 for non-integer id", %{store: store} do
+      conn = authed_get("/api/reviews/abc", store)
+      assert conn.status == 404
+    end
+
     test "returns queued review status after creation", %{store: store} do
       post_conn =
         json_post("/api/reviews", %{
@@ -130,6 +145,22 @@ defmodule Cerberus.APITest do
       assert body["status"] == "queued"
       assert body["repo"] == "org/repo"
       assert body["pr_number"] == 42
+    end
+
+    test "does not leak github_token in response", %{store: store} do
+      post_conn =
+        json_post("/api/reviews", %{
+          repo: "org/repo",
+          pr_number: 42,
+          head_sha: "abc123",
+          github_token: "ghp_secret123"
+        }, store)
+
+      %{"review_id" => id} = Jason.decode!(post_conn.resp_body)
+
+      conn = authed_get("/api/reviews/#{id}", store)
+      body = Jason.decode!(conn.resp_body)
+      refute Map.has_key?(body, "github_token")
     end
   end
 

@@ -6,6 +6,20 @@
 
 set -euo pipefail
 
+# --- Helpers ---
+
+parse_json() {
+  python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(eval(compile(sys.argv[1], '<expr>', 'eval'), {'data': data}))
+except Exception as e:
+    print(f'error: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$1"
+}
+
 # --- Preflight ---
 
 if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
@@ -44,26 +58,25 @@ fi
 REPO="${BASE_REPO}"
 TIMEOUT="${CERBERUS_TIMEOUT:-600}"
 POLL_INTERVAL="${CERBERUS_POLL_INTERVAL:-5}"
+MAX_POLL_ERRORS=10
 
-payload=$(cat <<EOF
-{
-  "repo": "${REPO}",
-  "pr_number": ${PR_NUMBER},
-  "head_sha": "${HEAD_SHA}",
-  "github_token": "${GITHUB_TOKEN}",
-  "model": "${CERBERUS_MODEL:-}",
-  "context": "${CERBERUS_CONTEXT:-}"
-}
-EOF
-)
+payload=$(jq -n \
+  --arg repo "$REPO" \
+  --argjson pr_number "$PR_NUMBER" \
+  --arg head_sha "$HEAD_SHA" \
+  --arg github_token "$GITHUB_TOKEN" \
+  --arg model "${CERBERUS_MODEL:-}" \
+  --arg context "${CERBERUS_CONTEXT:-}" \
+  '{repo: $repo, pr_number: $pr_number, head_sha: $head_sha, github_token: $github_token, model: $model, context: $context}')
 
 echo "Dispatching review for ${REPO}#${PR_NUMBER} (${HEAD_SHA:0:12})..."
 
 response=$(curl -s -w "\n%{http_code}" \
+  --connect-timeout 10 --max-time 30 \
   -X POST "${CERBERUS_URL}/api/reviews" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${CERBERUS_API_KEY}" \
-  -d "${payload}")
+  -d "$payload")
 
 http_code=$(echo "$response" | tail -1)
 body=$(echo "$response" | sed '$d')
@@ -75,19 +88,21 @@ if [ "$http_code" != "202" ]; then
   exit 1
 fi
 
-review_id=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin)['review_id'])")
+review_id=$(echo "$body" | parse_json "data['review_id']")
 echo "Review dispatched: id=${review_id}"
 echo "review-id=${review_id}" >> "$GITHUB_OUTPUT"
 
 # --- Poll ---
 
 elapsed=0
+consecutive_errors=0
 
 while [ "$elapsed" -lt "$TIMEOUT" ]; do
   sleep "$POLL_INTERVAL"
   elapsed=$((elapsed + POLL_INTERVAL))
 
   poll_response=$(curl -s -w "\n%{http_code}" \
+    --connect-timeout 10 --max-time 30 \
     "${CERBERUS_URL}/api/reviews/${review_id}" \
     -H "Authorization: Bearer ${CERBERUS_API_KEY}")
 
@@ -95,20 +110,22 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
   poll_body=$(echo "$poll_response" | sed '$d')
 
   if [ "$poll_code" != "200" ]; then
-    echo "::warning::Poll returned ${poll_code}, retrying..."
+    consecutive_errors=$((consecutive_errors + 1))
+    echo "::warning::Poll returned ${poll_code} (error ${consecutive_errors}/${MAX_POLL_ERRORS})"
+    if [ "$consecutive_errors" -ge "$MAX_POLL_ERRORS" ]; then
+      echo "::error::Too many consecutive poll errors, aborting"
+      echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+      exit 1
+    fi
     continue
   fi
+  consecutive_errors=0
 
-  status=$(echo "$poll_body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
+  status=$(echo "$poll_body" | parse_json "data.get('status','unknown')")
 
   case "$status" in
     completed|failed)
-      verdict=$(echo "$poll_body" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-av = data.get('aggregated_verdict') or {}
-print(av.get('verdict', 'SKIP'))
-")
+      verdict=$(echo "$poll_body" | parse_json "(data.get('aggregated_verdict') or {}).get('verdict', 'SKIP')")
       echo "Review complete: verdict=${verdict} (${elapsed}s)"
       echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
 
