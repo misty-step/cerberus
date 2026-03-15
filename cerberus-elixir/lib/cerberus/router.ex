@@ -55,6 +55,11 @@ defmodule Cerberus.Router do
   def handle_call({:route, diff_text, opts}, _from, state) do
     result = do_route(diff_text, opts, state)
     {:reply, {:ok, result}, state}
+  rescue
+    e ->
+      Logger.warning("Router crashed: #{Exception.message(e)}")
+      summary = parse_diff(diff_text)
+      {:reply, {:ok, crash_fallback(summary)}, state}
   end
 
   # --- Routing Core ---
@@ -69,10 +74,10 @@ defmodule Cerberus.Router do
 
     all_perspectives = Enum.map(personas, &Atom.to_string(&1.perspective))
     name_to_perspective = Map.new(personas, &{&1.name, Atom.to_string(&1.perspective)})
-    panel_size = min(routing.panel_size, length(personas))
     required = required_perspectives(routing, name_to_perspective, summary.code_changed)
+    panel_size = max(min(routing.panel_size, length(personas)), length(required))
     metadata = Keyword.get(opts, :metadata, %{})
-    router_model = routing[:model] || @default_router_model
+    router_model = non_empty_string(routing[:model], @default_router_model)
 
     {panel, routing_used} =
       if Map.get(routing, :enabled, true) do
@@ -321,9 +326,9 @@ defmodule Cerberus.Router do
 
     ext_text = if ext_text == "", do: "(none)", else: ext_text
 
-    repo = Map.get(metadata, :repo, "unknown")
-    ref = Map.get(metadata, :ref, "unknown")
-    event = Map.get(metadata, :event, "unknown")
+    repo = metadata |> Map.get(:repo, "unknown") |> sanitize_prompt_value()
+    ref = metadata |> Map.get(:ref, "unknown") |> sanitize_prompt_value()
+    event = metadata |> Map.get(:event, "unknown") |> sanitize_prompt_value()
 
     bench_rows =
       Enum.map(personas, fn p ->
@@ -550,4 +555,32 @@ defmodule Cerberus.Router do
       code_changed: false
     }
   end
+
+  @default_crash_panel ~w(correctness security architecture testing)
+  defp crash_fallback(summary) do
+    %{
+      panel: @default_crash_panel,
+      reserves: ~w(maintainability resilience),
+      model_tier: classify_model_tier_safe(summary),
+      size_bucket: classify_size(summary),
+      routing_used: false
+    }
+  end
+
+  defp classify_model_tier_safe(summary) do
+    classify_model_tier(summary)
+  rescue
+    _ -> :standard
+  end
+
+  defp non_empty_string(val, _default) when is_binary(val) and val != "", do: val
+  defp non_empty_string(_, default), do: default
+
+  defp sanitize_prompt_value(val) when is_binary(val) do
+    val
+    |> String.replace(~r/[\n\r]/, " ")
+    |> String.slice(0, 200)
+  end
+
+  defp sanitize_prompt_value(_), do: "unknown"
 end

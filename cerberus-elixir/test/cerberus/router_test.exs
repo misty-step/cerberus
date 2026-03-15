@@ -433,6 +433,43 @@ defmodule Cerberus.RouterTest do
     end
   end
 
+  describe "route/3 with nil routing model" do
+    setup do
+      config_name = :"config_nilmodel_#{System.unique_integer([:positive])}"
+      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+
+      # Patch config to have nil model
+      :sys.replace_state(config_name, fn state ->
+        Map.update!(state, :routing, &Map.put(&1, :model, nil))
+      end)
+
+      # Mock LLM that captures the model it receives
+      test_pid = self()
+
+      mock_llm = fn params ->
+        send(test_pid, {:llm_model, params.model})
+        {:ok, Enum.take(["correctness", "security", "architecture", "testing"], params.panel_size)}
+      end
+
+      router_name = :"router_nilmodel_#{System.unique_integer([:positive])}"
+
+      {:ok, _router_pid} =
+        Router.start_link(
+          name: router_name,
+          config_server: config_name,
+          call_llm: mock_llm
+        )
+
+      %{router: router_name}
+    end
+
+    test "falls back to default router model when config model is nil", %{router: router} do
+      {:ok, _result} = Router.route(@simple_diff, [], router)
+      assert_receive {:llm_model, model}
+      assert model == "openrouter/google/gemini-3-flash-preview"
+    end
+  end
+
   describe "route/3 with routing disabled" do
     setup do
       config_name = :"config_disabled_#{System.unique_integer([:positive])}"
