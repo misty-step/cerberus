@@ -27,6 +27,6 @@ defmodule Cerberus.Verdict.Cost do
 
   defp lookup_pricing(model) do
     normalized = String.replace_prefix(model, "openrouter/", "")
-    Map.get(@model_pricing, model, Map.get(@model_pricing, normalized, @default_pricing))
+    Map.get(@model_pricing, normalized, @default_pricing)
   end
 end

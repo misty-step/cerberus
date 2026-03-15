@@ -13,8 +13,6 @@ defmodule Cerberus.Verdict.Dedup do
 
   alias Cerberus.Verdict.Finding
 
-  @severity_order %{"critical" => 0, "major" => 1, "minor" => 2, "info" => 3}
-
   @stop_words MapSet.new(~w(
     a an and at be by for from in into is it of on or same
     that the this to use used using with
@@ -60,7 +58,7 @@ defmodule Cerberus.Verdict.Dedup do
 
           %{
             state
-            | buckets: Map.put(state.buckets, key, ids ++ [id]),
+            | buckets: Map.put(state.buckets, key, [id | ids]),
               entries: Map.put(state.entries, id, entry),
               next_id: id + 1
           }
@@ -97,8 +95,7 @@ defmodule Cerberus.Verdict.Dedup do
 
   # --- Equivalence ---
 
-  @doc false
-  def equivalent?(existing, candidate) do
+  defp equivalent?(existing, candidate) do
     normalize_file(existing.file) == normalize_file(candidate.file) and
       norm_key(existing.category) == norm_key(candidate.category) and
       lines_close?(existing.line, candidate.line) and
@@ -135,12 +132,9 @@ defmodule Cerberus.Verdict.Dedup do
 
   # --- Tokenization ---
 
-  @doc false
-  def content_tokens(a, b), do: content_tokens([a, b])
-
-  @doc false
-  def content_tokens(values) when is_list(values) do
-    Enum.reduce(values, MapSet.new(), fn val, acc ->
+  defp content_tokens(a, b) do
+    [a, b]
+    |> Enum.reduce(MapSet.new(), fn val, acc ->
       val
       |> to_string()
       |> String.downcase()
@@ -217,18 +211,19 @@ defmodule Cerberus.Verdict.Dedup do
   end
 
   defp worst_severity(a, b) do
-    if Map.get(@severity_order, a, 3) <= Map.get(@severity_order, b, 3), do: a, else: b
+    if Finding.severity_rank(a) <= Finding.severity_rank(b), do: a, else: b
   end
 
-  defp choose_line(a, b) do
-    positives = Enum.filter([a, b], &(&1 > 0))
-    if positives != [], do: Enum.min(positives), else: max(a, max(b, 0))
-  end
+  defp choose_line(a, b) when a > 0 and b > 0, do: min(a, b)
+  defp choose_line(a, _b) when a > 0, do: a
+  defp choose_line(_a, b) when b > 0, do: b
+  defp choose_line(_, _), do: 0
 
   defp best_text(nil, b), do: b
   defp best_text(a, nil), do: a
+
   defp best_text(a, b) when is_binary(a) and is_binary(b) do
-    if String.length(b) > String.length(a), do: b, else: a
+    if byte_size(b) > byte_size(a), do: b, else: a
   end
 
   # --- Normalization ---

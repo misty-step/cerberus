@@ -21,7 +21,7 @@ defmodule Cerberus.Verdict.Aggregator do
   """
 
   alias Cerberus.Verdict
-  alias Cerberus.Verdict.{Cost, Dedup, Override}
+  alias Cerberus.Verdict.{Cost, Dedup, Finding, Override}
 
   @type result :: %{
           verdict: String.t(),
@@ -73,8 +73,6 @@ defmodule Cerberus.Verdict.Aggregator do
       if v.confidence >= min do
         v
       else
-        # Below threshold: exclude findings from verdict computation
-        # but keep the verdict struct for reporting
         %{v | findings: [], verdict: "SKIP"}
       end
     end)
@@ -83,9 +81,7 @@ defmodule Cerberus.Verdict.Aggregator do
   # --- Dedup ---
 
   defp dedup_findings(verdicts) do
-    findings_by_reviewer =
-      Map.new(verdicts, fn v -> {v.reviewer, v.findings} end)
-
+    findings_by_reviewer = Map.new(verdicts, fn v -> {v.reviewer, v.findings} end)
     Dedup.group_findings(findings_by_reviewer)
   end
 
@@ -120,27 +116,22 @@ defmodule Cerberus.Verdict.Aggregator do
   end
 
   defp has_critical?(verdict) do
-    Enum.any?(verdict.findings, &(&1.severity == "critical")) or
-      (is_map(verdict.stats) and Map.get(verdict.stats, "critical", 0) > 0)
+    Enum.any?(verdict.findings, &Finding.critical?/1)
   end
 
   # --- Decision ---
 
   defp decide(classified, override) do
     cond do
-      # Override bypasses all logic
       override != nil ->
         "PASS"
 
-      # All reviewers skipped
       classified.stats.total > 0 and classified.stats.skip == classified.stats.total ->
         "SKIP"
 
-      # Critical FAIL or 2+ non-critical FAILs
       classified.blocking_fails != [] or length(classified.non_critical_fails) >= 2 ->
         "FAIL"
 
-      # Any WARN or single non-critical FAIL
       classified.warns != [] or classified.non_critical_fails != [] ->
         "WARN"
 
@@ -165,7 +156,7 @@ defmodule Cerberus.Verdict.Aggregator do
 
       case parts do
         [] -> "All reviewers passed."
-        _ -> Enum.reverse(parts) |> Enum.join(", ") |> Kernel.<>(".")
+        _ -> parts |> Enum.reverse() |> Enum.join(", ") |> Kernel.<>(".")
       end
     end
   end
@@ -175,33 +166,28 @@ defmodule Cerberus.Verdict.Aggregator do
 
   # --- Reserve Triggers ---
 
-  @reserve_checks [
-    {:disagreement, &__MODULE__.disagreement?/1},
-    {:low_confidence, &__MODULE__.low_confidence?/1},
-    {:critical_weak_evidence, &__MODULE__.critical_weak_evidence?/1}
-  ]
-
   defp detect_reserves(verdicts) do
-    for {signal, check} <- @reserve_checks, check.(verdicts), do: signal
+    []
+    |> prepend_if(disagreement?(verdicts), :disagreement)
+    |> prepend_if(low_confidence?(verdicts), :low_confidence)
+    |> prepend_if(critical_weak_evidence?(verdicts), :critical_weak_evidence)
+    |> Enum.reverse()
   end
 
-  @doc false
-  def disagreement?(verdicts) do
+  defp disagreement?(verdicts) do
     effective = verdicts |> Enum.reject(&(&1.verdict == "SKIP")) |> Enum.map(& &1.verdict)
     "PASS" in effective and "FAIL" in effective
   end
 
-  @doc false
-  def low_confidence?(verdicts) do
+  defp low_confidence?(verdicts) do
     Enum.any?(verdicts, &(&1.verdict != "SKIP" and &1.confidence < 0.5))
   end
 
-  @doc false
-  def critical_weak_evidence?(verdicts) do
+  defp critical_weak_evidence?(verdicts) do
     Enum.any?(verdicts, fn v ->
       Enum.any?(v.findings, fn f ->
-        f.severity == "critical" and
-          (is_nil(f.evidence) or (is_binary(f.evidence) and String.length(f.evidence) < 10))
+        Finding.critical?(f) and
+          (is_nil(f.evidence) or (is_binary(f.evidence) and byte_size(f.evidence) < 10))
       end)
     end)
   end

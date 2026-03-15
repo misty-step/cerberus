@@ -212,32 +212,37 @@ defmodule Cerberus.Verdict.DedupTest do
     end
   end
 
-  # --- content_tokens/2 ---
+  # --- stemming behavior (tested through group_findings) ---
 
-  describe "content_tokens/2" do
-    test "extracts lowercase alpha tokens >= 4 chars" do
-      tokens = Dedup.content_tokens("Parse the JSON input", "")
-      assert MapSet.member?(tokens, "parse")
-      assert MapSet.member?(tokens, "json")
-      assert MapSet.member?(tokens, "input")
-      # "the" is a stop word, skipped
-      refute MapSet.member?(tokens, "the")
+  describe "stemming in token matching" do
+    test "stemmed forms merge findings (-ing, -ed variants)" do
+      f1 =
+        finding(%{
+          title: "Handling errors incorrectly",
+          description: "The parsed output is handled without validation"
+        })
+
+      f2 =
+        finding(%{
+          title: "Error handler missing validation",
+          description: "Parsed results processed without checks"
+        })
+
+      result = Dedup.group_findings(%{"trace" => [f1], "guard" => [f2]})
+      assert length(result) == 1
     end
 
-    test "stems -ing suffix" do
-      tokens = Dedup.content_tokens("handling errors", "")
-      assert MapSet.member?(tokens, "handl")
-    end
+    test "stop words and short tokens do not create false merges" do
+      f1 = finding(%{title: "SQL injection risk", description: "User input used in query"})
 
-    test "stems -ed suffix" do
-      tokens = Dedup.content_tokens("parsed", "")
-      # "parsed" is len 6 > 5, so it gets stemmed
-      assert MapSet.member?(tokens, "pars")
-    end
+      f2 =
+        finding(%{
+          title: "Missing test coverage",
+          description: "This module has no tests for the same area"
+        })
 
-    test "filters stop words" do
-      tokens = Dedup.content_tokens("this is from the same used", "")
-      assert MapSet.size(tokens) == 0
+      result = Dedup.group_findings(%{"trace" => [f1], "guard" => [f2]})
+      assert length(result) == 2
     end
   end
 end

@@ -24,7 +24,7 @@ defmodule Cerberus.Verdict.Override do
 
   @policy_strictness %{pr_author: 0, write_access: 1, maintainers_only: 2}
   @sha_re ~r/sha=([0-9a-fA-F]+)/
-  @command_re ~r{/cerberus\s+override|/council\s+override}
+  @command_re ~r{/cerberus\s+override}
 
   # --- Parsing ---
 

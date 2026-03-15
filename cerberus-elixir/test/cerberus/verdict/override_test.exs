@@ -27,15 +27,6 @@ defmodule Cerberus.Verdict.OverrideTest do
                Override.parse(valid_comment(), @head_sha)
     end
 
-    test "parses /council override command" do
-      comment = %{
-        "actor" => "bob",
-        "body" => "/council override sha=abc1234\nreason: Legacy alias"
-      }
-
-      assert {:ok, %Override{actor: "bob"}} = Override.parse(comment, @head_sha)
-    end
-
     test "extracts reason from body" do
       assert {:ok, %Override{reason: "Known limitation, fix next release"}} =
                Override.parse(valid_comment(), @head_sha)
