@@ -11,7 +11,7 @@ defmodule Cerberus.Config do
       Cerberus.Config.model_pool(:wave1) # => ["openrouter/...", ...] (shuffled)
       Cerberus.Config.verdict_rules()    # => %{fail_on: ..., warn_on: ..., confidence_min: 0.7}
       Cerberus.Config.routing()          # => %{panel_size: 4, always_include: [...], ...}
-      Cerberus.Config.reload()           # => :ok (force reload)
+      Cerberus.Config.reload()           # => :ok | {:error, reason}
   """
 
   use GenServer

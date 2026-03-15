@@ -145,21 +145,18 @@ defmodule Cerberus.ConfigTest do
   end
 
   describe "automatic hot-reload" do
-    test "detects prompt file modification and reloads", %{server: server} do
+    test "detects prompt file modification and reloads", %{server: server, pid: pid} do
       original = Config.personas(server) |> Enum.find(&(&1.name == "trace"))
       prompt_path = Path.join([@repo_root, "pi", "agents", "correctness.md"])
 
       # Touch the file to update mtime
       File.touch!(prompt_path)
 
-      # Trigger the poll manually
-      send(Process.whereis(server) || GenServer.whereis(server), :check_prompts)
-
-      # Give it a moment to process
-      Process.sleep(50)
+      # Trigger the poll manually and synchronize via a call (serialized after handle_info)
+      send(pid, :check_prompts)
+      Config.personas(server)
 
       reloaded = Config.personas(server) |> Enum.find(&(&1.name == "trace"))
-      # Content is the same (we only touched, didn't modify), but the reload path ran
       assert reloaded.prompt == original.prompt
     end
   end
