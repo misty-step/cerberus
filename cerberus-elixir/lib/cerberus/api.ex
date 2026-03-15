@@ -66,13 +66,18 @@ defmodule Cerberus.API do
     with {:ok, params} <- validate_review_params(conn.body_params) do
       store = conn.private[:store] || Cerberus.Store
 
-      case Cerberus.Store.create_review_run(store, params) do
-        review_id when is_integer(review_id) ->
-          maybe_start_pipeline(conn.private[:pipeline], review_id, params)
-          json(conn, 202, %{review_id: review_id, status: "queued"})
+      try do
+        case Cerberus.Store.create_review_run(store, params) do
+          review_id when is_integer(review_id) ->
+            maybe_start_pipeline(conn.private[:pipeline], review_id, params)
+            json(conn, 202, %{review_id: review_id, status: "queued"})
 
-        {:error, reason} ->
-          json(conn, 500, %{error: "store_error", detail: inspect(reason)})
+          {:error, reason} ->
+            json(conn, 500, %{error: "store_error", detail: inspect(reason)})
+        end
+      catch
+        :exit, reason ->
+          json(conn, 500, %{error: "store_unavailable", detail: inspect(reason)})
       end
     else
       {:error, reason} ->

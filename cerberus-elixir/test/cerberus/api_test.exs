@@ -164,6 +164,25 @@ defmodule Cerberus.APITest do
     end
   end
 
+  # --- Error handling ---
+
+  describe "POST /api/reviews error handling" do
+    test "returns 500 when store fails", %{store: _store} do
+      # Use a fake store pid that will crash
+      {:ok, dead_store} = Agent.start_link(fn -> nil end)
+      Agent.stop(dead_store)
+
+      conn =
+        conn(:post, "/api/reviews", Jason.encode!(%{repo: "org/repo", pr_number: 42, head_sha: "abc"}))
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("authorization", "Bearer #{@api_key}")
+        |> API.call(API.init(api_key: @api_key, store: dead_store))
+
+      # GenServer call to dead process will raise
+      assert conn.status == 500
+    end
+  end
+
   # --- 404 ---
 
   describe "unknown routes" do
