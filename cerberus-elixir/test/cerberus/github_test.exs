@@ -203,6 +203,22 @@ defmodule Cerberus.GitHubTest do
     end
   end
 
+  describe "list_pr_reviews/3" do
+    test "returns list of reviews" do
+      reviews = [
+        %{"id" => 1, "state" => "COMMENTED", "body" => "lgtm", "user" => %{"login" => "alice"}},
+        %{"id" => 2, "state" => "APPROVED", "body" => "", "user" => %{"login" => "bob"}}
+      ]
+
+      req =
+        mock_req(fn :get, "/repos/owner/repo/pulls/42/reviews", _req ->
+          json_resp(reviews)
+        end)
+
+      assert {:ok, ^reviews} = GitHub.list_pr_reviews(@repo, @pr, test_opts(req))
+    end
+  end
+
   describe "list_pr_files/3" do
     test "returns changed files with patches" do
       files = [
