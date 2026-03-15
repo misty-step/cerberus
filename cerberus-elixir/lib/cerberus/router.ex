@@ -58,8 +58,11 @@ defmodule Cerberus.Router do
   rescue
     e ->
       Logger.warning("Router crashed: #{Exception.message(e)}")
-      summary = parse_diff(diff_text)
-      {:reply, {:ok, crash_fallback(summary)}, state}
+      {:reply, {:ok, crash_fallback(parse_diff(diff_text))}, state}
+  catch
+    kind, reason ->
+      Logger.warning("Router #{kind}: #{inspect(reason)}")
+      {:reply, {:ok, crash_fallback(parse_diff(diff_text))}, state}
   end
 
   # --- Routing Core ---
@@ -76,7 +79,7 @@ defmodule Cerberus.Router do
     name_to_perspective = Map.new(personas, &{&1.name, Atom.to_string(&1.perspective)})
     required = required_perspectives(routing, name_to_perspective, summary.code_changed)
     panel_size = max(min(routing.panel_size, length(personas)), length(required))
-    metadata = Keyword.get(opts, :metadata, %{})
+    metadata = opts |> Keyword.get(:metadata, %{}) |> normalize_metadata()
     router_model = non_empty_string(routing[:model], @default_router_model)
 
     {panel, routing_used} =
@@ -313,6 +316,10 @@ defmodule Cerberus.Router do
       e ->
         Logger.warning("Router LLM call raised: #{Exception.message(e)}")
         {[], false}
+    catch
+      kind, reason ->
+        Logger.warning("Router LLM call #{kind}: #{inspect(reason)}")
+        {[], false}
     end
   end
 
@@ -345,7 +352,8 @@ defmodule Cerberus.Router do
           |> Enum.reject(&is_nil/1)
 
         tag_text = if tags == [], do: "unknown", else: Enum.join(tags, ",")
-        "- #{f.path} (+#{f.additions}, -#{f.deletions}) [ext=#{f.extension} type=#{tag_text}]"
+        safe_path = sanitize_prompt_value(f.path)
+        "- #{safe_path} (+#{f.additions}, -#{f.deletions}) [ext=#{f.extension} type=#{tag_text}]"
       end)
 
     file_rows = if file_rows == [], do: ["- (no changed files parsed)"], else: file_rows
@@ -575,6 +583,10 @@ defmodule Cerberus.Router do
 
   defp non_empty_string(val, _default) when is_binary(val) and val != "", do: val
   defp non_empty_string(_, default), do: default
+
+  defp normalize_metadata(m) when is_map(m), do: m
+  defp normalize_metadata(m) when is_list(m), do: Map.new(m)
+  defp normalize_metadata(_), do: %{}
 
   defp sanitize_prompt_value(val) when is_binary(val) do
     val
