@@ -105,11 +105,12 @@ defmodule Cerberus.Config do
     config_path = Path.join(repo_root, "defaults/config.yml")
 
     with {:ok, raw} <- YamlElixir.read_from_file(config_path),
-         {:ok, prompts, mtimes} <- load_prompts_with_mtimes(repo_root) do
+         {:ok, prompts, mtimes} <- load_prompts_with_mtimes(repo_root),
+         {:ok, personas} <- build_personas(raw, prompts) do
       {:ok,
        %{
          repo_root: repo_root,
-         personas: build_personas(raw, prompts),
+         personas: personas,
          model_pools: build_model_pools(raw),
          verdict_rules: build_verdict_rules(raw),
          routing: build_routing(raw),
@@ -121,21 +122,29 @@ defmodule Cerberus.Config do
   defp build_personas(raw, prompts) do
     reviewers = Map.get(raw, "reviewers", [])
 
-    Enum.map(reviewers, fn r ->
-      perspective = String.to_atom(r["perspective"])
+    Enum.reduce_while(reviewers, {:ok, []}, fn r, {:ok, acc} ->
+      case Map.fetch(prompts, r["perspective"]) do
+        {:ok, prompt} ->
+          persona = %Persona{
+            name: r["name"],
+            perspective: String.to_atom(r["perspective"]),
+            prompt: prompt,
+            model_policy: parse_model_policy(r["model"]),
+            description: r["description"],
+            override: parse_atom(r["override"]),
+            tools: r["tools"] || %{}
+          }
 
-      %Persona{
-        name: r["name"],
-        perspective: perspective,
-        prompt:
-          Map.get(prompts, r["perspective"]) ||
-            raise("missing prompt file for perspective #{r["perspective"]}"),
-        model_policy: parse_model_policy(r["model"]),
-        description: r["description"],
-        override: parse_atom(r["override"]),
-        tools: r["tools"] || %{}
-      }
+          {:cont, {:ok, [persona | acc]}}
+
+        :error ->
+          {:halt, {:error, {:missing_prompt, r["perspective"]}}}
+      end
     end)
+    |> case do
+      {:ok, personas} -> {:ok, Enum.reverse(personas)}
+      error -> error
+    end
   end
 
   defp build_model_pools(raw) do
