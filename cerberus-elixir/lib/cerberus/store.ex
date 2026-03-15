@@ -135,25 +135,29 @@ defmodule Cerberus.Store do
     """
 
     result =
-      with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql),
-           :ok <-
-             Exqlite.Sqlite3.bind(stmt, [
-               attrs[:review_run_id],
-               attrs[:reviewer] || "",
-               attrs[:model] || "",
-               attrs[:prompt_tokens] || 0,
-               attrs[:completion_tokens] || 0,
-               attrs[:cost_usd] || 0.0,
-               attrs[:duration_ms] || 0,
-               to_string(attrs[:status] || "success"),
-               if(attrs[:is_fallback], do: 1, else: 0)
-             ]),
-           :done <- Exqlite.Sqlite3.step(conn, stmt) do
-        Exqlite.Sqlite3.release(conn, stmt)
-        :ok
-      else
-        {:error, _} = err -> err
-        other -> {:error, other}
+      with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql) do
+        try do
+          with :ok <-
+                 Exqlite.Sqlite3.bind(stmt, [
+                   attrs[:review_run_id],
+                   attrs[:reviewer] || "",
+                   attrs[:model] || "",
+                   attrs[:prompt_tokens] || 0,
+                   attrs[:completion_tokens] || 0,
+                   attrs[:cost_usd] || 0.0,
+                   attrs[:duration_ms] || 0,
+                   to_string(attrs[:status] || "success"),
+                   if(attrs[:is_fallback], do: 1, else: 0)
+                 ]),
+               :done <- Exqlite.Sqlite3.step(conn, stmt) do
+            :ok
+          else
+            {:error, _} = err -> err
+            other -> {:error, other}
+          end
+        after
+          Exqlite.Sqlite3.release(conn, stmt)
+        end
       end
 
     {:reply, result, state}
@@ -223,11 +227,14 @@ defmodule Cerberus.Store do
   end
 
   defp query_rows(conn, sql, bindings, row_parser) do
-    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql),
-         :ok <- bind_if_needed(conn, stmt, bindings) do
-      rows = collect_parsed_rows(conn, stmt, row_parser, [])
-      Exqlite.Sqlite3.release(conn, stmt)
-      rows
+    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql) do
+      try do
+        with :ok <- bind_if_needed(conn, stmt, bindings) do
+          collect_parsed_rows(conn, stmt, row_parser, [])
+        end
+      after
+        Exqlite.Sqlite3.release(conn, stmt)
+      end
     end
   end
 

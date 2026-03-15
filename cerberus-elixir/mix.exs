@@ -23,9 +23,9 @@ defmodule Cerberus.MixProject do
     [
       {:exqlite, "~> 0.34"},
       {:jason, "~> 1.4"},
-      {:opentelemetry_api, "~> 1.4"},
-      {:opentelemetry, "~> 1.5"},
-      {:opentelemetry_exporter, "~> 1.8"},
+      {:opentelemetry_api, "~> 1.5"},
+      {:opentelemetry, "~> 1.7"},
+      {:opentelemetry_exporter, "~> 1.10"},
       {:req, "~> 0.5"},
       {:req_llm, "~> 1.2"},
       {:yaml_elixir, "~> 2.12"}

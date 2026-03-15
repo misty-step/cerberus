@@ -57,17 +57,21 @@ defmodule Cerberus.Telemetry do
   On success, sets GenAI usage attributes and calculated cost.
   """
   def with_reviewer(parent_ctx, perspective, model, fun) when is_function(fun, 0) do
-    if parent_ctx, do: OpenTelemetry.Ctx.attach(parent_ctx)
+    token = if parent_ctx, do: OpenTelemetry.Ctx.attach(parent_ctx), else: nil
 
-    Tracer.with_span :"cerberus.reviewer", %{
-      attributes: [
-        {"cerberus.perspective", to_string(perspective)},
-        {"gen_ai.request.model", to_string(model)}
-      ]
-    } do
-      result = fun.()
-      set_reviewer_result_attrs(result, model)
-      result
+    try do
+      Tracer.with_span :"cerberus.reviewer", %{
+        attributes: [
+          {"cerberus.perspective", to_string(perspective)},
+          {"gen_ai.request.model", to_string(model)}
+        ]
+      } do
+        result = fun.()
+        set_reviewer_result_attrs(result, model)
+        result
+      end
+    after
+      if token, do: OpenTelemetry.Ctx.detach(token)
     end
   end
 

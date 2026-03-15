@@ -20,10 +20,12 @@ defmodule Cerberus.Telemetry.Langfuse do
   Optional: `:input_tokens`, `:output_tokens`, `:duration_ms`, `:cost`.
   """
   def send_generation(config, attrs) do
+    start_time = (attrs[:start_time] || DateTime.utc_now()) |> DateTime.to_iso8601()
+
     body = %{
       name: attrs[:name],
       model: attrs[:model],
-      startTime: DateTime.utc_now() |> DateTime.to_iso8601(),
+      startTime: start_time,
       usage: %{
         input: attrs[:input_tokens] || 0,
         output: attrs[:output_tokens] || 0
@@ -65,10 +67,7 @@ defmodule Cerberus.Telemetry.Langfuse do
 
     case Req.post(url,
            json: body,
-           headers: [
-             {"authorization", "Basic #{auth}"},
-             {"content-type", "application/json"}
-           ],
+           headers: [{"authorization", "Basic #{auth}"}],
            receive_timeout: 10_000
          ) do
       {:ok, %{status: status}} when status in 200..299 ->
