@@ -58,11 +58,11 @@ defmodule Cerberus.Router do
   rescue
     e ->
       Logger.warning("Router crashed: #{Exception.message(e)}")
-      {:reply, {:ok, crash_fallback(parse_diff(diff_text))}, state}
+      {:reply, {:ok, crash_fallback(safe_parse_diff(diff_text))}, state}
   catch
     kind, reason ->
       Logger.warning("Router #{kind}: #{inspect(reason)}")
-      {:reply, {:ok, crash_fallback(parse_diff(diff_text))}, state}
+      {:reply, {:ok, crash_fallback(safe_parse_diff(diff_text))}, state}
   end
 
   # --- Routing Core ---
@@ -273,17 +273,21 @@ defmodule Cerberus.Router do
 
     # Start with required, extend from fallback order, then remaining perspectives
     pool = fallback_order ++ all_perspectives
+    seen = MapSet.new(required)
 
-    panel =
-      Enum.reduce(pool, required, fn p, acc ->
-        if p in acc or (MapSet.member?(skip_when_no_code, p) and not MapSet.member?(required_set, p)) do
-          acc
+    extras =
+      Enum.reduce(pool, {[], seen}, fn p, {acc, seen_set} ->
+        if MapSet.member?(seen_set, p) or
+             (MapSet.member?(skip_when_no_code, p) and not MapSet.member?(required_set, p)) do
+          {acc, seen_set}
         else
-          acc ++ [p]
+          {[p | acc], MapSet.put(seen_set, p)}
         end
       end)
+      |> elem(0)
+      |> Enum.reverse()
 
-    panel |> Enum.uniq() |> Enum.take(panel_size)
+    (required ++ extras) |> Enum.take(panel_size)
   end
 
   # --- LLM Routing ---
@@ -580,6 +584,14 @@ defmodule Cerberus.Router do
   rescue
     _ -> :standard
   end
+
+  defp safe_parse_diff(text) when is_binary(text) do
+    parse_diff(text)
+  rescue
+    _ -> empty_summary()
+  end
+
+  defp safe_parse_diff(_), do: empty_summary()
 
   defp non_empty_string(val, _default) when is_binary(val) and val != "", do: val
   defp non_empty_string(_, default), do: default
