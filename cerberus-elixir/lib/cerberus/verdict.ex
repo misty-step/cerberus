@@ -134,7 +134,11 @@ defmodule Cerberus.Verdict do
 
   defp check_stats(_), do: {:error, :stats_not_map}
 
-  # Normalize percentage-style confidence (e.g. 85 → 0.85)
+  # Normalize percentage-style confidence (e.g. 85 or 85.0 → 0.85)
   defp normalize_confidence(c) when is_integer(c) and c > 1 and c <= 100, do: c / 100.0
+
+  defp normalize_confidence(c) when is_float(c) and c > 1.0 and c <= 100.0,
+    do: c / 100.0
+
   defp normalize_confidence(c), do: c
 end

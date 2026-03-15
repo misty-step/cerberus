@@ -443,6 +443,32 @@ defmodule Cerberus.ReviewerTest do
 
       assert {:error, :all_models_exhausted} = Reviewer.review(pid, pr_context())
     end
+
+    test "short-circuits on permanent errors without trying fallback" do
+      %{config: config} = setup_config()
+      test_pid = self()
+
+      perm_fail = fn params ->
+        send(test_pid, {:called, params.model})
+        {:error, {:permanent, :no_api_key}}
+      end
+
+      {:ok, pid} =
+        Reviewer.start_link(
+          perspective: :correctness,
+          model: "primary",
+          fallback_models: ["fallback"],
+          config_server: config,
+          call_llm: perm_fail,
+          repo_root: @repo_root
+        )
+
+      assert {:error, {:permanent, :no_api_key}} = Reviewer.review(pid, pr_context())
+
+      # Only primary was called, fallback was never tried
+      assert_receive {:called, "primary"}
+      refute_receive {:called, "fallback"}
+    end
   end
 
   # --- Timeout ---

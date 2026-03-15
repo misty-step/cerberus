@@ -49,6 +49,8 @@ defmodule Cerberus.Verdict.Finding do
     end
   end
 
+  def validate(_), do: {:error, :finding_not_map}
+
   defp check_required(map) do
     missing = Enum.filter(@required_keys, &(not Map.has_key?(map, &1)))
     if missing == [], do: :ok, else: {:error, {:missing_fields, missing}}
@@ -73,6 +75,7 @@ defmodule Cerberus.Verdict.Finding do
 
   defp check_optional(map) do
     with :ok <- check_scope(map),
+         :ok <- check_suggestion(map),
          :ok <- check_evidence(map),
          :ok <- check_suggestion_verified(map) do
       :ok
@@ -83,7 +86,13 @@ defmodule Cerberus.Verdict.Finding do
     if MapSet.member?(@valid_scopes, s), do: :ok, else: {:error, {:invalid_scope, s}}
   end
 
+  defp check_scope(%{"scope" => s}) when not is_nil(s), do: {:error, :scope_not_string}
   defp check_scope(_), do: :ok
+
+  defp check_suggestion(%{"suggestion" => s}) when not is_binary(s) and not is_nil(s),
+    do: {:error, :suggestion_not_string}
+
+  defp check_suggestion(_), do: :ok
 
   defp check_evidence(%{"evidence" => e}) when not is_binary(e) and not is_nil(e),
     do: {:error, :evidence_not_string}

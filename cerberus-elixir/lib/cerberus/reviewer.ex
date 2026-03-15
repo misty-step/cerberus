@@ -73,7 +73,10 @@ defmodule Cerberus.Reviewer do
     {:reply, result, state}
   rescue
     e ->
-      Logger.warning("Reviewer #{state.perspective} crashed: #{Exception.message(e)}")
+      Logger.warning(
+        "Reviewer #{state.perspective} crashed: #{Exception.format(:error, e, __STACKTRACE__)}"
+      )
+
       {:reply, {:error, {:crash, Exception.message(e)}}, state}
   end
 
@@ -134,6 +137,7 @@ defmodule Cerberus.Reviewer do
   defp try_with_fallback([model | rest], messages, tools, state) do
     case try_model(model, messages, tools, state, 0) do
       {:ok, _} = success -> success
+      {:error, {:permanent, _}} = error -> error
       {:error, _} -> try_with_fallback(rest, messages, tools, state)
     end
   end
@@ -190,6 +194,9 @@ defmodule Cerberus.Reviewer do
       {:error, :transient} ->
         {:error, :transient}
 
+      {:error, {:permanent, _}} = error ->
+        error
+
       {:error, reason} ->
         {:error, {:permanent, reason}}
     end
@@ -200,8 +207,15 @@ defmodule Cerberus.Reviewer do
       Enum.map(tool_calls, fn tc ->
         args =
           case Jason.decode(tc.function.arguments) do
-            {:ok, parsed} -> parsed
-            {:error, _} -> %{}
+            {:ok, parsed} ->
+              parsed
+
+            {:error, reason} ->
+              Logger.warning(
+                "Reviewer: malformed tool arguments for #{tc.function.name}: #{inspect(reason)}"
+              )
+
+              %{}
           end
 
         result = tool_handler.(%{name: tc.function.name, arguments: args})
@@ -234,7 +248,8 @@ defmodule Cerberus.Reviewer do
     }
   end
 
-  defp format_tool_result({:ok, result}), do: to_string(result)
+  defp format_tool_result({:ok, result}) when is_binary(result), do: result
+  defp format_tool_result({:ok, result}), do: Jason.encode!(result)
   defp format_tool_result({:error, reason}), do: "Error: #{reason}"
 
   # --- Usage Tracking ---

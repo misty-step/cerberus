@@ -87,6 +87,12 @@ defmodule Cerberus.VerdictTest do
       json = Jason.encode!(map)
       assert {:ok, %Verdict{confidence: 0.85}} = Verdict.parse(json)
     end
+
+    test "normalizes float confidence percentage" do
+      map = Map.put(valid_verdict_map(), "confidence", 85.0)
+      json = Jason.encode!(map)
+      assert {:ok, %Verdict{confidence: 0.85}} = Verdict.parse(json)
+    end
   end
 
   # --- Verdict.validate/1 ---
@@ -205,6 +211,21 @@ defmodule Cerberus.VerdictTest do
     test "rejects non-boolean suggestion_verified" do
       map = Map.put(valid_finding_map(), "suggestion_verified", "yes")
       assert {:error, :suggestion_verified_not_boolean} = Finding.validate(map)
+    end
+
+    test "rejects non-map values" do
+      assert {:error, :finding_not_map} = Finding.validate("not a map")
+      assert {:error, :finding_not_map} = Finding.validate(42)
+    end
+
+    test "rejects non-string scope values" do
+      map = Map.put(valid_finding_map(), "scope", 123)
+      assert {:error, :scope_not_string} = Finding.validate(map)
+    end
+
+    test "rejects non-string suggestion values" do
+      map = Map.put(valid_finding_map(), "suggestion", %{"key" => "val"})
+      assert {:error, :suggestion_not_string} = Finding.validate(map)
     end
   end
 end
