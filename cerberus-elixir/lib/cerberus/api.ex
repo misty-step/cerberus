@@ -33,6 +33,9 @@ defmodule Cerberus.API do
 
   # --- Auth ---
 
+  # Health check must be unauthenticated for Fly/Sprite health probes.
+  defp check_auth(%Plug.Conn{request_path: "/api/health"} = conn, _opts), do: conn
+
   defp check_auth(conn, _opts) do
     expected = conn.private[:api_key] || api_key_from_env()
 

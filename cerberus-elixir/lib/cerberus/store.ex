@@ -125,6 +125,7 @@ defmodule Cerberus.Store do
 
     with :ok <- ensure_database_directory(database_path),
          {:ok, conn} <- Exqlite.Sqlite3.open(database_path),
+         :ok <- configure_pragmas(conn),
          :ok <- ensure_schema_tables(conn) do
       state = %{conn: conn, database_path: database_path}
       {:ok, state}
@@ -329,6 +330,19 @@ defmodule Cerberus.Store do
   def terminate(_reason, %{conn: conn}) do
     Exqlite.Sqlite3.close(conn)
     :ok
+  end
+
+  defp configure_pragmas(conn) do
+    Enum.reduce_while(
+      ["PRAGMA journal_mode=WAL", "PRAGMA busy_timeout=5000", "PRAGMA foreign_keys=ON"],
+      :ok,
+      fn pragma, :ok ->
+        case Exqlite.Sqlite3.execute(conn, pragma) do
+          :ok -> {:cont, :ok}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end
+    )
   end
 
   defp ensure_database_directory(database_path) do

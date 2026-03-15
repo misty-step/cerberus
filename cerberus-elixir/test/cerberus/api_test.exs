@@ -34,8 +34,8 @@ defmodule Cerberus.APITest do
   # --- Authentication ---
 
   describe "authentication" do
-    test "rejects requests without bearer token", %{store: store} do
-      conn = conn(:get, "/api/health") |> call(store)
+    test "rejects unauthenticated non-health requests", %{store: store} do
+      conn = conn(:get, "/api/reviews/1") |> call(store)
       assert conn.status == 401
       body = Jason.decode!(conn.resp_body)
       assert body["error"] == "missing_or_invalid_auth"
@@ -43,7 +43,7 @@ defmodule Cerberus.APITest do
 
     test "rejects requests with wrong token", %{store: store} do
       conn =
-        conn(:get, "/api/health")
+        conn(:get, "/api/reviews/1")
         |> put_req_header("authorization", "Bearer wrong-key")
         |> call(store)
 
@@ -53,6 +53,13 @@ defmodule Cerberus.APITest do
     test "accepts valid bearer token", %{store: store} do
       conn = authed_get("/api/health", store)
       assert conn.status == 200
+    end
+
+    test "health check bypasses auth", %{store: store} do
+      conn = conn(:get, "/api/health") |> call(store)
+      assert conn.status == 200
+      body = Jason.decode!(conn.resp_body)
+      assert body["status"] == "ok"
     end
   end
 
