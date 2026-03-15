@@ -138,7 +138,8 @@ defmodule Cerberus.Reviewer do
     end
   end
 
-  defp try_model(_model, _messages, _tools, _state, attempt) when attempt >= 3 do
+  defp try_model(_model, _messages, _tools, %{max_retries: max}, attempt)
+       when attempt >= max do
     {:error, :max_retries_exceeded}
   end
 
@@ -163,7 +164,7 @@ defmodule Cerberus.Reviewer do
     case state.call_llm.(params) do
       {:ok, %{tool_calls: tcs} = resp} when is_list(tcs) and tcs != [] ->
         accumulated = accumulate_usage(usage, resp[:usage])
-        {new_msgs, _} = execute_tools(tcs, state.tool_handler)
+        new_msgs = execute_tools(tcs, state.tool_handler)
         assistant_msg = build_assistant_tool_msg(tcs)
 
         run_conversation(
@@ -212,7 +213,7 @@ defmodule Cerberus.Reviewer do
         }
       end)
 
-    {results, nil}
+    results
   end
 
   defp build_assistant_tool_msg(tool_calls) do

@@ -73,8 +73,13 @@ defmodule Cerberus.VerdictTest do
       assert {:ok, %Verdict{verdict: "PASS"}} = Verdict.parse(text)
     end
 
-    test "rejects invalid JSON" do
-      assert {:error, _} = Verdict.parse("not json at all")
+    test "rejects plain text without JSON" do
+      assert {:error, :no_json_block} = Verdict.parse("just some prose without json")
+    end
+
+    test "accepts raw JSON without fenced block" do
+      json = Jason.encode!(valid_verdict_map())
+      assert {:ok, %Verdict{verdict: "PASS"}} = Verdict.parse(json)
     end
 
     test "normalizes integer confidence percentage" do

@@ -68,7 +68,13 @@ defmodule Cerberus.Verdict do
   defp extract_json(text) do
     case Regex.scan(~r/```json\s*\n(.*?)```/s, text) do
       [] ->
-        {:ok, String.trim(text)}
+        trimmed = String.trim(text)
+
+        if String.starts_with?(trimmed, "{") or String.starts_with?(trimmed, "[") do
+          {:ok, trimmed}
+        else
+          {:error, :no_json_block}
+        end
 
       matches ->
         [_, json] = List.last(matches)
