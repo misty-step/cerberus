@@ -52,7 +52,13 @@ defmodule Cerberus.Store do
   ]
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
+    {name, opts} = Keyword.pop(opts, :name)
+
+    if name do
+      GenServer.start_link(__MODULE__, opts, name: name)
+    else
+      GenServer.start_link(__MODULE__, opts)
+    end
   end
 
   @spec ensure_schema(pid() | atom()) :: :ok | {:error, term()}

@@ -9,7 +9,7 @@ defmodule Cerberus.Application do
 
     children = [
       Cerberus.Config,
-      {Cerberus.Store, database_path: Cerberus.database_path()},
+      {Cerberus.Store, name: Cerberus.Store, database_path: Cerberus.database_path()},
       Cerberus.ReviewSupervisor,
       Cerberus.Router,
       Cerberus.Telemetry,

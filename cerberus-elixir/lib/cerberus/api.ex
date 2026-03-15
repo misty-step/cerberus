@@ -36,8 +36,8 @@ defmodule Cerberus.API do
   defp check_auth(conn, _opts) do
     expected = conn.private[:api_key] || api_key_from_env()
 
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token] when token == expected ->
+    case {expected, get_req_header(conn, "authorization")} do
+      {key, ["Bearer " <> token]} when is_binary(key) and key != "" and token == key ->
         conn
 
       _ ->
@@ -49,7 +49,11 @@ defmodule Cerberus.API do
   end
 
   defp api_key_from_env do
-    System.get_env("CERBERUS_API_KEY") || ""
+    case System.get_env("CERBERUS_API_KEY") do
+      nil -> nil
+      "" -> nil
+      key -> key
+    end
   end
 
   # --- Routes ---
@@ -61,9 +65,15 @@ defmodule Cerberus.API do
   post "/api/reviews" do
     with {:ok, params} <- validate_review_params(conn.body_params) do
       store = conn.private[:store] || Cerberus.Store
-      review_id = Cerberus.Store.create_review_run(store, params)
-      maybe_start_pipeline(conn.private[:pipeline], review_id, params)
-      json(conn, 202, %{review_id: review_id, status: "queued"})
+
+      case Cerberus.Store.create_review_run(store, params) do
+        review_id when is_integer(review_id) ->
+          maybe_start_pipeline(conn.private[:pipeline], review_id, params)
+          json(conn, 202, %{review_id: review_id, status: "queued"})
+
+        {:error, reason} ->
+          json(conn, 500, %{error: "store_error", detail: inspect(reason)})
+      end
     else
       {:error, reason} ->
         json(conn, 422, %{error: reason})

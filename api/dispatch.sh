@@ -124,7 +124,12 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
   status=$(echo "$poll_body" | parse_json "data.get('status','unknown')")
 
   case "$status" in
-    completed|failed)
+    failed)
+      echo "::error::Cerberus review pipeline failed (${elapsed}s)"
+      echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+      exit 1
+      ;;
+    completed)
       verdict=$(echo "$poll_body" | parse_json "(data.get('aggregated_verdict') or {}).get('verdict', 'SKIP')")
       echo "Review complete: verdict=${verdict} (${elapsed}s)"
       echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
