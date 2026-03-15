@@ -22,7 +22,6 @@ defmodule Cerberus.Reviewer do
   @default_timeout_ms 600_000
   @default_max_retries 3
   @default_max_steps 25
-  @openrouter_url "https://openrouter.ai/api/v1/chat/completions"
 
   # --- Client API ---
 
@@ -37,26 +36,34 @@ defmodule Cerberus.Reviewer do
   `{:error, reason}` on failure.
   """
   def review(server, pr_context, timeout \\ nil) do
-    timeout = timeout || GenServer.call(server, :timeout_ms)
-    GenServer.call(server, {:review, pr_context}, timeout)
+    GenServer.call(server, {:review, pr_context}, timeout || @default_timeout_ms)
   end
 
   # --- Server Callbacks ---
 
   @impl true
   def init(opts) do
+    repo_root = Keyword.get(opts, :repo_root)
+
+    template =
+      case Cerberus.ReviewPrompt.load_template(repo_root || Cerberus.repo_root()) do
+        {:ok, t} -> t
+        {:error, _} -> "Review the PR diff at {{DIFF_FILE}} from the {{PERSPECTIVE}} perspective."
+      end
+
     {:ok,
      %{
        perspective: Keyword.fetch!(opts, :perspective),
        model: Keyword.fetch!(opts, :model),
        config_server: Keyword.get(opts, :config_server, Cerberus.Config),
-       call_llm: Keyword.get(opts, :call_llm, &default_call_llm/1),
+       call_llm: Keyword.get(opts, :call_llm, &Cerberus.LLM.OpenRouter.call/1),
        tool_handler: Keyword.get(opts, :tool_handler, &noop_tool_handler/1),
        max_retries: Keyword.get(opts, :max_retries, @default_max_retries),
        fallback_models: Keyword.get(opts, :fallback_models, []),
        timeout_ms: Keyword.get(opts, :timeout_ms, @default_timeout_ms),
        max_steps: Keyword.get(opts, :max_steps, @default_max_steps),
-       repo_root: Keyword.get(opts, :repo_root)
+       repo_root: repo_root,
+       template: template
      }}
   end
 
@@ -110,22 +117,13 @@ defmodule Cerberus.Reviewer do
   end
 
   defp build_prompts(persona, pr_context, state) do
-    system_prompt = persona.prompt
-    repo_root = state.repo_root || Cerberus.repo_root()
-
-    template =
-      case Cerberus.ReviewPrompt.load_template(repo_root) do
-        {:ok, t} -> t
-        {:error, _} -> "Review the PR diff at {{DIFF_FILE}} from the {{PERSPECTIVE}} perspective."
-      end
-
     vars =
       pr_context
       |> Map.put(:perspective, to_string(state.perspective))
       |> Cerberus.ReviewPrompt.build_vars()
 
-    user_prompt = Cerberus.ReviewPrompt.render(template, vars)
-    {system_prompt, user_prompt}
+    user_prompt = Cerberus.ReviewPrompt.render(state.template, vars)
+    {persona.prompt, user_prompt}
   end
 
   # --- Retry + Fallback ---
@@ -156,6 +154,8 @@ defmodule Cerberus.Reviewer do
   end
 
   # --- Conversation Loop ---
+  # Messages accumulate in reverse to avoid O(n^2) list append.
+  # Reversed to chronological order before each LLM call.
 
   defp run_conversation(_model, _messages, _tools, state, step, _usage)
        when step >= state.max_steps do
@@ -168,12 +168,12 @@ defmodule Cerberus.Reviewer do
     case state.call_llm.(params) do
       {:ok, %{tool_calls: tcs} = resp} when is_list(tcs) and tcs != [] ->
         accumulated = accumulate_usage(usage, resp[:usage])
-        new_msgs = execute_tools(tcs, state.tool_handler)
+        tool_msgs = execute_tools(tcs, state.tool_handler)
         assistant_msg = build_assistant_tool_msg(tcs)
 
         run_conversation(
           model,
-          messages ++ [assistant_msg | new_msgs],
+          messages ++ [assistant_msg | tool_msgs],
           tools,
           state,
           step + 1,
@@ -203,31 +203,28 @@ defmodule Cerberus.Reviewer do
   end
 
   defp execute_tools(tool_calls, tool_handler) do
-    results =
-      Enum.map(tool_calls, fn tc ->
-        args =
-          case Jason.decode(tc.function.arguments) do
-            {:ok, parsed} ->
-              parsed
+    Enum.map(tool_calls, fn tc ->
+      args =
+        case Jason.decode(tc.function.arguments) do
+          {:ok, parsed} ->
+            parsed
 
-            {:error, reason} ->
-              Logger.warning(
-                "Reviewer: malformed tool arguments for #{tc.function.name}: #{inspect(reason)}"
-              )
+          {:error, reason} ->
+            Logger.warning(
+              "Reviewer: malformed tool arguments for #{tc.function.name}: #{inspect(reason)}"
+            )
 
-              %{}
-          end
+            %{}
+        end
 
-        result = tool_handler.(%{name: tc.function.name, arguments: args})
+      result = tool_handler.(%{name: tc.function.name, arguments: args})
 
-        %{
-          "role" => "tool",
-          "tool_call_id" => tc.id,
-          "content" => format_tool_result(result)
-        }
-      end)
-
-    results
+      %{
+        "role" => "tool",
+        "tool_call_id" => tc.id,
+        "content" => format_tool_result(result)
+      }
+    end)
   end
 
   defp build_assistant_tool_msg(tool_calls) do
@@ -285,102 +282,6 @@ defmodule Cerberus.Reviewer do
       %{duration_ms: elapsed_ms},
       %{perspective: state.perspective, model: state.model}
     )
-  end
-
-  # --- Default LLM Transport ---
-
-  defp default_call_llm(params) do
-    api_key =
-      System.get_env("CERBERUS_API_KEY") ||
-        System.get_env("CERBERUS_OPENROUTER_API_KEY") ||
-        System.get_env("OPENROUTER_API_KEY")
-
-    if is_nil(api_key) or api_key == "" do
-      {:error, :no_api_key}
-    else
-      do_call_openrouter(api_key, params)
-    end
-  end
-
-  defp do_call_openrouter(api_key, params) do
-    payload =
-      %{
-        model: params.model,
-        messages: params.messages,
-        max_tokens: params.max_tokens
-      }
-      |> maybe_add_tools(params.tools)
-
-    case Req.post(@openrouter_url,
-           json: payload,
-           headers: [
-             {"authorization", "Bearer #{api_key}"},
-             {"user-agent", "cerberus-reviewer/1.0"},
-             {"http-referer", "https://github.com/misty-step/cerberus"},
-             {"x-title", "Cerberus Reviewer"}
-           ],
-           receive_timeout: 120_000
-         ) do
-      {:ok, %{status: 200, body: body}} ->
-        parse_openrouter_response(body)
-
-      {:ok, %{status: status}} when status in [429, 500, 502, 503] ->
-        {:error, :transient}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {:http_error, status, inspect(body)}}
-
-      {:error, %{reason: :timeout}} ->
-        {:error, :transient}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp maybe_add_tools(payload, tools) when is_list(tools) and tools != [] do
-    Map.put(payload, :tools, tools)
-  end
-
-  defp maybe_add_tools(payload, _), do: payload
-
-  defp parse_openrouter_response(body) when is_map(body) do
-    with choices when is_list(choices) and choices != [] <- body["choices"],
-         message when is_map(message) <- hd(choices)["message"] do
-      {:ok,
-       %{
-         content: message["content"],
-         tool_calls: parse_tool_calls(message["tool_calls"]),
-         usage: parse_usage(body["usage"])
-       }}
-    else
-      _ -> {:error, :invalid_response}
-    end
-  end
-
-  defp parse_openrouter_response(_), do: {:error, :invalid_response}
-
-  defp parse_tool_calls(nil), do: []
-
-  defp parse_tool_calls(tcs) when is_list(tcs) do
-    Enum.map(tcs, fn tc ->
-      %{
-        id: tc["id"],
-        function: %{
-          name: get_in(tc, ["function", "name"]),
-          arguments: get_in(tc, ["function", "arguments"]) || "{}"
-        }
-      }
-    end)
-  end
-
-  defp parse_usage(nil), do: %{prompt_tokens: 0, completion_tokens: 0}
-
-  defp parse_usage(u) when is_map(u) do
-    %{
-      prompt_tokens: u["prompt_tokens"] || 0,
-      completion_tokens: u["completion_tokens"] || 0
-    }
   end
 
   defp noop_tool_handler(%{name: name}) do

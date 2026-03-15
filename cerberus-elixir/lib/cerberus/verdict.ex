@@ -46,7 +46,7 @@ defmodule Cerberus.Verdict do
   def validate(map) when is_map(map) do
     with :ok <- check_required_keys(map),
          :ok <- check_verdict_value(map),
-         :ok <- check_confidence(map),
+         {:ok, confidence} <- check_confidence(map),
          :ok <- check_string_fields(map),
          {:ok, findings} <- validate_findings(map["findings"]),
          :ok <- check_stats(map["stats"]) do
@@ -55,7 +55,7 @@ defmodule Cerberus.Verdict do
          reviewer: map["reviewer"],
          perspective: map["perspective"],
          verdict: map["verdict"],
-         confidence: normalize_confidence(map["confidence"]),
+         confidence: confidence,
          summary: map["summary"],
          findings: findings,
          stats: map["stats"]
@@ -95,7 +95,7 @@ defmodule Cerberus.Verdict do
 
   defp check_confidence(%{"confidence" => c}) when is_number(c) do
     n = normalize_confidence(c)
-    if n >= 0.0 and n <= 1.0, do: :ok, else: {:error, {:confidence_out_of_range, c}}
+    if n >= 0.0 and n <= 1.0, do: {:ok, n}, else: {:error, {:confidence_out_of_range, c}}
   end
 
   defp check_confidence(_), do: {:error, :confidence_not_number}
@@ -109,13 +109,15 @@ defmodule Cerberus.Verdict do
   end
 
   defp validate_findings(findings) when is_list(findings) do
-    results = Enum.map(findings, &Finding.validate/1)
-    errors = Enum.filter(results, &match?({:error, _}, &1))
-
-    if errors == [] do
-      {:ok, Enum.map(results, fn {:ok, f} -> f end)}
-    else
-      {:error, {:invalid_findings, errors}}
+    Enum.reduce_while(findings, {:ok, []}, fn f, {:ok, acc} ->
+      case Finding.validate(f) do
+        {:ok, valid} -> {:cont, {:ok, [valid | acc]}}
+        {:error, _} = e -> {:halt, {:error, {:invalid_findings, [e]}}}
+      end
+    end)
+    |> case do
+      {:ok, reversed} -> {:ok, :lists.reverse(reversed)}
+      error -> error
     end
   end
 

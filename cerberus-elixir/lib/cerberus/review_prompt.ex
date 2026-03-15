@@ -6,11 +6,6 @@ defmodule Cerberus.ReviewPrompt do
   string values from the PR context map.
   """
 
-  @placeholders ~w(
-    PR_TITLE PR_AUTHOR HEAD_BRANCH BASE_BRANCH PR_BODY
-    DIFF_FILE PERSPECTIVE CURRENT_DATE PROJECT_CONTEXT_SECTION
-  )
-
   @doc "Render a template string by replacing {{KEY}} placeholders with values from vars."
   @spec render(String.t(), map()) :: String.t()
   def render(template, vars) when is_binary(template) and is_map(vars) do
@@ -41,7 +36,4 @@ defmodule Cerberus.ReviewPrompt do
       "PROJECT_CONTEXT_SECTION" => pr_context[:project_context] || ""
     }
   end
-
-  @doc "List of supported placeholder keys."
-  def placeholders, do: @placeholders
 end
