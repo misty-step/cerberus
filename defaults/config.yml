@@ -30,7 +30,7 @@ model:
 # Waves are disabled — all routed reviewers run in a single parallel dispatch.
 # Wave definitions are retained for backward compatibility with custom consumer
 # workflows that still pass wave= to the matrix action. New workflows should
-# omit the wave parameter entirely; model selection uses tier_pools via MODEL_TIER.
+# omit the wave parameter entirely; model selection maps MODEL_TIER to model.wave_pools.
 waves:
   enabled: false
   order:
