@@ -39,7 +39,7 @@ defmodule Cerberus.Config do
   @spec routing(GenServer.server()) :: map()
   def routing(server \\ __MODULE__), do: GenServer.call(server, :routing)
 
-  @spec reload(GenServer.server()) :: :ok
+  @spec reload(GenServer.server()) :: :ok | {:error, term()}
   def reload(server \\ __MODULE__), do: GenServer.call(server, :reload)
 
   # --- Server Callbacks ---
@@ -78,8 +78,13 @@ defmodule Cerberus.Config do
 
   def handle_call(:reload, _from, state) do
     case load_and_parse(state.repo_root) do
-      {:ok, new_state} -> {:reply, :ok, new_state}
-      {:error, _reason} -> {:reply, :ok, state}
+      {:ok, new_state} ->
+        {:reply, :ok, new_state}
+
+      {:error, reason} ->
+        require Logger
+        Logger.warning("Config reload failed: #{inspect(reason)}, keeping current state")
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -122,7 +127,9 @@ defmodule Cerberus.Config do
       %Persona{
         name: r["name"],
         perspective: perspective,
-        prompt: Map.get(prompts, r["perspective"], ""),
+        prompt:
+          Map.get(prompts, r["perspective"]) ||
+            raise("missing prompt file for perspective #{r["perspective"]}"),
         model_policy: parse_model_policy(r["model"]),
         description: r["description"],
         override: parse_atom(r["override"]),
@@ -197,17 +204,30 @@ defmodule Cerberus.Config do
   end
 
   defp maybe_reload_prompts(state) do
-    current_mtimes =
-      state.prompt_mtimes
-      |> Map.keys()
-      |> Enum.reduce(%{}, fn path, acc ->
-        case File.stat(path) do
-          {:ok, stat} -> Map.put(acc, path, stat.mtime)
-          _ -> acc
-        end
-      end)
+    glob = Application.get_env(:cerberus_elixir, :prompt_glob, "pi/agents/*.md")
 
-    if current_mtimes != state.prompt_mtimes do
+    current_paths =
+      state.repo_root
+      |> Path.join(glob)
+      |> Path.wildcard()
+      |> MapSet.new()
+
+    known_paths = state.prompt_mtimes |> Map.keys() |> MapSet.new()
+
+    # Detect new or removed files
+    files_changed = current_paths != known_paths
+
+    # Detect mtime changes on known files
+    mtimes_changed =
+      not files_changed and
+        Enum.any?(Map.keys(state.prompt_mtimes), fn path ->
+          case File.stat(path) do
+            {:ok, stat} -> stat.mtime != state.prompt_mtimes[path]
+            _ -> true
+          end
+        end)
+
+    if files_changed or mtimes_changed do
       case load_and_parse(state.repo_root) do
         {:ok, new_state} -> new_state
         {:error, _} -> state

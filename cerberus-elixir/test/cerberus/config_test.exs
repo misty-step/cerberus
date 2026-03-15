@@ -67,9 +67,7 @@ defmodule Cerberus.ConfigTest do
     end
 
     test "returns shuffled list (order may vary across calls)", %{server: server} do
-      # Collect 10 samples — at least one pair should differ in order
       results = for _ <- 1..10, do: Config.model_pool(:wave1, server)
-      # With 3 models, probability of all 10 being identical is (1/6)^9 ≈ 0
       assert length(Enum.uniq(results)) > 1 or length(hd(results)) <= 1
     end
 
@@ -123,15 +121,36 @@ defmodule Cerberus.ConfigTest do
     end
   end
 
-  describe "hot-reload" do
-    test "detects prompt file changes and reloads", %{server: server} do
+  describe "reload/1" do
+    test "reloads config and preserves valid state", %{server: server} do
       original = Config.personas(server) |> Enum.find(&(&1.name == "trace"))
-
-      # Force a reload — the content should still be valid
       :ok = Config.reload(server)
-
       reloaded = Config.personas(server) |> Enum.find(&(&1.name == "trace"))
       assert reloaded.prompt == original.prompt
+    end
+
+    test "returns error and preserves state when config path is invalid", %{server: server} do
+      original_personas = Config.personas(server)
+
+      # Corrupt the repo_root in GenServer state to trigger reload failure
+      :sys.replace_state(server, fn state ->
+        Map.put(state, :repo_root, "/nonexistent/path")
+      end)
+
+      assert {:error, _reason} = Config.reload(server)
+
+      # State preserved — personas unchanged
+      assert Config.personas(server) == original_personas
+    end
+  end
+
+  describe "init failure" do
+    test "returns error when repo_root has no config" do
+      name = :"config_bad_#{System.unique_integer([:positive])}"
+      Process.flag(:trap_exit, true)
+
+      assert {:error, _reason} =
+               Config.start_link(repo_root: "/nonexistent/path", name: name)
     end
   end
 end
