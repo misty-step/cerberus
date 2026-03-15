@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Thin Cerberus API dispatcher for GitHub Actions.
+#
+# Preflight → POST /api/reviews → poll GET /api/reviews/:id → set outputs.
+# All review execution happens server-side.
+
+set -euo pipefail
+
+# --- Preflight ---
+
+if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+  echo "::notice::Cerberus: skipping fork PR (no secrets available)"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
+  exit 0
+fi
+
+if [ "$IS_DRAFT" = "true" ]; then
+  echo "::notice::Cerberus: skipping draft PR"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
+  exit 0
+fi
+
+if [ -z "${CERBERUS_API_KEY:-}" ]; then
+  echo "::error::Cerberus: CERBERUS_API_KEY is not set"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
+  exit 1
+fi
+
+if [ -z "${CERBERUS_URL:-}" ]; then
+  echo "::error::Cerberus: CERBERUS_URL is not set"
+  exit 1
+fi
+
+if [ -z "${PR_NUMBER:-}" ] || [ -z "${HEAD_SHA:-}" ]; then
+  echo "::error::Cerberus: PR_NUMBER or HEAD_SHA not available (is this a pull_request event?)"
+  exit 1
+fi
+
+# --- Dispatch ---
+
+REPO="${BASE_REPO}"
+TIMEOUT="${CERBERUS_TIMEOUT:-600}"
+POLL_INTERVAL="${CERBERUS_POLL_INTERVAL:-5}"
+
+payload=$(cat <<EOF
+{
+  "repo": "${REPO}",
+  "pr_number": ${PR_NUMBER},
+  "head_sha": "${HEAD_SHA}",
+  "github_token": "${GITHUB_TOKEN}",
+  "model": "${CERBERUS_MODEL:-}",
+  "context": "${CERBERUS_CONTEXT:-}"
+}
+EOF
+)
+
+echo "Dispatching review for ${REPO}#${PR_NUMBER} (${HEAD_SHA:0:12})..."
+
+response=$(curl -s -w "\n%{http_code}" \
+  -X POST "${CERBERUS_URL}/api/reviews" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${CERBERUS_API_KEY}" \
+  -d "${payload}")
+
+http_code=$(echo "$response" | tail -1)
+body=$(echo "$response" | sed '$d')
+
+if [ "$http_code" != "202" ]; then
+  echo "::error::Cerberus API returned ${http_code}: ${body}"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
+  exit 1
+fi
+
+review_id=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin)['review_id'])")
+echo "Review dispatched: id=${review_id}"
+echo "review-id=${review_id}" >> "$GITHUB_OUTPUT"
+
+# --- Poll ---
+
+elapsed=0
+
+while [ "$elapsed" -lt "$TIMEOUT" ]; do
+  sleep "$POLL_INTERVAL"
+  elapsed=$((elapsed + POLL_INTERVAL))
+
+  poll_response=$(curl -s -w "\n%{http_code}" \
+    "${CERBERUS_URL}/api/reviews/${review_id}" \
+    -H "Authorization: Bearer ${CERBERUS_API_KEY}")
+
+  poll_code=$(echo "$poll_response" | tail -1)
+  poll_body=$(echo "$poll_response" | sed '$d')
+
+  if [ "$poll_code" != "200" ]; then
+    echo "::warning::Poll returned ${poll_code}, retrying..."
+    continue
+  fi
+
+  status=$(echo "$poll_body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
+
+  case "$status" in
+    completed|failed)
+      verdict=$(echo "$poll_body" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+av = data.get('aggregated_verdict') or {}
+print(av.get('verdict', 'SKIP'))
+")
+      echo "Review complete: verdict=${verdict} (${elapsed}s)"
+      echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+
+      # Write verdict JSON to RUNNER_TEMP for downstream consumption
+      if [ -n "${RUNNER_TEMP:-}" ]; then
+        verdict_path="${RUNNER_TEMP}/cerberus-api-verdict.json"
+        echo "$poll_body" > "$verdict_path"
+        echo "Verdict JSON written to ${verdict_path}"
+      fi
+
+      # Fail on FAIL verdict if configured
+      if [ "${CERBERUS_FAIL_ON_VERDICT:-true}" = "true" ] && [ "$verdict" = "FAIL" ]; then
+        echo "::error::Cerberus verdict: FAIL"
+        exit 1
+      fi
+
+      exit 0
+      ;;
+    queued|running)
+      echo "Status: ${status} (${elapsed}s elapsed)"
+      ;;
+    *)
+      echo "::warning::Unknown status: ${status}"
+      ;;
+  esac
+done
+
+echo "::error::Cerberus review timed out after ${TIMEOUT}s"
+echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+exit 1

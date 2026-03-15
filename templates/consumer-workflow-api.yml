@@ -1,0 +1,35 @@
+# Cerberus API-mode consumer workflow.
+#
+# Single-step review via the hosted Cerberus API.
+# Replaces the heavy matrix workflow with a thin HTTP dispatch.
+#
+# Prerequisites:
+#   - CERBERUS_API_KEY secret (authenticates to the Cerberus API)
+#   - CERBERUS_URL secret or variable (API base URL, e.g. https://cerberus.fly.dev)
+#
+# Migration from matrix workflow:
+#   Remove the preflight, route, review matrix, and verdict jobs.
+#   Replace with this single job.
+
+name: Cerberus Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  pull-requests: write
+  checks: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: misty-step/cerberus/api@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.CERBERUS_API_KEY }}
+          cerberus-url: ${{ vars.CERBERUS_URL }}
+          fail-on-verdict: 'true'
