@@ -86,13 +86,10 @@ The consumer defines the reviewer matrix in its own workflow. This repository pr
 
 Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `pi/agents/`, `templates/`, `defaults/`).
 
-### The Six Reviewers (3 per wave)
+### The Six Reviewers
 
-| Wave | Models | Reviewers |
-|------|--------|-----------|
-| wave1 | flash | trace · guard · proof |
-| wave2 | standard | atlas · fuse · craft |
-| wave3 | pro | trace · guard · atlas |
+The router selects a focused panel from the full bench per PR, dispatched in parallel.
+Model tier (flash/standard/pro) is assigned by the router based on PR complexity.
 
 | Codename | Perspective | Focus |
 |----------|-------------|-------|
