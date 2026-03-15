@@ -124,7 +124,7 @@ defmodule Cerberus.Config do
 
     Enum.reduce_while(reviewers, {:ok, []}, fn r, {:ok, acc} ->
       case Map.fetch(prompts, r["perspective"]) do
-        {:ok, prompt} ->
+        {:ok, prompt} when byte_size(prompt) > 0 ->
           persona = %Persona{
             name: r["name"],
             perspective: String.to_atom(r["perspective"]),
@@ -136,6 +136,9 @@ defmodule Cerberus.Config do
           }
 
           {:cont, {:ok, [persona | acc]}}
+
+        {:ok, _empty} ->
+          {:halt, {:error, {:empty_prompt, r["perspective"]}}}
 
         :error ->
           {:halt, {:error, {:missing_prompt, r["perspective"]}}}
@@ -238,8 +241,13 @@ defmodule Cerberus.Config do
 
     if files_changed or mtimes_changed do
       case load_and_parse(state.repo_root) do
-        {:ok, new_state} -> new_state
-        {:error, _} -> state
+        {:ok, new_state} ->
+          new_state
+
+        {:error, reason} ->
+          require Logger
+          Logger.warning("Config hot-reload failed: #{inspect(reason)}, keeping current state")
+          state
       end
     else
       state
