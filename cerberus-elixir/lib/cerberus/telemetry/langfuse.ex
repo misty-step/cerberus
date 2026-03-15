@@ -62,7 +62,7 @@ defmodule Cerberus.Telemetry.Langfuse do
 
   @doc false
   def post(config, path, body) do
-    url = config.host <> path
+    url = validated_url(config.host, path)
     auth = Base.encode64("#{config.public_key}:#{config.secret_key}")
 
     case Req.post(url,
@@ -81,5 +81,21 @@ defmodule Cerberus.Telemetry.Langfuse do
         Logger.warning("Langfuse POST #{path} failed: #{inspect(reason)}")
         {:error, reason}
     end
+  end
+
+  @default_host "https://cloud.langfuse.com"
+
+  defp validated_url(host, path) do
+    uri = URI.parse(host)
+
+    unless uri.scheme == "https" do
+      Logger.warning(
+        "Langfuse host #{inspect(host)} uses #{uri.scheme || "no"} scheme — " <>
+          "only HTTPS is allowed. Falling back to #{@default_host}"
+      )
+    end
+
+    safe_host = if uri.scheme == "https", do: host, else: @default_host
+    safe_host <> path
   end
 end
