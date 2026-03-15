@@ -47,6 +47,19 @@ Find logic bugs, edge cases, and incorrect behavior introduced by this PR.
 - CAS/atomic retry loops with ABA or no-progress risks
 - State transitions that can become inconsistent
 
+### Spec Compliance (check when acceptance criteria are present)
+When acceptance criteria (ACs) are provided in the review context via `github_read`:
+1. For each AC, trace the code path through the diff that satisfies it.
+2. Report SATISFIED if the diff clearly implements the AC.
+3. Report NOT_SATISFIED if the AC requirement is missing or contradicted by the diff.
+4. Report CANNOT_DETERMINE if the diff is ambiguous or you lack enough context.
+5. If an AC has no corresponding test in the diff, flag it as a finding with severity: minor,
+   category: `untested-acceptance-criterion`.
+6. Include the AC text in the finding description so reviewers can map findings to requirements.
+
+Spec compliance findings follow the same evidence bar as all other findings.
+Do not fabricate AC status — if ACs are absent from the context, skip this section entirely.
+
 ### Secondary (check if relevant)
 - Logic inversions, wrong comparators, inverted boolean flags
 - Incorrect default values, missing initialization, stale state
@@ -182,6 +195,8 @@ When a finding spans multiple perspectives, apply it ONLY to the primary owner:
 - Security bug that is also a logic bug → yours (flag the logic aspect)
 - Security exploit without logic bug → guard (skip it)
 - Missing test for a correctness bug → proof (skip it)
+- AC compliance mapping (SATISFIED/NOT_SATISFIED) → yours
+- General test coverage gaps without AC link → proof (skip it)
 - Failure-path logic for dependency outages → fuse (skip it); exception: unbounded retry/requeue loops with no max-attempt bound are correctness bugs (infinite loop) and belong here
 - Backward-compat break without logic bug → pact (skip it)
 If your finding would be better owned by another reviewer, skip it.
