@@ -71,8 +71,4 @@ defmodule Cerberus.Tools.GithubRead do
       }
     ]
   end
-
-  @doc "Tool names available for validation."
-  @spec tool_names() :: [String.t()]
-  def tool_names, do: ~w(get_file_contents search_code list_directory)
 end

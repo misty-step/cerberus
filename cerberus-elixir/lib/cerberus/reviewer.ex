@@ -97,7 +97,7 @@ defmodule Cerberus.Reviewer do
         {:error, {:unknown_perspective, perspective}}
 
       persona ->
-        {system_prompt, user_prompt} = build_prompts(persona, pr_context, state)
+        {system_prompt, user_prompt} = build_prompts(persona, pr_context, perspective, state)
         tools = Cerberus.Tools.GithubRead.definitions()
 
         messages = [
@@ -116,10 +116,10 @@ defmodule Cerberus.Reviewer do
     |> Enum.find(&(to_string(&1.perspective) == perspective))
   end
 
-  defp build_prompts(persona, pr_context, state) do
+  defp build_prompts(persona, pr_context, perspective, state) do
     vars =
       pr_context
-      |> Map.put(:perspective, to_string(state.perspective))
+      |> Map.put(:perspective, perspective)
       |> Cerberus.ReviewPrompt.build_vars()
 
     user_prompt = Cerberus.ReviewPrompt.render(state.template, vars)
