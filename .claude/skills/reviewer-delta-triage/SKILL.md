@@ -10,14 +10,30 @@ One PR in, one log entry out. The value compounds across runs — miss patterns 
 
 ## Workflow
 
-1. Collect the PR review surface.
-2. Read every comment body from every reviewer (Cerberus, Greptile, CodeRabbit, Codex, Gemini, etc.).
-3. Read the diff and touched code — you cannot judge findings without seeing what was actually written.
-4. Identify Cerberus's lane: which perspectives ran, which timed out, what the verdict was.
-5. Classify every external finding (see Judgment Rules).
-6. For every real miss, tag the perspective that should have caught it + the improvement lever.
-7. Append a structured entry to `.groom/triage-log.md` (see Log Format).
-8. Print a short summary to the conversation.
+1. **Collect** the PR review surface using the collector script.
+2. **Verify channel coverage.** GitHub stores review feedback in three separate channels.
+   ALL THREE are required before you can proceed:
+   - **PR comments** (`comments`) — top-level conversation
+   - **Review bodies** (`reviews`) — summary text submitted with a review
+   - **Inline review comments** (`review_comments`) — line-level comments on specific files
+
+   The collector fetches all three. After running it, check the stderr summary line:
+   `Collected: N comments, N reviews, N inline review comments, N authors`
+
+   **If `review_comments` is missing or 0 and external reviewers are present, STOP.**
+   Fetch manually: `gh api repos/{owner}/{repo}/pulls/{pr}/comments --paginate`
+   Most actionable findings from Gemini, Codex, and CodeRabbit are inline review comments.
+   Skipping this channel silently drops the majority of external signal.
+
+3. **Read every comment body** from every channel, every reviewer. Count findings per reviewer
+   before classifying — if an external reviewer has a review body but zero inline comments,
+   that is suspicious (Gemini/Codex almost always post inline).
+4. **Read the diff and touched code** — you cannot judge findings without seeing what was actually written.
+5. **Identify Cerberus's lane**: which perspectives ran, which timed out, what the verdict was.
+6. **Classify every external finding** (see Judgment Rules).
+7. For every real miss, **tag the perspective** that should have caught it + the improvement lever.
+8. **Append a structured entry** to `.groom/triage-log.md` (see Log Format).
+9. **Print a short summary** to the conversation.
 
 ## Judgment Rules
 
@@ -94,6 +110,8 @@ python3 .claude/skills/reviewer-delta-triage/scripts/collect_pr_review_surface.p
   --pr <number> \
   --out /tmp/pr-<number>-review-surface.json
 ```
+
+The collector prints a channel summary to stderr. Verify all three channels have data.
 
 ## What this skill does NOT do
 
