@@ -61,3 +61,59 @@ Miss patterns that repeat across entries become hardening work.
 - **testing/proof: strongest perspective.** 5/5 real, 5/5 unique. Found tautological assertions and missing error-path tests that no external reviewer caught.
 - **Greptile: highest signal external reviewer.** 9/12 real, 5 unique. Consistently finds implementation bugs that Cerberus correctness misses.
 - **Codex: no unique signal.** 2/2 real but both duplicates of Greptile. Low marginal value.
+
+---
+
+### PR #404 — Port verdict aggregation and finding dedup to Elixir
+
+**Date:** 2026-03-15 | **Link:** https://github.com/misty-step/cerberus/pull/404 | **Verdict:** WARN
+**Ran:** trace/correctness (PASS 1.0, WARN 0.95), guard/security (PASS 1.0, PASS 0.92), proof/testing (PASS 0.90), atlas/architecture (PASS 0.85, PASS 0.92) | **Timed out:** none | **Skipped:** fuse, craft
+
+#### Misses
+
+| Finding | Category | Perspective | Blind/Impaired | Found by | Lever |
+|---------|----------|-------------|----------------|----------|-------|
+| `:low_confidence` reserve signal dead code — can never fire with default `confidence_min=0.7` because verdicts below 0.5 are gated to SKIP first, and `low_confidence?` skips SKIP verdicts | logic-gap | correctness | blind | Codex | eval |
+
+#### Cerberus-only finds
+
+| Finding | Perspective | Category |
+|---------|-------------|----------|
+| Aggregator returns plain map instead of struct | architecture | api-consistency |
+| Model pricing hardcoded in module attribute | architecture | configuration |
+| Double-negative logic in `content_match?` reduces clarity | architecture | complex-logic |
+| Simple rule-based stemmer may have edge cases | architecture | implementation-choice |
+
+#### Noise
+
+| Finding | Reviewer | Why noise |
+|---------|----------|-----------|
+| Simplify `build_summary` list-building pattern | Gemini | Style preference, not a defect |
+| Remove `prepend_if` helper | Gemini | Style preference, coupled to above |
+| Simplify `detect_reserves` pattern | Gemini | Style preference |
+| Extract `1_000_000` to named constant | Gemini | Literal is self-evident in `cost / 1_000_000` |
+| Simplify `content_tokens` with `flat_map` | Gemini | Style preference |
+| Remove "redundant" `List.flatten` after `Regex.scan` | Gemini | **Wrong** — `Regex.scan` without capture groups returns `[["match"]]`, flatten IS needed |
+| Consolidate nil/""/null guard clauses | Gemini | Style preference |
+| Missing `/council override` backward compatibility | Codex | Deliberately removed for product isolation rule |
+
+#### Signal quality
+
+| Reviewer | Findings | Real | Noise | Unique (not found by others) |
+|----------|----------|------|-------|------------------------------|
+| Cerberus/trace | 1 | 1 | 0 | 0 (perm atom/string — also found by Codex) |
+| Cerberus/atlas | 4 | 2 | 2 | 2 (map-vs-struct, pricing-hardcoded) |
+| Cerberus/guard | 0 | 0 | 0 | 0 |
+| Cerberus/proof | 0 | 0 | 0 | 0 |
+| Gemini | 7 | 0 | 7 | 0 (all style, one factually wrong) |
+| Codex | 3 | 2 | 1 | 1 (`:low_confidence` dead code — real miss) |
+| Greptile | 0 | — | — | — (paywalled) |
+| CodeRabbit | 0 | — | — | — (rate-limited) |
+
+#### Patterns
+
+- **correctness/trace: blind to threshold interaction bugs.** The `:low_confidence` dead code is a logic bug where two thresholds (confidence_min=0.7 for gating, 0.5 for reserve trigger) interact to make one feature permanently unreachable. Trace ran twice (wave1 + wave3) and missed this both times. This is the same class of bug as PR #401: trace fails to reason about the interaction between sequential pipeline stages.
+- **Codex: strongest external reviewer here.** 2/3 real, 1 unique (the dead-code logic bug). The `/council` finding was wrong (doesn't know the product isolation rule) but the reserve signal finding is the PR's most important bug. Codex outperformed Gemini on this PR.
+- **Gemini: zero signal on inline comments.** 7 inline comments, all style-only, one factually wrong (claimed `List.flatten` was redundant when it's required). No defects found. Gemini was the weakest reviewer on this PR.
+- **Permission atom/string mismatch: convergent finding.** Found independently by Cerberus/trace AND Codex. Both correctly identified the integration risk. Cerberus gets credit for catching it but so does Codex.
+- **Collector script was silently dropping inline review comments.** The `collect_pr_review_surface.py` script only fetched `comments` and `reviews` via `gh pr view --json`, missing the `pulls/{pr}/comments` REST endpoint entirely. This caused the initial triage to miss 11 inline comments. Fixed by adding `fetch_review_comments()` to the collector.

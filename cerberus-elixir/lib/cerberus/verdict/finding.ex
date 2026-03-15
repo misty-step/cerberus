@@ -36,8 +36,18 @@ defmodule Cerberus.Verdict.Finding do
         }
 
   @valid_severities MapSet.new(~w(critical major minor info))
+  @severity_rank %{"critical" => 0, "major" => 1, "minor" => 2, "info" => 3}
   @valid_scopes MapSet.new(~w(diff defaults-change))
   @required_keys ~w(severity category file line title description)
+
+  @doc "Numeric rank for severity comparison. Lower = more severe."
+  @spec severity_rank(String.t()) :: non_neg_integer()
+  def severity_rank(severity), do: Map.get(@severity_rank, severity, 3)
+
+  @doc "True if the finding has critical severity."
+  @spec critical?(t()) :: boolean()
+  def critical?(%__MODULE__{severity: "critical"}), do: true
+  def critical?(%__MODULE__{}), do: false
 
   @spec validate(map()) :: {:ok, t()} | {:error, term()}
   def validate(map) when is_map(map) do
