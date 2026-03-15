@@ -307,7 +307,10 @@ defmodule Cerberus.RouterTest do
 
     test "reserves contain non-selected perspectives", %{router: router, config: config} do
       {:ok, result} = Router.route(@simple_diff, [], router)
-      all = Cerberus.Config.personas(config) |> Enum.map(&to_string(&1.perspective)) |> MapSet.new()
+
+      all =
+        Cerberus.Config.personas(config) |> Enum.map(&to_string(&1.perspective)) |> MapSet.new()
+
       panel_set = MapSet.new(result.panel)
       reserve_set = MapSet.new(result.reserves)
 
@@ -448,7 +451,9 @@ defmodule Cerberus.RouterTest do
 
       mock_llm = fn params ->
         send(test_pid, {:llm_model, params.model})
-        {:ok, Enum.take(["correctness", "security", "architecture", "testing"], params.panel_size)}
+
+        {:ok,
+         Enum.take(["correctness", "security", "architecture", "testing"], params.panel_size)}
       end
 
       router_name = :"router_nilmodel_#{System.unique_integer([:positive])}"

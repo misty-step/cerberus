@@ -84,14 +84,29 @@ defmodule Cerberus.Router do
 
     {panel, routing_used} =
       if Map.get(routing, :enabled, true) do
-        try_llm_routing(state.call_llm, personas, summary, panel_size, required, all_perspectives, metadata, router_model)
+        try_llm_routing(
+          state.call_llm,
+          personas,
+          summary,
+          panel_size,
+          required,
+          all_perspectives,
+          metadata,
+          router_model
+        )
       else
         {[], false}
       end
 
     {panel, routing_used} =
       if panel == [] do
-        {build_fallback_panel(routing, name_to_perspective, all_perspectives, panel_size, summary.code_changed), false}
+        {build_fallback_panel(
+           routing,
+           name_to_perspective,
+           all_perspectives,
+           panel_size,
+           summary.code_changed
+         ), false}
       else
         {panel, routing_used}
       end
@@ -160,7 +175,9 @@ defmodule Cerberus.Router do
 
           {:ok, new_path} when new_path != current ->
             record = Map.get(files, current, new_file_record(new_path))
-            {files |> Map.delete(current) |> Map.put(new_path, %{record | path: new_path}), new_path}
+
+            {files |> Map.delete(current) |> Map.put(new_path, %{record | path: new_path}),
+             new_path}
 
           _ ->
             {files, current}
@@ -248,7 +265,9 @@ defmodule Cerberus.Router do
     always = resolve_names(routing.always_include, name_to_perspective)
 
     if code_changed? do
-      code_req = resolve_names(Map.get(routing, :include_if_code_changed, []), name_to_perspective)
+      code_req =
+        resolve_names(Map.get(routing, :include_if_code_changed, []), name_to_perspective)
+
       Enum.uniq(always ++ code_req)
     else
       always
@@ -256,7 +275,13 @@ defmodule Cerberus.Router do
   end
 
   @doc false
-  def build_fallback_panel(routing, name_to_perspective, all_perspectives, panel_size, code_changed?) do
+  def build_fallback_panel(
+        routing,
+        name_to_perspective,
+        all_perspectives,
+        panel_size,
+        code_changed?
+      ) do
     required = required_perspectives(routing, name_to_perspective, code_changed?)
     fallback_order = resolve_names(routing.fallback_panel, name_to_perspective)
     required_set = MapSet.new(required)
@@ -292,7 +317,16 @@ defmodule Cerberus.Router do
 
   # --- LLM Routing ---
 
-  defp try_llm_routing(call_llm, personas, summary, panel_size, required, all_perspectives, metadata, router_model) do
+  defp try_llm_routing(
+         call_llm,
+         personas,
+         summary,
+         panel_size,
+         required,
+         all_perspectives,
+         metadata,
+         router_model
+       ) do
     prompt = build_prompt(personas, summary, panel_size, required, metadata)
 
     params = %{
