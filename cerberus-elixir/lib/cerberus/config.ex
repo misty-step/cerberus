@@ -176,7 +176,9 @@ defmodule Cerberus.Config do
       panel_size: routing["panel_size"] || 4,
       always_include: routing["always_include"] || [],
       fallback_panel: routing["fallback_panel"] || [],
-      include_if_code_changed: routing["include_if_code_changed"] || []
+      include_if_code_changed: routing["include_if_code_changed"] || [],
+      enabled: routing["enabled"] != false,
+      model: routing["model"]
     }
   end
 
