@@ -76,7 +76,9 @@ defmodule Cerberus.API do
             json(conn, 202, %{review_id: review_id, status: "queued"})
 
           {:error, reason} ->
-            json(conn, 500, %{error: "store_error", detail: inspect(reason)})
+            require Logger
+            Logger.error("Store error creating review run: #{inspect(reason)}")
+            json(conn, 500, %{error: "store_error"})
         end
       catch
         :exit, reason ->
@@ -133,8 +135,7 @@ defmodule Cerberus.API do
       true ->
         {:ok, %{repo: repo, pr_number: pr_number, head_sha: head_sha,
                 github_token: params["github_token"],
-                model: params["model"],
-                context: params["context"]}}
+                model: params["model"]}}
     end
   end
 

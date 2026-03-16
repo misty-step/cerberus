@@ -9,15 +9,9 @@ set -euo pipefail
 # --- Helpers ---
 
 parse_json() {
-  python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    print(eval(compile(sys.argv[1], '<expr>', 'eval'), {'data': data}))
-except Exception as e:
-    print(f'error: {e}', file=sys.stderr)
-    sys.exit(1)
-" "$1"
+  # Extract a value from JSON using jq. Falls back to empty string on error.
+  local filter="$1"
+  jq -r "$filter // empty" 2>/dev/null || echo ""
 }
 
 # --- Preflight ---
@@ -66,8 +60,7 @@ payload=$(jq -n \
   --arg head_sha "$HEAD_SHA" \
   --arg github_token "$GITHUB_TOKEN" \
   --arg model "${CERBERUS_MODEL:-}" \
-  --arg context "${CERBERUS_CONTEXT:-}" \
-  '{repo: $repo, pr_number: $pr_number, head_sha: $head_sha, github_token: $github_token, model: $model, context: $context}')
+  '{repo: $repo, pr_number: $pr_number, head_sha: $head_sha, github_token: $github_token, model: $model}')
 
 echo "Dispatching review for ${REPO}#${PR_NUMBER} (${HEAD_SHA:0:12})..."
 
@@ -88,7 +81,7 @@ if [ "$http_code" != "202" ]; then
   exit 1
 fi
 
-review_id=$(echo "$body" | parse_json "data['review_id']")
+review_id=$(echo "$body" | parse_json '.review_id')
 echo "Review dispatched: id=${review_id}"
 echo "review-id=${review_id}" >> "$GITHUB_OUTPUT"
 
@@ -121,7 +114,7 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
   fi
   consecutive_errors=0
 
-  status=$(echo "$poll_body" | parse_json "data.get('status','unknown')")
+  status=$(echo "$poll_body" | parse_json '.status // "unknown"')
 
   case "$status" in
     failed)
@@ -130,7 +123,7 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
       exit 1
       ;;
     completed)
-      verdict=$(echo "$poll_body" | parse_json "(data.get('aggregated_verdict') or {}).get('verdict', 'SKIP')")
+      verdict=$(echo "$poll_body" | parse_json '.aggregated_verdict.verdict // "SKIP"')
       echo "Review complete: verdict=${verdict} (${elapsed}s)"
       echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
 

@@ -117,3 +117,66 @@ Miss patterns that repeat across entries become hardening work.
 - **Gemini: zero signal on inline comments.** 7 inline comments, all style-only, one factually wrong (claimed `List.flatten` was redundant when it's required). No defects found. Gemini was the weakest reviewer on this PR.
 - **Permission atom/string mismatch: convergent finding.** Found independently by Cerberus/trace AND Codex. Both correctly identified the integration risk. Cerberus gets credit for catching it but so does Codex.
 - **Collector script was silently dropping inline review comments.** The `collect_pr_review_surface.py` script only fetched `comments` and `reviews` via `gh pr view --json`, missing the `pulls/{pr}/comments` REST endpoint entirely. This caused the initial triage to miss 11 inline comments. Fixed by adding `fetch_review_comments()` to the collector.
+
+---
+
+### PR #410 — Thin GHA action dispatches to Cerberus API
+
+**Date:** 2026-03-15 | **Link:** https://github.com/misty-step/cerberus/pull/410 | **Verdict:** WARN (final push), FAIL (earlier pushes)
+**Ran:** trace/correctness (PASS 0.85), guard/security (WARN 0.85), proof/testing (FAIL 0.85), atlas/architecture (PASS 0.85) | **Timed out:** guard, trace (on sha 1da5263 only) | **Skipped:** fuse, craft
+**External reviewers:** CodeRabbit (20 inline), Codex (3 inline), Greptile (paywalled)
+
+#### Misses
+
+| Finding | Category | Perspective | Blind/Impaired | Found by | Lever |
+|---------|----------|-------------|----------------|----------|-------|
+| `eval(compile())` in parse_json — unnecessary eval, replace with jq | eval-injection | security | blind | CodeRabbit, Codex, Cerberus/guard | — |
+| `inspect(reason)` in 500 error may leak github_token to logs | secrets-leakage | security | blind | CodeRabbit, Cerberus/guard (partially) | prompt |
+| `update_review_run/3` returns `:ok` for non-existent IDs (silent no-op) | logic-gap | correctness | blind | CodeRabbit | prompt |
+| `create_review_run/2` typespec says `integer()` but can return `{:error, _}` | type-mismatch | correctness | blind | CodeRabbit, Codex | prompt |
+| `parse_json` failure under `set -e` bypasses poll error counter | error-handling | correctness | blind | Cerberus/trace (partially), CodeRabbit | prompt |
+| No test for polling loop (timeout, error accumulation, verdict extraction) | missing-coverage | testing | blind | Cerberus/proof, CodeRabbit, Codex | eval |
+| Duplicate `DEFERRED` milestone headings in BACKLOG-PRIORITIES.md | doc-inconsistency | correctness | blind | CodeRabbit | — |
+
+#### Cerberus-only finds
+
+| Finding | Perspective | Category |
+|---------|-------------|----------|
+| Inconsistent GITHUB_OUTPUT handling across validation failures | architecture | boundary-integrity |
+| Unvalidated numeric inputs (POLL_INTERVAL, TIMEOUT) in bash arithmetic | correctness | input-validation |
+| `api_key_from_env` edge cases not tested | testing | missing-coverage |
+| No tests for different verdict values and fail-on-verdict behavior | testing | missing-coverage |
+
+#### Noise
+
+| Finding | Reviewer | Why noise |
+|---------|----------|-----------|
+| Store `Cerberus.Store` has no live process (`:noproc`) | CodeRabbit (critical), Codex | **Wrong** — `application.ex:12` passes `name: Cerberus.Store` in child spec. Store IS registered. |
+| IDOR: any API key can access any review run | Cerberus/guard, CodeRabbit | Single-tenant self-hosted API, one API key per deployment. No multi-tenancy. |
+| `eval()` enables RCE from compromised API | Cerberus/guard (critical) | Overstated — `eval` runs script-authored expressions, not API response data. Attack requires script modification, not API compromise. Real finding is code smell, not RCE. |
+| Schema migration needed for `CREATE TABLE IF NOT EXISTS` | CodeRabbit, Codex | New codebase, no prior deployments. Zero existing databases to migrate. |
+| CLAUDE.md architecture diagram should show API-dispatch flow | CodeRabbit | Nitpick, not a defect. CLAUDE.md already references API path in deployment section. |
+| `CERBERUS_CONTEXT` violates review context boundary | CodeRabbit | Valid CLAUDE.md policy point, but `context` field is optional passthrough, not semantic injection. Acceptable for now. |
+| Missing OSS-VS-CLOUD.md relative link prefix | CodeRabbit | Stub file, content is one sentence. Link works in both GitHub and local renders. |
+
+#### Signal quality
+
+| Reviewer | Findings | Real | Noise | Unique (not found by others) |
+|----------|----------|------|-------|------------------------------|
+| CodeRabbit | 20 | 11 | 9 | 5 (update silent no-op, typespec mismatch, parse_json/set-e interaction, GITHUB_TOKEN preflight, duplicate deferred heading) |
+| Codex | 3 | 2 | 1 | 0 (all duplicates of CodeRabbit) |
+| Cerberus/proof | 5 | 5 | 0 | 3 (api_key_from_env coverage, verdict value coverage, fail-on-verdict coverage) |
+| Cerberus/guard | 2 | 1 | 1 | 0 (eval finding also by CodeRabbit; IDOR is noise) |
+| Cerberus/trace | 2 | 2 | 0 | 1 (numeric input validation) |
+| Cerberus/atlas | 4 | 2 | 2 | 1 (GITHUB_OUTPUT inconsistency) |
+| Greptile | 0 | — | — | — (paywalled) |
+
+#### Patterns
+
+- **eval(compile()) convergent finding.** All three active reviewers (Cerberus/guard, CodeRabbit, Codex) flagged the `eval()` in `parse_json`. Cerberus/guard overrated it as RCE (critical); CodeRabbit correctly identified it as a code smell (major). Cerberus severity calibration needs work — the expression string comes from the script, not the API.
+- **CodeRabbit: strongest external reviewer on this PR.** 11/20 real, 5 unique. Found the `update_review_run` silent no-op, the typespec lie, and the `parse_json`/`set -e` interaction that bypasses the error counter. These are real integration bugs.
+- **Codex: zero unique signal again.** 2/3 real but all duplicates of CodeRabbit. Consistent with PR #404 pattern — Codex rarely adds marginal value when CodeRabbit is present.
+- **Cerberus/proof: consistent performer.** 5/5 real, 3 unique. Testing perspective continues to find coverage gaps that external reviewers miss. Strongest Cerberus perspective across all three triage entries.
+- **False positive pattern: "no live process" (`:noproc`).** Both CodeRabbit (critical) and Codex claimed `Cerberus.Store` has no registered name. Both wrong — `application.ex:12` explicitly passes `name: Cerberus.Store`. This is a context-retrieval failure: reviewers analyzed `store.ex` in isolation without reading `application.ex`. Same class as PR #401's "empty prompt" false positive where reviewers missed the initialization path.
+- **Polling loop coverage gap: real and important.** `dispatch.sh` has 90 lines of untested polling logic. Cerberus/proof, CodeRabbit, and Codex all flagged this. The preflight tests cover lines 1-55 only. This should be fixed before merge.
+- **correctness/trace: improving but still misses integration bugs.** Trace found the numeric input validation gap (unique) but missed the `update_review_run` silent no-op and the typespec mismatch. Both require cross-module reasoning (API caller assumptions vs Store behavior). Trace still struggles with contract-boundary bugs.

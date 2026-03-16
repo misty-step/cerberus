@@ -20,7 +20,6 @@ Everything else is deferred.
   - Maintainability and supportability work needed for paid usage.
   - Benchmark loop and scorecard ritual for recurring reviewer audits.
   - Prompt/context/agentic experiments driven by benchmark misses, not intuition.
-- `DEFERRED: Expansion`
 - `DEFERRED: Research / Expansion`
   - Research spikes and long-horizon product expansion.
 
