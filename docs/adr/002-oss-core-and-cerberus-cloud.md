@@ -1,6 +1,6 @@
 # ADR 002: OSS Core + Cerberus Cloud (GitHub App) Split
 
-- Status: Accepted
+- Status: Superseded by ADR 005
 - Date: 2026-02-16
 - Deciders: Cerberus maintainers
 - Related: vision.md, docs/ARCHITECTURE.md, #145

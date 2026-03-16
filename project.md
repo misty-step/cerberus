@@ -10,7 +10,7 @@ Agentic code review platform — multi-perspective review, auto-triage, and obse
 - Multi-perspective review (6 specialized reviewers vs single-pass)
 - Model diversity (each reviewer uses a different model via OpenRouter)
 - Aggregated verdict with override protocol — not binary pass/fail
-- Open core (OSS GitHub Action + managed Cerberus Cloud)
+- Fully OSS (single codebase, BYOK GitHub Action)
 - Agentic triage — findings auto-remediated via fix PRs
 
 ## Domain Glossary
@@ -28,7 +28,7 @@ Canonical source: `docs/TERMINOLOGY.md`
 | [stale-knowledge] | Pipeline-added tag indicating a finding may assert stale training-data knowledge (version claims, release dates). Severity preserved — human judges |
 | Override | A `/cerberus override sha=<sha>` comment from an authorized actor, suppressing a FAIL verdict |
 | OSS action | The GitHub Action distribution (BYOK — bring your own key). This repo |
-| Cerberus Cloud | Managed GitHub App (separate repo). Handles billing, quota, org controls |
+| ~~Cerberus Cloud~~ | Archived. See `docs/adr/005-single-codebase-oss-only.md` |
 | Pi runtime | The LLM invocation layer used by reviewers. Invoked via `scripts/run-reviewer.py` → `scripts/lib/runtime_facade.py` |
 | Pool | A set of models that reviewers draw from randomly each run, for model diversity |
 

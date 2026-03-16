@@ -8,10 +8,9 @@ Cerberus is agentic DevOps composed from distinct, focused modules. Each module 
 
 ## Distribution
 
-- **OSS Core (this repo)**: GitHub Actions (BYOK model key). PR comments + checks as the UX.
-- **Cerberus Cloud (planned)**: GitHub App + GitHub Marketplace billing. Same review/triage loop, but managed keys + quotas + org controls, and zero-YAML onboarding.
+- **OSS (this repo)**: GitHub Actions (BYOK model key). PR comments + checks as the UX.
 
-Source of truth: `docs/adr/002-oss-core-and-cerberus-cloud.md`.
+Source of truth: `docs/adr/005-single-codebase-oss-only.md`.
 
 ## Modules
 

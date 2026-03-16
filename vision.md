@@ -14,14 +14,13 @@ Cerberus differentiators:
 - **Multi-perspective review** — 6 specialized reviewers vs single-pass
 - **Model diversity** — each reviewer can use a different model (Kimi, Gemini, GLM, Minimax)
 - **Aggregated verdict with override protocol** — not binary pass/fail
-- **Open core** — OSS GitHub Action (BYOK) + optional managed Cerberus Cloud
+- **Fully OSS** — GitHub Action (BYOK), single codebase
 - **Agentic triage** — findings auto-remediated via fix PRs
 - **Observability modules** — health checks, error tracking, status pages (future)
 
 ## Packaging
 
 - **OSS**: GitHub Actions (bring your own model key)
-- **Cloud**: GitHub App + GitHub Marketplace billing (managed keys, quotas, org controls)
 
 ## Target User
 Engineering teams (2-50 devs) who want automated code review that catches what humans miss, without drowning in noise. Willing to pay for quality signal.
