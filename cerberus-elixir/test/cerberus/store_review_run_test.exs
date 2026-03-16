@@ -81,5 +81,9 @@ defmodule Cerberus.StoreReviewRunTest do
       {:ok, run} = Store.get_review_run(store, id)
       assert run.status == "queued"
     end
+
+    test "returns not_found for non-existent ID", %{store: store} do
+      assert {:error, :not_found} = Store.update_review_run(store, 99999, %{status: "running"})
+    end
   end
 end

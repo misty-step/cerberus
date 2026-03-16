@@ -241,7 +241,13 @@ defmodule Cerberus.Store do
           try do
             with :ok <- Exqlite.Sqlite3.bind(stmt, bindings ++ [id]),
                  :done <- Exqlite.Sqlite3.step(conn, stmt) do
-              :ok
+              with {:ok, cs} <- Exqlite.Sqlite3.prepare(conn, "SELECT changes()"),
+                   {:row, [count]} <- Exqlite.Sqlite3.step(conn, cs) do
+                Exqlite.Sqlite3.release(conn, cs)
+                if count == 0, do: {:error, :not_found}, else: :ok
+              else
+                _ -> :ok
+              end
             else
               {:error, _} = err -> err
               other -> {:error, other}

@@ -54,6 +54,15 @@ TIMEOUT="${CERBERUS_TIMEOUT:-600}"
 POLL_INTERVAL="${CERBERUS_POLL_INTERVAL:-5}"
 MAX_POLL_ERRORS=10
 
+if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
+  echo "::error::Cerberus: TIMEOUT must be a positive integer (got: ${TIMEOUT})"
+  exit 1
+fi
+if ! [[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || [ "$POLL_INTERVAL" -eq 0 ]; then
+  echo "::error::Cerberus: POLL_INTERVAL must be a positive integer (got: ${POLL_INTERVAL})"
+  exit 1
+fi
+
 payload=$(jq -n \
   --arg repo "$REPO" \
   --argjson pr_number "$PR_NUMBER" \
