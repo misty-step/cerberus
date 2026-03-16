@@ -82,7 +82,9 @@ defmodule Cerberus.API do
         end
       catch
         :exit, reason ->
-          json(conn, 500, %{error: "store_unavailable", detail: inspect(reason)})
+          require Logger
+          Logger.error("Store unavailable: #{inspect(reason)}")
+          json(conn, 500, %{error: "store_unavailable"})
       end
     else
       {:error, reason} ->

@@ -39,11 +39,15 @@ fi
 
 if [ -z "${CERBERUS_URL:-}" ]; then
   echo "::error::Cerberus: CERBERUS_URL is not set"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
   exit 1
 fi
 
 if [ -z "${PR_NUMBER:-}" ] || [ -z "${HEAD_SHA:-}" ]; then
   echo "::error::Cerberus: PR_NUMBER or HEAD_SHA not available (is this a pull_request event?)"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
   exit 1
 fi
 
