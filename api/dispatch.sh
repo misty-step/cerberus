@@ -14,41 +14,39 @@ parse_json() {
   jq -r "$filter // empty" 2>/dev/null || echo ""
 }
 
+bail_skip() {
+  # Write SKIP outputs and exit. Every early-exit path must use this
+  # to maintain the action output contract.
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
+  exit "$1"
+}
+
 # --- Preflight ---
 
 if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
   echo "::notice::Cerberus: skipping fork PR (no secrets available)"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 0
+  bail_skip 0
 fi
 
 if [ "$IS_DRAFT" = "true" ]; then
   echo "::notice::Cerberus: skipping draft PR"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 0
+  bail_skip 0
 fi
 
 if [ -z "${CERBERUS_API_KEY:-}" ]; then
   echo "::error::Cerberus: CERBERUS_API_KEY is not set"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 1
+  bail_skip 1
 fi
 
 if [ -z "${CERBERUS_URL:-}" ]; then
   echo "::error::Cerberus: CERBERUS_URL is not set"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 1
+  bail_skip 1
 fi
 
 if [ -z "${PR_NUMBER:-}" ] || [ -z "${HEAD_SHA:-}" ]; then
   echo "::error::Cerberus: PR_NUMBER or HEAD_SHA not available (is this a pull_request event?)"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 1
+  bail_skip 1
 fi
 
 # --- Dispatch ---
@@ -60,24 +58,19 @@ MAX_POLL_ERRORS=10
 
 if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
   echo "::error::Cerberus: TIMEOUT must be a positive integer (got: ${TIMEOUT})"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 1
+  bail_skip 1
 fi
 if ! [[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || [ "$POLL_INTERVAL" -eq 0 ]; then
   echo "::error::Cerberus: POLL_INTERVAL must be a positive integer (got: ${POLL_INTERVAL})"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 1
+  bail_skip 1
 fi
 
 payload=$(jq -n \
   --arg repo "$REPO" \
   --argjson pr_number "$PR_NUMBER" \
   --arg head_sha "$HEAD_SHA" \
-  --arg github_token "$GITHUB_TOKEN" \
   --arg model "${CERBERUS_MODEL:-}" \
-  '{repo: $repo, pr_number: $pr_number, head_sha: $head_sha, github_token: $github_token, model: $model}')
+  '{repo: $repo, pr_number: $pr_number, head_sha: $head_sha, model: $model}')
 
 echo "Dispatching review for ${REPO}#${PR_NUMBER} (${HEAD_SHA:0:12})..."
 
@@ -93,9 +86,7 @@ body=$(echo "$response" | sed '$d')
 
 if [ "$http_code" != "202" ]; then
   echo "::error::Cerberus API returned ${http_code}: ${body}"
-  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
-  echo "review-id=" >> "$GITHUB_OUTPUT"
-  exit 1
+  bail_skip 1
 fi
 
 review_id=$(echo "$body" | parse_json '.review_id')

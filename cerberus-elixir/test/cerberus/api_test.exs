@@ -154,20 +154,20 @@ defmodule Cerberus.APITest do
       assert body["pr_number"] == 42
     end
 
-    test "does not leak github_token in response", %{store: store} do
+    test "ignores unrecognized fields in request", %{store: store} do
       post_conn =
         json_post("/api/reviews", %{
           repo: "org/repo",
           pr_number: 42,
           head_sha: "abc123",
-          github_token: "test-token-fixture"
+          extra_field: "should-be-ignored"
         }, store)
 
       %{"review_id" => id} = Jason.decode!(post_conn.resp_body)
 
       conn = authed_get("/api/reviews/#{id}", store)
       body = Jason.decode!(conn.resp_body)
-      refute Map.has_key?(body, "github_token")
+      refute Map.has_key?(body, "extra_field")
     end
   end
 

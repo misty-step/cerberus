@@ -8,8 +8,9 @@ branding:
 
 inputs:
   github-token:
-    description: 'GitHub token for PR operations (passed to API for comment/check posting)'
-    required: true
+    description: 'GitHub token for PR operations. Reserved for server-side posting (#412).'
+    required: false
+    default: ''
   api-key:
     description: 'Cerberus API authentication key'
     required: true
@@ -44,7 +45,6 @@ runs:
       id: dispatch
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
         CERBERUS_API_KEY: ${{ inputs.api-key }}
         CERBERUS_URL: ${{ inputs.cerberus-url }}
         CERBERUS_MODEL: ${{ inputs.model }}

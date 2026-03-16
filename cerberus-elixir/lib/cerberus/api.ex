@@ -143,7 +143,6 @@ defmodule Cerberus.API do
 
       true ->
         {:ok, %{repo: repo, pr_number: pr_number, head_sha: head_sha,
-                github_token: params["github_token"],
                 model: params["model"]}}
     end
   end
