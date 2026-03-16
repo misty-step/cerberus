@@ -40,7 +40,7 @@ lint:
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		echo "🔍 Running shellcheck..."; \
-		find scripts tests -name "*.sh" -type f -exec shellcheck {} +; \
+		find scripts tests api -name "*.sh" -type f -exec shellcheck {} +; \
 	else \
 		echo "⚠ shellcheck not installed. Install with: brew install shellcheck (macOS) or apt install shellcheck (Linux)"; \
 		exit 1; \

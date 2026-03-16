@@ -70,11 +70,9 @@ Three waves with flash → standard → pro model escalation, but routing is the
 - Migration guide (v1 → v2): `docs/MIGRATION.md`
 - Review-run contract: `docs/review-run-contract.md`
 - Terminology: `docs/TERMINOLOGY.md`
-- OSS vs Cloud: `docs/OSS-VS-CLOUD.md`
 - Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
 - Troubleshooting: `docs/TROUBLESHOOTING.md`
 - Architecture: `docs/ARCHITECTURE.md`
-- Cloud repo: `https://github.com/misty-step/cerberus-cloud` (bootstrap)
 
 ## Local Non-GHA Review Path
 

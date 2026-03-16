@@ -7,8 +7,12 @@ defmodule Cerberus.Store do
     """
     CREATE TABLE IF NOT EXISTS review_runs (
       id INTEGER PRIMARY KEY,
+      repo TEXT,
       pr_number INTEGER,
-      status TEXT NOT NULL,
+      head_sha TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      aggregated_verdict_json TEXT,
+      completed_at TEXT,
       inserted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -48,7 +52,13 @@ defmodule Cerberus.Store do
   ]
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
+    {name, opts} = Keyword.pop(opts, :name)
+
+    if name do
+      GenServer.start_link(__MODULE__, opts, name: name)
+    else
+      GenServer.start_link(__MODULE__, opts)
+    end
   end
 
   @spec ensure_schema(pid() | atom()) :: :ok | {:error, term()}
@@ -59,6 +69,21 @@ defmodule Cerberus.Store do
   @spec table_names(pid() | atom()) :: {:ok, [String.t()]} | {:error, term()}
   def table_names(store) do
     GenServer.call(store, :table_names)
+  end
+
+  @spec create_review_run(pid() | atom(), map()) :: non_neg_integer() | {:error, term()}
+  def create_review_run(store, attrs) do
+    GenServer.call(store, {:create_review_run, attrs})
+  end
+
+  @spec get_review_run(pid() | atom(), integer()) :: {:ok, map()} | {:error, :not_found}
+  def get_review_run(store, id) do
+    GenServer.call(store, {:get_review_run, id})
+  end
+
+  @spec update_review_run(pid() | atom(), integer(), map()) :: :ok | {:error, term()}
+  def update_review_run(store, id, attrs) do
+    GenServer.call(store, {:update_review_run, id, attrs})
   end
 
   @doc """
@@ -100,6 +125,7 @@ defmodule Cerberus.Store do
 
     with :ok <- ensure_database_directory(database_path),
          {:ok, conn} <- Exqlite.Sqlite3.open(database_path),
+         :ok <- configure_pragmas(conn),
          :ok <- ensure_schema_tables(conn) do
       state = %{conn: conn, database_path: database_path}
       {:ok, state}
@@ -112,18 +138,77 @@ defmodule Cerberus.Store do
   end
 
   def handle_call(:table_names, _from, %{conn: conn} = state) do
-    result =
-      with {:ok, statement} <-
-             Exqlite.Sqlite3.prepare(
-               conn,
-               "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-             ) do
-        rows = collect_rows(conn, statement, [])
-        Exqlite.Sqlite3.release(conn, statement)
-        rows
+    sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+    result = with_statement(conn, sql, [], fn _conn, stmt ->
+      collect_rows(conn, stmt, [])
+    end)
+    {:reply, result, state}
+  end
+
+  def handle_call({:create_review_run, attrs}, _from, %{conn: conn} = state) do
+    sql = "INSERT INTO review_runs (repo, pr_number, head_sha, status) VALUES (?1, ?2, ?3, 'queued')"
+    bindings = [attrs[:repo], attrs[:pr_number], attrs[:head_sha]]
+
+    result = exec(conn, sql, bindings, fn conn, _stmt ->
+      case Exqlite.Sqlite3.last_insert_rowid(conn) do
+        {:ok, rowid} -> rowid
+        rowid when is_integer(rowid) -> rowid
       end
+    end)
 
     {:reply, result, state}
+  end
+
+  def handle_call({:get_review_run, id}, _from, %{conn: conn} = state) do
+    sql = """
+    SELECT id, repo, pr_number, head_sha, status, aggregated_verdict_json, completed_at, inserted_at
+    FROM review_runs WHERE id = ?1
+    """
+
+    result = with_statement(conn, sql, [id], fn conn, stmt ->
+      case Exqlite.Sqlite3.step(conn, stmt) do
+        {:row, [id, repo, pr, sha, status, verdict_json, completed, inserted]} ->
+          {:ok, %{
+            review_id: id, repo: repo, pr_number: pr, head_sha: sha,
+            status: status, aggregated_verdict: safe_decode(verdict_json),
+            completed_at: completed, inserted_at: inserted
+          }}
+
+        :done ->
+          {:error, :not_found}
+      end
+    end)
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:update_review_run, id, attrs}, _from, %{conn: conn} = state) do
+    {sets, bindings, idx} =
+      Enum.reduce([:status, :aggregated_verdict_json, :completed_at], {[], [], 1}, fn key, {s, b, i} ->
+        case Map.get(attrs, key) do
+          nil -> {s, b, i}
+          val -> {["#{key} = ?#{i}" | s], b ++ [val], i + 1}
+        end
+      end)
+
+    if sets == [] do
+      {:reply, :ok, state}
+    else
+      sql = "UPDATE review_runs SET #{Enum.reverse(sets) |> Enum.join(", ")} WHERE id = ?#{idx}"
+
+      result = exec(conn, sql, bindings ++ [id], fn conn, _stmt ->
+        changes_count(conn)
+      end)
+
+      result =
+        case result do
+          {:ok, 0} -> {:error, :not_found}
+          {:ok, _n} -> :ok
+          other -> other
+        end
+
+      {:reply, result, state}
+    end
   end
 
   def handle_call({:insert_cost, attrs}, _from, %{conn: conn} = state) do
@@ -134,32 +219,19 @@ defmodule Cerberus.Store do
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
     """
 
-    result =
-      with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql) do
-        try do
-          with :ok <-
-                 Exqlite.Sqlite3.bind(stmt, [
-                   attrs[:review_run_id],
-                   attrs[:reviewer] || "",
-                   attrs[:model] || "",
-                   attrs[:prompt_tokens] || 0,
-                   attrs[:completion_tokens] || 0,
-                   attrs[:cost_usd] || 0.0,
-                   attrs[:duration_ms] || 0,
-                   to_string(attrs[:status] || "success"),
-                   if(attrs[:is_fallback], do: 1, else: 0)
-                 ]),
-               :done <- Exqlite.Sqlite3.step(conn, stmt) do
-            :ok
-          else
-            {:error, _} = err -> err
-            other -> {:error, other}
-          end
-        after
-          Exqlite.Sqlite3.release(conn, stmt)
-        end
-      end
+    bindings = [
+      attrs[:review_run_id],
+      attrs[:reviewer] || "",
+      attrs[:model] || "",
+      attrs[:prompt_tokens] || 0,
+      attrs[:completion_tokens] || 0,
+      attrs[:cost_usd] || 0.0,
+      attrs[:duration_ms] || 0,
+      to_string(attrs[:status] || "success"),
+      if(attrs[:is_fallback], do: 1, else: 0)
+    ]
 
+    result = exec(conn, sql, bindings)
     {:reply, result, state}
   end
 
@@ -203,6 +275,86 @@ defmodule Cerberus.Store do
     :ok
   end
 
+  # --- Statement lifecycle helpers ---
+
+  # Prepare, bind, execute callback, release. The core abstraction that
+  # eliminates the prepare/try/bind/after/release boilerplate.
+  defp with_statement(conn, sql, bindings, fun) do
+    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql) do
+      try do
+        with :ok <- bind_if_needed(stmt, bindings) do
+          fun.(conn, stmt)
+        end
+      after
+        Exqlite.Sqlite3.release(conn, stmt)
+      end
+    end
+  end
+
+  # Execute a write statement (bind + step to :done), then run an optional
+  # post-step callback. Returns :ok when no callback is given.
+  defp exec(conn, sql, bindings, after_fn \\ nil) do
+    with_statement(conn, sql, bindings, fn conn, stmt ->
+      case Exqlite.Sqlite3.step(conn, stmt) do
+        :done ->
+          if after_fn, do: after_fn.(conn, stmt), else: :ok
+
+        {:error, _} = err -> err
+        other -> {:error, other}
+      end
+    end)
+  end
+
+  defp changes_count(conn) do
+    with {:ok, cs} <- Exqlite.Sqlite3.prepare(conn, "SELECT changes()"),
+         {:row, [count]} <- Exqlite.Sqlite3.step(conn, cs) do
+      Exqlite.Sqlite3.release(conn, cs)
+      {:ok, count}
+    else
+      _ -> {:ok, 0}
+    end
+  end
+
+  # --- Query helpers ---
+
+  defp query_rows(conn, sql, bindings, row_parser) do
+    with_statement(conn, sql, bindings, fn conn, stmt ->
+      collect_parsed_rows(conn, stmt, row_parser, [])
+    end)
+  end
+
+  defp bind_if_needed(_stmt, []), do: :ok
+  defp bind_if_needed(stmt, bindings), do: Exqlite.Sqlite3.bind(stmt, bindings)
+
+  defp collect_rows(conn, statement, acc) do
+    case Exqlite.Sqlite3.step(conn, statement) do
+      {:row, [name]} -> collect_rows(conn, statement, [name | acc])
+      :done -> {:ok, Enum.reverse(acc)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp collect_parsed_rows(conn, stmt, parser, acc) do
+    case Exqlite.Sqlite3.step(conn, stmt) do
+      {:row, values} -> collect_parsed_rows(conn, stmt, parser, [parser.(values) | acc])
+      :done -> {:ok, Enum.reverse(acc)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp configure_pragmas(conn) do
+    Enum.reduce_while(
+      ["PRAGMA journal_mode=WAL", "PRAGMA busy_timeout=5000", "PRAGMA foreign_keys=ON"],
+      :ok,
+      fn pragma, :ok ->
+        case Exqlite.Sqlite3.execute(conn, pragma) do
+          :ok -> {:cont, :ok}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end
+    )
+  end
+
   defp ensure_database_directory(database_path) do
     database_path
     |> Path.dirname()
@@ -218,36 +370,7 @@ defmodule Cerberus.Store do
     end)
   end
 
-  defp collect_rows(conn, statement, acc) do
-    case Exqlite.Sqlite3.step(conn, statement) do
-      {:row, [name]} -> collect_rows(conn, statement, [name | acc])
-      :done -> {:ok, Enum.reverse(acc)}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp query_rows(conn, sql, bindings, row_parser) do
-    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, sql) do
-      try do
-        with :ok <- bind_if_needed(conn, stmt, bindings) do
-          collect_parsed_rows(conn, stmt, row_parser, [])
-        end
-      after
-        Exqlite.Sqlite3.release(conn, stmt)
-      end
-    end
-  end
-
-  defp bind_if_needed(_conn, _stmt, []), do: :ok
-  defp bind_if_needed(_conn, stmt, bindings), do: Exqlite.Sqlite3.bind(stmt, bindings)
-
-  defp collect_parsed_rows(conn, stmt, parser, acc) do
-    case Exqlite.Sqlite3.step(conn, stmt) do
-      {:row, values} -> collect_parsed_rows(conn, stmt, parser, [parser.(values) | acc])
-      :done -> {:ok, Enum.reverse(acc)}
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  # --- Data helpers ---
 
   defp parse_model_performance_row([
          model,
@@ -271,6 +394,14 @@ defmodule Cerberus.Store do
       total_prompt_tokens: prompt_tokens || 0,
       total_completion_tokens: completion_tokens || 0
     }
+  end
+
+  defp safe_decode(nil), do: nil
+  defp safe_decode(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, val} -> val
+      _ -> nil
+    end
   end
 
   defp parse_cost_row([reviewer, model, prompt_tokens, completion_tokens,

@@ -459,8 +459,7 @@ defmodule Cerberus.Router do
 
   defp default_call_llm(params) do
     api_key =
-      System.get_env("CERBERUS_API_KEY") ||
-        System.get_env("CERBERUS_OPENROUTER_API_KEY") ||
+      System.get_env("CERBERUS_OPENROUTER_API_KEY") ||
         System.get_env("OPENROUTER_API_KEY")
 
     if is_nil(api_key) or api_key == "" do

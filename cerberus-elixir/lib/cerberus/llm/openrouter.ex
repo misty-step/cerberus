@@ -19,13 +19,14 @@ defmodule Cerberus.LLM.OpenRouter do
   @doc """
   Resolve the OpenRouter API key from environment variables.
 
-  Priority: CERBERUS_API_KEY > CERBERUS_OPENROUTER_API_KEY > OPENROUTER_API_KEY
+  Priority: CERBERUS_OPENROUTER_API_KEY > OPENROUTER_API_KEY
+
+  CERBERUS_API_KEY is reserved for API auth — never use it for LLM calls.
   """
   @spec resolve_api_key() :: {:ok, String.t()} | :error
   def resolve_api_key do
     key =
-      System.get_env("CERBERUS_API_KEY") ||
-        System.get_env("CERBERUS_OPENROUTER_API_KEY") ||
+      System.get_env("CERBERUS_OPENROUTER_API_KEY") ||
         System.get_env("OPENROUTER_API_KEY")
 
     if is_nil(key) or key == "", do: :error, else: {:ok, key}

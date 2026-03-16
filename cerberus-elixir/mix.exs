@@ -21,11 +21,13 @@ defmodule Cerberus.MixProject do
 
   defp deps do
     [
+      {:bandit, "~> 1.6"},
       {:exqlite, "~> 0.34"},
       {:jason, "~> 1.4"},
       {:opentelemetry_api, "~> 1.5"},
       {:opentelemetry, "~> 1.7"},
       {:opentelemetry_exporter, "~> 1.10"},
+      {:plug, "~> 1.16"},
       {:req, "~> 0.5"},
       {:req_llm, "~> 1.2"},
       {:yaml_elixir, "~> 2.12"}
