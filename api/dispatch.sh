@@ -60,10 +60,14 @@ MAX_POLL_ERRORS=10
 
 if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
   echo "::error::Cerberus: TIMEOUT must be a positive integer (got: ${TIMEOUT})"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
   exit 1
 fi
 if ! [[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || [ "$POLL_INTERVAL" -eq 0 ]; then
   echo "::error::Cerberus: POLL_INTERVAL must be a positive integer (got: ${POLL_INTERVAL})"
+  echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+  echo "review-id=" >> "$GITHUB_OUTPUT"
   exit 1
 fi
 

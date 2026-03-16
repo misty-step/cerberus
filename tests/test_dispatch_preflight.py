@@ -49,7 +49,7 @@ def run_dispatch(env_overrides, expect_fail=False, subprocess_timeout=5):
             )
         return result, outputs
     except subprocess.TimeoutExpired as exc:
-        raise AssertionError(f"dispatch.sh timed out after 5s") from exc
+        raise AssertionError("dispatch.sh timed out after 5s") from exc
     finally:
         os.unlink(env["GITHUB_OUTPUT"])
 
@@ -81,6 +81,27 @@ class TestPreflightSkips:
     def test_fails_missing_head_sha(self):
         result, outputs = run_dispatch({"HEAD_SHA": ""})
         assert result.returncode == 1
+
+    def test_fails_non_numeric_timeout(self):
+        result, outputs = run_dispatch({"CERBERUS_TIMEOUT": "abc"})
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+        assert "review-id" in outputs
+
+    def test_fails_negative_timeout(self):
+        result, outputs = run_dispatch({"CERBERUS_TIMEOUT": "-1"})
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+
+    def test_fails_zero_poll_interval(self):
+        result, outputs = run_dispatch({"CERBERUS_POLL_INTERVAL": "0"})
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+
+    def test_fails_non_numeric_poll_interval(self):
+        result, outputs = run_dispatch({"CERBERUS_POLL_INTERVAL": "abc"})
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
 
 
 class TestDispatchAttempt:

@@ -19,9 +19,6 @@ inputs:
   model:
     description: 'Model override (optional). Passed to the API for reviewer model selection.'
     default: ''
-  context:
-    description: 'Optional project context included in reviewer prompts. Do not include secrets.'
-    default: ''
   timeout:
     description: 'Maximum seconds to wait for review completion'
     default: '600'
@@ -51,7 +48,6 @@ runs:
         CERBERUS_API_KEY: ${{ inputs.api-key }}
         CERBERUS_URL: ${{ inputs.cerberus-url }}
         CERBERUS_MODEL: ${{ inputs.model }}
-        CERBERUS_CONTEXT: ${{ inputs.context }}
         CERBERUS_TIMEOUT: ${{ inputs.timeout }}
         CERBERUS_POLL_INTERVAL: ${{ inputs.poll-interval }}
         CERBERUS_FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}

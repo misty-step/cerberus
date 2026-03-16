@@ -71,7 +71,7 @@ defmodule Cerberus.Store do
     GenServer.call(store, :table_names)
   end
 
-  @spec create_review_run(pid() | atom(), map()) :: integer() | {:error, term()}
+  @spec create_review_run(pid() | atom(), map()) :: non_neg_integer() | {:error, term()}
   def create_review_run(store, attrs) do
     GenServer.call(store, {:create_review_run, attrs})
   end

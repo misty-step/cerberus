@@ -40,8 +40,15 @@ defmodule Cerberus.API do
     expected = conn.private[:api_key] || api_key_from_env()
 
     case {expected, get_req_header(conn, "authorization")} do
-      {key, ["Bearer " <> token]} when is_binary(key) and key != "" and token == key ->
-        conn
+      {key, ["Bearer " <> token]} when is_binary(key) and key != "" ->
+        if Plug.Crypto.secure_compare(token, key) do
+          conn
+        else
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(401, Jason.encode!(%{error: "missing_or_invalid_auth"}))
+          |> halt()
+        end
 
       _ ->
         conn
