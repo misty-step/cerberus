@@ -245,3 +245,38 @@ class TestPollingLoop:
         ])
         assert result.returncode == 0
         assert outputs.get("verdict") == "PASS"
+
+    def test_timeout_boundary_exact(self):
+        """TIMEOUT=2, POLL_INTERVAL=2 — exits after exactly 1 poll."""
+        result, outputs = _run_with_mock(
+            [(200, {"status": "running"})],
+            extra_env={"CERBERUS_TIMEOUT": "2", "CERBERUS_POLL_INTERVAL": "2"},
+        )
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+        # review-id is set before the poll loop, so it should still be present
+        assert "review-id" in outputs
+
+    def test_unknown_status_continues_polling(self):
+        """Unknown status emits a warning but keeps polling until completion."""
+        result, outputs = _run_with_mock([
+            (200, {"status": "initializing"}),
+            (200, {"status": "completed", "aggregated_verdict": {"verdict": "PASS"}}),
+        ])
+        assert result.returncode == 0
+        assert outputs.get("verdict") == "PASS"
+        assert "Unknown status: initializing" in result.stdout
+
+    def test_runner_temp_verdict_file(self):
+        """Verdict JSON is written to RUNNER_TEMP when set."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result, outputs = _run_with_mock(
+                [(200, {"status": "completed", "aggregated_verdict": {"verdict": "PASS"}})],
+                extra_env={"RUNNER_TEMP": tmpdir},
+            )
+            assert result.returncode == 0
+            verdict_path = os.path.join(tmpdir, "cerberus-api-verdict.json")
+            assert os.path.exists(verdict_path)
+            with open(verdict_path) as f:
+                data = json.load(f)
+            assert data["aggregated_verdict"]["verdict"] == "PASS"
