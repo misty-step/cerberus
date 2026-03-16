@@ -1,17 +1,21 @@
-"""Tests for api/dispatch.sh preflight logic.
+"""Tests for api/dispatch.sh preflight and polling logic.
 
 Validates that the thin action correctly skips fork PRs, draft PRs,
-and missing credentials before dispatching to the API.
+and missing credentials before dispatching to the API, and that the
+polling loop handles status transitions, timeouts, and verdicts.
 """
 
+import json
 import os
 import subprocess
 import tempfile
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 DISPATCH_SCRIPT = os.path.join(os.path.dirname(__file__), "..", "api", "dispatch.sh")
 
 
-def run_dispatch(env_overrides, expect_fail=False):
+def run_dispatch(env_overrides, expect_fail=False, subprocess_timeout=5):
     """Run dispatch.sh with given env and capture output."""
     env = {
         "HEAD_REPO": "org/repo",
@@ -21,7 +25,7 @@ def run_dispatch(env_overrides, expect_fail=False):
         "CERBERUS_URL": "http://localhost:9999",
         "PR_NUMBER": "42",
         "HEAD_SHA": "abc123def456",
-        "GITHUB_TOKEN": "ghp_test",
+        "GITHUB_TOKEN": "test-token-fixture",
         "GITHUB_OUTPUT": "",
         "PATH": os.environ.get("PATH", ""),
     }
@@ -37,7 +41,7 @@ def run_dispatch(env_overrides, expect_fail=False):
             env=env,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=subprocess_timeout,
         )
         with open(env["GITHUB_OUTPUT"]) as f:
             outputs = dict(
@@ -88,3 +92,135 @@ class TestDispatchAttempt:
         )
         # curl will fail to connect — script should exit non-zero
         assert result.returncode != 0
+
+
+# --- Mock API for polling tests ---
+
+
+def _make_handler(responses):
+    """Build a request handler that replays canned responses in order.
+
+    `responses` is a list of (status_code, body_dict) tuples.
+    POST /api/reviews always returns 202 with a review_id.
+    GET  /api/reviews/:id pops from the list.
+    """
+    call_count = {"poll": 0}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass  # suppress request logs
+
+        def do_POST(self):
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"review_id": 1, "status": "queued"}).encode())
+
+        def do_GET(self):
+            idx = min(call_count["poll"], len(responses) - 1)
+            code, body = responses[idx]
+            call_count["poll"] += 1
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode())
+
+    return Handler
+
+
+def _run_with_mock(responses, extra_env=None, timeout=20):
+    """Start a mock HTTP server, run dispatch.sh against it, return (result, outputs)."""
+    handler = _make_handler(responses)
+    server = HTTPServer(("127.0.0.1", 0), handler)
+    port = server.server_address[1]
+    t = threading.Thread(target=server.serve_forever)
+    t.daemon = True
+    t.start()
+
+    env_overrides = {
+        "CERBERUS_URL": f"http://127.0.0.1:{port}",
+        "CERBERUS_POLL_INTERVAL": "1",
+        "CERBERUS_TIMEOUT": "10",
+    }
+    if extra_env:
+        env_overrides.update(extra_env)
+
+    try:
+        return run_dispatch(env_overrides, subprocess_timeout=timeout)
+    finally:
+        server.shutdown()
+
+
+class TestPollingLoop:
+    def test_completed_pass_verdict(self):
+        """Completed review with PASS exits 0."""
+        result, outputs = _run_with_mock([
+            (200, {"status": "queued"}),
+            (200, {"status": "running"}),
+            (200, {"status": "completed", "aggregated_verdict": {"verdict": "PASS"}}),
+        ])
+        assert result.returncode == 0
+        assert outputs.get("verdict") == "PASS"
+
+    def test_completed_fail_verdict_exits_nonzero(self):
+        """FAIL verdict with fail-on-verdict=true exits 1."""
+        result, outputs = _run_with_mock([
+            (200, {"status": "completed", "aggregated_verdict": {"verdict": "FAIL"}}),
+        ], extra_env={"CERBERUS_FAIL_ON_VERDICT": "true"})
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "FAIL"
+
+    def test_completed_fail_verdict_no_fail_exits_zero(self):
+        """FAIL verdict with fail-on-verdict=false exits 0."""
+        result, outputs = _run_with_mock([
+            (200, {"status": "completed", "aggregated_verdict": {"verdict": "FAIL"}}),
+        ], extra_env={"CERBERUS_FAIL_ON_VERDICT": "false"})
+        assert result.returncode == 0
+        assert outputs.get("verdict") == "FAIL"
+
+    def test_completed_warn_verdict(self):
+        """WARN verdict exits 0."""
+        result, outputs = _run_with_mock([
+            (200, {"status": "completed", "aggregated_verdict": {"verdict": "WARN"}}),
+        ])
+        assert result.returncode == 0
+        assert outputs.get("verdict") == "WARN"
+
+    def test_failed_status_exits_nonzero(self):
+        """Server-side pipeline failure exits 1 with SKIP verdict."""
+        result, outputs = _run_with_mock([
+            (200, {"status": "running"}),
+            (200, {"status": "failed"}),
+        ])
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+
+    def test_timeout_exits_nonzero(self):
+        """Exceeding TIMEOUT exits 1 with SKIP verdict."""
+        # Always return running — will hit 3s timeout
+        result, outputs = _run_with_mock(
+            [(200, {"status": "running"})],
+            extra_env={"CERBERUS_TIMEOUT": "3", "CERBERUS_POLL_INTERVAL": "1"},
+        )
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+
+    def test_consecutive_poll_errors_abort(self):
+        """Too many consecutive HTTP errors aborts with SKIP."""
+        # Return 500 errors — should abort after MAX_POLL_ERRORS (10)
+        result, outputs = _run_with_mock(
+            [(500, {"error": "internal"})],
+            extra_env={"CERBERUS_TIMEOUT": "30", "CERBERUS_POLL_INTERVAL": "1"},
+        )
+        assert result.returncode == 1
+        assert outputs.get("verdict") == "SKIP"
+
+    def test_transient_errors_recover(self):
+        """A few HTTP errors followed by success don't abort."""
+        result, outputs = _run_with_mock([
+            (500, {"error": "transient"}),
+            (500, {"error": "transient"}),
+            (200, {"status": "completed", "aggregated_verdict": {"verdict": "PASS"}}),
+        ])
+        assert result.returncode == 0
+        assert outputs.get("verdict") == "PASS"
