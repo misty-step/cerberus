@@ -69,16 +69,23 @@ set_secrets() {
   echo "Enter CERBERUS_OPENROUTER_API_KEY (LLM calls):"
   read -rs CERBERUS_OPENROUTER_API_KEY
 
-  sprite -s "$SPRITE_NAME" exec -- sh -c "
-    cat > /home/sprite/.cerberus-env << 'ENVEOF'
+  # Write env file locally, transfer via -file to avoid secrets in process args
+  local tmpfile
+  tmpfile=$(mktemp)
+  trap 'rm -f "$tmpfile"' RETURN
+
+  cat > "$tmpfile" << EOF
 export PORT=8080
-export CERBERUS_API_KEY=\"$CERBERUS_API_KEY\"
-export CERBERUS_OPENROUTER_API_KEY=\"$CERBERUS_OPENROUTER_API_KEY\"
+export CERBERUS_API_KEY=$CERBERUS_API_KEY
+export CERBERUS_OPENROUTER_API_KEY=$CERBERUS_OPENROUTER_API_KEY
 export CERBERUS_DB_PATH=/home/sprite/data/cerberus.sqlite3
 export CERBERUS_REPO_ROOT=/home/sprite/cerberus
-ENVEOF
-    chmod 600 /home/sprite/.cerberus-env
-  "
+EOF
+
+  sprite -s "$SPRITE_NAME" exec \
+    -file "$tmpfile":/home/sprite/.cerberus-env \
+    -- chmod 600 /home/sprite/.cerberus-env
+
   log "Secrets written"
 }
 
