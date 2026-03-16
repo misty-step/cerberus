@@ -2,7 +2,10 @@ import Config
 
 # --- Port ---
 if port = System.get_env("PORT") do
-  config :cerberus_elixir, api_port: String.to_integer(port)
+  case Integer.parse(port) do
+    {n, ""} when n > 0 -> config :cerberus_elixir, api_port: n
+    _ -> raise "PORT must be a positive integer, got: #{inspect(port)}"
+  end
 end
 
 # --- Repo root ---

@@ -160,7 +160,7 @@ defmodule Cerberus.APITest do
           repo: "org/repo",
           pr_number: 42,
           head_sha: "abc123",
-          github_token: "ghp_secret123"
+          github_token: "test-token-fixture"
         }, store)
 
       %{"review_id" => id} = Jason.decode!(post_conn.resp_body)

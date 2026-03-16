@@ -44,8 +44,8 @@ def run_dispatch(env_overrides, expect_fail=False):
                 line.split("=", 1) for line in f.read().strip().split("\n") if "=" in line
             )
         return result, outputs
-    except subprocess.TimeoutExpired:
-        return None, {}
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(f"dispatch.sh timed out after 5s") from exc
     finally:
         os.unlink(env["GITHUB_OUTPUT"])
 
