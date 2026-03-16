@@ -97,6 +97,12 @@ defmodule Cerberus.Store do
     GenServer.call(store, {:insert_cost, attrs})
   end
 
+  @doc "Insert an event record (errors, lifecycle transitions)."
+  @spec insert_event(pid() | atom(), map()) :: :ok | {:error, term()}
+  def insert_event(store, attrs) do
+    GenServer.call(store, {:insert_event, attrs})
+  end
+
   @doc """
   Query model performance metrics grouped by model.
 
@@ -139,22 +145,28 @@ defmodule Cerberus.Store do
 
   def handle_call(:table_names, _from, %{conn: conn} = state) do
     sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-    result = with_statement(conn, sql, [], fn _conn, stmt ->
-      collect_rows(conn, stmt, [])
-    end)
+
+    result =
+      with_statement(conn, sql, [], fn _conn, stmt ->
+        collect_rows(conn, stmt, [])
+      end)
+
     {:reply, result, state}
   end
 
   def handle_call({:create_review_run, attrs}, _from, %{conn: conn} = state) do
-    sql = "INSERT INTO review_runs (repo, pr_number, head_sha, status) VALUES (?1, ?2, ?3, 'queued')"
+    sql =
+      "INSERT INTO review_runs (repo, pr_number, head_sha, status) VALUES (?1, ?2, ?3, 'queued')"
+
     bindings = [attrs[:repo], attrs[:pr_number], attrs[:head_sha]]
 
-    result = exec(conn, sql, bindings, fn conn, _stmt ->
-      case Exqlite.Sqlite3.last_insert_rowid(conn) do
-        {:ok, rowid} -> rowid
-        rowid when is_integer(rowid) -> rowid
-      end
-    end)
+    result =
+      exec(conn, sql, bindings, fn conn, _stmt ->
+        case Exqlite.Sqlite3.last_insert_rowid(conn) do
+          {:ok, rowid} -> rowid
+          rowid when is_integer(rowid) -> rowid
+        end
+      end)
 
     {:reply, result, state}
   end
@@ -165,26 +177,34 @@ defmodule Cerberus.Store do
     FROM review_runs WHERE id = ?1
     """
 
-    result = with_statement(conn, sql, [id], fn conn, stmt ->
-      case Exqlite.Sqlite3.step(conn, stmt) do
-        {:row, [id, repo, pr, sha, status, verdict_json, completed, inserted]} ->
-          {:ok, %{
-            review_id: id, repo: repo, pr_number: pr, head_sha: sha,
-            status: status, aggregated_verdict: safe_decode(verdict_json),
-            completed_at: completed, inserted_at: inserted
-          }}
+    result =
+      with_statement(conn, sql, [id], fn conn, stmt ->
+        case Exqlite.Sqlite3.step(conn, stmt) do
+          {:row, [id, repo, pr, sha, status, verdict_json, completed, inserted]} ->
+            {:ok,
+             %{
+               review_id: id,
+               repo: repo,
+               pr_number: pr,
+               head_sha: sha,
+               status: status,
+               aggregated_verdict: safe_decode(verdict_json),
+               completed_at: completed,
+               inserted_at: inserted
+             }}
 
-        :done ->
-          {:error, :not_found}
-      end
-    end)
+          :done ->
+            {:error, :not_found}
+        end
+      end)
 
     {:reply, result, state}
   end
 
   def handle_call({:update_review_run, id, attrs}, _from, %{conn: conn} = state) do
     {sets, bindings, idx} =
-      Enum.reduce([:status, :aggregated_verdict_json, :completed_at], {[], [], 1}, fn key, {s, b, i} ->
+      Enum.reduce([:status, :aggregated_verdict_json, :completed_at], {[], [], 1}, fn key,
+                                                                                      {s, b, i} ->
         case Map.get(attrs, key) do
           nil -> {s, b, i}
           val -> {["#{key} = ?#{i}" | s], b ++ [val], i + 1}
@@ -196,9 +216,10 @@ defmodule Cerberus.Store do
     else
       sql = "UPDATE review_runs SET #{Enum.reverse(sets) |> Enum.join(", ")} WHERE id = ?#{idx}"
 
-      result = exec(conn, sql, bindings ++ [id], fn conn, _stmt ->
-        changes_count(conn)
-      end)
+      result =
+        exec(conn, sql, bindings ++ [id], fn conn, _stmt ->
+          changes_count(conn)
+        end)
 
       result =
         case result do
@@ -231,6 +252,24 @@ defmodule Cerberus.Store do
       if(attrs[:is_fallback], do: 1, else: 0)
     ]
 
+    result = exec(conn, sql, bindings)
+    {:reply, result, state}
+  end
+
+  def handle_call({:insert_event, attrs}, _from, %{conn: conn} = state) do
+    sql = """
+    INSERT INTO events (review_run_id, kind, payload_json)
+    VALUES (?1, ?2, ?3)
+    """
+
+    payload =
+      case attrs[:payload] do
+        p when is_binary(p) -> p
+        p when is_map(p) -> Jason.encode!(p)
+        _ -> "{}"
+      end
+
+    bindings = [attrs[:review_run_id], attrs[:kind] || "unknown", payload]
     result = exec(conn, sql, bindings)
     {:reply, result, state}
   end
@@ -299,8 +338,11 @@ defmodule Cerberus.Store do
         :done ->
           if after_fn, do: after_fn.(conn, stmt), else: :ok
 
-        {:error, _} = err -> err
-        other -> {:error, other}
+        {:error, _} = err ->
+          err
+
+        other ->
+          {:error, other}
       end
     end)
   end
@@ -397,6 +439,7 @@ defmodule Cerberus.Store do
   end
 
   defp safe_decode(nil), do: nil
+
   defp safe_decode(json) when is_binary(json) do
     case Jason.decode(json) do
       {:ok, val} -> val
@@ -404,8 +447,16 @@ defmodule Cerberus.Store do
     end
   end
 
-  defp parse_cost_row([reviewer, model, prompt_tokens, completion_tokens,
-                       cost_usd, duration_ms, status, is_fallback]) do
+  defp parse_cost_row([
+         reviewer,
+         model,
+         prompt_tokens,
+         completion_tokens,
+         cost_usd,
+         duration_ms,
+         status,
+         is_fallback
+       ]) do
     %{
       reviewer: reviewer,
       model: model,

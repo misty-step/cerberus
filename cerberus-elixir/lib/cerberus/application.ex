@@ -11,9 +11,10 @@ defmodule Cerberus.Application do
       Cerberus.Config,
       {Cerberus.Store, name: Cerberus.Store, database_path: Cerberus.database_path()},
       Cerberus.ReviewSupervisor,
+      {Task.Supervisor, name: Cerberus.TaskSupervisor},
       Cerberus.Router,
       Cerberus.Telemetry,
-      {Bandit, plug: Cerberus.API, port: port}
+      {Bandit, plug: {Cerberus.API, pipeline: &Cerberus.Pipeline.start/2}, port: port}
     ]
 
     opts = [strategy: :one_for_one, name: Cerberus.Supervisor]

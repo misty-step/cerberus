@@ -1,0 +1,485 @@
+defmodule Cerberus.Pipeline do
+  @moduledoc """
+  Orchestrates a complete review run: fetch → route → review → aggregate → post.
+
+  Launched asynchronously by the API after `POST /api/reviews`. Updates the
+  review run row through its lifecycle (queued → running → completed | failed)
+  and posts results to GitHub (verdict comment, PR review, check run).
+
+  ## DI seams (all via `opts`)
+
+      :store           — Store GenServer (default: Cerberus.Store)
+      :github_opts     — keyword list forwarded to all GitHub calls (inject :req here)
+      :config_server   — Config GenServer (default: Cerberus.Config)
+      :router_server   — Router GenServer (default: Cerberus.Router)
+      :supervisor      — DynamicSupervisor for reviewers (default: Cerberus.ReviewSupervisor)
+      :call_llm        — LLM function passed to each Reviewer
+      :tool_handler    — tool handler passed to each Reviewer
+      :task_supervisor  — TaskSupervisor for async start (default: Cerberus.TaskSupervisor)
+      :reviewer_timeout — per-reviewer timeout in ms (default: 600_000)
+      :repo_root       — for template loading
+  """
+
+  require Logger
+
+  alias Cerberus.{Config, GitHub, Reviewer, Router, Store, Telemetry}
+  alias Cerberus.Verdict.{Aggregator, Cost, Override}
+
+  @tier_to_pool %{flash: :wave1, standard: :wave2, pro: :wave3}
+  @default_reviewer_timeout_ms 600_000
+  @default_model "openrouter/moonshotai/kimi-k2.5"
+  @check_name "Cerberus / Verdict"
+  @verdict_marker "<!-- cerberus-verdict -->"
+
+  # --- Public API ---
+
+  @doc "Start the pipeline asynchronously. Returns `{:ok, pid}`."
+  def start(review_id, params, opts \\ []) do
+    sup = Keyword.get(opts, :task_supervisor, Cerberus.TaskSupervisor)
+    Task.Supervisor.start_child(sup, fn -> run(review_id, params, opts) end)
+  end
+
+  @doc """
+  Execute the full pipeline synchronously.
+
+  Returns `{:ok, aggregated_result}` on success, `{:error, reason}` on failure.
+  """
+  def run(review_id, params, opts \\ []) do
+    store = Keyword.get(opts, :store, Store)
+    gh = Keyword.get(opts, :github_opts, [])
+    config = Keyword.get(opts, :config_server, Config)
+    router = Keyword.get(opts, :router_server, Router)
+    supervisor = Keyword.get(opts, :supervisor, Cerberus.ReviewSupervisor)
+    timeout = Keyword.get(opts, :reviewer_timeout, @default_reviewer_timeout_ms)
+
+    repo = params.repo
+    pr = params.pr_number
+    sha = params.head_sha
+
+    try do
+      Store.update_review_run(store, review_id, %{status: "running"})
+
+      # 1. Fetch PR context + diff
+      {:ok, pr_ctx} = GitHub.fetch_pr_context(repo, pr, gh)
+      {:ok, diff} = GitHub.fetch_pr_diff(repo, pr, gh)
+
+      # 2. Check run (best-effort)
+      check_id = start_check_run(repo, sha, gh)
+
+      # 3. Route
+      {:ok, routing} = Router.route(diff, [metadata: %{repo: repo}], router)
+
+      # 4. Run reviewers in parallel
+      results =
+        Telemetry.with_review_run(pr, fn otel_ctx ->
+          run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts)
+        end)
+
+      # 5. Persist costs
+      persist_costs(results, review_id, store)
+
+      # 6. Resolve override
+      override = resolve_override(repo, pr, sha, pr_ctx.author, results, config, gh)
+
+      # 7. Aggregate
+      verdicts = Enum.map(results, & &1.verdict)
+      usage = Map.new(results, &{&1.perspective, Map.merge(&1.usage, %{model: &1.model})})
+      aggregated = Aggregator.aggregate(verdicts, override: override, usage: usage)
+
+      # 8. Post to GitHub (best-effort)
+      post_to_github(repo, pr, sha, aggregated, check_id, gh)
+
+      # 9. Finalize DB
+      Store.update_review_run(store, review_id, %{
+        status: "completed",
+        aggregated_verdict_json: Jason.encode!(to_stored_json(aggregated)),
+        completed_at: DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
+      {:ok, aggregated}
+    rescue
+      e ->
+        Logger.error(
+          "Pipeline #{review_id} failed: #{Exception.format(:error, e, __STACKTRACE__)}"
+        )
+
+        Store.update_review_run(store, review_id, %{status: "failed"})
+
+        Store.insert_event(store, %{
+          review_run_id: review_id,
+          kind: "pipeline_error",
+          payload: %{
+            error: Exception.message(e),
+            trace: Exception.format_stacktrace(__STACKTRACE__) |> String.slice(0, 4_000)
+          }
+        })
+
+        {:error, {:pipeline_failed, Exception.message(e)}}
+    end
+  end
+
+  # --- Reviewer Dispatch ---
+
+  defp run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts) do
+    diff_file = write_temp_diff(diff)
+
+    review_ctx = %{
+      title: pr_ctx.title,
+      author: pr_ctx.author,
+      head_branch: pr_ctx.head_ref,
+      base_branch: pr_ctx.base_ref,
+      body: pr_ctx.body,
+      diff_file: diff_file,
+      diff: diff,
+      repo: params.repo,
+      pr_number: params.pr_number,
+      head_sha: params.head_sha
+    }
+
+    pool = resolve_model_pool(routing.model_tier, config)
+
+    tasks =
+      Enum.map(routing.panel, fn perspective ->
+        model = pick_model(perspective, pool, config)
+
+        Task.async(fn ->
+          Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
+            spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts)
+          end)
+        end)
+      end)
+
+    results =
+      tasks
+      |> Enum.zip(routing.panel)
+      |> Enum.map(fn {task, perspective} ->
+        collect_result(task, perspective, timeout)
+      end)
+
+    File.rm(diff_file)
+    results
+  end
+
+  defp spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts) do
+    perspective_atom =
+      try do
+        String.to_existing_atom(perspective)
+      rescue
+        ArgumentError -> String.to_atom(perspective)
+      end
+
+    reviewer_opts =
+      [
+        perspective: perspective_atom,
+        model: model,
+        config_server: config,
+        timeout_ms: timeout
+      ] ++ Keyword.take(opts, [:call_llm, :tool_handler, :repo_root])
+
+    {:ok, pid} = DynamicSupervisor.start_child(supervisor, {Reviewer, reviewer_opts})
+
+    try do
+      Reviewer.review(pid, review_ctx, timeout)
+    after
+      try do
+        GenServer.stop(pid, :normal, 5_000)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+  end
+
+  defp collect_result(task, perspective, timeout) do
+    case Task.yield(task, timeout + 5_000) || Task.shutdown(task) do
+      {:ok, {:ok, result}} ->
+        %{
+          perspective: perspective,
+          verdict: result.verdict,
+          usage: result.usage,
+          model: result[:model] || "unknown",
+          status: :ok
+        }
+
+      {:ok, {:error, reason}} ->
+        Logger.warning("Reviewer #{perspective} failed: #{inspect(reason)}")
+
+        %{
+          perspective: perspective,
+          verdict: skip_verdict(perspective),
+          usage: zero_usage(),
+          model: "unknown",
+          status: :error
+        }
+
+      nil ->
+        Logger.warning("Reviewer #{perspective} timed out")
+
+        %{
+          perspective: perspective,
+          verdict: skip_verdict(perspective),
+          usage: zero_usage(),
+          model: "unknown",
+          status: :timeout
+        }
+    end
+  end
+
+  # --- Model Resolution ---
+
+  defp resolve_model_pool(tier, config) do
+    pool_tier = Map.get(@tier_to_pool, tier, :wave2)
+    Config.model_pool(pool_tier, config)
+  end
+
+  defp pick_model(perspective, pool, config) do
+    persona =
+      config
+      |> Config.personas()
+      |> Enum.find(&(to_string(&1.perspective) == perspective))
+
+    case persona && persona.model_policy do
+      :pool ->
+        if pool != [], do: Enum.random(pool), else: @default_model
+
+      model when is_binary(model) and model != "" ->
+        model
+
+      _ ->
+        @default_model
+    end
+  end
+
+  # --- Override ---
+
+  defp resolve_override(repo, pr, sha, pr_author, _results, config, gh) do
+    with {:ok, comments} <- GitHub.fetch_comments(repo, pr, gh) do
+      comments_with_actor =
+        Enum.map(comments, fn c ->
+          Map.put(c, "actor", get_in(c, ["user", "login"]) || "unknown")
+        end)
+
+      case Override.select(comments_with_actor, sha, :pr_author, pr_author) do
+        {:ok, override} -> override
+        :none -> nil
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  # --- Cost ---
+
+  defp persist_costs(results, review_id, store) do
+    Enum.each(results, fn r ->
+      cost = Cost.calculate(r.usage.prompt_tokens, r.usage.completion_tokens, r.model)
+
+      Store.insert_cost(store, %{
+        review_run_id: review_id,
+        reviewer: r.perspective,
+        model: r.model,
+        prompt_tokens: r.usage.prompt_tokens,
+        completion_tokens: r.usage.completion_tokens,
+        cost_usd: cost,
+        duration_ms: 0,
+        status: to_string(r.status),
+        is_fallback: false
+      })
+    end)
+  end
+
+  # --- GitHub Posting ---
+
+  defp start_check_run(repo, sha, gh) do
+    case GitHub.create_check_run(repo, sha, @check_name, gh ++ [status: "in_progress"]) do
+      {:ok, %{body: %{"id" => id}}} -> id
+      _ -> nil
+    end
+  end
+
+  defp post_to_github(repo, pr, sha, aggregated, check_id, gh) do
+    # Verdict comment (idempotent upsert)
+    body = format_verdict_comment(aggregated)
+    GitHub.upsert_comment(repo, pr, @verdict_marker, body, gh)
+
+    # PR review with inline comments
+    inline = build_inline_comments(aggregated, repo, pr, gh)
+    review_body = "Cerberus: #{aggregated.verdict} — #{aggregated.summary}"
+    GitHub.create_pr_review(repo, pr, sha, review_body, inline, gh)
+
+    # Check run conclusion
+    if check_id do
+      conclusion = verdict_to_conclusion(aggregated.verdict)
+
+      GitHub.update_check_run(
+        repo,
+        check_id,
+        %{
+          status: "completed",
+          conclusion: conclusion,
+          output: %{
+            title: "Cerberus: #{aggregated.verdict}",
+            summary: aggregated.summary
+          }
+        },
+        gh
+      )
+    end
+  rescue
+    e ->
+      Logger.warning("GitHub posting failed (non-fatal): #{Exception.message(e)}")
+  end
+
+  defp build_inline_comments(aggregated, repo, pr, gh) do
+    case GitHub.list_pr_files(repo, pr, gh) do
+      {:ok, files} ->
+        pos_maps = Map.new(files, &{&1["filename"], GitHub.build_position_map(&1["patch"] || "")})
+
+        aggregated.findings
+        |> Enum.flat_map(fn finding ->
+          f = extract_finding(finding)
+
+          with %{} = pmap <- Map.get(pos_maps, f.file),
+               pos when is_integer(pos) <- Map.get(pmap, f.line) do
+            suggestion = if f.suggestion, do: "\n\n> #{f.suggestion}", else: ""
+
+            [
+              %{
+                path: f.file,
+                position: pos,
+                body:
+                  "**#{String.upcase(f.severity)}**: #{f.title}\n\n#{f.description}#{suggestion}"
+              }
+            ]
+          else
+            _ -> []
+          end
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  # --- Formatting ---
+
+  defp format_verdict_comment(agg) do
+    s = agg.stats
+
+    findings =
+      if agg.findings == [] do
+        ""
+      else
+        text =
+          agg.findings
+          |> Enum.map(&format_one_finding/1)
+          |> Enum.join("\n")
+
+        "\n\n### Findings\n\n#{text}"
+      end
+
+    override =
+      if agg.override,
+        do:
+          "\n\n> **Override** by `#{agg.override.actor}` for `#{String.slice(agg.override.sha, 0, 7)}`",
+        else: ""
+
+    """
+    #{@verdict_marker}
+    ## #{verdict_emoji(agg.verdict)} Cerberus: #{agg.verdict}
+
+    #{agg.summary}
+
+    | Metric | Count |
+    |--------|-------|
+    | Reviewers | #{s.total} |
+    | Pass | #{s.pass} |
+    | Warn | #{s.warn} |
+    | Fail | #{s.fail} |
+    | Skip | #{s.skip} |
+    #{findings}#{override}
+
+    <sub>Cost: $#{Float.round(agg.cost.total_usd, 4)}</sub>
+    """
+    |> String.trim()
+  end
+
+  defp format_one_finding(finding) do
+    f = extract_finding(finding)
+    reviewers = extract_reviewers(finding)
+    badge = severity_badge(f.severity)
+    loc = if f.file, do: " `#{f.file}:#{f.line || 0}`", else: ""
+    who = if reviewers != [], do: " (#{Enum.join(reviewers, ", ")})", else: ""
+    sug = if f.suggestion, do: "\n  > #{f.suggestion}", else: ""
+    "- #{badge} **#{f.title}**#{loc}#{who}\n  #{f.description}#{sug}"
+  end
+
+  defp extract_finding(%{finding: f}), do: f
+  defp extract_finding(f), do: f
+
+  defp extract_reviewers(%{reviewers: r}) when is_list(r), do: r
+  defp extract_reviewers(_), do: []
+
+  defp severity_badge("critical"), do: "CRITICAL"
+  defp severity_badge("major"), do: "MAJOR"
+  defp severity_badge("minor"), do: "MINOR"
+  defp severity_badge("info"), do: "INFO"
+  defp severity_badge(_), do: "?"
+
+  defp verdict_emoji("PASS"), do: "PASS"
+  defp verdict_emoji("WARN"), do: "WARN"
+  defp verdict_emoji("FAIL"), do: "FAIL"
+  defp verdict_emoji("SKIP"), do: "SKIP"
+  defp verdict_emoji(_), do: "?"
+
+  defp verdict_to_conclusion("PASS"), do: "success"
+  defp verdict_to_conclusion("WARN"), do: "neutral"
+  defp verdict_to_conclusion("FAIL"), do: "failure"
+  defp verdict_to_conclusion("SKIP"), do: "skipped"
+  defp verdict_to_conclusion(_), do: "neutral"
+
+  # --- Helpers ---
+
+  defp skip_verdict(perspective) do
+    %Cerberus.Verdict{
+      reviewer: perspective,
+      perspective: perspective,
+      verdict: "SKIP",
+      confidence: 0.0,
+      summary: "Reviewer did not complete",
+      findings: [],
+      stats: %{
+        "files_reviewed" => 0,
+        "files_with_issues" => 0,
+        "critical" => 0,
+        "major" => 0,
+        "minor" => 0,
+        "info" => 0
+      }
+    }
+  end
+
+  defp zero_usage, do: %{prompt_tokens: 0, completion_tokens: 0}
+
+  defp write_temp_diff(diff) do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus-diff-#{System.unique_integer([:positive])}.diff"
+      )
+
+    File.write!(path, diff)
+    path
+  end
+
+  defp to_stored_json(agg) do
+    %{
+      verdict: agg.verdict,
+      summary: agg.summary,
+      stats: agg.stats,
+      findings_count: length(agg.findings),
+      cost: agg.cost,
+      override:
+        if(agg.override, do: %{actor: agg.override.actor, sha: agg.override.sha}, else: nil)
+    }
+  end
+end
