@@ -79,7 +79,7 @@ defmodule Cerberus.Pipeline do
       persist_costs(results, review_id, store)
 
       # 6. Resolve override
-      override = resolve_override(repo, pr, sha, pr_ctx.author, results, config, gh)
+      override = resolve_override(repo, pr, sha, pr_ctx.author, gh)
 
       # 7. Aggregate
       verdicts = Enum.map(results, & &1.verdict)
@@ -128,6 +128,8 @@ defmodule Cerberus.Pipeline do
   defp run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts) do
     diff_file = write_temp_diff(diff)
     task_sup = Keyword.get(opts, :task_supervisor, Cerberus.TaskSupervisor)
+    personas = Config.personas(config)
+    pool = resolve_model_pool(routing.model_tier, config)
 
     try do
       review_ctx = %{
@@ -143,22 +145,34 @@ defmodule Cerberus.Pipeline do
         head_sha: params.head_sha
       }
 
-      pool = resolve_model_pool(routing.model_tier, config)
+      # Resolve each perspective to its persona once (avoids repeated Config GenServer calls)
+      panel =
+        Enum.map(routing.panel, fn perspective ->
+          persona = Enum.find(personas, &(to_string(&1.perspective) == perspective))
+
+          unless persona do
+            known = Enum.map(personas, &to_string(&1.perspective))
+
+            raise ArgumentError,
+                  "unknown perspective: #{inspect(perspective)} (known: #{inspect(known)})"
+          end
+
+          model = pick_model(persona, pool)
+          {perspective, persona, model}
+        end)
 
       tasks =
-        Enum.map(routing.panel, fn perspective ->
-          model = pick_model(perspective, pool, config)
-
+        Enum.map(panel, fn {perspective, persona, model} ->
           Task.Supervisor.async_nolink(task_sup, fn ->
             Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
-              spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts)
+              spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts)
             end)
           end)
         end)
 
       tasks
-      |> Enum.zip(routing.panel)
-      |> Enum.map(fn {task, perspective} ->
+      |> Enum.zip(panel)
+      |> Enum.map(fn {task, {perspective, _persona, _model}} ->
         collect_result(task, perspective, timeout)
       end)
     after
@@ -166,24 +180,12 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  defp spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts) do
-    personas = Config.personas(config)
-    persona = Enum.find(personas, &(to_string(&1.perspective) == perspective))
-
-    unless persona do
-      known = Enum.map(personas, &to_string(&1.perspective))
-
-      raise ArgumentError,
-            "unknown perspective: #{inspect(perspective)} (known: #{inspect(known)})"
-    end
-
-    perspective_atom = persona.perspective
-
+  defp spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts) do
     reviewer_opts =
       [
-        perspective: perspective_atom,
+        perspective: persona.perspective,
         model: model,
-        config_server: config,
+        config_server: Keyword.get(opts, :config_server, Config),
         timeout_ms: timeout
       ] ++ Keyword.take(opts, [:call_llm, :tool_handler, :repo_root])
 
@@ -242,13 +244,8 @@ defmodule Cerberus.Pipeline do
     Config.model_pool(pool_tier, config)
   end
 
-  defp pick_model(perspective, pool, config) do
-    persona =
-      config
-      |> Config.personas()
-      |> Enum.find(&(to_string(&1.perspective) == perspective))
-
-    case persona && persona.model_policy do
+  defp pick_model(persona, pool) do
+    case persona.model_policy do
       :pool ->
         if pool == [], do: @default_model, else: Enum.random(pool)
 
@@ -262,7 +259,7 @@ defmodule Cerberus.Pipeline do
 
   # --- Override ---
 
-  defp resolve_override(repo, pr, sha, pr_author, _results, _config, gh) do
+  defp resolve_override(repo, pr, sha, pr_author, gh) do
     with {:ok, comments} <- GitHub.fetch_comments(repo, pr, gh) do
       comments_with_actor =
         Enum.map(comments, fn c ->
@@ -401,7 +398,7 @@ defmodule Cerberus.Pipeline do
 
     """
     #{@verdict_marker}
-    ## #{verdict_emoji(agg.verdict)} Cerberus: #{agg.verdict}
+    ## #{verdict_label(agg.verdict)} Cerberus: #{agg.verdict}
 
     #{agg.summary}
 
@@ -441,11 +438,11 @@ defmodule Cerberus.Pipeline do
   defp severity_badge("info"), do: "INFO"
   defp severity_badge(_), do: "?"
 
-  defp verdict_emoji("PASS"), do: "PASS"
-  defp verdict_emoji("WARN"), do: "WARN"
-  defp verdict_emoji("FAIL"), do: "FAIL"
-  defp verdict_emoji("SKIP"), do: "SKIP"
-  defp verdict_emoji(_), do: "?"
+  defp verdict_label("PASS"), do: "PASS"
+  defp verdict_label("WARN"), do: "WARN"
+  defp verdict_label("FAIL"), do: "FAIL"
+  defp verdict_label("SKIP"), do: "SKIP"
+  defp verdict_label(_), do: "?"
 
   defp verdict_to_conclusion("PASS"), do: "success"
   defp verdict_to_conclusion("WARN"), do: "neutral"
