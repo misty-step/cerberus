@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
 from pkg.canary import CanaryErrorSink, CanaryHealthSink
 from pkg.errortracking.grouper import ErrorAlert

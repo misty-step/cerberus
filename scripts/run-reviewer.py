@@ -349,9 +349,14 @@ def try_structured_extraction(
         return False
 
     try:
-        json.loads(result.stdout)
+        obj = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         print(f"Structured extraction: invalid JSON output: {exc}")
+        return False
+
+    verdict = obj.get("verdict") if isinstance(obj, dict) else None
+    if verdict not in ("PASS", "WARN", "FAIL", "SKIP"):
+        print(f"Structured extraction: invalid verdict {verdict!r}; falling back to fenced-block parsing.")
         return False
 
     write_text(output_file, result.stdout)
