@@ -2,6 +2,7 @@ defmodule Cerberus.Store do
   @moduledoc false
 
   use GenServer
+  require Logger
 
   @schema_statements [
     """
@@ -275,8 +276,12 @@ defmodule Cerberus.Store do
 
         p when is_map(p) ->
           case Jason.encode(p) do
-            {:ok, json} -> json
-            {:error, _} -> "{}"
+            {:ok, json} ->
+              json
+
+            {:error, reason} ->
+              Logger.warning("Failed to encode event payload: #{inspect(reason)}")
+              "{}"
           end
 
         _ ->
@@ -295,7 +300,7 @@ defmodule Cerberus.Store do
 
     result =
       query_rows(conn, sql, [run_id], fn [kind, payload] ->
-        %{kind: kind, payload: safe_decode(payload) || payload}
+        %{kind: kind, payload: safe_decode(payload)}
       end)
 
     {:reply, result, state}

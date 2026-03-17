@@ -167,14 +167,17 @@ defmodule Cerberus.Pipeline do
   end
 
   defp spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts) do
-    known = config |> Config.personas() |> Enum.map(&to_string(&1.perspective))
+    personas = Config.personas(config)
+    persona = Enum.find(personas, &(to_string(&1.perspective) == perspective))
 
-    unless perspective in known do
+    unless persona do
+      known = Enum.map(personas, &to_string(&1.perspective))
+
       raise ArgumentError,
             "unknown perspective: #{inspect(perspective)} (known: #{inspect(known)})"
     end
 
-    perspective_atom = String.to_existing_atom(perspective)
+    perspective_atom = persona.perspective
 
     reviewer_opts =
       [

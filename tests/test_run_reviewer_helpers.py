@@ -304,6 +304,14 @@ class TestStructuredExtractionVerdictValidation:
                       "critical": 0, "major": 0, "minor": 0, "info": 0},
         })
 
+        # Create preconditions so try_structured_extraction reaches verdict validation
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "extract-verdict.py").write_text("# stub")
+
+        source = tmp_path / "scratchpad.txt"
+        source.write_text("some review text")
+
         # Mock subprocess.run to return the invalid JSON
         def mock_run(*args, **kwargs):
             return subprocess.CompletedProcess(args[0], 0, stdout=invalid_json, stderr="")
@@ -313,7 +321,7 @@ class TestStructuredExtractionVerdictValidation:
         output_file = tmp_path / "verdict.json"
         result = _mod.try_structured_extraction(
             cerberus_root=tmp_path,
-            scratchpad=tmp_path / "nonexistent",
+            scratchpad=source,
             stdout_file=tmp_path / "nonexistent",
             perspective="security",
             model_used="test-model",

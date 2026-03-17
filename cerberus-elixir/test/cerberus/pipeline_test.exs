@@ -35,6 +35,7 @@ defmodule Cerberus.PipelineTest do
   """
 
   setup do
+    Process.flag(:trap_exit, true)
     uid = System.unique_integer([:positive])
 
     # Store
@@ -192,7 +193,6 @@ defmodule Cerberus.PipelineTest do
 
   describe "happy path" do
     test "POST creates run, spawns reviewers, aggregates, posts to GitHub", ctx do
-      Process.flag(:trap_exit, true)
       review_id = create_run(ctx.store)
       opts = pipeline_opts(ctx)
 
@@ -211,7 +211,6 @@ defmodule Cerberus.PipelineTest do
     end
 
     test "GET returns running during execution, completed after", ctx do
-      Process.flag(:trap_exit, true)
       review_id = create_run(ctx.store)
 
       # Verify starts as queued
@@ -337,7 +336,6 @@ defmodule Cerberus.PipelineTest do
 
   describe "GitHub posting resilience" do
     test "check run creation failure (500) — pipeline still completes", ctx do
-      Process.flag(:trap_exit, true)
       review_id = create_run(ctx.store)
 
       opts =
@@ -355,7 +353,6 @@ defmodule Cerberus.PipelineTest do
     end
 
     test "GitHub posting raises — pipeline still completes", ctx do
-      Process.flag(:trap_exit, true)
       review_id = create_run(ctx.store)
 
       # Mock that returns success for everything except comment creation, which raises
@@ -416,7 +413,6 @@ defmodule Cerberus.PipelineTest do
 
   describe "start/3" do
     test "fires pipeline asynchronously", ctx do
-      Process.flag(:trap_exit, true)
       review_id = create_run(ctx.store)
       opts = pipeline_opts(ctx)
 
@@ -436,7 +432,6 @@ defmodule Cerberus.PipelineTest do
 
   describe "cost tracking" do
     test "persists per-reviewer costs", ctx do
-      Process.flag(:trap_exit, true)
       review_id = create_run(ctx.store)
       opts = pipeline_opts(ctx)
 
