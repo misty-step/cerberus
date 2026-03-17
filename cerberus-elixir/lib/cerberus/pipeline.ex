@@ -398,7 +398,7 @@ defmodule Cerberus.Pipeline do
 
     """
     #{@verdict_marker}
-    ## #{verdict_label(agg.verdict)} Cerberus: #{agg.verdict}
+    ## #{agg.verdict} — Cerberus
 
     #{agg.summary}
 
@@ -419,7 +419,7 @@ defmodule Cerberus.Pipeline do
   defp format_one_finding(finding) do
     f = extract_finding(finding)
     reviewers = extract_reviewers(finding)
-    badge = severity_badge(f.severity)
+    badge = String.upcase(f.severity || "?")
     loc = if f.file, do: " `#{f.file}:#{f.line || 0}`", else: ""
     who = if reviewers != [], do: " (#{Enum.join(reviewers, ", ")})", else: ""
     sug = if f.suggestion, do: "\n  > #{f.suggestion}", else: ""
@@ -431,18 +431,6 @@ defmodule Cerberus.Pipeline do
 
   defp extract_reviewers(%{reviewers: r}) when is_list(r), do: r
   defp extract_reviewers(_), do: []
-
-  defp severity_badge("critical"), do: "CRITICAL"
-  defp severity_badge("major"), do: "MAJOR"
-  defp severity_badge("minor"), do: "MINOR"
-  defp severity_badge("info"), do: "INFO"
-  defp severity_badge(_), do: "?"
-
-  defp verdict_label("PASS"), do: "PASS"
-  defp verdict_label("WARN"), do: "WARN"
-  defp verdict_label("FAIL"), do: "FAIL"
-  defp verdict_label("SKIP"), do: "SKIP"
-  defp verdict_label(_), do: "?"
 
   defp verdict_to_conclusion("PASS"), do: "success"
   defp verdict_to_conclusion("WARN"), do: "neutral"
