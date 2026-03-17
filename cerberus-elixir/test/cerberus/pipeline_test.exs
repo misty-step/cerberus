@@ -238,7 +238,7 @@ defmodule Cerberus.PipelineTest do
         :counters.add(call_count, 1, 1)
 
         if count == 0 do
-          Process.sleep(60_000)
+          Process.sleep(10_000)
           {:error, :timeout}
         else
           mock_llm_pass(params)
@@ -304,6 +304,91 @@ defmodule Cerberus.PipelineTest do
 
       {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
       assert run.status == "failed"
+
+      # Verify error event was persisted
+      {:ok, events} = Cerberus.Store.list_events(ctx.store, review_id)
+      assert [%{kind: "pipeline_error", payload: payload}] = events
+      assert is_map(payload)
+      assert Map.has_key?(payload, "error")
+    end
+  end
+
+  # --- Resilience: GitHub failures ---
+
+  describe "GitHub posting resilience" do
+    test "check run creation failure (500) — pipeline still completes", ctx do
+      Process.flag(:trap_exit, true)
+      review_id = create_run(ctx.store)
+
+      opts =
+        pipeline_opts(ctx,
+          github_responses: %{
+            create_check: %Req.Response{status: 500, body: %{"error" => "internal"}}
+          }
+        )
+
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
+      assert result.verdict in ["PASS", "WARN", "SKIP"]
+
+      {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "completed"
+    end
+
+    test "GitHub posting raises — pipeline still completes", ctx do
+      Process.flag(:trap_exit, true)
+      review_id = create_run(ctx.store)
+
+      # Mock that returns success for everything except comment creation, which raises
+      error_on_comment =
+        Req.new(
+          adapter: fn request ->
+            url = to_string(request.url)
+
+            response =
+              cond do
+                request.method == :get and String.match?(url, ~r{/pulls/\d+$}) and
+                    Enum.any?(request.headers, fn
+                      {"accept", [v | _]} -> v == "application/vnd.github.diff"
+                      {"accept", v} when is_binary(v) -> v == "application/vnd.github.diff"
+                      _ -> false
+                    end) ->
+                  %Req.Response{status: 200, body: @diff}
+
+                request.method == :get and String.match?(url, ~r{/pulls/\d+$}) ->
+                  default_pr_context_response()
+
+                request.method == :get and String.contains?(url, "/issues/") and
+                    String.contains?(url, "/comments") ->
+                  %Req.Response{status: 200, body: []}
+
+                request.method == :get and String.contains?(url, "/pulls/") and
+                    String.contains?(url, "/files") ->
+                  %Req.Response{status: 200, body: []}
+
+                request.method == :post and String.contains?(url, "/check-runs") ->
+                  %Req.Response{status: 201, body: %{"id" => 999}}
+
+                request.method == :post and String.contains?(url, "/comments") ->
+                  raise "GitHub API unavailable"
+
+                true ->
+                  %Req.Response{status: 200, body: %{}}
+              end
+
+            {request, response}
+          end
+        )
+
+      opts =
+        Keyword.merge(pipeline_opts(ctx),
+          github_opts: [req: error_on_comment, max_retries: 0, retry_delay: fn _ -> :ok end]
+        )
+
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
+      assert result.verdict in ["PASS", "WARN", "SKIP"]
+
+      {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "completed"
     end
   end
 

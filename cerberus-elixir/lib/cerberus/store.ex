@@ -103,6 +103,12 @@ defmodule Cerberus.Store do
     GenServer.call(store, {:insert_event, attrs})
   end
 
+  @doc "List events for a review run."
+  @spec list_events(pid() | atom(), integer()) :: {:ok, [map()]} | {:error, term()}
+  def list_events(store, review_run_id) do
+    GenServer.call(store, {:list_events, review_run_id})
+  end
+
   @doc """
   Query model performance metrics grouped by model.
 
@@ -264,13 +270,34 @@ defmodule Cerberus.Store do
 
     payload =
       case attrs[:payload] do
-        p when is_binary(p) -> p
-        p when is_map(p) -> Jason.encode!(p)
-        _ -> "{}"
+        p when is_binary(p) ->
+          p
+
+        p when is_map(p) ->
+          case Jason.encode(p) do
+            {:ok, json} -> json
+            {:error, _} -> "{}"
+          end
+
+        _ ->
+          "{}"
       end
 
     bindings = [attrs[:review_run_id], attrs[:kind] || "unknown", payload]
     result = exec(conn, sql, bindings)
+    {:reply, result, state}
+  end
+
+  def handle_call({:list_events, run_id}, _from, %{conn: conn} = state) do
+    sql = """
+    SELECT kind, payload_json FROM events WHERE review_run_id = ?1 ORDER BY inserted_at
+    """
+
+    result =
+      query_rows(conn, sql, [run_id], fn [kind, payload] ->
+        %{kind: kind, payload: safe_decode(payload) || payload}
+      end)
+
     {:reply, result, state}
   end
 

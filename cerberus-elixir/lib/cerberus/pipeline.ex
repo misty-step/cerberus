@@ -122,51 +122,54 @@ defmodule Cerberus.Pipeline do
 
   defp run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts) do
     diff_file = write_temp_diff(diff)
+    task_sup = Keyword.get(opts, :task_supervisor, Cerberus.TaskSupervisor)
 
-    review_ctx = %{
-      title: pr_ctx.title,
-      author: pr_ctx.author,
-      head_branch: pr_ctx.head_ref,
-      base_branch: pr_ctx.base_ref,
-      body: pr_ctx.body,
-      diff_file: diff_file,
-      diff: diff,
-      repo: params.repo,
-      pr_number: params.pr_number,
-      head_sha: params.head_sha
-    }
+    try do
+      review_ctx = %{
+        title: pr_ctx.title,
+        author: pr_ctx.author,
+        head_branch: pr_ctx.head_ref,
+        base_branch: pr_ctx.base_ref,
+        body: pr_ctx.body,
+        diff_file: diff_file,
+        diff: diff,
+        repo: params.repo,
+        pr_number: params.pr_number,
+        head_sha: params.head_sha
+      }
 
-    pool = resolve_model_pool(routing.model_tier, config)
+      pool = resolve_model_pool(routing.model_tier, config)
 
-    tasks =
-      Enum.map(routing.panel, fn perspective ->
-        model = pick_model(perspective, pool, config)
+      tasks =
+        Enum.map(routing.panel, fn perspective ->
+          model = pick_model(perspective, pool, config)
 
-        Task.async(fn ->
-          Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
-            spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts)
+          Task.Supervisor.async_nolink(task_sup, fn ->
+            Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
+              spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts)
+            end)
           end)
         end)
-      end)
 
-    results =
       tasks
       |> Enum.zip(routing.panel)
       |> Enum.map(fn {task, perspective} ->
         collect_result(task, perspective, timeout)
       end)
-
-    File.rm(diff_file)
-    results
+    after
+      File.rm(diff_file)
+    end
   end
 
   defp spawn_and_review(perspective, model, review_ctx, supervisor, timeout, config, opts) do
-    perspective_atom =
-      try do
-        String.to_existing_atom(perspective)
-      rescue
-        ArgumentError -> String.to_atom(perspective)
-      end
+    known = config |> Config.personas() |> Enum.map(&to_string(&1.perspective))
+
+    unless perspective in known do
+      raise ArgumentError,
+            "unknown perspective: #{inspect(perspective)} (known: #{inspect(known)})"
+    end
+
+    perspective_atom = String.to_existing_atom(perspective)
 
     reviewer_opts =
       [
@@ -202,26 +205,26 @@ defmodule Cerberus.Pipeline do
 
       {:ok, {:error, reason}} ->
         Logger.warning("Reviewer #{perspective} failed: #{inspect(reason)}")
+        degraded_result(perspective, :error)
 
-        %{
-          perspective: perspective,
-          verdict: skip_verdict(perspective),
-          usage: zero_usage(),
-          model: "unknown",
-          status: :error
-        }
+      {:exit, reason} ->
+        Logger.warning("Reviewer #{perspective} crashed: #{inspect(reason)}")
+        degraded_result(perspective, :error)
 
       nil ->
         Logger.warning("Reviewer #{perspective} timed out")
-
-        %{
-          perspective: perspective,
-          verdict: skip_verdict(perspective),
-          usage: zero_usage(),
-          model: "unknown",
-          status: :timeout
-        }
+        degraded_result(perspective, :timeout)
     end
+  end
+
+  defp degraded_result(perspective, status) do
+    %{
+      perspective: perspective,
+      verdict: skip_verdict(perspective),
+      usage: zero_usage(),
+      model: "unknown",
+      status: status
+    }
   end
 
   # --- Model Resolution ---
@@ -239,7 +242,7 @@ defmodule Cerberus.Pipeline do
 
     case persona && persona.model_policy do
       :pool ->
-        if pool != [], do: Enum.random(pool), else: @default_model
+        if pool == [], do: @default_model, else: Enum.random(pool)
 
       model when is_binary(model) and model != "" ->
         model
@@ -251,7 +254,7 @@ defmodule Cerberus.Pipeline do
 
   # --- Override ---
 
-  defp resolve_override(repo, pr, sha, pr_author, _results, config, gh) do
+  defp resolve_override(repo, pr, sha, pr_author, _results, _config, gh) do
     with {:ok, comments} <- GitHub.fetch_comments(repo, pr, gh) do
       comments_with_actor =
         Enum.map(comments, fn c ->
@@ -281,11 +284,16 @@ defmodule Cerberus.Pipeline do
         completion_tokens: r.usage.completion_tokens,
         cost_usd: cost,
         duration_ms: 0,
-        status: to_string(r.status),
+        status: status_label(r.status),
         is_fallback: false
       })
     end)
   end
+
+  defp status_label(:ok), do: "success"
+  defp status_label(:error), do: "error"
+  defp status_label(:timeout), do: "timeout"
+  defp status_label(other), do: to_string(other)
 
   # --- GitHub Posting ---
 
