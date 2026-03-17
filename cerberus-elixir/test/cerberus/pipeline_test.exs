@@ -278,6 +278,26 @@ defmodule Cerberus.PipelineTest do
       assert result.verdict == "SKIP"
       assert result.stats.skip == result.stats.total
     end
+
+    test "reviewer process crashes — degraded to SKIP via {:exit, reason}", ctx do
+      Process.flag(:trap_exit, true)
+
+      crash_llm = fn _params ->
+        # Simulate a process crash (exit, not exception)
+        Process.exit(self(), :kill)
+      end
+
+      review_id = create_run(ctx.store)
+      opts = pipeline_opts(ctx, call_llm: crash_llm, reviewer_timeout: 5_000)
+
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
+
+      {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "completed"
+
+      # Crashed reviewers degraded to SKIP
+      assert result.stats.skip == result.stats.total
+    end
   end
 
   # --- Full Failure ---

@@ -97,24 +97,29 @@ defmodule Cerberus.Pipeline do
       })
 
       {:ok, aggregated}
-    rescue
-      e ->
-        Logger.error(
-          "Pipeline #{review_id} failed: #{Exception.format(:error, e, __STACKTRACE__)}"
-        )
+    catch
+      kind, reason ->
+        stacktrace = __STACKTRACE__
+        message = Exception.format(kind, reason, stacktrace)
+        Logger.error("Pipeline #{review_id} failed: #{message}")
 
-        Store.update_review_run(store, review_id, %{status: "failed"})
+        # Store updates are best-effort — Store GenServer may itself be dead
+        try do
+          Store.update_review_run(store, review_id, %{status: "failed"})
 
-        Store.insert_event(store, %{
-          review_run_id: review_id,
-          kind: "pipeline_error",
-          payload: %{
-            error: Exception.message(e),
-            trace: Exception.format_stacktrace(__STACKTRACE__) |> String.slice(0, 4_000)
-          }
-        })
+          Store.insert_event(store, %{
+            review_run_id: review_id,
+            kind: "pipeline_error",
+            payload: %{
+              error: Exception.format_banner(kind, reason),
+              trace: Exception.format_stacktrace(stacktrace) |> String.slice(0, 4_000)
+            }
+          })
+        catch
+          _, _ -> :ok
+        end
 
-        {:error, {:pipeline_failed, Exception.message(e)}}
+        {:error, {:pipeline_failed, Exception.format(kind, reason)}}
     end
   end
 
