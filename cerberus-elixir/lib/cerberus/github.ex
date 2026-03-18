@@ -343,9 +343,9 @@ defmodule Cerberus.GitHub do
     req = build_req(opts) |> Req.merge(headers: [{"accept", "application/vnd.github.text-match+json"}])
     path_filter = Keyword.get(opts, :path_filter)
 
-    sanitized = String.replace(query, ~r/(repo|org|user|fork):\S+/, "")
+    sanitized = String.replace(query, ~r/(repo|org|user|fork):\S+/i, "")
 
-    safe_filter = if path_filter, do: String.replace(path_filter, ~r/(repo|org|user|fork):\S+/, ""), else: nil
+    safe_filter = if path_filter, do: String.replace(path_filter, ~r/(repo|org|user|fork):\S+/i, ""), else: nil
 
     q =
       "#{sanitized} repo:#{repo}" <>
