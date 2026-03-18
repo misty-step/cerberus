@@ -70,8 +70,8 @@ export CERBERUS_API_KEY=your-api-key
 export CERBERUS_OPENROUTER_API_KEY=your-openrouter-key
 
 # Optional
-export CERBERUS_PORT=4000
-export CERBERUS_DATABASE_PATH=tmp/cerberus.db
+export PORT=4000
+export CERBERUS_DB_PATH=tmp/cerberus.db
 export LANGFUSE_PUBLIC_KEY=...
 export LANGFUSE_SECRET_KEY=...
 

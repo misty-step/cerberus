@@ -13,13 +13,14 @@ Copy this into `.github/workflows/cerberus.yml`:
 name: Cerberus
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
   issues: write
   pull-requests: write
 jobs:
   review:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: misty-step/cerberus/api@master

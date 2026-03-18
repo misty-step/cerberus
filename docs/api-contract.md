@@ -42,7 +42,7 @@ the pipeline executes in the background.
 | `repo` | string | yes | GitHub repository (`owner/repo`) |
 | `pr_number` | integer | yes | Pull request number |
 | `head_sha` | string | yes | HEAD commit SHA |
-| `model` | string | no | Model override for all reviewers. Empty string or omitted = server default. |
+| `model` | string | no | Reserved for model override. Accepted but not yet wired to reviewer selection; reviewers use configured pool/policy. |
 
 **Response: `202 Accepted`**
 
@@ -173,8 +173,8 @@ Consecutive poll errors (non-200) are tolerated up to 10 before aborting.
 | `CERBERUS_API_KEY` | yes | Bearer token for API auth |
 | `CERBERUS_OPENROUTER_API_KEY` | yes | OpenRouter API key for LLM calls |
 | `OPENROUTER_API_KEY` | no | Legacy alias for the above |
-| `CERBERUS_PORT` | no | HTTP port (default: 4000) |
-| `CERBERUS_DATABASE_PATH` | no | SQLite database path |
+| `PORT` | no | HTTP port (default: 4000) |
+| `CERBERUS_DB_PATH` | no | SQLite database path |
 | `LANGFUSE_PUBLIC_KEY` | no | Langfuse trace export |
 | `LANGFUSE_SECRET_KEY` | no | Langfuse trace export |
 
