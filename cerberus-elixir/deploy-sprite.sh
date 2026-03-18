@@ -57,8 +57,7 @@ deploy() {
     MIX_ENV=prod mix compile
   '
 
-  sprite -s "$SPRITE_NAME" checkpoint create --comment "deploy $(date +%Y%m%d-%H%M)"
-  log "Deploy complete"
+  log "Deploy complete (checkpoint deferred to caller)"
 }
 
 # --- Secrets ---

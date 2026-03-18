@@ -1,0 +1,64 @@
+name: Deploy to Sprite
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'cerberus-elixir/**'
+      - 'defaults/**'
+      - 'pi/**'
+      - 'templates/**'
+
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy-sprite
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sprite CLI
+        run: curl -fsSL https://sprites.fly.dev/install | sh
+
+      - name: Authenticate
+        run: sprite auth setup --token "${{ secrets.SPRITE_TOKEN }}"
+
+      - name: Deploy
+        run: ./cerberus-elixir/deploy-sprite.sh deploy
+
+      - name: Restart app
+        run: |
+          sprite -s cerberus-api exec -- sh -c '
+            pkill -f "mix run" 2>/dev/null || true
+            . /home/sprite/.cerberus-env
+            cd /home/sprite/cerberus-elixir
+            nohup sh -c "MIX_ENV=prod elixir --sname cerberus -S mix run --no-halt" \
+              > /home/sprite/cerberus.log 2>&1 &
+          '
+
+      - name: Health check
+        run: |
+          URL=$(sprite -s cerberus-api url)
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sS -o /dev/null -w "%{http_code}" "$URL/api/health" 2>&1) || true
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+
+      - name: Checkpoint
+        if: success()
+        run: sprite -s cerberus-api checkpoint create --comment "ci-deploy-${{ github.sha }}"
