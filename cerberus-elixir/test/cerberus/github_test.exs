@@ -438,6 +438,11 @@ defmodule Cerberus.GitHubTest do
                GitHub.get_file_contents(@repo, "../etc/passwd", "abc123", [])
     end
 
+    test "rejects URL-encoded path traversal" do
+      assert {:error, {:invalid_path, "%2e%2e/etc/passwd"}} =
+               GitHub.get_file_contents(@repo, "%2e%2e/etc/passwd", "abc123", [])
+    end
+
     test "rejects absolute paths" do
       assert {:error, {:invalid_path, "/etc/passwd"}} =
                GitHub.get_file_contents(@repo, "/etc/passwd", "abc123", [])

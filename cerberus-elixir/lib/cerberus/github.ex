@@ -379,9 +379,11 @@ defmodule Cerberus.GitHub do
   # --- Path validation ---
 
   defp validate_path(path) do
+    decoded = URI.decode(path)
+
     cond do
-      String.contains?(path, "..") -> {:error, {:invalid_path, path}}
-      String.starts_with?(path, "/") -> {:error, {:invalid_path, path}}
+      String.contains?(decoded, "..") -> {:error, {:invalid_path, path}}
+      String.starts_with?(decoded, "/") -> {:error, {:invalid_path, path}}
       true -> :ok
     end
   end
