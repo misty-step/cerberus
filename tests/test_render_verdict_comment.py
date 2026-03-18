@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from lib.markdown import severity_icon
 from lib.render_verdict_comment import (
     classify_skip_reviewer,
     collect_hotspots,
@@ -537,6 +538,7 @@ def test_render_comment_preserves_grouped_description_in_key_findings() -> None:
 def test_render_fix_order_merges_equivalent_findings() -> None:
     """AC1: Nearby lines, different titles, same root cause → Fix Order shows one
     merged entry with both reviewer names attached."""
+    # Overlapping tokens: executor, cleanup, swap*, restore* — well above the 2-token threshold
     comment = render_comment(
         {
             "verdict": "WARN",
@@ -585,7 +587,12 @@ def test_render_fix_order_merges_equivalent_findings() -> None:
 
 
 def test_render_same_title_different_lines_stay_separate() -> None:
-    """AC2: Exact same title on different lines → two separate Fix Order entries."""
+    """AC2: Exact same title on nearby but distinct lines → two separate Fix Order entries.
+
+    Lines 10 and 12 are within the 3-line proximity window, so this exercises
+    the same-title-different-line rejection rule (findings.py:182-190), not the
+    distant-lines short-circuit.
+    """
     comment = render_comment(
         {
             "verdict": "WARN",
@@ -613,7 +620,7 @@ def test_render_same_title_different_lines_stay_separate() -> None:
                             "severity": "major",
                             "category": "bug",
                             "file": "src/handler.py",
-                            "line": 50,
+                            "line": 12,
                             "title": "Missing null check",
                             "description": "No null check on config input",
                             "suggestion": "add null check",
@@ -673,8 +680,8 @@ def test_render_merged_finding_shows_highest_severity() -> None:
     )
     fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
     first_item = next(ln for ln in fix_section.splitlines() if ln.lstrip().startswith("1. "))
-    assert "🔴" in first_item, "Merged finding must show critical icon"
-    assert "🟡" not in first_item, "Minor icon must not appear on merged finding"
+    assert severity_icon("critical") in first_item, "Merged finding must show critical icon"
+    assert severity_icon("minor") not in first_item, "Minor icon must not appear on merged finding"
 
 
 def test_render_comment_preserves_fileless_key_findings() -> None:
