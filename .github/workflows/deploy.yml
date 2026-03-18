@@ -35,14 +35,7 @@ jobs:
         run: ./cerberus-elixir/deploy-sprite.sh deploy
 
       - name: Restart app
-        run: |
-          sprite -s cerberus-api exec -- sh -c '
-            pkill -f "mix run" 2>/dev/null || true
-            . /home/sprite/.cerberus-env
-            cd /home/sprite/cerberus-elixir
-            nohup sh -c "MIX_ENV=prod elixir --sname cerberus -S mix run --no-halt" \
-              > /home/sprite/cerberus.log 2>&1 &
-          '
+        run: ./cerberus-elixir/deploy-sprite.sh restart
 
       - name: Health check
         run: |
