@@ -383,6 +383,213 @@ defmodule Cerberus.GitHubTest do
     end
   end
 
+  # --- get_file_contents ---
+
+  describe "get_file_contents/4" do
+    test "returns decoded base64 file content" do
+      content = Base.encode64("defmodule Foo do\n  def bar, do: :ok\nend\n")
+
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/lib/foo.ex", _req ->
+          json_resp(%{"content" => content, "encoding" => "base64", "type" => "file"})
+        end)
+
+      assert {:ok, text} = GitHub.get_file_contents(@repo, "lib/foo.ex", "abc123", test_opts(req))
+      assert text =~ "defmodule Foo"
+    end
+
+    test "passes ref as query param" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/lib/foo.ex", request ->
+          send(test_pid, {:query, request.url.query})
+          content = Base.encode64("content")
+          json_resp(%{"content" => content, "encoding" => "base64", "type" => "file"})
+        end)
+
+      {:ok, _} = GitHub.get_file_contents(@repo, "lib/foo.ex", "deadbeef", test_opts(req))
+      assert_receive {:query, query}
+      assert query =~ "ref=deadbeef"
+    end
+
+    test "returns http_error on 404" do
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/nonexistent.ex", _req ->
+          json_resp(%{"message" => "Not Found"}, 404)
+        end)
+
+      assert {:error, {:http_error, 404, _}} =
+               GitHub.get_file_contents(@repo, "nonexistent.ex", "abc123", test_opts(req))
+    end
+
+    test "returns error when path is a directory" do
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/lib", _req ->
+          json_resp([%{"name" => "foo.ex", "type" => "file"}])
+        end)
+
+      assert {:error, {:not_a_file, "lib"}} =
+               GitHub.get_file_contents(@repo, "lib", "abc123", test_opts(req))
+    end
+
+    test "rejects paths with traversal sequences" do
+      assert {:error, {:invalid_path, "../etc/passwd"}} =
+               GitHub.get_file_contents(@repo, "../etc/passwd", "abc123", [])
+    end
+
+    test "rejects URL-encoded path traversal" do
+      assert {:error, {:invalid_path, "%2e%2e/etc/passwd"}} =
+               GitHub.get_file_contents(@repo, "%2e%2e/etc/passwd", "abc123", [])
+    end
+
+    test "rejects absolute paths" do
+      assert {:error, {:invalid_path, "/etc/passwd"}} =
+               GitHub.get_file_contents(@repo, "/etc/passwd", "abc123", [])
+    end
+
+    test "returns file_too_large when content is null" do
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/big.bin", _req ->
+          json_resp(%{"type" => "file", "size" => 150_000_000, "content" => nil, "encoding" => "none"})
+        end)
+
+      assert {:error, {:file_too_large, "big.bin", 150_000_000}} =
+               GitHub.get_file_contents(@repo, "big.bin", "abc123", test_opts(req))
+    end
+  end
+
+  # --- search_code ---
+
+  describe "search_code/4" do
+    test "returns search results" do
+      items = [
+        %{"name" => "foo.ex", "path" => "lib/foo.ex",
+          "text_matches" => [%{"fragment" => "def bar"}]}
+      ]
+
+      req =
+        mock_req(fn :get, "/search/code", _req ->
+          json_resp(%{"items" => items, "total_count" => 1})
+        end)
+
+      assert {:ok, ^items} = GitHub.search_code(@repo, "def bar", test_opts(req))
+    end
+
+    test "builds query with repo scope" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/search/code", request ->
+          send(test_pid, {:query, request.url.query})
+          json_resp(%{"items" => [], "total_count" => 0})
+        end)
+
+      {:ok, _} = GitHub.search_code(@repo, "pattern", test_opts(req))
+      assert_receive {:query, query}
+      params = URI.decode_query(query)
+      assert params["q"] =~ "pattern"
+      assert params["q"] =~ "repo:owner/repo"
+    end
+
+    test "includes path filter when provided" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/search/code", request ->
+          send(test_pid, {:query, request.url.query})
+          json_resp(%{"items" => [], "total_count" => 0})
+        end)
+
+      {:ok, _} = GitHub.search_code(@repo, "pattern", test_opts(req) ++ [path_filter: "lib/**"])
+      assert_receive {:query, query}
+      params = URI.decode_query(query)
+      assert params["q"] =~ "path:lib/**"
+    end
+
+    test "returns empty list when no matches" do
+      req =
+        mock_req(fn :get, "/search/code", _req ->
+          json_resp(%{"items" => [], "total_count" => 0})
+        end)
+
+      assert {:ok, []} = GitHub.search_code(@repo, "nonexistent_xyz", test_opts(req))
+    end
+
+    test "strips scope qualifiers from path_filter" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/search/code", request ->
+          send(test_pid, {:query, request.url.query})
+          json_resp(%{"items" => [], "total_count" => 0})
+        end)
+
+      {:ok, _} = GitHub.search_code(@repo, "pattern", test_opts(req) ++ [path_filter: "lib repo:evil/repo"])
+      assert_receive {:query, query}
+      params = URI.decode_query(query)
+      refute params["q"] =~ "repo:evil"
+    end
+
+    test "strips injected repo: qualifiers from query" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/search/code", request ->
+          send(test_pid, {:query, request.url.query})
+          json_resp(%{"items" => [], "total_count" => 0})
+        end)
+
+      {:ok, _} = GitHub.search_code(@repo, "foo repo:evil/repo bar", test_opts(req))
+      assert_receive {:query, query}
+      params = URI.decode_query(query)
+      refute params["q"] =~ "repo:evil"
+      assert params["q"] =~ "repo:owner/repo"
+    end
+  end
+
+  # --- list_directory ---
+
+  describe "list_directory/4" do
+    test "returns directory entries" do
+      entries = [
+        %{"name" => "foo.ex", "type" => "file", "path" => "lib/foo.ex"},
+        %{"name" => "bar", "type" => "dir", "path" => "lib/bar"}
+      ]
+
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/lib", _req ->
+          json_resp(entries)
+        end)
+
+      assert {:ok, ^entries} = GitHub.list_directory(@repo, "lib", "abc123", test_opts(req))
+    end
+
+    test "returns error when path is a file" do
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/lib/foo.ex", _req ->
+          json_resp(%{"name" => "foo.ex", "type" => "file", "content" => "x"})
+        end)
+
+      assert {:error, {:not_a_directory, "lib/foo.ex"}} =
+               GitHub.list_directory(@repo, "lib/foo.ex", "abc123", test_opts(req))
+    end
+
+    test "passes ref as query param" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/src", request ->
+          send(test_pid, {:query, request.url.query})
+          json_resp([%{"name" => "main.rs", "type" => "file"}])
+        end)
+
+      {:ok, _} = GitHub.list_directory(@repo, "src", "deadbeef", test_opts(req))
+      assert_receive {:query, query}
+      assert query =~ "ref=deadbeef"
+    end
+  end
+
   # --- Helpers ---
 
   defp extract_page(nil), do: "1"

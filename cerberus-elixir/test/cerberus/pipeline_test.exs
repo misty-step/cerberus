@@ -428,6 +428,83 @@ defmodule Cerberus.PipelineTest do
     end
   end
 
+  # --- Tool Handler Wiring ---
+
+  describe "tool handler wiring" do
+    test "auto-wires tool handler when not provided in opts", ctx do
+      review_id = create_run(ctx.store)
+      test_pid = self()
+
+      # LLM that makes a tool call, letting us verify the handler is wired
+      tool_call_llm = fn params ->
+        # On first call, request a tool call; on second, return verdict
+        if Enum.any?(params.messages, &(&1["role"] == "tool")) do
+          {:ok,
+           %{
+             content: @valid_verdict_json,
+             tool_calls: nil,
+             usage: %{prompt_tokens: 100, completion_tokens: 50}
+           }}
+        else
+          send(test_pid, :tool_call_attempted)
+
+          {:ok,
+           %{
+             content: @valid_verdict_json,
+             tool_calls: nil,
+             usage: %{prompt_tokens: 100, completion_tokens: 50}
+           }}
+        end
+      end
+
+      # No :tool_handler in opts — pipeline should build one from context
+      opts = pipeline_opts(ctx, call_llm: tool_call_llm)
+      refute Keyword.has_key?(opts, :tool_handler)
+
+      assert {:ok, _} = Pipeline.run(review_id, params(), opts)
+    end
+
+    test "preserves injected tool_handler (DI seam)", ctx do
+      review_id = create_run(ctx.store)
+      test_pid = self()
+
+      custom_handler = fn call ->
+        send(test_pid, {:custom_handler_called, call.name})
+        {:ok, "custom result"}
+      end
+
+      tool_call_llm = fn params ->
+        if Enum.any?(params.messages, &(&1["role"] == "tool")) do
+          {:ok,
+           %{
+             content: @valid_verdict_json,
+             tool_calls: nil,
+             usage: %{prompt_tokens: 100, completion_tokens: 50}
+           }}
+        else
+          {:ok,
+           %{
+             content: nil,
+             tool_calls: [
+               %{
+                 id: "call_1",
+                 function: %{name: "get_file_contents", arguments: ~s({"path": "lib/foo.ex"})}
+               }
+             ],
+             usage: %{prompt_tokens: 100, completion_tokens: 20}
+           }}
+        end
+      end
+
+      opts = pipeline_opts(ctx, call_llm: tool_call_llm) ++ [tool_handler: custom_handler]
+
+      assert {:ok, _} = Pipeline.run(review_id, params(), opts)
+
+      # Custom handler was called, not the auto-wired one
+      assert_receive {:custom_handler_called, "get_file_contents"}
+    end
+  end
+
   # --- Cost Persistence ---
 
   describe "cost tracking" do
