@@ -6,7 +6,7 @@ results to GitHub.
 
 ## Architecture
 
-```
+```text
 Cerberus.Supervisor (one_for_one)
   ├── Cerberus.Config            — hot-reload persona/model config from defaults/config.yml
   ├── Cerberus.Store             — SQLite persistence (review runs, costs, events)

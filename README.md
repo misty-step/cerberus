@@ -40,7 +40,7 @@ The action dispatches a review via `POST /api/reviews`, polls until completion, 
 |-------|----------|---------|-------------|
 | `api-key` | yes | - | Cerberus API authentication key |
 | `cerberus-url` | yes | - | API base URL (e.g., `https://cerberus.fly.dev`) |
-| `model` | no | `''` | Model override for all reviewers |
+| `model` | no | `''` | Reserved; accepted but not yet wired to reviewer selection |
 | `timeout` | no | `600` | Max seconds to wait for review completion |
 | `poll-interval` | no | `5` | Seconds between status polls |
 | `fail-on-verdict` | no | `true` | Exit 1 if aggregated verdict is FAIL |

@@ -12,7 +12,7 @@ Local development: `http://localhost:4000`
 
 All endpoints except `/api/health` require a Bearer token.
 
-```
+```text
 Authorization: Bearer <CERBERUS_API_KEY>
 ```
 
@@ -123,7 +123,7 @@ Liveness probe. No authentication required.
 
 ## Status Lifecycle
 
-```
+```text
 queued ──> running ──> completed
                   └──> failed
 ```
