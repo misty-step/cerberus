@@ -119,7 +119,7 @@ defmodule Cerberus.Pipeline do
           _, _ -> :ok
         end
 
-        {:error, {:pipeline_failed, Exception.format(kind, reason)}}
+        {:error, {:pipeline_failed, Exception.format(kind, reason, stacktrace)}}
     end
   end
 
