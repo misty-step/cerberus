@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -577,7 +578,7 @@ def test_render_fix_order_merges_equivalent_findings() -> None:
         marker="<!-- test -->",
     )
     fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
-    numbered_lines = [ln for ln in fix_section.splitlines() if ln.lstrip().startswith(("1. ", "2. "))]
+    numbered_lines = [ln for ln in fix_section.splitlines() if re.match(r"\s*\d+\.\s", ln)]
     assert len(numbered_lines) == 1, f"Expected 1 merged fix item, got {len(numbered_lines)}"
     assert "Codex" in fix_section
     assert "Coderabbit" in fix_section
@@ -672,8 +673,8 @@ def test_render_merged_finding_shows_highest_severity() -> None:
     )
     fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
     first_item = next(ln for ln in fix_section.splitlines() if ln.lstrip().startswith("1. "))
-    assert "\U0001f534" in first_item, "Merged finding must show critical icon (🔴)"
-    assert "\U0001f7e1" not in first_item, "Minor icon (🟡) must not appear on merged finding"
+    assert "🔴" in first_item, "Merged finding must show critical icon"
+    assert "🟡" not in first_item, "Minor icon must not appear on merged finding"
 
 
 def test_render_comment_preserves_fileless_key_findings() -> None:
