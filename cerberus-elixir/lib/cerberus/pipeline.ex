@@ -131,6 +131,14 @@ defmodule Cerberus.Pipeline do
     personas = Config.personas(config)
     pool = resolve_model_pool(routing.model_tier, config)
 
+    # Build tool handler from review context unless injected (tests)
+    gh = Keyword.get(opts, :github_opts, [])
+
+    opts =
+      Keyword.put_new_lazy(opts, :tool_handler, fn ->
+        Cerberus.Tools.GithubReadHandler.build(params.repo, params.head_sha, gh)
+      end)
+
     try do
       review_ctx = %{
         title: pr_ctx.title,

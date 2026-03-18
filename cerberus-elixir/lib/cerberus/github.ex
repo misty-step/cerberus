@@ -304,4 +304,63 @@ defmodule Cerberus.GitHub do
   end
 
   def build_position_map(_), do: %{}
+
+  # === Repository content API ===
+
+  @doc "Fetch file contents from a repo at a given ref. Returns decoded text."
+  def get_file_contents(repo, path, ref, opts \\ []) do
+    req = build_req(opts)
+    params = if ref, do: [ref: ref], else: []
+
+    case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
+      {:ok, %{body: items}} when is_list(items) ->
+        {:error, {:not_a_file, path}}
+
+      {:ok, %{body: %{"content" => content, "encoding" => "base64"}}} when is_binary(content) ->
+        {:ok, Base.decode64!(content, ignore: :whitespace)}
+
+      {:ok, %{body: %{"content" => content}}} when is_binary(content) ->
+        {:ok, content}
+
+      {:ok, %{body: %{"type" => "file", "size" => size}}} ->
+        {:error, {:file_too_large, path, size}}
+
+      error ->
+        error
+    end
+  end
+
+  @doc "Search code in a repository. Returns list of matching items."
+  def search_code(repo, query, opts \\ []) do
+    req = build_req(opts) |> Req.merge(headers: [{"accept", "application/vnd.github.text-match+json"}])
+    path_filter = Keyword.get(opts, :path_filter)
+
+    sanitized = String.replace(query, ~r/repo:\S+/, "")
+
+    q =
+      "#{sanitized} repo:#{repo}" <>
+        if(path_filter, do: " path:#{path_filter}", else: "")
+
+    case request_with_retry(:get, req, [url: "/search/code", params: [q: q]], opts) do
+      {:ok, %{body: %{"items" => items}}} -> {:ok, items}
+      error -> error
+    end
+  end
+
+  @doc "List directory contents at a given ref. Returns list of entries."
+  def list_directory(repo, path, ref, opts \\ []) do
+    req = build_req(opts)
+    params = if ref, do: [ref: ref], else: []
+
+    case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
+      {:ok, %{body: items}} when is_list(items) ->
+        {:ok, items}
+
+      {:ok, %{body: %{"type" => "file"}}} ->
+        {:error, {:not_a_directory, path}}
+
+      error ->
+        error
+    end
+  end
 end
