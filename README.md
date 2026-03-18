@@ -4,8 +4,52 @@ Multi-agent AI code review for GitHub PRs.
 
 Cerberus ships a 6-reviewer bench and routes most PRs to a focused 4-reviewer panel instead of running the full bench every time.
 
-## Quick Start (Reusable Workflow)
+## Quick Start (API Dispatch)
+
+The fastest path: a single-step GHA action that dispatches to a hosted Cerberus instance.
 Copy this into `.github/workflows/cerberus.yml`:
+
+```yaml
+name: Cerberus
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: misty-step/cerberus/api@master
+        with:
+          api-key: ${{ secrets.CERBERUS_API_KEY }}
+          cerberus-url: https://cerberus.fly.dev
+```
+
+Set one repository secret: `CERBERUS_API_KEY` (auth token for the Cerberus API).
+
+The action dispatches a review via `POST /api/reviews`, polls until completion, and exits with the aggregated verdict. See [API contract](docs/api-contract.md) for the full HTTP reference.
+
+<details>
+<summary>API action inputs</summary>
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `api-key` | yes | - | Cerberus API authentication key |
+| `cerberus-url` | yes | - | API base URL (e.g., `https://cerberus.fly.dev`) |
+| `model` | no | `''` | Reserved; accepted but not yet wired to reviewer selection |
+| `timeout` | no | `600` | Max seconds to wait for review completion |
+| `poll-interval` | no | `5` | Seconds between status polls |
+| `fail-on-verdict` | no | `true` | Exit 1 if aggregated verdict is FAIL |
+
+</details>
+
+## Quick Start (GHA Matrix — Legacy)
+
+For teams that prefer running reviewers locally in GitHub Actions (BYOK model key):
 
 ```yaml
 name: Cerberus
@@ -34,15 +78,8 @@ Cerberus routes each PR to the most relevant panel (default size: 4):
 - `trace` (correctness) always runs
 - `guard` (security) is required when non-doc/non-test code changes
 - router is enabled by default in the reusable workflow
+
 ## Reviewers
-
-Six reviewers in three fixed waves — escalating model strength:
-
-| Wave | Models | Reviewers | Question |
-|------|--------|-----------|----------|
-| wave1 | flash | trace · guard · proof | Does it work and is it safe? |
-| wave2 | standard | atlas · fuse · craft | Is it well-designed? |
-| wave3 | pro | trace · guard · atlas | Deep audit of highest stakes |
 
 | Codename | Perspective | Focus |
 |----------|-------------|-------|
@@ -53,53 +90,30 @@ Six reviewers in three fixed waves — escalating model strength:
 | fuse | Resilience | Failure handling, retries, graceful degradation |
 | craft | Maintainability | Readability, naming, future maintenance cost |
 
+In API dispatch mode, the server-side router selects the panel and model tier in a single pass.
+
+In GHA matrix mode, reviewers run in cascading waves with escalating model strength:
+
+| Wave | Models | Reviewers | Question |
+|------|--------|-----------|----------|
+| wave1 | flash | trace · guard · proof | Does it work and is it safe? |
+| wave2 | standard | atlas · fuse · craft | Is it well-designed? |
+| wave3 | pro | trace · guard · atlas | Deep audit of highest stakes |
+
 The gate between waves is a hard check: wave2 only runs when wave1 passes cleanly (no critical or major findings). Wave3 only runs when wave2 passes. This keeps cost proportional to signal.
 
-## Cost Snapshot
-Three waves with flash → standard → pro model escalation, but routing is the first cost-control gate.
-
-- Wave1 (flash, 3 reviewers) runs on every PR — lowest cost
-- Wave2 (standard, 3 reviewers) only on clean wave1 exit
-- Wave3 (pro, 3 reviewers) only on clean wave2 exit; flash-tier PRs (docs-only) stop at wave2
-- Default model set is restricted to: `kimi-k2.5`, `minimax-m2.5`, `glm-5`, `gemini-3-flash-preview`, `grok-4.1-fast`, `grok-4.20-beta`, `grok-4.20-multi-agent-beta`, and `mercury-2`
-- Practical monthly spend is typically below a single CodeRabbit seat for small/medium teams
-- Exact spend depends on PR volume, diff size, and escalation rate
-
-## Docs
-
-- Migration guide (v1 → v2): `docs/MIGRATION.md`
-- Review-run contract: `docs/review-run-contract.md`
-- Terminology: `docs/TERMINOLOGY.md`
-- Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
-- Troubleshooting: `docs/TROUBLESHOOTING.md`
-- Architecture: `docs/ARCHITECTURE.md`
-
-## Local Non-GHA Review Path
-
-Cerberus now ships one supported non-GitHub-Actions runner for maintainers and
-future self-hosted orchestrators:
-
-```bash
-python3 scripts/non_gha_review_run.py \
-  --repo misty-step/cerberus \
-  --pr 329 \
-  --output-dir /tmp/cerberus-review
-```
-
-Requirements:
-- authenticated `gh`
-- the same model API key env vars already used by `scripts/run-reviewer.py`
-
-The command writes `pr.diff`, `pr-context.json`, `review-run.json`, per-reviewer
-verdict JSON, and the final `verdict.json` into `--output-dir` while reusing the
-existing runner, parser, and aggregator contracts.
-
-## Workflow Architecture
-- **Primary (recommended):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@master`
-- **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`
-- **Optional:** add `templates/triage-workflow.yml` for automated failure triage
-
 ## How It Works
+
+**API dispatch mode:**
+1. Thin GHA action sends `POST /api/reviews` with repo, PR number, and HEAD SHA
+2. Server routes the PR to a focused reviewer panel (2-4 reviewers)
+3. Reviewers run in parallel, supervised for fault tolerance
+4. Verdict aggregation with finding dedup, then GitHub posting (verdict comment + inline PR review + check run)
+5. Action polls `GET /api/reviews/:id` until `completed` or `failed`
+
+See [`cerberus-elixir/README.md`](cerberus-elixir/README.md#pipeline) for the internal pipeline details.
+
+**GHA matrix mode (legacy):**
 1. Cerberus routes the PR to a focused reviewer subset, then runs that matrix in parallel
 2. Pi CLI analyzes the PR diff from each reviewer's perspective (default: Kimi K2.5 via OpenRouter, configurable per reviewer)
    - Default reviewer tools omit shell execution; if `bash` is enabled for a profile, guardrails still block destructive and network-egress command patterns.
@@ -108,6 +122,46 @@ existing runner, parser, and aggregator contracts.
 4. Each reviewer uploads a structured verdict artifact (optionally posts a per-reviewer PR comment)
 5. The verdict job aggregates all reviews, posts a verdict comment, and posts a PR review with inline comments (up to 30) anchored to diff lines
 6. Cerberus verdict: **FAIL** on critical fail or 2+ fails, **WARN** on warnings or a single non-critical fail, **PASS** otherwise
+
+## Docs
+
+- **API contract**: [`docs/api-contract.md`](docs/api-contract.md)
+- Migration guide (v1 → v2): `docs/MIGRATION.md`
+- Review-run contract: `docs/review-run-contract.md`
+- Terminology: `docs/TERMINOLOGY.md`
+- Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
+- Troubleshooting: `docs/TROUBLESHOOTING.md`
+- Architecture: `docs/ARCHITECTURE.md`
+
+## Cost Snapshot
+
+- API dispatch: single HTTP round-trip from GHA; all compute on the Cerberus server
+- GHA matrix: three waves with flash → standard → pro model escalation, routing as the first cost-control gate
+- Default model set: `kimi-k2.5`, `minimax-m2.5`, `glm-5`, `gemini-3-flash-preview`, `grok-4.1-fast`, `grok-4.20-beta`, `grok-4.20-multi-agent-beta`, `mercury-2`
+- Practical monthly spend is typically below a single CodeRabbit seat for small/medium teams
+- Exact spend depends on PR volume, diff size, and escalation rate
+
+## Verdict Rules
+Each reviewer emits:
+- **FAIL**: any critical finding OR 2+ major findings
+- **WARN**: exactly 1 major OR 5+ minor findings OR 3+ minor findings in the same category
+- **PASS**: otherwise
+- Only findings from reviews with confidence **>= 0.7** count toward verdict thresholds.
+
+Cerberus verdict:
+- **FAIL**: any critical reviewer FAIL OR 2+ reviewer FAILs (unless overridden)
+- **WARN**: any reviewer WARN OR a single non-critical reviewer FAIL
+- **PASS**: all reviewers pass
+
+## Override Protocol
+Comment on the PR:
+
+```text
+/cerberus override sha=<short-sha>
+Reason: <explanation>
+```
+
+The SHA must match the current HEAD commit. Override downgrades FAIL to non-blocking.
 
 ## Auto-Triage (v1.1)
 Cerberus ships a separate triage module for verdict failures:
@@ -129,7 +183,7 @@ Use `templates/triage-workflow.yml` to enable:
 Cerberus supports both same-repo and fork PRs with appropriate security handling:
 
 ### Same-Repo PRs
-Full Cerberus review runs with full access to the `CERBERUS_OPENROUTER_API_KEY` secret.
+Full Cerberus review runs with full access to secrets.
 
 ### Fork PRs
 - Fork PRs trigger the workflow but skip the review jobs
@@ -139,7 +193,29 @@ Full Cerberus review runs with full access to the `CERBERUS_OPENROUTER_API_KEY` 
 
 This prevents confusing failures when secret-dependent operations can't access their credentials.
 
-## Inputs
+## Local Non-GHA Review Path
+
+Cerberus ships one supported non-GitHub-Actions runner for maintainers and
+future self-hosted orchestrators:
+
+```bash
+python3 scripts/non_gha_review_run.py \
+  --repo misty-step/cerberus \
+  --pr 329 \
+  --output-dir /tmp/cerberus-review
+```
+
+Requirements:
+- authenticated `gh`
+- the same model API key env vars already used by `scripts/run-reviewer.py`
+
+The command writes `pr.diff`, `pr-context.json`, `review-run.json`, per-reviewer
+verdict JSON, and the final `verdict.json` into `--output-dir` while reusing the
+existing runner, parser, and aggregator contracts.
+
+<details>
+<summary>GHA Matrix Mode — Full Inputs Reference</summary>
+
 ### Review Action (`misty-step/cerberus@master`)
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -171,40 +247,13 @@ This prevents confusing failures when secret-dependent operations can't access t
 | `workflow` | no | `.github/workflows/cerberus.yml` | Workflow file to validate |
 | `fail-on-warnings` | no | `false` | Exit 1 if warnings are found |
 
-## Verdict Rules
-Each reviewer emits:
-- **FAIL**: any critical finding OR 2+ major findings
-- **WARN**: exactly 1 major OR 5+ minor findings OR 3+ minor findings in the same category
-- **PASS**: otherwise
-- Only findings from reviews with confidence **>= 0.7** count toward verdict thresholds.
+### Outputs
+**Review Action**: `verdict` (PASS, WARN, FAIL, SKIP), `verdict-json` (path to verdict JSON file)
+**Verdict Action**: `verdict` (Cerberus verdict)
 
-Cerberus verdict:
-- **FAIL**: any critical reviewer FAIL OR 2+ reviewer FAILs (unless overridden)
-- **WARN**: any reviewer WARN OR a single non-critical reviewer FAIL
-- **PASS**: all reviewers pass
+### Customization
 
-## Override Protocol
-Comment on the PR:
-
-```text
-/cerberus override sha=<short-sha>
-Reason: <explanation>
-```
-
-The SHA must match the current HEAD commit. Override downgrades FAIL to non-blocking.
-
-## Outputs
-### Review Action
-- `verdict`: PASS, WARN, FAIL, or SKIP
-- `verdict-json`: Path to the verdict JSON file
-
-### Verdict Action
-- `verdict`: Cerberus verdict (PASS, WARN, FAIL, SKIP)
-
-## Customization
-### Run fewer reviewers
-Remove rows from the matrix:
-
+**Run fewer reviewers:**
 ```yaml
 matrix:
   include:
@@ -212,7 +261,7 @@ matrix:
     - { reviewer: guard, perspective: security }
 ```
 
-### Non-blocking reviews
+**Non-blocking reviews:**
 ```yaml
 - uses: misty-step/cerberus/verdict@master
   with:
@@ -220,38 +269,17 @@ matrix:
     fail-on-verdict: 'false'
 ```
 
-### Model diversity
+**Model diversity:**
 By default, Cerberus selects models per reviewer from `defaults/config.yml`.
 
-Cerberus now runs cascading review waves:
+Cerberus runs cascading review waves:
 - `wave1`: `grok-4.1-fast`, `mercury-2`, `minimax-m2.5`
 - `wave2`: `kimi-k2.5`, `gemini-3-flash-preview`, `glm-5`
 - `wave3`: `grok-4.20-beta`, `grok-4.20-multi-agent-beta`, `kimi-k2.5`
 
-Escalation is deterministic. Cerberus advances to the next wave only when the current wave has no blocking findings under `waves.gate` in `defaults/config.yml`.
-
-Router still emits `model_tier` (`flash`, `standard`, `pro`) from diff complexity. Wave policy uses that tier to cap maximum wave depth via `waves.max_for_tier`.
-
-Within a wave, pool-based reviewers draw models from `model.wave_pools.<wave>`. If a wave pool is missing, Cerberus falls back to `model.tiers.<tier>`, then `model.pool`.
-
 Override per reviewer via the matrix `model` field (action input `model` overrides config). See `templates/consumer-workflow-minimal.yml` for a full decomposed example.
 
-If you set `model`, Cerberus annotates the run with the configured model it would have used vs the override. Prefer leaving `model` unset to stay in sync with evolving per-reviewer defaults.
-
-```yaml
-matrix:
-  include:
-    - { reviewer: trace, perspective: correctness, model: 'openrouter/moonshotai/kimi-k2.5' }
-    - { reviewer: atlas, perspective: architecture, model: 'openrouter/z-ai/glm-5' }
-    - { reviewer: guard, perspective: security, model: 'openrouter/minimax/minimax-m2.5' }
-    - { reviewer: fuse, perspective: resilience, model: 'openrouter/x-ai/grok-4.1-fast' }
-    - { reviewer: craft, perspective: maintainability, model: 'openrouter/moonshotai/kimi-k2.5' }
-    - { reviewer: proof, perspective: testing, model: 'openrouter/google/gemini-3-flash-preview' }
-```
-
-If a reviewer's primary model fails with a transient error (429, 5xx, network), it retries with exponential backoff then falls through to the `fallback-models` chain before emitting SKIP.
-
-### Fail when no review happened (SKIP)
+**Fail when no review happened (SKIP):**
 ```yaml
 - uses: misty-step/cerberus/verdict@master
   with:
@@ -259,9 +287,18 @@ If a reviewer's primary model fails with a transient error (429, 5xx, network), 
     fail-on-skip: 'true'
 ```
 
+</details>
+
+## Workflow Architecture
+- **Primary (recommended):** API dispatch via `misty-step/cerberus/api@master`
+- **GHA matrix (legacy):** reusable workflow via `misty-step/cerberus/.github/workflows/cerberus.yml@master`
+- **Advanced / power user:** decomposed pipeline template at `templates/consumer-workflow-minimal.yml`
+- **Optional:** add `templates/triage-workflow.yml` for automated failure triage
+
 ## Requirements
 - GitHub repository with Actions enabled
-- One secret: `CERBERUS_OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
+- **API dispatch:** `CERBERUS_API_KEY` + hosted Cerberus URL
+- **GHA matrix:** `CERBERUS_OPENROUTER_API_KEY` (get one at [openrouter.ai](https://openrouter.ai))
 - Permissions: `pull-requests: read` on review jobs, `issues: write` on PR-thread comment jobs, and both `issues: write` plus `pull-requests: write` on verdict jobs
 
 ## License
