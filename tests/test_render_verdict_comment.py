@@ -634,8 +634,8 @@ def test_render_same_title_different_lines_stay_separate() -> None:
         marker="<!-- test -->",
     )
     fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
-    assert "1. " in fix_section
-    assert "2. " in fix_section, "Same title on different lines must remain separate"
+    numbered_lines = [ln for ln in fix_section.splitlines() if re.match(r"\s*\d+\.\s", ln)]
+    assert len(numbered_lines) == 2, f"Expected 2 separate fix items, got {len(numbered_lines)}"
 
 
 def test_render_merged_finding_shows_highest_severity() -> None:
