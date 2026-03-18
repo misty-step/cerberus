@@ -1,11 +1,13 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from lib.markdown import severity_icon
 from lib.render_verdict_comment import (
     classify_skip_reviewer,
     collect_hotspots,
@@ -531,6 +533,155 @@ def test_render_comment_preserves_grouped_description_in_key_findings() -> None:
         marker="<!-- test -->",
     )
     assert "Description: cleanup receives a canceled context" in comment
+
+
+def test_render_fix_order_merges_equivalent_findings() -> None:
+    """AC1: Nearby lines, different titles, same root cause → Fix Order shows one
+    merged entry with both reviewer names attached."""
+    # Overlapping tokens: executor, cleanup, swap*, restore* — well above the 2-token threshold
+    comment = render_comment(
+        {
+            "verdict": "WARN",
+            "reviewers": [
+                {
+                    "reviewer": "CODEX",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "bug",
+                            "file": "src/engine.go",
+                            "line": 40,
+                            "title": "Restore host executor after sandbox cleanup",
+                            "description": "The executor stays swapped after cleanup returns.",
+                            "suggestion": "restore the prior executor before exit",
+                        }
+                    ],
+                },
+                {
+                    "reviewer": "CODERABBIT",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "minor",
+                            "category": "bug",
+                            "file": "src/engine.go",
+                            "line": 42,
+                            "title": "Executor field is replaced but not restored",
+                            "description": "Cleanup leaves the swapped executor installed.",
+                            "suggestion": "restore the original executor after cleanup",
+                        }
+                    ],
+                },
+            ],
+        },
+        max_findings=5,
+        max_key_findings=5,
+        marker="<!-- test -->",
+    )
+    fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
+    numbered_lines = [ln for ln in fix_section.splitlines() if re.match(r"\s*\d+\.\s", ln)]
+    assert len(numbered_lines) == 1, f"Expected 1 merged fix item, got {len(numbered_lines)}"
+    assert "Codex" in fix_section
+    assert "Coderabbit" in fix_section
+
+
+def test_render_same_title_different_lines_stay_separate() -> None:
+    """AC2: Exact same title on nearby but distinct lines → two separate Fix Order entries.
+
+    Lines 10 and 12 are within the 3-line proximity window, so this exercises
+    the same-title-different-line rejection rule (findings.py:182-190), not the
+    distant-lines short-circuit.
+    """
+    comment = render_comment(
+        {
+            "verdict": "WARN",
+            "reviewers": [
+                {
+                    "reviewer": "TRACE",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "bug",
+                            "file": "src/handler.py",
+                            "line": 10,
+                            "title": "Missing null check",
+                            "description": "No null check on user input",
+                            "suggestion": "add null check",
+                        }
+                    ],
+                },
+                {
+                    "reviewer": "GUARD",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "major",
+                            "category": "bug",
+                            "file": "src/handler.py",
+                            "line": 12,
+                            "title": "Missing null check",
+                            "description": "No null check on config input",
+                            "suggestion": "add null check",
+                        }
+                    ],
+                },
+            ],
+        },
+        max_findings=5,
+        max_key_findings=5,
+        marker="<!-- test -->",
+    )
+    fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
+    numbered_lines = [ln for ln in fix_section.splitlines() if re.match(r"\s*\d+\.\s", ln)]
+    assert len(numbered_lines) == 2, f"Expected 2 separate fix items, got {len(numbered_lines)}"
+
+
+def test_render_merged_finding_shows_highest_severity() -> None:
+    """AC3: Disagreeing severities → rendered output shows the highest (critical)."""
+    comment = render_comment(
+        {
+            "verdict": "WARN",
+            "reviewers": [
+                {
+                    "reviewer": "TRACE",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "minor",
+                            "category": "bug",
+                            "file": "src/a.py",
+                            "line": 10,
+                            "title": "Shared bug across reviewers",
+                            "description": "This is a shared finding",
+                        }
+                    ],
+                },
+                {
+                    "reviewer": "GUARD",
+                    "verdict": "WARN",
+                    "findings": [
+                        {
+                            "severity": "critical",
+                            "category": "bug",
+                            "file": "src/a.py",
+                            "line": 10,
+                            "title": "Shared bug across reviewers",
+                            "description": "This is the same shared finding",
+                        }
+                    ],
+                },
+            ],
+        },
+        max_findings=5,
+        max_key_findings=5,
+        marker="<!-- test -->",
+    )
+    fix_section = comment.split("### Fix Order", 1)[1].split("###", 1)[0]
+    first_item = next(ln for ln in fix_section.splitlines() if ln.lstrip().startswith("1. "))
+    assert severity_icon("critical") in first_item, "Merged finding must show critical icon"
+    assert severity_icon("minor") not in first_item, "Minor icon must not appear on merged finding"
 
 
 def test_render_comment_preserves_fileless_key_findings() -> None:
