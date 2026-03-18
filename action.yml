@@ -307,7 +307,18 @@ runs:
         if [[ -f "${CERBERUS_TMP}/${PERSPECTIVE}-parse-input" ]]; then
           PARSE_INPUT="$(cat "${CERBERUS_TMP}/${PERSPECTIVE}-parse-input")"
         fi
+        set +e
         python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
+        parse_exit=$?
+        set -e
+        if [[ $parse_exit -ne 0 ]]; then
+          if [[ -s "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" ]] && \
+             jq -e '.verdict' "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" >/dev/null 2>&1; then
+            echo "::warning::parse-review.py exited $parse_exit but wrote fallback verdict"
+          else
+            exit $parse_exit
+          fi
+        fi
         RUNTIME_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-runtime-seconds"
         if [[ -f "$RUNTIME_FILE" ]]; then
           runtime_seconds="$(cat "$RUNTIME_FILE")"

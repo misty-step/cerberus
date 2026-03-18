@@ -280,3 +280,79 @@ def test_main_invalid_agent_prompt_body(monkeypatch, tmp_path: Path, capsys) -> 
     code = _mod.main(["security"])
     assert code == 2
     assert "invalid agent prompt body" in capsys.readouterr().err
+
+
+# --- Structured extraction verdict validation ---
+
+
+class TestStructuredExtractionVerdictValidation:
+    """Validate that try_structured_extraction rejects invalid verdict values."""
+
+    @staticmethod
+    def _setup_extraction(tmp_path, monkeypatch, verdict_json):
+        """Create preconditions and mock subprocess for structured extraction."""
+        import subprocess
+
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "extract-verdict.py").write_text("# stub")
+
+        source = tmp_path / "scratchpad.txt"
+        source.write_text("some review text")
+
+        def mock_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args[0], 0, stdout=verdict_json, stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        output_file = tmp_path / "verdict.json"
+        return source, output_file
+
+    @staticmethod
+    def _make_verdict_json(verdict, summary="test"):
+        import json
+        return json.dumps({
+            "reviewer": "GUARD",
+            "perspective": "security",
+            "verdict": verdict,
+            "confidence": 0.85,
+            "summary": summary,
+            "findings": [],
+            "stats": {"files_reviewed": 0, "files_with_issues": 0,
+                      "critical": 0, "major": 0, "minor": 0, "info": 0},
+        })
+
+    def test_rejects_invalid_verdict(self, tmp_path, monkeypatch):
+        """Structured extraction with verdict='rejected' should return False."""
+        source, output_file = self._setup_extraction(
+            tmp_path, monkeypatch, self._make_verdict_json("rejected")
+        )
+        result = _mod.try_structured_extraction(
+            cerberus_root=tmp_path,
+            scratchpad=source,
+            stdout_file=tmp_path / "nonexistent",
+            perspective="security",
+            model_used="test-model",
+            output_file=output_file,
+        )
+        assert result is False
+        assert not output_file.exists()
+
+    def test_accepts_valid_verdict(self, tmp_path, monkeypatch):
+        """Structured extraction with verdict='PASS' should return True."""
+        import json
+
+        source, output_file = self._setup_extraction(
+            tmp_path, monkeypatch, self._make_verdict_json("PASS", "No issues")
+        )
+        result = _mod.try_structured_extraction(
+            cerberus_root=tmp_path,
+            scratchpad=source,
+            stdout_file=tmp_path / "nonexistent",
+            perspective="security",
+            model_used="test-model",
+            output_file=output_file,
+        )
+        assert result is True
+        assert output_file.exists()
+        assert json.loads(output_file.read_text())["verdict"] == "PASS"
