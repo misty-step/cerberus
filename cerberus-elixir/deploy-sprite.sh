@@ -5,7 +5,8 @@
 #   ./deploy-sprite.sh              # deploy (create Sprite if needed)
 #   ./deploy-sprite.sh bootstrap    # force full bootstrap
 #   ./deploy-sprite.sh secrets      # set secrets interactively
-#   ./deploy-sprite.sh start        # start the app
+#   ./deploy-sprite.sh start        # start the app (foreground)
+#   ./deploy-sprite.sh restart      # kill stale + start backgrounded (CI/CD)
 #
 # Requires: sprite CLI, authenticated with Fly.
 
@@ -57,8 +58,7 @@ deploy() {
     MIX_ENV=prod mix compile
   '
 
-  sprite -s "$SPRITE_NAME" checkpoint create --comment "deploy $(date +%Y%m%d-%H%M)"
-  log "Deploy complete"
+  log "Deploy complete (checkpoint deferred to caller)"
 }
 
 # --- Secrets ---
@@ -100,6 +100,21 @@ start_app() {
   '
 }
 
+# --- Restart (CI/CD) ---
+
+restart_app() {
+  log "Restarting Cerberus API"
+  sprite -s "$SPRITE_NAME" exec -- sh -c '
+    pkill -f "mix run" 2>/dev/null || true
+    sleep 2
+    . /home/sprite/.cerberus-env
+    cd /home/sprite/cerberus-elixir
+    nohup sh -c "MIX_ENV=prod elixir --sname cerberus -S mix run --no-halt" \
+      > /home/sprite/cerberus.log 2>&1 &
+  '
+  log "Restart initiated"
+}
+
 # --- Main ---
 
 command="${1:-deploy}"
@@ -115,6 +130,9 @@ case "$command" in
   start)
     start_app
     ;;
+  restart)
+    restart_app
+    ;;
   deploy)
     if ! sprite_exists; then
       log "Sprite not found, bootstrapping first"
@@ -123,6 +141,6 @@ case "$command" in
     deploy
     ;;
   *)
-    die "Unknown command: $command. Use: deploy, bootstrap, secrets, start"
+    die "Unknown command: $command. Use: deploy, bootstrap, secrets, start, restart"
     ;;
 esac

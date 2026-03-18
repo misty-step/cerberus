@@ -79,6 +79,52 @@ mix run --no-halt
 # or: iex -S mix
 ```
 
+## Deployment
+
+Deployed to a Fly Sprite via `deploy-sprite.sh`. CI/CD auto-deploys on merge to
+master when `cerberus-elixir/`, `defaults/`, `pi/`, or `templates/` change.
+
+See `fly.toml` for the declarative deployment config (port, health check, region).
+
+### Required Environment Variables
+
+| Variable | Description | Where Set |
+|----------|-------------|-----------|
+| `CERBERUS_API_KEY` | Bearer token for API authentication | Sprite env file |
+| `CERBERUS_OPENROUTER_API_KEY` | OpenRouter API key for LLM calls | Sprite env file |
+| `PORT` | HTTP listen port (default 4000, prod 8080) | `fly.toml` / env |
+| `CERBERUS_DB_PATH` | SQLite database path | `fly.toml` / env |
+| `CERBERUS_REPO_ROOT` | Path to cerberus repo assets on sprite | `fly.toml` / env |
+| `SPRITE_TOKEN` | Fly Sprite auth token (CI/CD only) | GitHub secret |
+
+### Optional Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `LANGFUSE_PUBLIC_KEY` | Langfuse observability public key |
+| `LANGFUSE_SECRET_KEY` | Langfuse observability secret key |
+| `LANGFUSE_HOST` | Langfuse endpoint (default: cloud.langfuse.com) |
+
+### Manual Deploy
+
+```bash
+./deploy-sprite.sh              # deploy (create sprite if needed)
+./deploy-sprite.sh bootstrap    # force full bootstrap
+./deploy-sprite.sh secrets      # set secrets interactively
+./deploy-sprite.sh start        # start the app
+```
+
+### CI/CD Deploy
+
+Automated via `.github/workflows/deploy.yml`:
+1. Install sprite CLI
+2. Authenticate with `SPRITE_TOKEN`
+3. Run `deploy-sprite.sh deploy`
+4. Verify `/api/health` returns 200
+5. Checkpoint on success (rollback anchor)
+
+Failed deploys do not checkpoint — restore the prior checkpoint to roll back.
+
 ## Testing
 
 ```bash
