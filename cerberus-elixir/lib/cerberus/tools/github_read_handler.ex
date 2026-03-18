@@ -53,20 +53,33 @@ defmodule Cerberus.Tools.GithubReadHandler do
 
   defp slice_lines(content, start_line, end_line) do
     lines = String.split(content, "\n")
-    start_idx = max((start_line || 1) - 1, 0)
-    end_idx = (end_line || length(lines)) - 1
+    s = to_int(start_line, 1)
+    e = to_int(end_line, length(lines))
+    start_idx = max(s - 1, 0)
+    end_idx = e - 1
 
     case lines |> Enum.slice(start_idx..end_idx//1) |> Enum.join("\n") do
-      "" when content != "" -> "(no content in lines #{start_line || 1}..#{end_line || "end"})"
+      "" when content != "" -> "(no content in lines #{s}..#{e})"
       result -> result
     end
   end
+
+  defp to_int(n, _default) when is_integer(n), do: n
+
+  defp to_int(s, default) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, _} -> n
+      :error -> default
+    end
+  end
+
+  defp to_int(_, default), do: default
 
   defp format_search_results(items) do
     items
     |> Enum.map(fn item ->
       path = item["path"] || item["name"] || "?"
-      fragments = get_in(item, ["text_matches", Access.all(), "fragment"]) || []
+      fragments = (get_in(item, ["text_matches", Access.all(), "fragment"]) || []) |> Enum.reject(&is_nil/1)
       frag_text = if fragments == [], do: "", else: "\n  " <> Enum.join(fragments, "\n  ")
       "#{path}#{frag_text}"
     end)
@@ -86,6 +99,9 @@ defmodule Cerberus.Tools.GithubReadHandler do
   defp format_error({:transient, msg}), do: "GitHub API temporarily unavailable: #{msg}"
   defp format_error({:auth, msg}), do: "Authentication failed: #{msg}"
   defp format_error({:permissions, msg}), do: "Insufficient permissions: #{msg}"
+  defp format_error({:invalid_path, path}), do: "Invalid path (traversal or absolute): #{path}"
+  defp format_error({:decode_error, path}), do: "Failed to decode file content: #{path}"
+  defp format_error({:unexpected_response, path}), do: "Unexpected API response for: #{path}"
   defp format_error({:file_too_large, path, size}), do: "File too large for contents API (#{size} bytes): #{path}"
   defp format_error({:not_a_file, path}), do: "Path is a directory, not a file: #{path}"
   defp format_error({:not_a_directory, path}), do: "Path is a file, not a directory: #{path}"

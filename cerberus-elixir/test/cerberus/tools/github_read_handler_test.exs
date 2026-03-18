@@ -88,6 +88,32 @@ defmodule Cerberus.Tools.GithubReadHandlerTest do
       assert msg =~ "directory"
     end
 
+    test "coerces string line bounds to integers" do
+      lines = "line1\nline2\nline3\nline4\nline5\n"
+      content = Base.encode64(lines)
+
+      req =
+        mock_req(fn :get, "/repos/owner/repo/contents/lib/foo.ex", _req ->
+          json_resp(%{"content" => content, "encoding" => "base64", "type" => "file"})
+        end)
+
+      handler = GithubReadHandler.build(@repo, @ref, gh_opts(req))
+
+      assert {:ok, text} =
+               handler.(%{
+                 name: "get_file_contents",
+                 arguments: %{"path" => "lib/foo.ex", "start_line" => "2", "end_line" => "3"}
+               })
+
+      assert text == "line2\nline3"
+    end
+
+    test "rejects path traversal" do
+      handler = GithubReadHandler.build(@repo, @ref, [])
+      assert {:error, msg} = handler.(%{name: "get_file_contents", arguments: %{"path" => "../etc/passwd"}})
+      assert msg =~ "traversal"
+    end
+
     test "returns diagnostic when line slice is out of range" do
       lines = "line1\nline2\n"
       content = Base.encode64(lines)
@@ -125,6 +151,21 @@ defmodule Cerberus.Tools.GithubReadHandlerTest do
       handler = GithubReadHandler.build(@repo, @ref, gh_opts(req))
       assert {:ok, text} = handler.(%{name: "search_code", arguments: %{"query" => "def bar"}})
       assert is_binary(text)
+      assert text =~ "lib/foo.ex"
+    end
+
+    test "handles text_matches with missing fragment keys" do
+      items = [
+        %{"path" => "lib/foo.ex", "text_matches" => [%{"object_type" => "FileContent"}]}
+      ]
+
+      req =
+        mock_req(fn :get, "/search/code", _req ->
+          json_resp(%{"items" => items, "total_count" => 1})
+        end)
+
+      handler = GithubReadHandler.build(@repo, @ref, gh_opts(req))
+      assert {:ok, text} = handler.(%{name: "search_code", arguments: %{"query" => "bar"}})
       assert text =~ "lib/foo.ex"
     end
 

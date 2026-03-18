@@ -309,24 +309,32 @@ defmodule Cerberus.GitHub do
 
   @doc "Fetch file contents from a repo at a given ref. Returns decoded text."
   def get_file_contents(repo, path, ref, opts \\ []) do
-    req = build_req(opts)
-    params = if ref, do: [ref: ref], else: []
+    with :ok <- validate_path(path) do
+      req = build_req(opts)
+      params = if ref, do: [ref: ref], else: []
 
-    case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
-      {:ok, %{body: items}} when is_list(items) ->
-        {:error, {:not_a_file, path}}
+      case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
+        {:ok, %{body: items}} when is_list(items) ->
+          {:error, {:not_a_file, path}}
 
-      {:ok, %{body: %{"content" => content, "encoding" => "base64"}}} when is_binary(content) ->
-        {:ok, Base.decode64!(content, ignore: :whitespace)}
+        {:ok, %{body: %{"content" => content, "encoding" => "base64"}}} when is_binary(content) ->
+          case Base.decode64(content, ignore: :whitespace) do
+            {:ok, decoded} -> {:ok, decoded}
+            :error -> {:error, {:decode_error, path}}
+          end
 
-      {:ok, %{body: %{"content" => content}}} when is_binary(content) ->
-        {:ok, content}
+        {:ok, %{body: %{"content" => content}}} when is_binary(content) ->
+          {:ok, content}
 
-      {:ok, %{body: %{"type" => "file", "size" => size}}} ->
-        {:error, {:file_too_large, path, size}}
+        {:ok, %{body: %{"type" => "file", "size" => size}}} ->
+          {:error, {:file_too_large, path, size}}
 
-      error ->
-        error
+        {:ok, _} ->
+          {:error, {:unexpected_response, path}}
+
+        error ->
+          error
+      end
     end
   end
 
@@ -335,11 +343,13 @@ defmodule Cerberus.GitHub do
     req = build_req(opts) |> Req.merge(headers: [{"accept", "application/vnd.github.text-match+json"}])
     path_filter = Keyword.get(opts, :path_filter)
 
-    sanitized = String.replace(query, ~r/repo:\S+/, "")
+    sanitized = String.replace(query, ~r/(repo|org|user|fork):\S+/, "")
+
+    safe_filter = if path_filter, do: String.replace(path_filter, ~r/(repo|org|user|fork):\S+/, ""), else: nil
 
     q =
       "#{sanitized} repo:#{repo}" <>
-        if(path_filter, do: " path:#{path_filter}", else: "")
+        if(safe_filter, do: " path:#{safe_filter}", else: "")
 
     case request_with_retry(:get, req, [url: "/search/code", params: [q: q]], opts) do
       {:ok, %{body: %{"items" => items}}} -> {:ok, items}
@@ -349,18 +359,30 @@ defmodule Cerberus.GitHub do
 
   @doc "List directory contents at a given ref. Returns list of entries."
   def list_directory(repo, path, ref, opts \\ []) do
-    req = build_req(opts)
-    params = if ref, do: [ref: ref], else: []
+    with :ok <- validate_path(path) do
+      req = build_req(opts)
+      params = if ref, do: [ref: ref], else: []
 
-    case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
-      {:ok, %{body: items}} when is_list(items) ->
-        {:ok, items}
+      case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
+        {:ok, %{body: items}} when is_list(items) ->
+          {:ok, items}
 
-      {:ok, %{body: %{"type" => "file"}}} ->
-        {:error, {:not_a_directory, path}}
+        {:ok, %{body: %{"type" => "file"}}} ->
+          {:error, {:not_a_directory, path}}
 
-      error ->
-        error
+        error ->
+          error
+      end
+    end
+  end
+
+  # --- Path validation ---
+
+  defp validate_path(path) do
+    cond do
+      String.contains?(path, "..") -> {:error, {:invalid_path, path}}
+      String.starts_with?(path, "/") -> {:error, {:invalid_path, path}}
+      true -> :ok
     end
   end
 end

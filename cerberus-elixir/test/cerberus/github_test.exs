@@ -433,6 +433,16 @@ defmodule Cerberus.GitHubTest do
                GitHub.get_file_contents(@repo, "lib", "abc123", test_opts(req))
     end
 
+    test "rejects paths with traversal sequences" do
+      assert {:error, {:invalid_path, "../etc/passwd"}} =
+               GitHub.get_file_contents(@repo, "../etc/passwd", "abc123", [])
+    end
+
+    test "rejects absolute paths" do
+      assert {:error, {:invalid_path, "/etc/passwd"}} =
+               GitHub.get_file_contents(@repo, "/etc/passwd", "abc123", [])
+    end
+
     test "returns file_too_large when content is null" do
       req =
         mock_req(fn :get, "/repos/owner/repo/contents/big.bin", _req ->
@@ -499,6 +509,21 @@ defmodule Cerberus.GitHubTest do
         end)
 
       assert {:ok, []} = GitHub.search_code(@repo, "nonexistent_xyz", test_opts(req))
+    end
+
+    test "strips scope qualifiers from path_filter" do
+      test_pid = self()
+
+      req =
+        mock_req(fn :get, "/search/code", request ->
+          send(test_pid, {:query, request.url.query})
+          json_resp(%{"items" => [], "total_count" => 0})
+        end)
+
+      {:ok, _} = GitHub.search_code(@repo, "pattern", test_opts(req) ++ [path_filter: "lib repo:evil/repo"])
+      assert_receive {:query, query}
+      params = URI.decode_query(query)
+      refute params["q"] =~ "repo:evil"
     end
 
     test "strips injected repo: qualifiers from query" do
