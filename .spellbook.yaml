@@ -1,0 +1,28 @@
+# .spellbook.yaml — Cerberus multi-agent AI code review system
+skills:
+  # Default operating frames (declared in CLAUDE.md)
+  - context-engineering
+  - llm-infrastructure
+  - harness-engineering
+  # Core domain
+  - otp-agent-orchestration
+  - llm-semantic-match
+  - observability
+  - external-integration-patterns
+  - formal-verify
+  - codified-context-architecture
+  - guardrail
+  - security-scan
+  # Workflow & delivery
+  - autopilot
+  - reflect
+  - calibrate
+  - github-cli-hygiene
+  - org-quality-governance
+  - ci-spend-optimizer
+agents:
+  - infrastructure-guardian
+  - architecture-guardian
+  - config-auditor
+  - agent-updater
+  - learning-codifier
