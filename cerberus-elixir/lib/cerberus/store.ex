@@ -638,6 +638,6 @@ defmodule Cerberus.Store do
   end
 
   defp normalize_confidence(confidence) when is_float(confidence), do: confidence
-  defp normalize_confidence(confidence) when is_integer(confidence), do: confidence / 1
+  defp normalize_confidence(confidence) when is_integer(confidence), do: confidence / 1.0
   defp normalize_confidence(_), do: 0.0
 end
