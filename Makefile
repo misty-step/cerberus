@@ -3,6 +3,12 @@
 
 .PHONY: setup test lint shellcheck yamllint elixir-test validate help
 
+# Require a CLI tool or fail with install instructions.
+# Usage: $(call require,<cmd>,<install hint>)
+define require
+@command -v $(1) >/dev/null 2>&1 || { echo "⚠ $(1) not installed. Install with: $(2)"; exit 1; }
+endef
+
 # Default target
 help:
 	@echo "Cerberus Quality Gates"
@@ -29,43 +35,27 @@ test:
 
 # Run ruff linter on all Python files
 lint:
-	@if command -v ruff >/dev/null 2>&1; then \
-		echo "🔍 Running ruff..."; \
-		ruff check scripts/ matrix/ tests/; \
-	else \
-		echo "⚠ ruff not installed. Install with: uv pip install ruff"; \
-		exit 1; \
-	fi
+	$(call require,ruff,uv pip install ruff)
+	@echo "🔍 Running ruff..."
+	@ruff check scripts/ matrix/ tests/
 
 # Run shellcheck on all shell scripts
 shellcheck:
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		echo "🔍 Running shellcheck..."; \
-		find scripts tests api cerberus-elixir -name "*.sh" -type f -exec shellcheck {} +; \
-	else \
-		echo "⚠ shellcheck not installed. Install with: brew install shellcheck (macOS) or apt install shellcheck (Linux)"; \
-		exit 1; \
-	fi
+	$(call require,shellcheck,brew install shellcheck (macOS) or apt install shellcheck (Linux))
+	@echo "🔍 Running shellcheck..."
+	@find scripts tests api cerberus-elixir -name "*.sh" -type f -exec shellcheck {} +
 
 # Run yamllint on workflow YAML
 yamllint:
-	@if command -v yamllint >/dev/null 2>&1; then \
-		echo "🔍 Running yamllint..."; \
-		yamllint .github/workflows/*.yml; \
-	else \
-		echo "⚠ yamllint not installed. Install with: pip install yamllint"; \
-		exit 1; \
-	fi
+	$(call require,yamllint,pip install yamllint)
+	@echo "🔍 Running yamllint..."
+	@yamllint .github/workflows/*.yml
 
 # Run Elixir scaffold verification
 elixir-test:
-	@if command -v mix >/dev/null 2>&1; then \
-		echo "🔍 Running cerberus-elixir checks..."; \
-		cd cerberus-elixir && mix deps.get && mix compile && mix test; \
-	else \
-		echo "⚠ mix not installed. Install Elixir to validate cerberus-elixir"; \
-		exit 1; \
-	fi
+	$(call require,mix,Install Elixir to validate cerberus-elixir)
+	@echo "🔍 Running cerberus-elixir checks..."
+	@cd cerberus-elixir && mix deps.get && mix compile && mix test
 
 # Full local validation (test + lint + shellcheck + yamllint + elixir-test)
 validate: test lint shellcheck yamllint elixir-test
