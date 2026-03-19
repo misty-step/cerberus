@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import NoReturn
 
 from lib.review_schema import (
+    AC_COMPLIANCE_STATUSES,
     DEPRECATED_FINDING_FIELDS,
     DEPRECATED_FINDING_TITLE_PREFIXES,
     FINDING_FIELDS,
     REQUIRED_FINDING_FIELDS,
+    REQUIRED_AC_COMPLIANCE_DETAIL_FIELDS,
+    REQUIRED_AC_COMPLIANCE_FIELDS,
     REQUIRED_ROOT_FIELDS,
     ROOT_FIELDS,
     VALID_FINDING_SCOPES,
@@ -593,6 +596,83 @@ def validate(obj: dict) -> None:
         if not isinstance(stats[skey], int):
             fail(f"stats field not int: {skey}")
 
+    ac_compliance = obj.get("ac_compliance")
+    if ac_compliance is None:
+        return
+    if not isinstance(ac_compliance, dict):
+        fail("ac_compliance must be object")
+
+    missing_ac_fields = sorted(REQUIRED_AC_COMPLIANCE_FIELDS - set(ac_compliance))
+    if missing_ac_fields:
+        fail(f"ac_compliance missing field(s): {', '.join(missing_ac_fields)}")
+
+    unexpected_ac_fields = sorted(set(ac_compliance) - REQUIRED_AC_COMPLIANCE_FIELDS)
+    if unexpected_ac_fields:
+        fail(f"ac_compliance has unexpected field(s): {', '.join(unexpected_ac_fields)}")
+
+    for key in ("total", "satisfied", "not_satisfied", "cannot_determine"):
+        if not isinstance(ac_compliance[key], int):
+            fail(f"ac_compliance field not int: {key}")
+
+    details = ac_compliance["details"]
+    if not isinstance(details, list):
+        fail("ac_compliance details must be a list")
+
+    for idx, detail in enumerate(details):
+        if not isinstance(detail, dict):
+            fail(f"ac_compliance detail {idx} not object")
+        missing_fields = sorted(REQUIRED_AC_COMPLIANCE_DETAIL_FIELDS - set(detail))
+        if missing_fields:
+            fail(f"ac_compliance detail {idx} missing field(s): {', '.join(missing_fields)}")
+        unexpected_fields = sorted(set(detail) - REQUIRED_AC_COMPLIANCE_DETAIL_FIELDS)
+        if unexpected_fields:
+            fail(f"ac_compliance detail {idx} has unexpected field(s): {', '.join(unexpected_fields)}")
+        for key in ("ac", "status", "evidence"):
+            if not isinstance(detail[key], str):
+                fail(f"ac_compliance detail {idx} field must be string: {key}")
+        if detail["status"] not in AC_COMPLIANCE_STATUSES:
+            fail(f"ac_compliance detail {idx} invalid status")
+
+
+def normalize_ac_compliance(obj: dict) -> None:
+    """Recompute AC compliance counts from details and drop empty envelopes."""
+    ac_compliance = obj.get("ac_compliance")
+    if not isinstance(ac_compliance, dict):
+        return
+
+    details = ac_compliance.get("details")
+    if not isinstance(details, list):
+        return
+
+    normalized_details = [
+        detail for detail in details
+        if isinstance(detail, dict) and str(detail.get("ac", "")).strip()
+    ]
+    if not normalized_details:
+        obj.pop("ac_compliance", None)
+        return
+
+    actual = {
+        "total": len(normalized_details),
+        "satisfied": sum(1 for detail in normalized_details if detail.get("status") == "SATISFIED"),
+        "not_satisfied": sum(1 for detail in normalized_details if detail.get("status") == "NOT_SATISFIED"),
+        "cannot_determine": sum(1 for detail in normalized_details if detail.get("status") == "CANNOT_DETERMINE"),
+    }
+    reported = {
+        "total": ac_compliance.get("total", 0),
+        "satisfied": ac_compliance.get("satisfied", 0),
+        "not_satisfied": ac_compliance.get("not_satisfied", 0),
+        "cannot_determine": ac_compliance.get("cannot_determine", 0),
+    }
+    ac_compliance["details"] = normalized_details
+    ac_compliance.update(actual)
+    if reported != actual:
+        _diagnostics_envelope(obj)["ac_compliance_discrepancy"] = {
+            "reported": reported,
+            "actual": actual,
+            "discrepancy": True,
+        }
+
 
 def validate_and_correct_stats(obj: dict) -> None:
     """Validate LLM-reported stats against actual findings; correct if mismatched.
@@ -987,6 +1067,7 @@ def main() -> None:
         # value before parser code emits its own diagnostics.
         obj.pop("_diagnostics", None)
         validate_and_correct_stats(obj)
+        normalize_ac_compliance(obj)
         normalize_evidence_fields(obj)
         annotate_stale_knowledge_findings(obj)
         enforce_verdict_consistency(obj)

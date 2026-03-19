@@ -27,3 +27,10 @@ def test_trace_prompt_flags_untested_ac_as_minor() -> None:
 
     assert "no corresponding test" in text.lower()
     assert "minor" in text.lower()
+
+
+def test_trace_prompt_requests_structured_spec_compliance_notes() -> None:
+    text = CORRECTNESS_AGENT.read_text(encoding="utf-8")
+
+    assert "## Spec Compliance" in text
+    assert "structured extraction" in text.lower()

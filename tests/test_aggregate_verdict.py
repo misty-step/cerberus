@@ -866,6 +866,103 @@ class TestAggregateUnit:
         result = _aggregate(verdicts)
         assert result["override"]["used"] is False
 
+    def test_aggregates_ac_compliance_counts_and_details(self):
+        verdicts = [
+            _verdict(
+                "trace",
+                ac_compliance={
+                    "total": 2,
+                    "satisfied": 1,
+                    "not_satisfied": 1,
+                    "cannot_determine": 0,
+                    "details": [
+                        {
+                            "ac": "[test] Given reviewers output AC satisfaction findings, when verdict aggregation runs, then verdict JSON includes ac_compliance counts",
+                            "status": "SATISFIED",
+                            "evidence": "aggregate-verdict.py writes ac_compliance into verdict.json",
+                        },
+                        {
+                            "ac": "[test] Given ac_compliance exists in verdict, when the PR comment is rendered, then AC satisfaction is surfaced as a checklist",
+                            "status": "NOT_SATISFIED",
+                            "evidence": "render_verdict_comment.py does not yet render AC compliance",
+                        },
+                    ],
+                },
+            )
+        ]
+
+        result = _aggregate(verdicts)
+
+        assert result["ac_compliance"]["total"] == 2
+        assert result["ac_compliance"]["satisfied"] == 1
+        assert result["ac_compliance"]["not_satisfied"] == 1
+        assert result["ac_compliance"]["cannot_determine"] == 0
+        assert len(result["ac_compliance"]["details"]) == 2
+
+    def test_ac_compliance_dedupes_conservatively_across_reviewers(self):
+        verdicts = [
+            _verdict(
+                "trace",
+                ac_compliance={
+                    "total": 1,
+                    "satisfied": 1,
+                    "not_satisfied": 0,
+                    "cannot_determine": 0,
+                    "details": [
+                        {
+                            "ac": "Given reviewers output AC satisfaction findings, verdict JSON includes ac_compliance",
+                            "status": "SATISFIED",
+                            "evidence": "aggregate-verdict.py now writes ac_compliance",
+                        }
+                    ],
+                },
+            ),
+            _verdict(
+                "atlas",
+                ac_compliance={
+                    "total": 1,
+                    "satisfied": 0,
+                    "not_satisfied": 0,
+                    "cannot_determine": 1,
+                    "details": [
+                        {
+                            "ac": "Given reviewers output AC satisfaction findings, verdict JSON includes ac_compliance",
+                            "status": "CANNOT_DETERMINE",
+                            "evidence": "Did not trace the end-to-end render path.",
+                        }
+                    ],
+                },
+            ),
+            _verdict(
+                "proof",
+                ac_compliance={
+                    "total": 1,
+                    "satisfied": 0,
+                    "not_satisfied": 1,
+                    "cannot_determine": 0,
+                    "details": [
+                        {
+                            "ac": "Given reviewers output AC satisfaction findings, verdict JSON includes ac_compliance",
+                            "status": "NOT_SATISFIED",
+                            "evidence": "No ac_compliance field is present in the aggregated verdict.",
+                        }
+                    ],
+                },
+            ),
+        ]
+
+        result = _aggregate(verdicts)
+
+        assert result["ac_compliance"]["total"] == 1
+        assert result["ac_compliance"]["satisfied"] == 0
+        assert result["ac_compliance"]["not_satisfied"] == 1
+        assert result["ac_compliance"]["cannot_determine"] == 0
+        assert result["ac_compliance"]["details"][0]["status"] == "NOT_SATISFIED"
+
+    def test_omits_ac_compliance_when_reviewers_do_not_report_it(self):
+        result = _aggregate([_verdict("trace"), _verdict("atlas")])
+        assert "ac_compliance" not in result
+
     def test_promotes_large_unused_runtime_dependency_to_minor(self):
         verdicts = [
             _verdict(

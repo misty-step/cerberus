@@ -236,6 +236,84 @@ def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
     assert "blob/abcdef1234567890/src/hot1.py" in first_hot
 
 
+def test_renders_ac_compliance_checklist_when_present(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "WARN",
+        "summary": "1 reviewer. Failures: 0, warnings: 1, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "trace",
+                "perspective": "correctness",
+                "verdict": "WARN",
+                "confidence": 0.81,
+                "summary": "AC coverage is mixed.",
+                "runtime_seconds": 45,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+        "ac_compliance": {
+            "total": 3,
+            "satisfied": 1,
+            "not_satisfied": 1,
+            "cannot_determine": 1,
+            "details": [
+                {
+                    "ac": "[test] verdict JSON includes ac_compliance counts",
+                    "status": "SATISFIED",
+                    "evidence": "aggregate-verdict.py writes ac_compliance.",
+                },
+                {
+                    "ac": "[test] PR comment renders AC checklist",
+                    "status": "NOT_SATISFIED",
+                    "evidence": "render_verdict_comment.py does not yet render the section.",
+                },
+                {
+                    "ac": "[test] ac_compliance is omitted when no ACs exist",
+                    "status": "CANNOT_DETERMINE",
+                    "evidence": "No missing-AC case was exercised in this review.",
+                },
+            ],
+        },
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### AC Compliance (1/3 satisfied)" in body
+    assert "- ✅ [test] verdict JSON includes ac_compliance counts" in body
+    assert "- ❌ [test] PR comment renders AC checklist" in body
+    assert "- ❓ [test] ac_compliance is omitted when no ACs exist" in body
+
+
+def test_omits_ac_compliance_section_when_absent(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "PASS",
+        "summary": "1 reviewer. Failures: 0, warnings: 0, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "trace",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.95,
+                "summary": "All good.",
+                "runtime_seconds": 20,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### AC Compliance" not in body
+
+
 def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
     verdict_data = {
         "verdict": "WARN",

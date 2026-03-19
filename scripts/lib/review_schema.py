@@ -6,6 +6,7 @@ parse-time validation cannot drift independently.
 
 VERDICT_VALUES = ("PASS", "WARN", "FAIL", "SKIP")
 FINDING_SEVERITIES = ("critical", "major", "minor", "info")
+AC_COMPLIANCE_STATUSES = ("SATISFIED", "NOT_SATISFIED", "CANNOT_DETERMINE")
 REQUIRED_ROOT_FIELDS = (
     "reviewer",
     "perspective",
@@ -15,8 +16,9 @@ REQUIRED_ROOT_FIELDS = (
     "findings",
     "stats",
 )
+OPTIONAL_ROOT_FIELDS = frozenset({"ac_compliance"})
 PIPELINE_ROOT_FIELDS = frozenset({"_diagnostics", "_extraction_usage"})
-ROOT_FIELDS = frozenset(REQUIRED_ROOT_FIELDS) | PIPELINE_ROOT_FIELDS
+ROOT_FIELDS = frozenset(REQUIRED_ROOT_FIELDS) | OPTIONAL_ROOT_FIELDS | PIPELINE_ROOT_FIELDS
 REQUIRED_FINDING_FIELDS = frozenset({
     "severity",
     "category",
@@ -32,6 +34,18 @@ OPTIONAL_FINDING_FIELDS = frozenset({
     "suggestion_verified",
 })
 FINDING_FIELDS = REQUIRED_FINDING_FIELDS | OPTIONAL_FINDING_FIELDS
+REQUIRED_AC_COMPLIANCE_FIELDS = frozenset({
+    "total",
+    "satisfied",
+    "not_satisfied",
+    "cannot_determine",
+    "details",
+})
+REQUIRED_AC_COMPLIANCE_DETAIL_FIELDS = frozenset({
+    "ac",
+    "status",
+    "evidence",
+})
 DEPRECATED_FINDING_FIELDS = frozenset({
     "_unverified",
     "_unverified_reason",
@@ -88,6 +102,30 @@ def build_extraction_verdict_schema() -> dict:
                     "minor",
                     "info",
                 ],
+                "additionalProperties": False,
+            },
+            "ac_compliance": {
+                "type": "object",
+                "properties": {
+                    "total": {"type": "integer"},
+                    "satisfied": {"type": "integer"},
+                    "not_satisfied": {"type": "integer"},
+                    "cannot_determine": {"type": "integer"},
+                    "details": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "ac": {"type": "string"},
+                                "status": {"type": "string", "enum": list(AC_COMPLIANCE_STATUSES)},
+                                "evidence": {"type": "string"},
+                            },
+                            "required": sorted(REQUIRED_AC_COMPLIANCE_DETAIL_FIELDS),
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": sorted(REQUIRED_AC_COMPLIANCE_FIELDS),
                 "additionalProperties": False,
             },
         },

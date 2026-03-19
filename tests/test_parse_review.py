@@ -1382,6 +1382,47 @@ def test_unexpected_root_field_fails_validation():
     assert "unexpected root field" in err
 
 
+def test_ac_compliance_root_field_is_accepted_and_normalized():
+    review = json.dumps({
+        "reviewer": "TEST",
+        "perspective": "test",
+        "verdict": "PASS",
+        "confidence": 0.8,
+        "summary": "ok",
+        "findings": [],
+        "stats": {
+            "files_reviewed": 1,
+            "files_with_issues": 0,
+            "critical": 0,
+            "major": 0,
+            "minor": 0,
+            "info": 0,
+        },
+        "ac_compliance": {
+            "total": 99,
+            "satisfied": 99,
+            "not_satisfied": 0,
+            "cannot_determine": 0,
+            "details": [
+                {
+                    "ac": "[test] Given reviewers output AC satisfaction findings, when verdict aggregation runs, then verdict JSON includes ac_compliance counts",
+                    "status": "SATISFIED",
+                    "evidence": "Structured extraction produced ac_compliance in the parsed review output.",
+                }
+            ],
+        },
+    })
+    code, out, err = run_parse(f"```json\n{review}\n```")
+    data = json.loads(out)
+
+    assert code == 0, err
+    assert data["ac_compliance"]["total"] == 1
+    assert data["ac_compliance"]["satisfied"] == 1
+    assert data["ac_compliance"]["not_satisfied"] == 0
+    assert data["ac_compliance"]["cannot_determine"] == 0
+    assert data["_diagnostics"]["ac_compliance_discrepancy"]["discrepancy"] is True
+
+
 def test_invalid_finding_severity():
     """Invalid severity on a finding triggers fallback."""
     review = json.dumps({

@@ -284,6 +284,21 @@ class TestExtractVerdictFunction:
 
         assert captured[0] == "moonshotai/kimi-k2.5"
 
+    def test_prompt_mentions_ac_compliance_extraction_when_present(self) -> None:
+        verdict = _minimal_verdict()
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(json.loads(req.data.decode()))
+            return _mock_response(verdict)
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            mod.extract_verdict("## Spec Compliance\n- SATISFIED: AC 1", "correctness", "kimi-k2.5", "key")
+
+        system_prompt = captured[0]["messages"][0]["content"]
+        assert "ac_compliance" in system_prompt
+        assert "SATISFIED, NOT_SATISFIED, or CANNOT_DETERMINE" in system_prompt
+
     def test_malformed_response_raises(self) -> None:
         bad_resp = MagicMock()
         bad_resp.__enter__ = lambda s: s
@@ -329,3 +344,16 @@ class TestVerdictSchema:
         assert confidence_schema["type"] == "number"
         assert confidence_schema["minimum"] == 0
         assert confidence_schema["maximum"] == 1
+
+    def test_ac_compliance_schema_is_available_for_structured_extraction(self) -> None:
+        ac_schema = mod.VERDICT_SCHEMA["properties"]["ac_compliance"]
+        assert ac_schema["type"] == "object"
+        assert "details" in ac_schema["required"]
+
+        detail_schema = ac_schema["properties"]["details"]["items"]
+        assert set(detail_schema["required"]) == {"ac", "status", "evidence"}
+        assert set(detail_schema["properties"]["status"]["enum"]) == {
+            "SATISFIED",
+            "NOT_SATISFIED",
+            "CANNOT_DETERMINE",
+        }
