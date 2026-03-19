@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shellcheck
-        run: shellcheck scripts/*.sh api/*.sh
+        run: shellcheck scripts/*.sh api/*.sh cerberus-elixir/*.sh
 
       - name: Python syntax
         run: |
@@ -47,6 +47,11 @@ jobs:
                   yaml.safe_load(f)
               print(f'{path}: valid')
           "
+
+      - name: Yamllint
+        run: |
+          pip install yamllint -q
+          yamllint .github/workflows/*.yml
 
       - name: Validate template parity
         run: tests/validate-template-parity.sh

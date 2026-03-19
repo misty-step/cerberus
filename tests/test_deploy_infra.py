@@ -55,9 +55,11 @@ class TestFlyToml:
         assert "/api/health" in paths
 
     def test_health_check_has_required_fields(self) -> None:
-        check = self.config["http_service"]["checks"][0]
-        for field in ("interval", "timeout", "grace_period", "method", "path"):
-            assert field in check, f"health check missing required field: {field}"
+        checks = self.config["http_service"]["checks"]
+        required = {"interval", "timeout", "grace_period", "method", "path"}
+        for i, check in enumerate(checks):
+            missing = required - set(check.keys())
+            assert not missing, f"health check #{i + 1} missing: {', '.join(sorted(missing))}"
 
 
 class TestDeployWorkflow:
