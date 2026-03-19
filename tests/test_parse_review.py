@@ -8,8 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from conftest import parse_review
+
 SCRIPT = Path(__file__).parent.parent / "scripts" / "parse-review.py"
 FIXTURES = Path(__file__).parent / "fixtures"
+main = parse_review.main
+normalize_ac_compliance = parse_review.normalize_ac_compliance
+validate = parse_review.validate
 
 
 def run_parse(input_text: str, env_extra: dict | None = None) -> tuple[int, str, str]:
@@ -1421,6 +1426,245 @@ def test_ac_compliance_root_field_is_accepted_and_normalized():
     assert data["ac_compliance"]["not_satisfied"] == 0
     assert data["ac_compliance"]["cannot_determine"] == 0
     assert data["_diagnostics"]["ac_compliance_discrepancy"]["discrepancy"] is True
+
+
+def _valid_review_object() -> dict:
+    return {
+        "reviewer": "TEST",
+        "perspective": "test",
+        "verdict": "PASS",
+        "confidence": 0.8,
+        "summary": "ok",
+        "findings": [],
+        "stats": {
+            "files_reviewed": 1,
+            "files_with_issues": 0,
+            "critical": 0,
+            "major": 0,
+            "minor": 0,
+            "info": 0,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("ac_compliance", "expected_error"),
+    [
+        ("bad", "ac_compliance must be object"),
+        (
+            {
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [],
+            },
+            "ac_compliance missing field(s): total",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [],
+                "extra": True,
+            },
+            "ac_compliance has unexpected field(s): extra",
+        ),
+        (
+            {
+                "total": "1",
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [],
+            },
+            "ac_compliance field not int: total",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": "bad",
+            },
+            "ac_compliance details must be a list",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": ["bad"],
+            },
+            "ac_compliance detail 0 not object",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [{"status": "SATISFIED", "evidence": "ok"}],
+            },
+            "ac_compliance detail 0 missing field(s): ac",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [{"ac": "AC", "status": "SATISFIED", "evidence": "ok", "extra": True}],
+            },
+            "ac_compliance detail 0 has unexpected field(s): extra",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [{"ac": "AC", "status": 1, "evidence": "ok"}],
+            },
+            "ac_compliance detail 0 field must be string: status",
+        ),
+        (
+            {
+                "total": 1,
+                "satisfied": 1,
+                "not_satisfied": 0,
+                "cannot_determine": 0,
+                "details": [{"ac": "AC", "status": "MAYBE", "evidence": "ok"}],
+            },
+            "ac_compliance detail 0 invalid status",
+        ),
+    ],
+)
+def test_validate_rejects_invalid_ac_compliance_shapes(ac_compliance, expected_error, capsys):
+    review = _valid_review_object()
+    review["ac_compliance"] = ac_compliance
+
+    with pytest.raises(SystemExit) as excinfo:
+        validate(review)
+
+    assert excinfo.value.code == 1
+    assert expected_error in capsys.readouterr().err
+
+
+def test_validate_allows_missing_ac_compliance():
+    validate(_valid_review_object())
+
+
+@pytest.mark.parametrize("ac_compliance", [None, "bad"])
+def test_normalize_ac_compliance_ignores_missing_or_non_object(ac_compliance):
+    review = _valid_review_object()
+    if ac_compliance is not None:
+        review["ac_compliance"] = ac_compliance
+
+    normalize_ac_compliance(review)
+
+    assert review == _valid_review_object() or review["ac_compliance"] == "bad"
+
+
+def test_normalize_ac_compliance_keeps_non_list_details_unchanged():
+    review = _valid_review_object()
+    review["ac_compliance"] = {
+        "total": 1,
+        "satisfied": 1,
+        "not_satisfied": 0,
+        "cannot_determine": 0,
+        "details": "bad",
+    }
+
+    normalize_ac_compliance(review)
+
+    assert review["ac_compliance"]["details"] == "bad"
+    assert "_diagnostics" not in review
+
+
+def test_normalize_ac_compliance_drops_empty_details_after_filtering():
+    review = _valid_review_object()
+    review["ac_compliance"] = {
+        "total": 2,
+        "satisfied": 1,
+        "not_satisfied": 1,
+        "cannot_determine": 0,
+        "details": [
+            "bad",
+            {"ac": "   ", "status": "SATISFIED", "evidence": "ok"},
+        ],
+    }
+
+    normalize_ac_compliance(review)
+
+    assert "ac_compliance" not in review
+
+
+def test_normalize_ac_compliance_recomputes_counts_and_records_discrepancy():
+    review = _valid_review_object()
+    review["ac_compliance"] = {
+        "total": 9,
+        "satisfied": 9,
+        "not_satisfied": 0,
+        "cannot_determine": 0,
+        "details": [
+            {"ac": "AC one", "status": "SATISFIED", "evidence": "done"},
+            {"ac": "AC two", "status": "NOT_SATISFIED", "evidence": "missing"},
+            {"ac": "AC three", "status": "CANNOT_DETERMINE", "evidence": "unclear"},
+        ],
+    }
+
+    normalize_ac_compliance(review)
+
+    assert review["ac_compliance"]["total"] == 3
+    assert review["ac_compliance"]["satisfied"] == 1
+    assert review["ac_compliance"]["not_satisfied"] == 1
+    assert review["ac_compliance"]["cannot_determine"] == 1
+    assert review["_diagnostics"]["ac_compliance_discrepancy"]["reported"]["total"] == 9
+
+
+def test_main_normalizes_ac_compliance_before_emitting(tmp_path: Path, monkeypatch, capsys):
+    payload = {
+        "reviewer": "TEST",
+        "perspective": "test",
+        "verdict": "PASS",
+        "confidence": 0.8,
+        "summary": "ok",
+        "findings": [],
+        "stats": {
+            "files_reviewed": 1,
+            "files_with_issues": 0,
+            "critical": 0,
+            "major": 0,
+            "minor": 0,
+            "info": 0,
+        },
+        "ac_compliance": {
+            "total": 7,
+            "satisfied": 7,
+            "not_satisfied": 0,
+            "cannot_determine": 0,
+            "details": [
+                {"ac": "AC one", "status": "SATISFIED", "evidence": "done"},
+            ],
+        },
+    }
+    input_path = tmp_path / "review.txt"
+    input_path.write_text(f"```json\n{json.dumps(payload)}\n```")
+    monkeypatch.setattr(sys, "argv", ["parse-review.py", str(input_path)])
+    monkeypatch.setenv("REVIEWER_NAME", "TEST")
+    monkeypatch.setenv("PERSPECTIVE", "test")
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    assert excinfo.value.code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["ac_compliance"]["total"] == 1
+    assert output["_diagnostics"]["ac_compliance_discrepancy"]["actual"]["total"] == 1
 
 
 def test_invalid_finding_severity():

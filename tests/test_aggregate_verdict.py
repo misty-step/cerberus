@@ -691,6 +691,7 @@ def test_partial_model_metadata_propagates_present_values(tmp_path):
 
 _parse_override = aggregate_verdict.parse_override
 _aggregate = aggregate_verdict.aggregate
+_aggregate_ac_compliance = aggregate_verdict.aggregate_ac_compliance
 _validate_actor = aggregate_verdict.validate_actor
 _is_fallback_verdict = aggregate_verdict.is_fallback_verdict
 _parse_expected_reviewers = aggregate_verdict.parse_expected_reviewers
@@ -962,6 +963,60 @@ class TestAggregateUnit:
     def test_omits_ac_compliance_when_reviewers_do_not_report_it(self):
         result = _aggregate([_verdict("trace"), _verdict("atlas")])
         assert "ac_compliance" not in result
+
+    def test_aggregate_ac_compliance_skips_malformed_entries_and_prefers_longer_label(self):
+        result = _aggregate_ac_compliance(
+            [
+                _verdict("trace", ac_compliance={"details": "bad"}),
+                _verdict(
+                    "atlas",
+                    ac_compliance={
+                        "details": [
+                            "bad",
+                            {"ac": "   ", "status": "SATISFIED", "evidence": "skip blank"},
+                            {"ac": "AC coverage", "status": "SATISFIED", "evidence": "short"},
+                        ]
+                    },
+                ),
+                _verdict(
+                    "proof",
+                    ac_compliance={
+                        "details": [
+                            {
+                                "ac": "AC   coverage",
+                                "status": "SATISFIED",
+                                "evidence": "longer evidence wins for the final detail",
+                            }
+                        ]
+                    },
+                ),
+            ]
+        )
+
+        assert result is not None
+        assert result["total"] == 1
+        assert result["details"][0]["ac"] == "AC   coverage"
+        assert result["details"][0]["evidence"] == "longer evidence wins for the final detail"
+
+    def test_aggregate_ac_compliance_returns_none_when_all_statuses_are_invalid(self):
+        result = _aggregate_ac_compliance(
+            [
+                _verdict(
+                    "trace",
+                    ac_compliance={
+                        "details": [
+                            {
+                                "ac": "AC coverage",
+                                "status": "MAYBE",
+                                "evidence": "status is not valid",
+                            }
+                        ]
+                    },
+                )
+            ]
+        )
+
+        assert result is None
 
     def test_promotes_large_unused_runtime_dependency_to_minor(self):
         verdicts = [

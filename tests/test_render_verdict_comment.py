@@ -14,6 +14,7 @@ from lib.render_verdict_comment import (
     collect_issue_groups,
     count_findings,
     detect_skip_banner,
+    format_ac_compliance,
     format_skip_diagnostics_table,
     normalize_severity,
     normalize_verdict,
@@ -312,6 +313,77 @@ def test_omits_ac_compliance_section_when_absent(tmp_path: Path) -> None:
 
     assert code == 0, err
     assert "### AC Compliance" not in body
+
+
+def test_format_ac_compliance_omits_empty_details() -> None:
+    title, lines = format_ac_compliance({"details": []})
+
+    assert title == ""
+    assert lines == []
+
+
+def test_format_ac_compliance_skips_invalid_detail_rows() -> None:
+    title, lines = format_ac_compliance(
+        {
+            "details": [
+                "bad",
+                {"ac": "   ", "status": "SATISFIED", "evidence": "skip blank ac"},
+                {"ac": "AC coverage", "status": "UNKNOWN", "evidence": "skip bad status"},
+            ]
+        }
+    )
+
+    assert title == ""
+    assert lines == []
+
+
+def test_render_comment_includes_ac_compliance_section(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "misty-step/cerberus")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GH_HEAD_SHA", "abcdef1234567890")
+    monkeypatch.setenv("PR_CHANGED_FILES", "7")
+    monkeypatch.setenv("PR_ADDITIONS", "120")
+    monkeypatch.setenv("PR_DELETIONS", "44")
+    monkeypatch.setenv("CERBERUS_VERSION", "v1-test")
+    monkeypatch.setenv("GH_OVERRIDE_POLICY", "pr_author")
+    monkeypatch.setenv("FAIL_ON_VERDICT", "true")
+
+    body = render_comment(
+        {
+            "verdict": "WARN",
+            "summary": "1 reviewer. Failures: 0, warnings: 1, skipped: 0.",
+            "reviewers": [
+                {
+                    "reviewer": "trace",
+                    "perspective": "correctness",
+                    "verdict": "WARN",
+                    "confidence": 0.81,
+                    "summary": "AC coverage is mixed.",
+                    "runtime_seconds": 45,
+                    "findings": [],
+                    "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+                }
+            ],
+            "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+            "override": {"used": False},
+            "ac_compliance": {
+                "total": 2,
+                "satisfied": 1,
+                "details": [
+                    {"ac": "AC one", "status": "SATISFIED", "evidence": "done"},
+                    {"ac": "AC two", "status": "NOT_SATISFIED", "evidence": "missing tests"},
+                ],
+            },
+        },
+        max_findings=5,
+        max_key_findings=3,
+        marker="<!-- cerberus:verdict -->",
+    )
+
+    assert "### AC Compliance (1/2 satisfied)" in body
+    assert "- ✅ AC one" in body
+    assert "- ❌ AC two — *missing tests*" in body
 
 
 def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:
