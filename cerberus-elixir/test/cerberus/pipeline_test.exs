@@ -3,6 +3,30 @@ defmodule Cerberus.PipelineTest do
 
   alias Cerberus.Pipeline
 
+  defmodule FailingVerdictStore do
+    use GenServer
+
+    def start_link(actual_store) do
+      GenServer.start_link(__MODULE__, actual_store)
+    end
+
+    @impl true
+    def init(actual_store), do: {:ok, actual_store}
+
+    @impl true
+    def handle_call({:update_review_run, id, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.update_review_run(actual_store, id, attrs), actual_store}
+    end
+
+    def handle_call({:insert_event, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.insert_event(actual_store, attrs), actual_store}
+    end
+
+    def handle_call({:insert_verdict, _attrs}, _from, actual_store) do
+      {:reply, {:error, :boom}, actual_store}
+    end
+  end
+
   @valid_verdict_json """
   ```json
   {
@@ -512,10 +536,11 @@ defmodule Cerberus.PipelineTest do
       review_id = create_run(ctx.store)
       opts = pipeline_opts(ctx)
 
-      assert {:ok, _} = Pipeline.run(review_id, params(), opts)
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
 
       {:ok, costs} = Cerberus.Store.review_run_costs(ctx.store, review_id)
-      assert length(costs) > 0
+      assert length(costs) == result.stats.total
+      assert Enum.sort(Enum.map(costs, & &1.reviewer)) == ["atlas", "guard", "proof", "trace"]
 
       Enum.each(costs, fn c ->
         assert is_binary(c.reviewer)
@@ -529,10 +554,18 @@ defmodule Cerberus.PipelineTest do
       review_id = create_run(ctx.store)
       opts = pipeline_opts(ctx)
 
-      assert {:ok, _} = Pipeline.run(review_id, params(), opts)
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
 
       assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
-      assert length(verdicts) > 0
+      assert length(verdicts) == result.stats.total
+      assert Enum.sort(Enum.map(verdicts, & &1.reviewer)) == ["atlas", "guard", "proof", "trace"]
+
+      assert Enum.sort(Enum.map(verdicts, & &1.perspective)) == [
+               "architecture",
+               "correctness",
+               "security",
+               "testing"
+             ]
 
       Enum.each(verdicts, fn verdict ->
         assert is_binary(verdict.reviewer)
@@ -542,6 +575,22 @@ defmodule Cerberus.PipelineTest do
         assert is_binary(verdict.summary)
         assert is_list(verdict.findings)
       end)
+    end
+
+    test "fails the pipeline when verdict persistence fails", ctx do
+      review_id = create_run(ctx.store)
+      {:ok, failing_store} = FailingVerdictStore.start_link(ctx.store)
+
+      opts =
+        ctx
+        |> Map.put(:store, failing_store)
+        |> pipeline_opts()
+
+      assert {:error, {:pipeline_failed, message}} = Pipeline.run(review_id, params(), opts)
+      assert message =~ "failed to persist reviewer verdict"
+
+      assert {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "failed"
     end
   end
 end

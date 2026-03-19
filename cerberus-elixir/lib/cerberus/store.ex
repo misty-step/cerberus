@@ -278,23 +278,28 @@ defmodule Cerberus.Store do
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
     """
 
-    findings_json =
+    findings =
       attrs
       |> Map.get(:findings, [])
       |> normalize_findings()
-      |> Jason.encode!()
 
-    bindings = [
-      attrs[:review_run_id],
-      attrs[:reviewer] || "",
-      attrs[:verdict] || "SKIP",
-      attrs[:perspective] || "",
-      attrs[:confidence] || 0.0,
-      attrs[:summary] || "",
-      findings_json
-    ]
+    result =
+      with {:ok, findings_json} <- Jason.encode(findings) do
+        bindings = [
+          attrs[:review_run_id],
+          attrs[:reviewer] || "",
+          attrs[:verdict] || "SKIP",
+          attrs[:perspective] || "",
+          attrs[:confidence] || 0.0,
+          attrs[:summary] || "",
+          findings_json
+        ]
 
-    result = exec(conn, sql, bindings)
+        exec(conn, sql, bindings)
+      else
+        {:error, reason} -> {:error, {:invalid_findings, reason}}
+      end
+
     {:reply, result, state}
   end
 
@@ -627,13 +632,18 @@ defmodule Cerberus.Store do
   end
 
   defp parse_verdict_row([reviewer, perspective, verdict, confidence, summary, findings_json]) do
+    findings =
+      findings_json
+      |> safe_decode()
+      |> normalize_findings()
+
     %{
       reviewer: reviewer,
       perspective: perspective,
       verdict: verdict,
       confidence: normalize_confidence(confidence),
       summary: summary,
-      findings: safe_decode(findings_json) || []
+      findings: findings
     }
   end
 

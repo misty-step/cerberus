@@ -3,6 +3,16 @@ defmodule Cerberus.StoreReviewRunTest do
 
   alias Cerberus.Store
 
+  defp with_raw_db(database_path, fun) do
+    {:ok, conn} = Exqlite.Sqlite3.open(database_path)
+
+    try do
+      fun.(conn)
+    after
+      Exqlite.Sqlite3.close(conn)
+    end
+  end
+
   setup do
     db_path =
       Path.join(
@@ -12,7 +22,7 @@ defmodule Cerberus.StoreReviewRunTest do
 
     {:ok, store} = Store.start_link(database_path: db_path)
     on_exit(fn -> File.rm(db_path) end)
-    %{store: store}
+    %{store: store, db_path: db_path}
   end
 
   describe "create_review_run/2" do
@@ -179,6 +189,54 @@ defmodule Cerberus.StoreReviewRunTest do
                  "description" => "Add a guard clause."
                }
              ]
+    end
+
+    test "returns an error when findings cannot be JSON encoded", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      assert {:error, {:invalid_findings, _}} =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.4,
+                 summary: "Unserializable finding payload",
+                 findings: [%{raw: self()}]
+               })
+
+      assert :ok =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "PASS",
+                 confidence: 1.0,
+                 summary: "Store still healthy",
+                 findings: []
+               })
+
+      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
+      assert stored.summary == "Store still healthy"
+    end
+
+    test "normalizes malformed findings on the read path", %{store: store, db_path: db_path} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      with_raw_db(db_path, fn conn ->
+        :ok =
+          Exqlite.Sqlite3.execute(
+            conn,
+            """
+            INSERT INTO verdicts
+              (review_run_id, reviewer, verdict, perspective, confidence, summary, findings_json)
+            VALUES (#{id}, 'trace', 'WARN', 'correctness', 0.3, 'Malformed findings payload', '[null, 123, {}]')
+            """
+          )
+      end)
+
+      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
+      assert stored.findings == []
     end
   end
 end

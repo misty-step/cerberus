@@ -167,11 +167,11 @@ defmodule Cerberus.Pipeline do
           end
 
           model = pick_model(persona, pool)
-          {perspective, persona, model}
+          {persona.name, perspective, persona, model}
         end)
 
       tasks =
-        Enum.map(panel, fn {perspective, persona, model} ->
+        Enum.map(panel, fn {_reviewer, perspective, persona, model} ->
           Task.Supervisor.async_nolink(task_sup, fn ->
             Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
               spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts)
@@ -181,8 +181,8 @@ defmodule Cerberus.Pipeline do
 
       tasks
       |> Enum.zip(panel)
-      |> Enum.map(fn {task, {perspective, _persona, _model}} ->
-        collect_result(task, perspective, timeout)
+      |> Enum.map(fn {task, {reviewer, perspective, _persona, _model}} ->
+        collect_result(task, reviewer, perspective, timeout)
       end)
     after
       File.rm(diff_file)
@@ -211,12 +211,13 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  defp collect_result(task, perspective, timeout) do
+  defp collect_result(task, reviewer, perspective, timeout) do
     case Task.yield(task, timeout + 5_000) || Task.shutdown(task) do
       {:ok, {:ok, result}} ->
         %{
+          reviewer: reviewer,
           perspective: perspective,
-          verdict: result.verdict,
+          verdict: %{result.verdict | reviewer: reviewer, perspective: perspective},
           usage: result.usage,
           model: result[:model] || "unknown",
           status: :ok
@@ -224,22 +225,23 @@ defmodule Cerberus.Pipeline do
 
       {:ok, {:error, reason}} ->
         Logger.warning("Reviewer #{perspective} failed: #{inspect(reason)}")
-        degraded_result(perspective, :error)
+        degraded_result(reviewer, perspective, :error)
 
       {:exit, reason} ->
         Logger.warning("Reviewer #{perspective} crashed: #{inspect(reason)}")
-        degraded_result(perspective, :error)
+        degraded_result(reviewer, perspective, :error)
 
       nil ->
         Logger.warning("Reviewer #{perspective} timed out")
-        degraded_result(perspective, :timeout)
+        degraded_result(reviewer, perspective, :timeout)
     end
   end
 
-  defp degraded_result(perspective, status) do
+  defp degraded_result(reviewer, perspective, status) do
     %{
+      reviewer: reviewer,
       perspective: perspective,
-      verdict: skip_verdict(perspective),
+      verdict: skip_verdict(reviewer, perspective),
       usage: zero_usage(),
       model: "unknown",
       status: status
@@ -290,8 +292,8 @@ defmodule Cerberus.Pipeline do
     Enum.each(results, fn r ->
       case Store.insert_verdict(store, %{
              review_run_id: review_id,
-             reviewer: r.verdict.reviewer,
-             perspective: r.verdict.perspective,
+             reviewer: r.reviewer,
+             perspective: r.perspective,
              verdict: r.verdict.verdict,
              confidence: r.verdict.confidence,
              summary: r.verdict.summary,
@@ -312,7 +314,7 @@ defmodule Cerberus.Pipeline do
 
       Store.insert_cost(store, %{
         review_run_id: review_id,
-        reviewer: r.perspective,
+        reviewer: r.reviewer,
         model: r.model,
         prompt_tokens: r.usage.prompt_tokens,
         completion_tokens: r.usage.completion_tokens,
@@ -469,9 +471,9 @@ defmodule Cerberus.Pipeline do
 
   # --- Helpers ---
 
-  defp skip_verdict(perspective) do
+  defp skip_verdict(reviewer, perspective) do
     %Cerberus.Verdict{
-      reviewer: perspective,
+      reviewer: reviewer,
       perspective: perspective,
       verdict: "SKIP",
       confidence: 0.0,
