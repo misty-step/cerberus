@@ -1,0 +1,13 @@
+---
+extends: default
+
+rules:
+  # GitHub Actions uses `on:` which triggers truthy rule
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  # Workflow files commonly exceed 80 chars
+  line-length:
+    max: 200
+  # GitHub Actions YAML omits document-start marker
+  document-start: disable

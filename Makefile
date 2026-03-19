@@ -1,7 +1,7 @@
 # Cerberus Makefile
 # Quality gates and common tasks
 
-.PHONY: setup test lint shellcheck elixir-test validate help
+.PHONY: setup test lint shellcheck yamllint elixir-test validate help
 
 # Default target
 help:
@@ -14,8 +14,9 @@ help:
 	@echo "  make test       Run pytest suite"
 	@echo "  make lint       Run ruff on all Python files"
 	@echo "  make shellcheck Run shellcheck on all scripts"
+	@echo "  make yamllint   Run yamllint on workflow YAML"
 	@echo "  make elixir-test Run the cerberus-elixir scaffold checks"
-	@echo "  make validate   Run test + lint + shellcheck + elixir-test"
+	@echo "  make validate   Run test + lint + shellcheck + yamllint + elixir-test"
 
 # One-command install for git hooks
 setup:
@@ -40,9 +41,19 @@ lint:
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		echo "🔍 Running shellcheck..."; \
-		find scripts tests api -name "*.sh" -type f -exec shellcheck {} +; \
+		find scripts tests api cerberus-elixir -name "*.sh" -type f -exec shellcheck {} +; \
 	else \
 		echo "⚠ shellcheck not installed. Install with: brew install shellcheck (macOS) or apt install shellcheck (Linux)"; \
+		exit 1; \
+	fi
+
+# Run yamllint on workflow YAML
+yamllint:
+	@if command -v yamllint >/dev/null 2>&1; then \
+		echo "🔍 Running yamllint..."; \
+		yamllint .github/workflows/*.yml; \
+	else \
+		echo "⚠ yamllint not installed. Install with: pip install yamllint"; \
 		exit 1; \
 	fi
 
@@ -56,6 +67,6 @@ elixir-test:
 		exit 1; \
 	fi
 
-# Full local validation (test + lint + shellcheck + elixir-test)
-validate: test lint shellcheck elixir-test
+# Full local validation (test + lint + shellcheck + yamllint + elixir-test)
+validate: test lint shellcheck yamllint elixir-test
 	@echo "✓ All validation checks passed"
