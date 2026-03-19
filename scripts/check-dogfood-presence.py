@@ -46,7 +46,11 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(repo, str) or not repo:
             raise ValueError("core_repos entries must define a non-empty repo")
         min_presence = entry.get("min_presence")
-        if not isinstance(min_presence, (int, float)):
+        if (
+            not isinstance(min_presence, (int, float))
+            or isinstance(min_presence, bool)
+            or not 0.0 < float(min_presence) <= 1.0
+        ):
             raise ValueError("core_repos entries must define numeric min_presence")
 
     archived_repos = config.get("archived_repos")
@@ -56,13 +60,15 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("archived_repos entries must be non-empty strings")
     archived_repo_set = set(archived_repos)
     overlapping_repos = sorted(
-        entry.get("repo")
-        for entry in core_repos
-        if entry.get("repo") in archived_repo_set
+        {entry["repo"] for entry in core_repos} & archived_repo_set
     )
     if overlapping_repos:
         joined = ", ".join(overlapping_repos)
         raise ValueError(f"core_repos includes archived repos: {joined}")
+
+    window_days = config.get("window_days")
+    if not isinstance(window_days, int) or isinstance(window_days, bool) or window_days <= 0:
+        raise ValueError("window_days must be a positive integer")
 
     return config
 

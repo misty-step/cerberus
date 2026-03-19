@@ -260,6 +260,137 @@ def test_load_config_rejects_non_list_archived_repos(tmp_path) -> None:
         mod.load_config(config_path)
 
 
+def test_load_config_rejects_non_mapping_core_repo_entry(tmp_path) -> None:
+    mod = _import_script()
+    config_path = tmp_path / "dogfood.yml"
+    config_path.write_text(
+        dedent(
+            """
+            core_repos:
+              - misty-step/cerberus
+            archived_repos:
+              - misty-step/cerberus-cloud
+            classification:
+              absent: absent bucket description
+              skipped: skipped bucket description
+              present_clean: present clean bucket description
+              present_with_skips: present with skips bucket description
+            window_days: 7
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="core_repos entries must be mappings"):
+        mod.load_config(config_path)
+
+
+def test_load_config_rejects_core_repo_without_repo_name(tmp_path) -> None:
+    mod = _import_script()
+    config_path = tmp_path / "dogfood.yml"
+    config_path.write_text(
+        dedent(
+            """
+            core_repos:
+              - min_presence: 0.80
+            archived_repos:
+              - misty-step/cerberus-cloud
+            classification:
+              absent: absent bucket description
+              skipped: skipped bucket description
+              present_clean: present clean bucket description
+              present_with_skips: present with skips bucket description
+            window_days: 7
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="core_repos entries must define a non-empty repo"):
+        mod.load_config(config_path)
+
+
+@pytest.mark.parametrize("min_presence", ["high", True, 0, 1.5])
+def test_load_config_rejects_invalid_min_presence(tmp_path, min_presence) -> None:
+    mod = _import_script()
+    config_path = tmp_path / "dogfood.yml"
+    config_path.write_text(
+        dedent(
+            f"""
+            core_repos:
+              - repo: misty-step/cerberus
+                min_presence: {min_presence!r}
+            archived_repos:
+              - misty-step/cerberus-cloud
+            classification:
+              absent: absent bucket description
+              skipped: skipped bucket description
+              present_clean: present clean bucket description
+              present_with_skips: present with skips bucket description
+            window_days: 7
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="core_repos entries must define numeric min_presence"):
+        mod.load_config(config_path)
+
+
+@pytest.mark.parametrize("archived_repo", ["", 123])
+def test_load_config_rejects_invalid_archived_repo_entries(tmp_path, archived_repo) -> None:
+    mod = _import_script()
+    config_path = tmp_path / "dogfood.yml"
+    config_path.write_text(
+        dedent(
+            f"""
+            core_repos:
+              - repo: misty-step/cerberus
+                min_presence: 0.80
+            archived_repos:
+              - {archived_repo!r}
+            classification:
+              absent: absent bucket description
+              skipped: skipped bucket description
+              present_clean: present clean bucket description
+              present_with_skips: present with skips bucket description
+            window_days: 7
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="archived_repos entries must be non-empty strings"):
+        mod.load_config(config_path)
+
+
+@pytest.mark.parametrize("window_days", ["seven", True, 0])
+def test_load_config_rejects_invalid_window_days(tmp_path, window_days) -> None:
+    mod = _import_script()
+    config_path = tmp_path / "dogfood.yml"
+    config_path.write_text(
+        dedent(
+            f"""
+            core_repos:
+              - repo: misty-step/cerberus
+                min_presence: 0.80
+            archived_repos:
+              - misty-step/cerberus-cloud
+            classification:
+              absent: absent bucket description
+              skipped: skipped bucket description
+              present_clean: present clean bucket description
+              present_with_skips: present with skips bucket description
+            window_days: {window_days!r}
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="window_days must be a positive integer"):
+        mod.load_config(config_path)
+
+
 # --- classify_pr_from_checks tests ---
 
 
