@@ -3,6 +3,7 @@
 # Core repos where Cerberus must run consistently to produce
 # honest benchmark scorecards. Absence here weakens recall
 # claims because "never ran" is indistinguishable from "missed."
+# Active repos only. ADR 005 archived cerberus-cloud and cerberus-web.
 
 core_repos:
   - repo: misty-step/cerberus
@@ -11,6 +12,10 @@ core_repos:
     min_presence: 0.80
   - repo: misty-step/gitpulse
     min_presence: 0.70
+
+archived_repos:
+  - misty-step/cerberus-cloud
+  - misty-step/cerberus-web
 
 # Presence classification taxonomy
 #
