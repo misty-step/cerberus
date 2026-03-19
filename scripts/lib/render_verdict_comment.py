@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -253,6 +254,13 @@ def truncate(text: object, *, max_len: int) -> str:
     if len(raw) <= max_len:
         return raw
     return raw[: max_len - 1].rstrip() + "…"
+
+
+def escape_inline_markdown(text: object) -> str:
+    """Escape untrusted inline markdown content for safe checklist rendering."""
+    collapsed = " ".join(str(text or "").split())
+    escaped = html.escape(collapsed, quote=False)
+    return re.sub(r"([\\`*_{}\[\]()#+!|])", r"\\\1", escaped)
 
 
 def top_findings(reviewer: dict, *, max_findings: int) -> list[dict]:
@@ -699,11 +707,11 @@ def format_ac_compliance(ac_compliance: object) -> tuple[str, list[str]]:
     for detail in details:
         if not isinstance(detail, dict):
             continue
-        ac_text = str(detail.get("ac") or "").strip()
+        ac_text = escape_inline_markdown(detail.get("ac"))
         status = str(detail.get("status") or "").strip().upper()
         if not ac_text or status not in icon_by_status:
             continue
-        evidence = truncate(detail.get("evidence"), max_len=240)
+        evidence = escape_inline_markdown(truncate(detail.get("evidence"), max_len=240))
         line = f"- {icon_by_status[status]} {ac_text}"
         if evidence and status != "SATISFIED":
             line += f" — *{evidence}*"
