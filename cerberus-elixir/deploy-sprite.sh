@@ -104,12 +104,24 @@ start_app() {
 
 restart_app() {
   log "Restarting Cerberus API"
+  # shellcheck disable=SC2016  # $_MIX expanded by inner sh, not outer
   sprite -s "$SPRITE_NAME" exec -- sh -c '
-    pkill -f "mix run" 2>/dev/null || true
-    sleep 2
+    # Bracket trick prevents pkill matching itself; $_MIX variable prevents
+    # matching the parent sh -c whose command line contains the nohup text
+    pkill -f "[m]ix run --no-halt" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      pgrep -f "[m]ix run --no-halt" > /dev/null || break
+      sleep 1
+    done
+    # Escalate to SIGKILL if graceful shutdown failed
+    if pgrep -f "[m]ix run --no-halt" > /dev/null 2>&1; then
+      pkill -9 -f "[m]ix run --no-halt" 2>/dev/null || true
+      sleep 1
+    fi
     . /home/sprite/.cerberus-env
     cd /home/sprite/cerberus-elixir
-    nohup sh -c "MIX_ENV=prod elixir --sname cerberus -S mix run --no-halt" \
+    _MIX=mix
+    nohup sh -c "MIX_ENV=prod elixir --sname cerberus -S $_MIX run --no-halt" \
       > /home/sprite/cerberus.log 2>&1 &
   '
   log "Restart initiated"
