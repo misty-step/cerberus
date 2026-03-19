@@ -4,7 +4,12 @@ defmodule Cerberus.StoreReviewRunTest do
   alias Cerberus.Store
 
   setup do
-    db_path = Path.join(System.tmp_dir!(), "cerberus_store_rr_test_#{System.unique_integer([:positive])}.db")
+    db_path =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus_store_rr_test_#{System.unique_integer([:positive])}.db"
+      )
+
     {:ok, store} = Store.start_link(database_path: db_path)
     on_exit(fn -> File.rm(db_path) end)
     %{store: store}
@@ -54,11 +59,12 @@ defmodule Cerberus.StoreReviewRunTest do
       id = Store.create_review_run(store, %{repo: "a/b", pr_number: 1, head_sha: "sha1"})
       verdict = %{"verdict" => "PASS", "summary" => "All clear"}
 
-      assert :ok = Store.update_review_run(store, id, %{
-        status: "completed",
-        aggregated_verdict_json: Jason.encode!(verdict),
-        completed_at: "2026-03-15T12:00:00Z"
-      })
+      assert :ok =
+               Store.update_review_run(store, id, %{
+                 status: "completed",
+                 aggregated_verdict_json: Jason.encode!(verdict),
+                 completed_at: "2026-03-15T12:00:00Z"
+               })
 
       {:ok, run} = Store.get_review_run(store, id)
       assert run.status == "completed"
@@ -84,6 +90,95 @@ defmodule Cerberus.StoreReviewRunTest do
 
     test "returns not_found for non-existent ID", %{store: store} do
       assert {:error, :not_found} = Store.update_review_run(store, 99999, %{status: "running"})
+    end
+  end
+
+  describe "verdict persistence" do
+    test "stores and loads per-reviewer verdict details", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      assert :ok =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.85,
+                 summary: "Potential nil dereference",
+                 findings: [
+                   %{
+                     severity: "major",
+                     category: "correctness",
+                     file: "lib/foo.ex",
+                     line: 12,
+                     title: "Nil guard missing",
+                     description: "The code dereferences a maybe-nil value.",
+                     suggestion: "Guard the value before dereferencing."
+                   }
+                 ]
+               })
+
+      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
+      assert stored.reviewer == "trace"
+      assert stored.perspective == "correctness"
+      assert stored.verdict == "WARN"
+      assert stored.confidence == 0.85
+      assert stored.summary == "Potential nil dereference"
+
+      assert stored.findings == [
+               %{
+                 "severity" => "major",
+                 "category" => "correctness",
+                 "file" => "lib/foo.ex",
+                 "line" => 12,
+                 "title" => "Nil guard missing",
+                 "description" => "The code dereferences a maybe-nil value.",
+                 "suggestion" => "Guard the value before dereferencing."
+               }
+             ]
+    end
+
+    test "returns empty verdicts list for unknown review run", %{store: store} do
+      assert {:ok, []} = Store.review_run_verdicts(store, 99999)
+    end
+
+    test "drops invalid findings before storing", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      assert :ok =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.4,
+                 summary: "Mixed findings",
+                 findings: [
+                   %{
+                     severity: "minor",
+                     category: "correctness",
+                     file: "lib/foo.ex",
+                     line: 9,
+                     title: "Guard missing",
+                     description: "Add a guard clause."
+                   },
+                   nil,
+                   123
+                 ]
+               })
+
+      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
+
+      assert stored.findings == [
+               %{
+                 "severity" => "minor",
+                 "category" => "correctness",
+                 "file" => "lib/foo.ex",
+                 "line" => 9,
+                 "title" => "Guard missing",
+                 "description" => "Add a guard clause."
+               }
+             ]
     end
   end
 end

@@ -524,5 +524,24 @@ defmodule Cerberus.PipelineTest do
         assert c.completion_tokens >= 0
       end)
     end
+
+    test "persists per-reviewer verdicts", ctx do
+      review_id = create_run(ctx.store)
+      opts = pipeline_opts(ctx)
+
+      assert {:ok, _} = Pipeline.run(review_id, params(), opts)
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) > 0
+
+      Enum.each(verdicts, fn verdict ->
+        assert is_binary(verdict.reviewer)
+        assert is_binary(verdict.perspective)
+        assert verdict.verdict in ["PASS", "WARN", "FAIL", "SKIP"]
+        assert is_float(verdict.confidence)
+        assert is_binary(verdict.summary)
+        assert is_list(verdict.findings)
+      end)
+    end
   end
 end

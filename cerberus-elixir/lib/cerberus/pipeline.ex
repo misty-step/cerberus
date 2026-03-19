@@ -75,7 +75,8 @@ defmodule Cerberus.Pipeline do
           run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts)
         end)
 
-      # 5. Persist costs
+      # 5. Persist reviewer artifacts
+      persist_verdicts(results, review_id, store)
       persist_costs(results, review_id, store)
 
       # 6. Resolve override
@@ -284,6 +285,26 @@ defmodule Cerberus.Pipeline do
   end
 
   # --- Cost ---
+
+  defp persist_verdicts(results, review_id, store) do
+    Enum.each(results, fn r ->
+      case Store.insert_verdict(store, %{
+             review_run_id: review_id,
+             reviewer: r.verdict.reviewer,
+             perspective: r.verdict.perspective,
+             verdict: r.verdict.verdict,
+             confidence: r.verdict.confidence,
+             summary: r.verdict.summary,
+             findings: r.verdict.findings
+           }) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          raise "failed to persist reviewer verdict: #{inspect(reason)}"
+      end
+    end)
+  end
 
   defp persist_costs(results, review_id, store) do
     Enum.each(results, fn r ->

@@ -23,6 +23,10 @@ defmodule Cerberus.Store do
       review_run_id INTEGER NOT NULL,
       reviewer TEXT NOT NULL,
       verdict TEXT NOT NULL,
+      perspective TEXT NOT NULL DEFAULT '',
+      confidence REAL NOT NULL DEFAULT 0.0,
+      summary TEXT NOT NULL DEFAULT '',
+      findings_json TEXT NOT NULL DEFAULT '[]',
       inserted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -50,6 +54,13 @@ defmodule Cerberus.Store do
       inserted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """
+  ]
+
+  @verdicts_column_migrations [
+    {"perspective", "ALTER TABLE verdicts ADD COLUMN perspective TEXT NOT NULL DEFAULT ''"},
+    {"confidence", "ALTER TABLE verdicts ADD COLUMN confidence REAL NOT NULL DEFAULT 0.0"},
+    {"summary", "ALTER TABLE verdicts ADD COLUMN summary TEXT NOT NULL DEFAULT ''"},
+    {"findings_json", "ALTER TABLE verdicts ADD COLUMN findings_json TEXT NOT NULL DEFAULT '[]'"}
   ]
 
   def start_link(opts) do
@@ -85,6 +96,27 @@ defmodule Cerberus.Store do
   @spec update_review_run(pid() | atom(), integer(), map()) :: :ok | {:error, term()}
   def update_review_run(store, id, attrs) do
     GenServer.call(store, {:update_review_run, id, attrs})
+  end
+
+  @doc """
+  Insert a reviewer verdict record for a review run.
+
+  Attrs: `:review_run_id`, `:reviewer`, `:perspective`, `:verdict`,
+  `:confidence`, `:summary`, `:findings`.
+  """
+  @spec insert_verdict(pid() | atom(), map()) :: :ok | {:error, term()}
+  def insert_verdict(store, attrs) do
+    GenServer.call(store, {:insert_verdict, attrs})
+  end
+
+  @doc """
+  Query persisted reviewer verdicts for a specific review run.
+
+  Returns a list of per-reviewer verdict records in insertion order.
+  """
+  @spec review_run_verdicts(pid() | atom(), integer()) :: {:ok, [map()]} | {:error, term()}
+  def review_run_verdicts(store, review_run_id) do
+    GenServer.call(store, {:review_run_verdicts, review_run_id})
   end
 
   @doc """
@@ -139,7 +171,7 @@ defmodule Cerberus.Store do
     with :ok <- ensure_database_directory(database_path),
          {:ok, conn} <- Exqlite.Sqlite3.open(database_path),
          :ok <- configure_pragmas(conn),
-         :ok <- ensure_schema_tables(conn) do
+         :ok <- ensure_schema_ready(conn) do
       state = %{conn: conn, database_path: database_path}
       {:ok, state}
     end
@@ -147,7 +179,7 @@ defmodule Cerberus.Store do
 
   @impl true
   def handle_call(:ensure_schema, _from, %{conn: conn} = state) do
-    {:reply, ensure_schema_tables(conn), state}
+    {:reply, ensure_schema_ready(conn), state}
   end
 
   def handle_call(:table_names, _from, %{conn: conn} = state) do
@@ -237,6 +269,33 @@ defmodule Cerberus.Store do
 
       {:reply, result, state}
     end
+  end
+
+  def handle_call({:insert_verdict, attrs}, _from, %{conn: conn} = state) do
+    sql = """
+    INSERT INTO verdicts
+      (review_run_id, reviewer, verdict, perspective, confidence, summary, findings_json)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    """
+
+    findings_json =
+      attrs
+      |> Map.get(:findings, [])
+      |> normalize_findings()
+      |> Jason.encode!()
+
+    bindings = [
+      attrs[:review_run_id],
+      attrs[:reviewer] || "",
+      attrs[:verdict] || "SKIP",
+      attrs[:perspective] || "",
+      attrs[:confidence] || 0.0,
+      attrs[:summary] || "",
+      findings_json
+    ]
+
+    result = exec(conn, sql, bindings)
+    {:reply, result, state}
   end
 
   def handle_call({:insert_cost, attrs}, _from, %{conn: conn} = state) do
@@ -337,6 +396,18 @@ defmodule Cerberus.Store do
     """
 
     result = query_rows(conn, sql, [run_id], &parse_cost_row/1)
+    {:reply, result, state}
+  end
+
+  def handle_call({:review_run_verdicts, run_id}, _from, %{conn: conn} = state) do
+    sql = """
+    SELECT reviewer, perspective, verdict, confidence, summary, findings_json
+    FROM verdicts
+    WHERE review_run_id = ?1
+    ORDER BY inserted_at, id
+    """
+
+    result = query_rows(conn, sql, [run_id], &parse_verdict_row/1)
     {:reply, result, state}
   end
 
@@ -444,6 +515,42 @@ defmodule Cerberus.Store do
     end)
   end
 
+  defp ensure_schema_ready(conn) do
+    with :ok <- ensure_schema_tables(conn),
+         {:ok, verdict_columns} <- table_columns(conn, "verdicts") do
+      migrate_verdicts_table(conn, verdict_columns)
+    end
+  end
+
+  defp table_columns(conn, table_name) do
+    sql = "PRAGMA table_info(#{table_name})"
+
+    with_statement(conn, sql, [], fn conn, stmt ->
+      collect_table_columns(conn, stmt, [])
+    end)
+  end
+
+  defp collect_table_columns(conn, stmt, acc) do
+    case Exqlite.Sqlite3.step(conn, stmt) do
+      {:row, [_cid, name | _rest]} -> collect_table_columns(conn, stmt, [name | acc])
+      :done -> {:ok, Enum.reverse(acc)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp migrate_verdicts_table(conn, existing_columns) do
+    Enum.reduce_while(@verdicts_column_migrations, :ok, fn {column, statement}, :ok ->
+      if column in existing_columns do
+        {:cont, :ok}
+      else
+        case Exqlite.Sqlite3.execute(conn, statement) do
+          :ok -> {:cont, :ok}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end
+    end)
+  end
+
   # --- Data helpers ---
 
   defp parse_model_performance_row([
@@ -479,6 +586,24 @@ defmodule Cerberus.Store do
     end
   end
 
+  defp normalize_findings(findings) when is_list(findings),
+    do: Enum.flat_map(findings, &normalize_finding/1)
+
+  defp normalize_findings(_), do: []
+
+  defp normalize_finding(%_{} = finding), do: finding |> Map.from_struct() |> normalize_finding()
+
+  defp normalize_finding(finding) when is_map(finding) do
+    normalized =
+      finding
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+
+    if map_size(normalized) == 0, do: [], else: [normalized]
+  end
+
+  defp normalize_finding(_), do: []
+
   defp parse_cost_row([
          reviewer,
          model,
@@ -500,4 +625,19 @@ defmodule Cerberus.Store do
       is_fallback: is_fallback == 1
     }
   end
+
+  defp parse_verdict_row([reviewer, perspective, verdict, confidence, summary, findings_json]) do
+    %{
+      reviewer: reviewer,
+      perspective: perspective,
+      verdict: verdict,
+      confidence: normalize_confidence(confidence),
+      summary: summary,
+      findings: safe_decode(findings_json) || []
+    }
+  end
+
+  defp normalize_confidence(confidence) when is_float(confidence), do: confidence
+  defp normalize_confidence(confidence) when is_integer(confidence), do: confidence / 1
+  defp normalize_confidence(_), do: 0.0
 end
