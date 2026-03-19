@@ -145,3 +145,14 @@ class TestDeployScriptRestart:
     def test_escalates_to_sigkill(self) -> None:
         """Must SIGKILL if graceful shutdown fails after polling."""
         assert "pkill -9" in self.restart_body
+
+    def test_nohup_obfuscates_pattern(self) -> None:
+        """nohup line must not contain literal 'mix run' to prevent parent sh -c match."""
+        # The outer sh -c command line is visible to pkill -f; if the nohup
+        # line contains 'mix run --no-halt' literally, pkill kills the parent
+        nohup_start = self.restart_body.index("nohup")
+        nohup_line = self.restart_body[nohup_start : self.restart_body.index("\n", nohup_start)]
+        assert "mix run" not in nohup_line, (
+            "nohup command must obfuscate 'mix run' (e.g. via variable) "
+            "to prevent pkill matching the parent sh -c process"
+        )
