@@ -22,7 +22,7 @@ defmodule Cerberus.PipelineTest do
       {:reply, Cerberus.Store.insert_event(actual_store, attrs), actual_store}
     end
 
-    def handle_call({:insert_verdict, _attrs}, _from, actual_store) do
+    def handle_call({:insert_verdicts, _attrs_list}, _from, actual_store) do
       {:reply, {:error, :boom}, actual_store}
     end
   end
@@ -280,6 +280,10 @@ defmodule Cerberus.PipelineTest do
       assert result.stats.skip >= 1
       # At least one successful reviewer
       assert result.stats.pass >= 1 or result.stats.warn >= 1
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.any?(verdicts, &(&1.verdict == "SKIP"))
     end
 
     test "reviewer returns error — degraded to SKIP", ctx do
@@ -300,6 +304,10 @@ defmodule Cerberus.PipelineTest do
       # All reviewers failed — all SKIP
       assert result.verdict == "SKIP"
       assert result.stats.skip == result.stats.total
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.all?(verdicts, &(&1.verdict == "SKIP"))
     end
 
     test "reviewer process crashes — degraded to SKIP via {:exit, reason}", ctx do
@@ -320,6 +328,10 @@ defmodule Cerberus.PipelineTest do
 
       # Crashed reviewers degraded to SKIP
       assert result.stats.skip == result.stats.total
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.all?(verdicts, &(&1.verdict == "SKIP"))
     end
   end
 
@@ -591,6 +603,7 @@ defmodule Cerberus.PipelineTest do
 
       assert {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
       assert run.status == "failed"
+      assert {:ok, []} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
     end
   end
 end

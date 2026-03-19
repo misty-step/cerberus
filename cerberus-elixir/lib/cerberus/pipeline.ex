@@ -289,23 +289,26 @@ defmodule Cerberus.Pipeline do
   # --- Cost ---
 
   defp persist_verdicts(results, review_id, store) do
-    Enum.each(results, fn r ->
-      case Store.insert_verdict(store, %{
-             review_run_id: review_id,
-             reviewer: r.reviewer,
-             perspective: r.perspective,
-             verdict: r.verdict.verdict,
-             confidence: r.verdict.confidence,
-             summary: r.verdict.summary,
-             findings: r.verdict.findings
-           }) do
-        :ok ->
-          :ok
+    case Store.insert_verdicts(
+           store,
+           Enum.map(results, fn r ->
+             %{
+               review_run_id: review_id,
+               reviewer: r.reviewer,
+               perspective: r.perspective,
+               verdict: r.verdict.verdict,
+               confidence: r.verdict.confidence,
+               summary: r.verdict.summary,
+               findings: r.verdict.findings
+             }
+           end)
+         ) do
+      :ok ->
+        :ok
 
-        {:error, reason} ->
-          raise "failed to persist reviewer verdict: #{inspect(reason)}"
-      end
-    end)
+      {:error, reason} ->
+        raise "failed to persist reviewer verdict: #{inspect(reason)}"
+    end
   end
 
   defp persist_costs(results, review_id, store) do

@@ -2,6 +2,7 @@ defmodule Cerberus.StoreReviewRunTest do
   use ExUnit.Case, async: true
 
   alias Cerberus.Store
+  alias Cerberus.Verdict.Finding
 
   defp with_raw_db(database_path, fun) do
     {:ok, conn} = Exqlite.Sqlite3.open(database_path)
@@ -191,6 +192,73 @@ defmodule Cerberus.StoreReviewRunTest do
              ]
     end
 
+    test "normalizes struct findings before storing", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      assert :ok =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.4,
+                 summary: "Struct finding",
+                 findings: [
+                   %Finding{
+                     severity: "major",
+                     category: "correctness",
+                     file: "lib/foo.ex",
+                     line: 18,
+                     title: "Guard missing",
+                     description: "Add a guard clause.",
+                     suggestion: "Pattern match before dereferencing."
+                   }
+                 ]
+               })
+
+      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
+
+      assert stored.findings == [
+               %{
+                 "severity" => "major",
+                 "category" => "correctness",
+                 "file" => "lib/foo.ex",
+                 "line" => 18,
+                 "title" => "Guard missing",
+                 "description" => "Add a guard clause.",
+                 "suggestion" => "Pattern match before dereferencing."
+               }
+             ]
+    end
+
+    test "batch verdict inserts are atomic when one payload is invalid", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      assert {:error, {:invalid_findings, _}} =
+               Store.insert_verdicts(store, [
+                 %{
+                   review_run_id: id,
+                   reviewer: "trace",
+                   perspective: "correctness",
+                   verdict: "PASS",
+                   confidence: 1.0,
+                   summary: "Healthy verdict",
+                   findings: []
+                 },
+                 %{
+                   review_run_id: id,
+                   reviewer: "guard",
+                   perspective: "security",
+                   verdict: "WARN",
+                   confidence: 0.5,
+                   summary: "Bad verdict payload",
+                   findings: [%{raw: self()}]
+                 }
+               ])
+
+      assert {:ok, []} = Store.review_run_verdicts(store, id)
+    end
+
     test "returns an error when findings cannot be JSON encoded", %{store: store} do
       id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
 
@@ -237,6 +305,48 @@ defmodule Cerberus.StoreReviewRunTest do
 
       assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
       assert stored.findings == []
+    end
+
+    test "normalizes integer and invalid confidence values on the read path", %{
+      store: store,
+      db_path: db_path
+    } do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      with_raw_db(db_path, fn conn ->
+        :ok =
+          Exqlite.Sqlite3.execute(
+            conn,
+            """
+            INSERT INTO verdicts
+              (review_run_id, reviewer, verdict, perspective, confidence, summary, findings_json)
+            VALUES
+              (#{id}, 'trace', 'PASS', 'correctness', 1, 'Integer confidence', '[]'),
+              (#{id}, 'guard', 'WARN', 'security', 'bogus', 'Invalid confidence', '[]')
+            """
+          )
+      end)
+
+      assert {:ok, verdicts} = Store.review_run_verdicts(store, id)
+
+      assert Enum.sort_by(verdicts, & &1.reviewer) == [
+               %{
+                 reviewer: "guard",
+                 perspective: "security",
+                 verdict: "WARN",
+                 confidence: 0.0,
+                 summary: "Invalid confidence",
+                 findings: []
+               },
+               %{
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "PASS",
+                 confidence: 1.0,
+                 summary: "Integer confidence",
+                 findings: []
+               }
+             ]
     end
   end
 end

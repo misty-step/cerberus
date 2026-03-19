@@ -74,4 +74,57 @@ defmodule Cerberus.StoreTest do
     assert stored.perspective == "correctness"
     assert stored.summary == "Looks good"
   end
+
+  test "migrates partially upgraded verdict table columns on boot" do
+    database_path =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus-store-partial-#{System.unique_integer([:positive])}.db"
+      )
+
+    on_exit(fn -> File.rm(database_path) end)
+
+    with_raw_db(database_path, fn conn ->
+      :ok =
+        Exqlite.Sqlite3.execute(
+          conn,
+          """
+          CREATE TABLE verdicts (
+            id INTEGER PRIMARY KEY,
+            review_run_id INTEGER NOT NULL,
+            reviewer TEXT NOT NULL,
+            verdict TEXT NOT NULL,
+            perspective TEXT NOT NULL DEFAULT '',
+            inserted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+          """
+        )
+    end)
+
+    store = start_supervised!({Cerberus.Store, database_path: database_path})
+
+    review_id =
+      Cerberus.Store.create_review_run(store, %{
+        repo: "org/repo",
+        pr_number: 42,
+        head_sha: "abc123"
+      })
+
+    assert :ok =
+             Cerberus.Store.insert_verdict(store, %{
+               review_run_id: review_id,
+               reviewer: "trace",
+               perspective: "correctness",
+               verdict: "PASS",
+               confidence: 0.9,
+               summary: "Looks good",
+               findings: []
+             })
+
+    assert {:ok, [stored]} = Cerberus.Store.review_run_verdicts(store, review_id)
+    assert stored.perspective == "correctness"
+    assert stored.confidence == 0.9
+    assert stored.summary == "Looks good"
+    assert stored.findings == []
+  end
 end
