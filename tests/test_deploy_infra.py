@@ -67,6 +67,12 @@ class TestDeployWorkflow:
     def test_deploy_installs_sprite_cli(self) -> None:
         assert "sprite" in self.text
 
+    def test_sprite_install_is_pinned_with_checksum(self) -> None:
+        assert "install | sh" not in self.text
+        assert "${SPRITE_VERSION}" in self.text
+        assert "sha256sum -c" in self.text
+        assert re.search(r"SPRITE_SHA256:\s*[0-9a-f]{64}", self.text)
+
     def test_deploy_authenticates(self) -> None:
         assert "SPRITE_TOKEN" in self.text
 
