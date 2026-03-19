@@ -312,21 +312,30 @@ defmodule Cerberus.Pipeline do
   end
 
   defp persist_costs(results, review_id, store) do
-    Enum.each(results, fn r ->
-      cost = Cost.calculate(r.usage.prompt_tokens, r.usage.completion_tokens, r.model)
+    case Store.insert_costs(
+           store,
+           Enum.map(results, fn r ->
+             cost = Cost.calculate(r.usage.prompt_tokens, r.usage.completion_tokens, r.model)
 
-      Store.insert_cost(store, %{
-        review_run_id: review_id,
-        reviewer: r.reviewer,
-        model: r.model,
-        prompt_tokens: r.usage.prompt_tokens,
-        completion_tokens: r.usage.completion_tokens,
-        cost_usd: cost,
-        duration_ms: 0,
-        status: status_label(r.status),
-        is_fallback: false
-      })
-    end)
+             %{
+               review_run_id: review_id,
+               reviewer: r.reviewer,
+               model: r.model,
+               prompt_tokens: r.usage.prompt_tokens,
+               completion_tokens: r.usage.completion_tokens,
+               cost_usd: cost,
+               duration_ms: 0,
+               status: status_label(r.status),
+               is_fallback: false
+             }
+           end)
+         ) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise "failed to persist reviewer cost: #{inspect(reason)}"
+    end
   end
 
   defp status_label(:ok), do: "success"

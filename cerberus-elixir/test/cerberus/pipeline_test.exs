@@ -27,6 +27,34 @@ defmodule Cerberus.PipelineTest do
     end
   end
 
+  defmodule FailingCostStore do
+    use GenServer
+
+    def start_link(actual_store) do
+      GenServer.start_link(__MODULE__, actual_store)
+    end
+
+    @impl true
+    def init(actual_store), do: {:ok, actual_store}
+
+    @impl true
+    def handle_call({:update_review_run, id, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.update_review_run(actual_store, id, attrs), actual_store}
+    end
+
+    def handle_call({:insert_event, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.insert_event(actual_store, attrs), actual_store}
+    end
+
+    def handle_call({:insert_verdicts, attrs_list}, _from, actual_store) do
+      {:reply, Cerberus.Store.insert_verdicts(actual_store, attrs_list), actual_store}
+    end
+
+    def handle_call({:insert_costs, _attrs_list}, _from, actual_store) do
+      {:reply, {:error, :boom}, actual_store}
+    end
+  end
+
   @valid_verdict_json """
   ```json
   {
@@ -604,6 +632,23 @@ defmodule Cerberus.PipelineTest do
       assert {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
       assert run.status == "failed"
       assert {:ok, []} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+    end
+
+    test "fails the pipeline when cost persistence fails", ctx do
+      review_id = create_run(ctx.store)
+      {:ok, failing_store} = FailingCostStore.start_link(ctx.store)
+
+      opts =
+        ctx
+        |> Map.put(:store, failing_store)
+        |> pipeline_opts()
+
+      assert {:error, {:pipeline_failed, message}} = Pipeline.run(review_id, params(), opts)
+      assert message =~ "failed to persist reviewer cost"
+
+      assert {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "failed"
+      assert {:ok, []} = Cerberus.Store.review_run_costs(ctx.store, review_id)
     end
   end
 end

@@ -141,6 +141,16 @@ defmodule Cerberus.Store do
     GenServer.call(store, {:insert_cost, attrs})
   end
 
+  @doc """
+  Insert reviewer cost records for a review run atomically.
+
+  If any row fails to write, none of the rows are committed.
+  """
+  @spec insert_costs(pid() | atom(), [map()]) :: :ok | {:error, term()}
+  def insert_costs(store, attrs_list) do
+    GenServer.call(store, {:insert_costs, attrs_list})
+  end
+
   @doc "Insert an event record (errors, lifecycle transitions)."
   @spec insert_event(pid() | atom(), map()) :: :ok | {:error, term()}
   def insert_event(store, attrs) do
@@ -291,27 +301,11 @@ defmodule Cerberus.Store do
   end
 
   def handle_call({:insert_cost, attrs}, _from, %{conn: conn} = state) do
-    sql = """
-    INSERT INTO review_costs
-      (review_run_id, reviewer, model, prompt_tokens, completion_tokens,
-       cost_usd, duration_ms, status, is_fallback)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-    """
+    {:reply, insert_cost_records(conn, [attrs]), state}
+  end
 
-    bindings = [
-      attrs[:review_run_id],
-      attrs[:reviewer] || "",
-      attrs[:model] || "",
-      attrs[:prompt_tokens] || 0,
-      attrs[:completion_tokens] || 0,
-      attrs[:cost_usd] || 0.0,
-      attrs[:duration_ms] || 0,
-      to_string(attrs[:status] || "success"),
-      if(attrs[:is_fallback], do: 1, else: 0)
-    ]
-
-    result = exec(conn, sql, bindings)
-    {:reply, result, state}
+  def handle_call({:insert_costs, attrs_list}, _from, %{conn: conn} = state) do
+    {:reply, insert_cost_records(conn, attrs_list), state}
   end
 
   def handle_call({:insert_event, attrs}, _from, %{conn: conn} = state) do
@@ -729,6 +723,46 @@ defmodule Cerberus.Store do
     INSERT INTO verdicts
       (review_run_id, reviewer, verdict, perspective, confidence, summary, findings_json)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    """
+  end
+
+  defp insert_cost_records(_conn, []), do: :ok
+
+  defp insert_cost_records(conn, attrs_list) do
+    attrs_list
+    |> Enum.map(&prepare_cost_binding/1)
+    |> then(fn bindings_list ->
+      transaction(conn, fn ->
+        Enum.reduce_while(bindings_list, :ok, fn bindings, :ok ->
+          case exec(conn, cost_insert_sql(), bindings) do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+        end)
+      end)
+    end)
+  end
+
+  defp prepare_cost_binding(attrs) do
+    [
+      attrs[:review_run_id],
+      attrs[:reviewer] || "",
+      attrs[:model] || "",
+      attrs[:prompt_tokens] || 0,
+      attrs[:completion_tokens] || 0,
+      attrs[:cost_usd] || 0.0,
+      attrs[:duration_ms] || 0,
+      to_string(attrs[:status] || "success"),
+      if(attrs[:is_fallback], do: 1, else: 0)
+    ]
+  end
+
+  defp cost_insert_sql do
+    """
+    INSERT INTO review_costs
+      (review_run_id, reviewer, model, prompt_tokens, completion_tokens,
+       cost_usd, duration_ms, status, is_fallback)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
     """
   end
 
