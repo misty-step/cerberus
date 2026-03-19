@@ -964,6 +964,48 @@ class TestAggregateUnit:
         result = _aggregate([_verdict("trace"), _verdict("atlas")])
         assert "ac_compliance" not in result
 
+    def test_run_aggregate_preserves_ac_compliance_from_artifacts(self, tmp_path):
+        (tmp_path / "trace.json").write_text(
+            json.dumps(
+                {
+                    "reviewer": "trace",
+                    "perspective": "correctness",
+                    "verdict": "PASS",
+                    "confidence": 0.9,
+                    "summary": "AC review complete.",
+                    "findings": [],
+                    "stats": {
+                        "files_reviewed": 1,
+                        "files_with_issues": 0,
+                        "critical": 0,
+                        "major": 0,
+                        "minor": 0,
+                        "info": 0,
+                    },
+                    "ac_compliance": {
+                        "total": 1,
+                        "satisfied": 1,
+                        "not_satisfied": 0,
+                        "cannot_determine": 0,
+                        "details": [
+                            {
+                                "ac": "Given reviewers output AC satisfaction findings, verdict JSON includes ac_compliance",
+                                "status": "SATISFIED",
+                                "evidence": "artifact ingestion preserved ac_compliance",
+                            }
+                        ],
+                    },
+                }
+            )
+        )
+
+        code, out, err = run_aggregate(str(tmp_path))
+
+        assert code == 0, err
+        result = json.loads(Path("/tmp/verdict.json").read_text())
+        assert result["ac_compliance"]["total"] == 1
+        assert result["ac_compliance"]["details"][0]["status"] == "SATISFIED"
+
     def test_aggregate_ac_compliance_skips_malformed_entries_and_prefers_longer_label(self):
         result = _aggregate_ac_compliance(
             [

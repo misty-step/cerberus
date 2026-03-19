@@ -811,6 +811,7 @@ def main() -> None:
             "summary": data.get("summary", ""),
             "findings": data.get("findings"),
             "stats": data.get("stats"),
+            "ac_compliance": data.get("ac_compliance"),
             "runtime_seconds": data.get("runtime_seconds"),
             "model_used": data.get("model_used"),
             "primary_model": data.get("primary_model"),
