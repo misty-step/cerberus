@@ -533,12 +533,12 @@ defmodule Cerberus.ReviewerTest do
 
       {:ok, _} = Reviewer.review(pid, pr_context())
 
-      assert_receive {:telemetry, [:cerberus, :reviewer, :complete], measurements, metadata}
+      assert_receive {:telemetry, [:cerberus, :reviewer, :complete], measurements,
+                      %{perspective: :correctness, model: "test-model"} = metadata}
       assert measurements.prompt_tokens == 500
       assert measurements.completion_tokens == 200
       assert measurements.duration_ms >= 0
       assert metadata.perspective == :correctness
-      assert metadata.model == "test-model"
 
       :telemetry.detach("test-reviewer-complete")
     end
@@ -569,9 +569,9 @@ defmodule Cerberus.ReviewerTest do
 
       {:error, _} = Reviewer.review(pid, pr_context())
 
-      assert_receive {:telemetry, [:cerberus, :reviewer, :error], measurements, metadata}
+      assert_receive {:telemetry, [:cerberus, :reviewer, :error], measurements,
+                      %{perspective: :correctness, model: "test-model"}}
       assert measurements.duration_ms >= 0
-      assert metadata.perspective == :correctness
 
       :telemetry.detach("test-reviewer-error")
     end
@@ -614,8 +614,8 @@ defmodule Cerberus.ReviewerTest do
 
       {:ok, _} = Reviewer.review(pid, pr_context())
 
-      assert_receive {:telemetry, [:cerberus, :reviewer, :complete], _measurements, metadata}
-      assert metadata.model == "fallback-model"
+      assert_receive {:telemetry, [:cerberus, :reviewer, :complete], _measurements,
+                      %{perspective: :correctness, model: "fallback-model"}}
 
       :telemetry.detach("test-reviewer-fallback-model")
     end
