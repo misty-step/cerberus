@@ -28,7 +28,43 @@ DOGFOOD_CONFIG = ROOT / "defaults" / "dogfood.yml"
 def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """Load dogfood presence configuration."""
     path = config_path or DOGFOOD_CONFIG
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return validate_config(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def validate_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Validate dogfood presence configuration."""
+    if not isinstance(config, dict):
+        raise ValueError("dogfood config must be a mapping")
+
+    core_repos = config.get("core_repos")
+    if not isinstance(core_repos, list) or not core_repos:
+        raise ValueError("core_repos must be a non-empty list")
+    for entry in core_repos:
+        if not isinstance(entry, dict):
+            raise ValueError("core_repos entries must be mappings")
+        repo = entry.get("repo")
+        if not isinstance(repo, str) or not repo:
+            raise ValueError("core_repos entries must define a non-empty repo")
+        min_presence = entry.get("min_presence")
+        if not isinstance(min_presence, (int, float)):
+            raise ValueError("core_repos entries must define numeric min_presence")
+
+    archived_repos = config.get("archived_repos")
+    if not isinstance(archived_repos, list):
+        raise ValueError("archived_repos must be a list")
+    if any(not isinstance(repo, str) or not repo for repo in archived_repos):
+        raise ValueError("archived_repos entries must be non-empty strings")
+    archived_repo_set = set(archived_repos)
+    overlapping_repos = sorted(
+        entry.get("repo")
+        for entry in core_repos
+        if entry.get("repo") in archived_repo_set
+    )
+    if overlapping_repos:
+        joined = ", ".join(overlapping_repos)
+        raise ValueError(f"core_repos includes archived repos: {joined}")
+
+    return config
 
 
 def classify_pr(
