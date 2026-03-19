@@ -6,6 +6,7 @@ documentation exist and satisfy the infrastructure-as-code acceptance criteria.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -102,3 +103,45 @@ class TestSecretsDocumentation:
 
     def test_documents_port(self) -> None:
         assert "PORT" in self.text
+
+
+class TestDeployScriptRestart:
+    """deploy-sprite.sh restart must avoid self-match and verify termination."""
+
+    def setup_method(self) -> None:
+        path = ELIXIR_ROOT / "deploy-sprite.sh"
+        assert path.exists(), "cerberus-elixir/deploy-sprite.sh must exist"
+        self.text = path.read_text(encoding="utf-8")
+        # Extract restart_app function body up to next top-level function or EOF
+        match = re.search(r"^restart_app\(\)", self.text, re.MULTILINE)
+        assert match, "restart_app() function must exist"
+        start = match.start()
+        body_start = self.text.index("\n", start) + 1
+        next_fn = re.search(r"^\w+\(\)", self.text[body_start:], re.MULTILINE)
+        end = body_start + next_fn.start() if next_fn else len(self.text)
+        self.restart_body = self.text[start:end]
+
+    def test_pkill_uses_self_exclusion_pattern(self) -> None:
+        """pkill must use bracket trick to avoid matching its own process."""
+        assert "[m]ix" in self.restart_body, (
+            "pkill pattern must use [m]ix bracket trick to prevent self-match"
+        )
+
+    def test_no_bare_pkill_mix_run(self) -> None:
+        """Must not use bare 'pkill -f "mix run"' (matches own sh -c)."""
+        assert 'pkill -f "mix run"' not in self.restart_body
+
+    def test_polls_for_termination(self) -> None:
+        """Must poll with pgrep instead of fixed sleep."""
+        assert "pgrep" in self.restart_body, (
+            "restart must poll for process termination with pgrep"
+        )
+
+    def test_no_fixed_sleep_for_termination(self) -> None:
+        """Must not rely on fixed 'sleep 2' for termination wait."""
+        # Allow sleep inside a polling loop but not as standalone termination wait
+        assert "sleep 2" not in self.restart_body
+
+    def test_escalates_to_sigkill(self) -> None:
+        """Must SIGKILL if graceful shutdown fails after polling."""
+        assert "pkill -9" in self.restart_body
