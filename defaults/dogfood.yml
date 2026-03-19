@@ -7,8 +7,6 @@
 core_repos:
   - repo: misty-step/cerberus
     min_presence: 0.80
-  - repo: misty-step/cerberus-cloud
-    min_presence: 0.90
   - repo: misty-step/volume
     min_presence: 0.80
   - repo: misty-step/gitpulse

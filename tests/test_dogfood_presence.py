@@ -42,6 +42,13 @@ def test_dogfood_config_includes_cerberus_repo() -> None:
     )
 
 
+def test_dogfood_config_excludes_archived_repos() -> None:
+    config = _load_dogfood()
+    repo_names = {r["repo"] for r in config["core_repos"]}
+    assert "misty-step/cerberus-cloud" not in repo_names
+    assert "misty-step/cerberus-web" not in repo_names
+
+
 def test_dogfood_config_defines_classification_taxonomy() -> None:
     config = _load_dogfood()
     classification = config["classification"]
