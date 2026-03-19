@@ -67,6 +67,28 @@ class TestDeployWorkflow:
     def test_deploy_installs_sprite_cli(self) -> None:
         assert "sprite" in self.text
 
+    def test_sprite_install_pins_version(self) -> None:
+        """Must install a specific sprite CLI version, not curl|sh."""
+        assert "install | sh" not in self.text, (
+            "sprite CLI must not be installed via unpinned curl|sh pipe"
+        )
+        assert "SPRITE_VERSION" in self.text, (
+            "deploy workflow must define a pinned SPRITE_VERSION"
+        )
+
+    def test_sprite_install_verifies_checksum(self) -> None:
+        """Must verify SHA256 checksum of downloaded binary."""
+        assert "sha256sum" in self.text or "SPRITE_SHA256" in self.text, (
+            "deploy workflow must verify sprite CLI checksum"
+        )
+
+    def test_sprite_checksum_is_64_hex_chars(self) -> None:
+        """Pinned SHA256 must be a valid 64-char hex string."""
+        import re
+
+        match = re.search(r"SPRITE_SHA256:\s*([0-9a-f]{64})", self.text)
+        assert match, "SPRITE_SHA256 must be a 64-character hex string"
+
     def test_deploy_authenticates(self) -> None:
         assert "SPRITE_TOKEN" in self.text
 

@@ -26,7 +26,20 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install sprite CLI
-        run: curl -fsSL https://sprites.fly.dev/install | sh
+        # To update: download new archive, run sha256sum, update both values.
+        # Checksums: https://sprites-binaries.t3.storage.dev/client/<version>/sprite-linux-amd64.tar.gz.sha256
+        env:
+          SPRITE_VERSION: v0.0.1-rc41
+          SPRITE_SHA256: 3c09e73f933d94bc02dd0872773dc1a34b8bb57eae1397091789433867ec8839
+        run: |
+          ARCHIVE="sprite-linux-amd64.tar.gz"
+          curl -fsSL -o "$ARCHIVE" \
+            "https://sprites-binaries.t3.storage.dev/client/${SPRITE_VERSION}/${ARCHIVE}"
+          echo "${SPRITE_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar xzf "$ARCHIVE"
+          install -m 755 sprite /usr/local/bin/sprite
+          rm -rf "$ARCHIVE"
+          sprite version
 
       - name: Authenticate
         run: sprite auth setup --token "${{ secrets.SPRITE_TOKEN }}"
