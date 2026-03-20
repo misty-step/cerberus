@@ -39,12 +39,6 @@ Everything else is deferred.
 - Keep every benchmark-backed child lane here until `#331` closes so the issue body, scorecards, and repo docs do not drift.
 - Latest benchmark evidence: `docs/reviewer-benchmark/2026-03-14-org-scorecard.md`
 
-- `P1` Benchmark loop
-  - Tracking: `#332`
-  - Status: `child issue closed; keep mapped here until #331 closes`
-  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-08-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-14-org-scorecard.md`
-  - Verification: `docs/reviewer-benchmark/README.md`, `tests/test_reviewer_benchmark_docs.py`, `tests/test_reviewer_benchmark_skill.py`
-  - Weekly org-wide reviewer scorecard plus the durable repo-local benchmark skill.
 - `P0` Security/dataflow blind-spot hardening
   - Tracking: `#333`
   - Status: `child issue closed; keep mapped here until #331 closes`
@@ -57,6 +51,12 @@ Everything else is deferred.
   - Benchmark evidence: `volume#401`, `volume#417`, `gitpulse#184`
   - Verification: `tests/test_review_slicing.py`, `tests/test_run_reviewer_runtime.py`, `docs/walkthroughs/issue-334-timeout-slice.md`
   - Correctness and security now use bounded high-risk slices before timeout salvage on large diffs.
+- `P1` Benchmark loop
+  - Tracking: `#332`
+  - Status: `child issue closed; keep mapped here until #331 closes`
+  - Benchmark evidence: `docs/reviewer-benchmark/2026-03-08-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-13-org-scorecard.md`, `docs/reviewer-benchmark/2026-03-14-org-scorecard.md`
+  - Verification: `docs/reviewer-benchmark/README.md`, `tests/test_reviewer_benchmark_docs.py`, `tests/test_reviewer_benchmark_skill.py`
+  - Weekly org-wide reviewer scorecard plus the durable repo-local benchmark skill.
 - `P1` Lifecycle/state-machine challenger reasoning
   - Tracking: `#335`
   - Status: `child issue closed; keep mapped here until #331 closes`
