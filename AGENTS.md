@@ -88,6 +88,9 @@ Before any change is committed to the gate:
 - `make validate` must pass.
 - Coverage must not regress below 70%.
 - `shellcheck` must be clean.
+- If a gate fails on a local blocker, debug and fix it before stopping. Do not
+  stop at merely reporting a red gate unless the blocker is external or unsafe
+  to resolve in the current lane.
 
 ---
 

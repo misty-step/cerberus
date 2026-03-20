@@ -17,10 +17,19 @@ defmodule Cerberus.TelemetryTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "cerberus_test_#{System.unique_integer([:positive])}_#{System.system_time(:microsecond)}.db"
+        "cerberus_test_#{System.unique_integer([:positive, :monotonic])}_#{System.system_time(:microsecond)}.db"
       )
 
     {:ok, store} = Cerberus.Store.start_link(database_path: path)
+
+    ExUnit.Callbacks.on_exit(fn ->
+      if Process.alive?(store) do
+        GenServer.stop(store)
+      end
+
+      File.rm(path)
+    end)
+
     store
   end
 
@@ -49,7 +58,8 @@ defmodule Cerberus.TelemetryTest do
     test "returns callback result unchanged" do
       result =
         Telemetry.with_reviewer(nil, :correctness, "test-model", fn ->
-          {:ok, %{verdict: %{verdict: "PASS"}, usage: %{prompt_tokens: 100, completion_tokens: 50}}}
+          {:ok,
+           %{verdict: %{verdict: "PASS"}, usage: %{prompt_tokens: 100, completion_tokens: 50}}}
         end)
 
       assert {:ok, %{verdict: %{verdict: "PASS"}}} = result
