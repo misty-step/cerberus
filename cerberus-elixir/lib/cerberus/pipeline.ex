@@ -75,7 +75,8 @@ defmodule Cerberus.Pipeline do
           run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts)
         end)
 
-      # 5. Persist costs
+      # 5. Persist reviewer artifacts
+      persist_verdicts(results, review_id, store)
       persist_costs(results, review_id, store)
 
       # 6. Resolve override
@@ -166,11 +167,11 @@ defmodule Cerberus.Pipeline do
           end
 
           model = pick_model(persona, pool)
-          {perspective, persona, model}
+          {persona.name, perspective, persona, model}
         end)
 
       tasks =
-        Enum.map(panel, fn {perspective, persona, model} ->
+        Enum.map(panel, fn {_reviewer, perspective, persona, model} ->
           Task.Supervisor.async_nolink(task_sup, fn ->
             Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
               spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts)
@@ -180,8 +181,8 @@ defmodule Cerberus.Pipeline do
 
       tasks
       |> Enum.zip(panel)
-      |> Enum.map(fn {task, {perspective, _persona, _model}} ->
-        collect_result(task, perspective, timeout)
+      |> Enum.map(fn {task, {reviewer, perspective, _persona, _model}} ->
+        collect_result(task, reviewer, perspective, timeout)
       end)
     after
       File.rm(diff_file)
@@ -210,12 +211,13 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  defp collect_result(task, perspective, timeout) do
+  defp collect_result(task, reviewer, perspective, timeout) do
     case Task.yield(task, timeout + 5_000) || Task.shutdown(task) do
       {:ok, {:ok, result}} ->
         %{
+          reviewer: reviewer,
           perspective: perspective,
-          verdict: result.verdict,
+          verdict: %{result.verdict | reviewer: reviewer, perspective: perspective},
           usage: result.usage,
           model: result[:model] || "unknown",
           status: :ok
@@ -223,22 +225,23 @@ defmodule Cerberus.Pipeline do
 
       {:ok, {:error, reason}} ->
         Logger.warning("Reviewer #{perspective} failed: #{inspect(reason)}")
-        degraded_result(perspective, :error)
+        degraded_result(reviewer, perspective, :error)
 
       {:exit, reason} ->
         Logger.warning("Reviewer #{perspective} crashed: #{inspect(reason)}")
-        degraded_result(perspective, :error)
+        degraded_result(reviewer, perspective, :error)
 
       nil ->
         Logger.warning("Reviewer #{perspective} timed out")
-        degraded_result(perspective, :timeout)
+        degraded_result(reviewer, perspective, :timeout)
     end
   end
 
-  defp degraded_result(perspective, status) do
+  defp degraded_result(reviewer, perspective, status) do
     %{
+      reviewer: reviewer,
       perspective: perspective,
-      verdict: skip_verdict(perspective),
+      verdict: skip_verdict(reviewer, perspective),
       usage: zero_usage(),
       model: "unknown",
       status: status
@@ -285,22 +288,54 @@ defmodule Cerberus.Pipeline do
 
   # --- Cost ---
 
-  defp persist_costs(results, review_id, store) do
-    Enum.each(results, fn r ->
-      cost = Cost.calculate(r.usage.prompt_tokens, r.usage.completion_tokens, r.model)
+  defp persist_verdicts(results, review_id, store) do
+    case Store.insert_verdicts(
+           store,
+           Enum.map(results, fn r ->
+             %{
+               review_run_id: review_id,
+               reviewer: r.reviewer,
+               perspective: r.perspective,
+               verdict: r.verdict.verdict,
+               confidence: r.verdict.confidence,
+               summary: r.verdict.summary,
+               findings: r.verdict.findings
+             }
+           end)
+         ) do
+      :ok ->
+        :ok
 
-      Store.insert_cost(store, %{
-        review_run_id: review_id,
-        reviewer: r.perspective,
-        model: r.model,
-        prompt_tokens: r.usage.prompt_tokens,
-        completion_tokens: r.usage.completion_tokens,
-        cost_usd: cost,
-        duration_ms: 0,
-        status: status_label(r.status),
-        is_fallback: false
-      })
-    end)
+      {:error, reason} ->
+        raise "failed to persist reviewer verdict: #{inspect(reason)}"
+    end
+  end
+
+  defp persist_costs(results, review_id, store) do
+    case Store.insert_costs(
+           store,
+           Enum.map(results, fn r ->
+             cost = Cost.calculate(r.usage.prompt_tokens, r.usage.completion_tokens, r.model)
+
+             %{
+               review_run_id: review_id,
+               reviewer: r.reviewer,
+               model: r.model,
+               prompt_tokens: r.usage.prompt_tokens,
+               completion_tokens: r.usage.completion_tokens,
+               cost_usd: cost,
+               duration_ms: 0,
+               status: status_label(r.status),
+               is_fallback: false
+             }
+           end)
+         ) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise "failed to persist reviewer cost: #{inspect(reason)}"
+    end
   end
 
   defp status_label(:ok), do: "success"
@@ -448,9 +483,9 @@ defmodule Cerberus.Pipeline do
 
   # --- Helpers ---
 
-  defp skip_verdict(perspective) do
+  defp skip_verdict(reviewer, perspective) do
     %Cerberus.Verdict{
-      reviewer: perspective,
+      reviewer: reviewer,
       perspective: perspective,
       verdict: "SKIP",
       confidence: 0.0,

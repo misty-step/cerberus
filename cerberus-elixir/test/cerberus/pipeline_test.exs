@@ -3,6 +3,58 @@ defmodule Cerberus.PipelineTest do
 
   alias Cerberus.Pipeline
 
+  defmodule FailingVerdictStore do
+    use GenServer
+
+    def start_link(actual_store) do
+      GenServer.start_link(__MODULE__, actual_store)
+    end
+
+    @impl true
+    def init(actual_store), do: {:ok, actual_store}
+
+    @impl true
+    def handle_call({:update_review_run, id, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.update_review_run(actual_store, id, attrs), actual_store}
+    end
+
+    def handle_call({:insert_event, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.insert_event(actual_store, attrs), actual_store}
+    end
+
+    def handle_call({:insert_verdicts, _attrs_list}, _from, actual_store) do
+      {:reply, {:error, :boom}, actual_store}
+    end
+  end
+
+  defmodule FailingCostStore do
+    use GenServer
+
+    def start_link(actual_store) do
+      GenServer.start_link(__MODULE__, actual_store)
+    end
+
+    @impl true
+    def init(actual_store), do: {:ok, actual_store}
+
+    @impl true
+    def handle_call({:update_review_run, id, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.update_review_run(actual_store, id, attrs), actual_store}
+    end
+
+    def handle_call({:insert_event, attrs}, _from, actual_store) do
+      {:reply, Cerberus.Store.insert_event(actual_store, attrs), actual_store}
+    end
+
+    def handle_call({:insert_verdicts, attrs_list}, _from, actual_store) do
+      {:reply, Cerberus.Store.insert_verdicts(actual_store, attrs_list), actual_store}
+    end
+
+    def handle_call({:insert_costs, _attrs_list}, _from, actual_store) do
+      {:reply, {:error, :boom}, actual_store}
+    end
+  end
+
   @valid_verdict_json """
   ```json
   {
@@ -256,6 +308,10 @@ defmodule Cerberus.PipelineTest do
       assert result.stats.skip >= 1
       # At least one successful reviewer
       assert result.stats.pass >= 1 or result.stats.warn >= 1
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.any?(verdicts, &(&1.verdict == "SKIP"))
     end
 
     test "reviewer returns error — degraded to SKIP", ctx do
@@ -276,6 +332,10 @@ defmodule Cerberus.PipelineTest do
       # All reviewers failed — all SKIP
       assert result.verdict == "SKIP"
       assert result.stats.skip == result.stats.total
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.all?(verdicts, &(&1.verdict == "SKIP"))
     end
 
     test "reviewer process crashes — degraded to SKIP via {:exit, reason}", ctx do
@@ -296,6 +356,10 @@ defmodule Cerberus.PipelineTest do
 
       # Crashed reviewers degraded to SKIP
       assert result.stats.skip == result.stats.total
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.all?(verdicts, &(&1.verdict == "SKIP"))
     end
   end
 
@@ -512,10 +576,11 @@ defmodule Cerberus.PipelineTest do
       review_id = create_run(ctx.store)
       opts = pipeline_opts(ctx)
 
-      assert {:ok, _} = Pipeline.run(review_id, params(), opts)
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
 
       {:ok, costs} = Cerberus.Store.review_run_costs(ctx.store, review_id)
-      assert length(costs) > 0
+      assert length(costs) == result.stats.total
+      assert Enum.sort(Enum.map(costs, & &1.reviewer)) == ["atlas", "guard", "proof", "trace"]
 
       Enum.each(costs, fn c ->
         assert is_binary(c.reviewer)
@@ -523,6 +588,67 @@ defmodule Cerberus.PipelineTest do
         assert c.prompt_tokens >= 0
         assert c.completion_tokens >= 0
       end)
+    end
+
+    test "persists per-reviewer verdicts", ctx do
+      review_id = create_run(ctx.store)
+      opts = pipeline_opts(ctx)
+
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
+
+      assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+      assert length(verdicts) == result.stats.total
+      assert Enum.sort(Enum.map(verdicts, & &1.reviewer)) == ["atlas", "guard", "proof", "trace"]
+
+      assert Enum.sort(Enum.map(verdicts, & &1.perspective)) == [
+               "architecture",
+               "correctness",
+               "security",
+               "testing"
+             ]
+
+      Enum.each(verdicts, fn verdict ->
+        assert is_binary(verdict.reviewer)
+        assert is_binary(verdict.perspective)
+        assert verdict.verdict in ["PASS", "WARN", "FAIL", "SKIP"]
+        assert is_float(verdict.confidence)
+        assert is_binary(verdict.summary)
+        assert is_list(verdict.findings)
+      end)
+    end
+
+    test "fails the pipeline when verdict persistence fails", ctx do
+      review_id = create_run(ctx.store)
+      {:ok, failing_store} = FailingVerdictStore.start_link(ctx.store)
+
+      opts =
+        ctx
+        |> Map.put(:store, failing_store)
+        |> pipeline_opts()
+
+      assert {:error, {:pipeline_failed, message}} = Pipeline.run(review_id, params(), opts)
+      assert message =~ "failed to persist reviewer verdict"
+
+      assert {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "failed"
+      assert {:ok, []} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
+    end
+
+    test "fails the pipeline when cost persistence fails", ctx do
+      review_id = create_run(ctx.store)
+      {:ok, failing_store} = FailingCostStore.start_link(ctx.store)
+
+      opts =
+        ctx
+        |> Map.put(:store, failing_store)
+        |> pipeline_opts()
+
+      assert {:error, {:pipeline_failed, message}} = Pipeline.run(review_id, params(), opts)
+      assert message =~ "failed to persist reviewer cost"
+
+      assert {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "failed"
+      assert {:ok, []} = Cerberus.Store.review_run_costs(ctx.store, review_id)
     end
   end
 end

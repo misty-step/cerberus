@@ -23,6 +23,10 @@ defmodule Cerberus.Store do
       review_run_id INTEGER NOT NULL,
       reviewer TEXT NOT NULL,
       verdict TEXT NOT NULL,
+      perspective TEXT NOT NULL DEFAULT '',
+      confidence REAL NOT NULL DEFAULT 0.0,
+      summary TEXT NOT NULL DEFAULT '',
+      findings_json TEXT NOT NULL DEFAULT '[]',
       inserted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -51,6 +55,14 @@ defmodule Cerberus.Store do
     )
     """
   ]
+
+  @verdicts_column_migrations [
+    {"perspective", "ALTER TABLE verdicts ADD COLUMN perspective TEXT NOT NULL DEFAULT ''"},
+    {"confidence", "ALTER TABLE verdicts ADD COLUMN confidence REAL NOT NULL DEFAULT 0.0"},
+    {"summary", "ALTER TABLE verdicts ADD COLUMN summary TEXT NOT NULL DEFAULT ''"},
+    {"findings_json", "ALTER TABLE verdicts ADD COLUMN findings_json TEXT NOT NULL DEFAULT '[]'"}
+  ]
+  @known_tables ~w(events review_costs review_runs verdicts)
 
   def start_link(opts) do
     {name, opts} = Keyword.pop(opts, :name)
@@ -88,6 +100,37 @@ defmodule Cerberus.Store do
   end
 
   @doc """
+  Insert a reviewer verdict record for a review run.
+
+  Attrs: `:review_run_id`, `:reviewer`, `:perspective`, `:verdict`,
+  `:confidence`, `:summary`, `:findings`.
+  """
+  @spec insert_verdict(pid() | atom(), map()) :: :ok | {:error, term()}
+  def insert_verdict(store, attrs) do
+    GenServer.call(store, {:insert_verdict, attrs})
+  end
+
+  @doc """
+  Insert reviewer verdict records for a review run atomically.
+
+  If any verdict payload is invalid, none of the rows are written.
+  """
+  @spec insert_verdicts(pid() | atom(), [map()]) :: :ok | {:error, term()}
+  def insert_verdicts(store, attrs_list) do
+    GenServer.call(store, {:insert_verdicts, attrs_list})
+  end
+
+  @doc """
+  Query persisted reviewer verdicts for a specific review run.
+
+  Returns a list of per-reviewer verdict records in insertion order.
+  """
+  @spec review_run_verdicts(pid() | atom(), integer()) :: {:ok, [map()]} | {:error, term()}
+  def review_run_verdicts(store, review_run_id) do
+    GenServer.call(store, {:review_run_verdicts, review_run_id})
+  end
+
+  @doc """
   Insert a cost record for a reviewer execution.
 
   Attrs: `:review_run_id`, `:reviewer`, `:model`, `:prompt_tokens`,
@@ -96,6 +139,16 @@ defmodule Cerberus.Store do
   @spec insert_cost(pid() | atom(), map()) :: :ok | {:error, term()}
   def insert_cost(store, attrs) do
     GenServer.call(store, {:insert_cost, attrs})
+  end
+
+  @doc """
+  Insert reviewer cost records for a review run atomically.
+
+  If any row fails to write, none of the rows are committed.
+  """
+  @spec insert_costs(pid() | atom(), [map()]) :: :ok | {:error, term()}
+  def insert_costs(store, attrs_list) do
+    GenServer.call(store, {:insert_costs, attrs_list})
   end
 
   @doc "Insert an event record (errors, lifecycle transitions)."
@@ -139,7 +192,7 @@ defmodule Cerberus.Store do
     with :ok <- ensure_database_directory(database_path),
          {:ok, conn} <- Exqlite.Sqlite3.open(database_path),
          :ok <- configure_pragmas(conn),
-         :ok <- ensure_schema_tables(conn) do
+         :ok <- ensure_schema_ready(conn) do
       state = %{conn: conn, database_path: database_path}
       {:ok, state}
     end
@@ -147,7 +200,7 @@ defmodule Cerberus.Store do
 
   @impl true
   def handle_call(:ensure_schema, _from, %{conn: conn} = state) do
-    {:reply, ensure_schema_tables(conn), state}
+    {:reply, ensure_schema_ready(conn), state}
   end
 
   def handle_call(:table_names, _from, %{conn: conn} = state) do
@@ -239,28 +292,20 @@ defmodule Cerberus.Store do
     end
   end
 
+  def handle_call({:insert_verdict, attrs}, _from, %{conn: conn} = state) do
+    {:reply, insert_verdict_records(conn, [attrs]), state}
+  end
+
+  def handle_call({:insert_verdicts, attrs_list}, _from, %{conn: conn} = state) do
+    {:reply, insert_verdict_records(conn, attrs_list), state}
+  end
+
   def handle_call({:insert_cost, attrs}, _from, %{conn: conn} = state) do
-    sql = """
-    INSERT INTO review_costs
-      (review_run_id, reviewer, model, prompt_tokens, completion_tokens,
-       cost_usd, duration_ms, status, is_fallback)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-    """
+    {:reply, insert_cost_records(conn, [attrs]), state}
+  end
 
-    bindings = [
-      attrs[:review_run_id],
-      attrs[:reviewer] || "",
-      attrs[:model] || "",
-      attrs[:prompt_tokens] || 0,
-      attrs[:completion_tokens] || 0,
-      attrs[:cost_usd] || 0.0,
-      attrs[:duration_ms] || 0,
-      to_string(attrs[:status] || "success"),
-      if(attrs[:is_fallback], do: 1, else: 0)
-    ]
-
-    result = exec(conn, sql, bindings)
-    {:reply, result, state}
+  def handle_call({:insert_costs, attrs_list}, _from, %{conn: conn} = state) do
+    {:reply, insert_cost_records(conn, attrs_list), state}
   end
 
   def handle_call({:insert_event, attrs}, _from, %{conn: conn} = state) do
@@ -337,6 +382,18 @@ defmodule Cerberus.Store do
     """
 
     result = query_rows(conn, sql, [run_id], &parse_cost_row/1)
+    {:reply, result, state}
+  end
+
+  def handle_call({:review_run_verdicts, run_id}, _from, %{conn: conn} = state) do
+    sql = """
+    SELECT reviewer, perspective, verdict, confidence, summary, findings_json
+    FROM verdicts
+    WHERE review_run_id = ?1
+    ORDER BY inserted_at, id
+    """
+
+    result = query_rows(conn, sql, [run_id], &parse_verdict_row/1)
     {:reply, result, state}
   end
 
@@ -444,6 +501,51 @@ defmodule Cerberus.Store do
     end)
   end
 
+  defp ensure_schema_ready(conn) do
+    with :ok <- ensure_schema_tables(conn),
+         {:ok, verdict_columns} <- table_columns(conn, "verdicts") do
+      migrate_verdicts_table(conn, verdict_columns)
+    end
+  end
+
+  defp table_columns(conn, table_name) when table_name in @known_tables do
+    sql = "PRAGMA table_info(#{table_name})"
+
+    with_statement(conn, sql, [], fn conn, stmt ->
+      collect_table_columns(conn, stmt, [])
+    end)
+  end
+
+  defp table_columns(_conn, table_name), do: {:error, {:unknown_table, table_name}}
+
+  defp collect_table_columns(conn, stmt, acc) do
+    case Exqlite.Sqlite3.step(conn, stmt) do
+      {:row, [_cid, name | _rest]} -> collect_table_columns(conn, stmt, [name | acc])
+      :done -> {:ok, Enum.reverse(acc)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp migrate_verdicts_table(conn, existing_columns) do
+    statements =
+      Enum.flat_map(@verdicts_column_migrations, fn {column, statement} ->
+        if column in existing_columns, do: [], else: [statement]
+      end)
+
+    if statements == [] do
+      :ok
+    else
+      transaction(conn, fn ->
+        Enum.reduce_while(statements, :ok, fn statement, :ok ->
+          case Exqlite.Sqlite3.execute(conn, statement) do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+        end)
+      end)
+    end
+  end
+
   # --- Data helpers ---
 
   defp parse_model_performance_row([
@@ -474,10 +576,50 @@ defmodule Cerberus.Store do
 
   defp safe_decode(json) when is_binary(json) do
     case Jason.decode(json) do
-      {:ok, val} -> val
-      _ -> nil
+      {:ok, val} ->
+        val
+
+      {:error, reason} ->
+        Logger.warning("failed to decode persisted JSON payload: #{inspect(reason)}")
+        nil
     end
   end
+
+  defp normalize_findings(findings) when is_list(findings) do
+    {normalized, dropped} =
+      Enum.reduce(findings, {[], 0}, fn finding, {acc, dropped} ->
+        case normalize_finding(finding) do
+          {:ok, normalized_finding} -> {[normalized_finding | acc], dropped}
+          :drop -> {acc, dropped + 1}
+        end
+      end)
+
+    if dropped > 0 do
+      Logger.warning("dropped #{dropped} invalid reviewer finding(s) during normalization")
+    end
+
+    Enum.reverse(normalized)
+  end
+
+  defp normalize_findings(nil), do: []
+
+  defp normalize_findings(_findings) do
+    Logger.warning("dropping invalid findings payload during read normalization: expected list")
+    []
+  end
+
+  defp normalize_finding(%_{} = finding), do: finding |> Map.from_struct() |> normalize_finding()
+
+  defp normalize_finding(finding) when is_map(finding) do
+    normalized =
+      finding
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+
+    if map_size(normalized) == 0, do: :drop, else: {:ok, normalized}
+  end
+
+  defp normalize_finding(_), do: :drop
 
   defp parse_cost_row([
          reviewer,
@@ -499,5 +641,165 @@ defmodule Cerberus.Store do
       status: status,
       is_fallback: is_fallback == 1
     }
+  end
+
+  defp parse_verdict_row([reviewer, perspective, verdict, confidence, summary, findings_json]) do
+    findings =
+      findings_json
+      |> safe_decode()
+      |> normalize_findings()
+
+    %{
+      reviewer: reviewer,
+      perspective: perspective,
+      verdict: verdict,
+      confidence: normalize_confidence(confidence),
+      summary: summary,
+      findings: findings
+    }
+  end
+
+  defp normalize_confidence(confidence) when is_float(confidence), do: confidence
+  defp normalize_confidence(confidence) when is_integer(confidence), do: confidence / 1.0
+  defp normalize_confidence(nil), do: 0.0
+
+  defp normalize_confidence(confidence) do
+    Logger.warning("normalizing unexpected confidence value to 0.0: #{inspect(confidence)}")
+    0.0
+  end
+
+  defp insert_verdict_records(_conn, []), do: :ok
+
+  defp insert_verdict_records(conn, attrs_list) do
+    with {:ok, bindings_list} <- prepare_verdict_bindings(attrs_list) do
+      transaction(conn, fn ->
+        Enum.reduce_while(bindings_list, :ok, fn bindings, :ok ->
+          case exec(conn, verdict_insert_sql(), bindings) do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+        end)
+      end)
+    end
+  end
+
+  defp prepare_verdict_bindings(attrs_list) do
+    Enum.reduce_while(attrs_list, {:ok, []}, fn attrs, {:ok, acc} ->
+      case prepare_verdict_binding(attrs) do
+        {:ok, bindings} -> {:cont, {:ok, [bindings | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> then(fn
+      {:ok, bindings} -> {:ok, Enum.reverse(bindings)}
+      other -> other
+    end)
+  end
+
+  defp prepare_verdict_binding(attrs) do
+    with {:ok, findings} <- validate_findings(Map.get(attrs, :findings, [])),
+         {:ok, findings_json} <- Jason.encode(findings) do
+      {:ok,
+       [
+         attrs[:review_run_id],
+         attrs[:reviewer] || "",
+         attrs[:verdict] || "SKIP",
+         attrs[:perspective] || "",
+         normalize_confidence(attrs[:confidence]),
+         attrs[:summary] || "",
+         findings_json
+       ]}
+    else
+      {:error, :not_a_list} ->
+        Logger.warning("invalid findings payload on write: expected list")
+        {:error, {:invalid_findings, :not_a_list}}
+
+      {:error, reason} ->
+        {:error, {:invalid_findings, reason}}
+    end
+  end
+
+  defp validate_findings(findings) when is_list(findings), do: {:ok, normalize_findings(findings)}
+  defp validate_findings(_findings), do: {:error, :not_a_list}
+
+  defp verdict_insert_sql do
+    """
+    INSERT INTO verdicts
+      (review_run_id, reviewer, verdict, perspective, confidence, summary, findings_json)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    """
+  end
+
+  defp insert_cost_records(_conn, []), do: :ok
+
+  defp insert_cost_records(conn, attrs_list) do
+    attrs_list
+    |> Enum.map(&prepare_cost_binding/1)
+    |> then(fn bindings_list ->
+      transaction(conn, fn ->
+        Enum.reduce_while(bindings_list, :ok, fn bindings, :ok ->
+          case exec(conn, cost_insert_sql(), bindings) do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+        end)
+      end)
+    end)
+  end
+
+  defp prepare_cost_binding(attrs) do
+    [
+      attrs[:review_run_id],
+      attrs[:reviewer] || "",
+      attrs[:model] || "",
+      attrs[:prompt_tokens] || 0,
+      attrs[:completion_tokens] || 0,
+      attrs[:cost_usd] || 0.0,
+      attrs[:duration_ms] || 0,
+      to_string(attrs[:status] || "success"),
+      if(attrs[:is_fallback], do: 1, else: 0)
+    ]
+  end
+
+  defp cost_insert_sql do
+    """
+    INSERT INTO review_costs
+      (review_run_id, reviewer, model, prompt_tokens, completion_tokens,
+       cost_usd, duration_ms, status, is_fallback)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+    """
+  end
+
+  defp transaction(conn, fun) do
+    with :ok <- Exqlite.Sqlite3.execute(conn, "BEGIN IMMEDIATE") do
+      try do
+        case fun.() do
+          :ok = result -> commit_transaction(conn, result)
+          {:ok, _} = result -> commit_transaction(conn, result)
+          {:error, _} = result -> rollback_transaction(conn, result)
+          other -> rollback_transaction(conn, {:error, other})
+        end
+      rescue
+        error ->
+          _ = Exqlite.Sqlite3.execute(conn, "ROLLBACK")
+          reraise error, __STACKTRACE__
+      catch
+        kind, reason ->
+          _ = Exqlite.Sqlite3.execute(conn, "ROLLBACK")
+          :erlang.raise(kind, reason, __STACKTRACE__)
+      end
+    end
+  end
+
+  defp commit_transaction(conn, result) do
+    case Exqlite.Sqlite3.execute(conn, "COMMIT") do
+      :ok -> result
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp rollback_transaction(conn, result) do
+    _ = Exqlite.Sqlite3.execute(conn, "ROLLBACK")
+    result
   end
 end

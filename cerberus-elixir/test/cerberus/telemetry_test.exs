@@ -14,7 +14,12 @@ defmodule Cerberus.TelemetryTest do
   end
 
   defp start_store do
-    path = Path.join(System.tmp_dir!(), "cerberus_test_#{System.unique_integer([:positive])}.db")
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus_test_#{System.unique_integer([:positive])}_#{System.system_time(:microsecond)}.db"
+      )
+
     {:ok, store} = Cerberus.Store.start_link(database_path: path)
     store
   end
