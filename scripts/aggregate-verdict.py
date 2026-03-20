@@ -368,6 +368,101 @@ def promote_unused_dependency_findings(verdicts: list[dict]) -> None:
             recompute_verdict_stats(verdict)
 
 
+def _normalize_ac_key(ac: object) -> str:
+    return " ".join(str(ac or "").split()).strip().lower()
+
+
+def _ac_status_rank(status: object) -> int:
+    order = {
+        "NOT_SATISFIED": 0,
+        "SATISFIED": 1,
+        "CANNOT_DETERMINE": 2,
+    }
+    return order.get(str(status or "").strip().upper(), 99)
+
+
+def _select_ac_detail(details: list[dict], final_status: str) -> dict:
+    matching = [detail for detail in details if str(detail.get("status") or "").strip().upper() == final_status]
+    pool = matching or details
+    return max(
+        pool,
+        key=lambda detail: (
+            len(str(detail.get("evidence") or "").strip()),
+            len(str(detail.get("ac") or "").strip()),
+        ),
+    )
+
+
+def aggregate_ac_compliance(verdicts: list[dict]) -> dict | None:
+    grouped: dict[str, dict[str, object]] = {}
+    order = 0
+
+    for verdict in verdicts:
+        ac_compliance = verdict.get("ac_compliance")
+        if not isinstance(ac_compliance, dict):
+            continue
+        details = ac_compliance.get("details")
+        if not isinstance(details, list):
+            continue
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            ac_text = str(detail.get("ac") or "").strip()
+            key = _normalize_ac_key(ac_text)
+            if not key:
+                continue
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "order": order,
+                    "ac": ac_text,
+                    "details": [],
+                },
+            )
+            if len(ac_text) > len(str(bucket.get("ac") or "")):
+                bucket["ac"] = ac_text
+            bucket["details"].append(
+                {
+                    "ac": ac_text,
+                    "status": str(detail.get("status") or "").strip().upper(),
+                    "evidence": str(detail.get("evidence") or "").strip(),
+                }
+            )
+            order += 1
+
+    if not grouped:
+        return None
+
+    final_details: list[dict[str, str]] = []
+    for bucket in sorted(grouped.values(), key=lambda item: int(item.get("order", 0))):
+        details = [detail for detail in bucket["details"] if detail.get("status") in {"SATISFIED", "NOT_SATISFIED", "CANNOT_DETERMINE"}]
+        if not details:
+            continue
+        final_status = min(
+            (str(detail["status"]) for detail in details),
+            key=_ac_status_rank,
+        )
+        chosen = _select_ac_detail(details, final_status)
+        final_details.append(
+            {
+                "ac": str(bucket.get("ac") or chosen.get("ac") or "").strip(),
+                "status": final_status,
+                "evidence": str(chosen.get("evidence") or "").strip(),
+            }
+        )
+
+    if not final_details:
+        return None
+
+    return {
+        "total": len(final_details),
+        "satisfied": sum(1 for detail in final_details if detail["status"] == "SATISFIED"),
+        "not_satisfied": sum(1 for detail in final_details if detail["status"] == "NOT_SATISFIED"),
+        "cannot_determine": sum(1 for detail in final_details if detail["status"] == "CANNOT_DETERMINE"),
+        "details": final_details,
+    }
+
+
 def aggregate(
     verdicts: list[dict],
     override: Override | None = None,
@@ -429,6 +524,7 @@ def aggregate(
         v for v in verdicts
         if is_fallback_verdict(v) and parse_failure_policy != "fail"
     ]
+    ac_compliance = aggregate_ac_compliance(verdicts)
 
     result = {
         "verdict": final_verdict,
@@ -447,6 +543,8 @@ def aggregate(
             "parse_failures_reclassified": len(parse_failures_reclassified),
         },
     }
+    if ac_compliance:
+        result["ac_compliance"] = ac_compliance
 
     if parse_failures_reclassified and parse_failure_policy == "warn":
         reviewers = ", ".join(
@@ -713,6 +811,7 @@ def main() -> None:
             "summary": data.get("summary", ""),
             "findings": data.get("findings"),
             "stats": data.get("stats"),
+            "ac_compliance": data.get("ac_compliance"),
             "runtime_seconds": data.get("runtime_seconds"),
             "model_used": data.get("model_used"),
             "primary_model": data.get("primary_model"),

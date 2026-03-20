@@ -56,6 +56,8 @@ When acceptance criteria (ACs) are provided in the review context via `github_re
 5. If an AC has no corresponding test in the diff, flag it as a finding with severity: minor,
    category: `untested-acceptance-criterion`.
 6. Include the AC text in the finding description so reviewers can map findings to requirements.
+7. In your scratchpad, keep a short `## Spec Compliance` checklist with one bullet per AC in the form
+   `- STATUS: <AC text> — <evidence>` so structured extraction can emit `ac_compliance`.
 
 Spec compliance findings follow the same evidence bar as all other findings.
 Do not fabricate AC status — if ACs are absent from the context, skip this section entirely.

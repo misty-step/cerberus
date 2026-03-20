@@ -14,6 +14,8 @@ from lib.render_verdict_comment import (
     collect_issue_groups,
     count_findings,
     detect_skip_banner,
+    escape_inline_markdown,
+    format_ac_compliance,
     format_skip_diagnostics_table,
     normalize_severity,
     normalize_verdict,
@@ -234,6 +236,252 @@ def test_renders_fix_order_and_hotspots_on_warn(tmp_path: Path) -> None:
     hot_section = body.split("### Hotspots", 1)[1].split("### Reviewer Overview", 1)[0]
     first_hot = next(ln for ln in hot_section.splitlines() if ln.startswith("- "))
     assert "blob/abcdef1234567890/src/hot1.py" in first_hot
+
+
+def test_renders_ac_compliance_checklist_when_present(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "WARN",
+        "summary": "1 reviewer. Failures: 0, warnings: 1, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "trace",
+                "perspective": "correctness",
+                "verdict": "WARN",
+                "confidence": 0.81,
+                "summary": "AC coverage is mixed.",
+                "runtime_seconds": 45,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+        "override": {"used": False},
+        "ac_compliance": {
+            "total": 3,
+            "satisfied": 1,
+            "not_satisfied": 1,
+            "cannot_determine": 1,
+            "details": [
+                {
+                    "ac": "[test] verdict JSON includes ac_compliance counts",
+                    "status": "SATISFIED",
+                    "evidence": "aggregate-verdict.py writes ac_compliance.",
+                },
+                {
+                    "ac": "[test] PR comment renders AC checklist",
+                    "status": "NOT_SATISFIED",
+                    "evidence": "render_verdict_comment.py does not yet render the section.",
+                },
+                {
+                    "ac": "[test] ac_compliance is omitted when no ACs exist",
+                    "status": "CANNOT_DETERMINE",
+                    "evidence": "No missing-AC case was exercised in this review.",
+                },
+            ],
+        },
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### AC Compliance (1/3 satisfied)" in body
+    assert r"- ✅ \[test\] verdict JSON includes ac\_compliance counts" in body
+    assert r"- ❌ \[test\] PR comment renders AC checklist" in body
+    assert r"- ❓ \[test\] ac\_compliance is omitted when no ACs exist" in body
+
+
+def test_omits_ac_compliance_section_when_absent(tmp_path: Path) -> None:
+    verdict_data = {
+        "verdict": "PASS",
+        "summary": "1 reviewer. Failures: 0, warnings: 0, skipped: 0.",
+        "reviewers": [
+            {
+                "reviewer": "trace",
+                "perspective": "correctness",
+                "verdict": "PASS",
+                "confidence": 0.95,
+                "summary": "All good.",
+                "runtime_seconds": 20,
+                "findings": [],
+                "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+            }
+        ],
+        "stats": {"total": 1, "pass": 1, "warn": 0, "fail": 0, "skip": 0},
+        "override": {"used": False},
+    }
+
+    code, body, err = run_render(tmp_path, verdict_data)
+
+    assert code == 0, err
+    assert "### AC Compliance" not in body
+
+
+def test_format_ac_compliance_omits_empty_details() -> None:
+    title, lines = format_ac_compliance({"details": []})
+
+    assert title == ""
+    assert lines == []
+
+
+def test_format_ac_compliance_skips_invalid_detail_rows() -> None:
+    title, lines = format_ac_compliance(
+        {
+            "details": [
+                "bad",
+                {"ac": "   ", "status": "SATISFIED", "evidence": "skip blank ac"},
+                {"ac": "AC coverage", "status": "UNKNOWN", "evidence": "skip bad status"},
+            ]
+        }
+    )
+
+    assert title == ""
+    assert lines == []
+
+
+def test_escape_inline_markdown_flattens_and_escapes_untrusted_text() -> None:
+    escaped = escape_inline_markdown("[spec](url) <b>tag</b>\nnext | row *x*")
+
+    assert escaped == r"\[spec\]\(url\) &lt;b&gt;tag&lt;/b&gt; next \| row \*x\*"
+
+
+def test_render_comment_includes_ac_compliance_section(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "misty-step/cerberus")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GH_HEAD_SHA", "abcdef1234567890")
+    monkeypatch.setenv("PR_CHANGED_FILES", "7")
+    monkeypatch.setenv("PR_ADDITIONS", "120")
+    monkeypatch.setenv("PR_DELETIONS", "44")
+    monkeypatch.setenv("CERBERUS_VERSION", "v1-test")
+    monkeypatch.setenv("GH_OVERRIDE_POLICY", "pr_author")
+    monkeypatch.setenv("FAIL_ON_VERDICT", "true")
+
+    body = render_comment(
+        {
+            "verdict": "WARN",
+            "summary": "1 reviewer. Failures: 0, warnings: 1, skipped: 0.",
+            "reviewers": [
+                {
+                    "reviewer": "trace",
+                    "perspective": "correctness",
+                    "verdict": "WARN",
+                    "confidence": 0.81,
+                    "summary": "AC coverage is mixed.",
+                    "runtime_seconds": 45,
+                    "findings": [],
+                    "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+                }
+            ],
+            "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+            "override": {"used": False},
+            "ac_compliance": {
+                "total": 2,
+                "satisfied": 1,
+                "details": [
+                    {"ac": "AC one", "status": "SATISFIED", "evidence": "done"},
+                    {"ac": "AC two", "status": "NOT_SATISFIED", "evidence": "missing tests"},
+                ],
+            },
+        },
+        max_findings=5,
+        max_key_findings=3,
+        marker="<!-- cerberus:verdict -->",
+    )
+
+    assert "### AC Compliance (1/2 satisfied)" in body
+    assert "- ✅ AC one" in body
+    assert "- ❌ AC two — *missing tests*" in body
+
+
+def test_render_comment_escapes_ac_compliance_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "misty-step/cerberus")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GH_HEAD_SHA", "abcdef1234567890")
+    monkeypatch.setenv("PR_CHANGED_FILES", "1")
+    monkeypatch.setenv("PR_ADDITIONS", "1")
+    monkeypatch.setenv("PR_DELETIONS", "0")
+    monkeypatch.setenv("CERBERUS_VERSION", "v1-test")
+    monkeypatch.setenv("GH_OVERRIDE_POLICY", "pr_author")
+    monkeypatch.setenv("FAIL_ON_VERDICT", "true")
+
+    body = render_comment(
+        {
+            "verdict": "WARN",
+            "summary": "1 reviewer. Failures: 0, warnings: 1, skipped: 0.",
+            "reviewers": [
+                {
+                    "reviewer": "trace",
+                    "perspective": "correctness",
+                    "verdict": "WARN",
+                    "confidence": 0.81,
+                    "summary": "AC coverage is mixed.",
+                    "runtime_seconds": 45,
+                    "findings": [],
+                    "stats": {"critical": 0, "major": 0, "minor": 1, "info": 0},
+                }
+            ],
+            "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+            "override": {"used": False},
+            "ac_compliance": {
+                "total": 1,
+                "satisfied": 0,
+                "details": [
+                    {
+                        "ac": "[spec](url) <b>tag</b>",
+                        "status": "NOT_SATISFIED",
+                        "evidence": "line one\nline two | *boom*",
+                    }
+                ],
+            },
+        },
+        max_findings=5,
+        max_key_findings=3,
+        marker="<!-- cerberus:verdict -->",
+    )
+
+    assert r"- ❌ \[spec\]\(url\) &lt;b&gt;tag&lt;/b&gt; — *line one line two \| \*boom\**" in body
+
+
+def test_render_comment_includes_raw_output_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "misty-step/cerberus")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GH_HEAD_SHA", "abcdef1234567890")
+    monkeypatch.setenv("PR_CHANGED_FILES", "1")
+    monkeypatch.setenv("PR_ADDITIONS", "1")
+    monkeypatch.setenv("PR_DELETIONS", "0")
+    monkeypatch.setenv("CERBERUS_VERSION", "v1-test")
+    monkeypatch.setenv("GH_OVERRIDE_POLICY", "pr_author")
+    monkeypatch.setenv("FAIL_ON_VERDICT", "true")
+
+    body = render_comment(
+        {
+            "verdict": "WARN",
+            "summary": "1 reviewer warned.",
+            "reviewers": [
+                {
+                    "reviewer": "APOLLO",
+                    "perspective": "correctness",
+                    "verdict": "WARN",
+                    "confidence": 0.3,
+                    "summary": "Partial review — no JSON block.",
+                    "runtime_seconds": 45,
+                    "findings": [],
+                    "stats": {"critical": 0, "major": 0, "minor": 0, "info": 0},
+                    "raw_review": "## Investigation Notes",
+                }
+            ],
+            "stats": {"total": 1, "pass": 0, "warn": 1, "fail": 0, "skip": 0},
+            "override": {"used": False},
+        },
+        max_findings=5,
+        max_key_findings=3,
+        marker="<!-- cerberus:verdict -->",
+    )
+
+    assert "produced unstructured output" in body
+    assert "Raw output is preserved in workflow artifacts/logs" in body
 
 
 def test_renders_skip_banner_for_credit_exhaustion(tmp_path: Path) -> None:

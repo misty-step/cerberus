@@ -63,7 +63,11 @@ def extract_verdict(
 
     system_prompt = (
         "You are a code review formatter. Given reviewer analysis notes, produce the verdict JSON object. "
-        "Include all findings from the notes. Do not add commentary or markdown."
+        "Include all findings from the notes. "
+        "If the notes evaluate acceptance criteria, populate `ac_compliance` with one detail per criterion using only "
+        "SATISFIED, NOT_SATISFIED, or CANNOT_DETERMINE, and keep evidence concise and grounded in the notes. "
+        "If the notes do not mention acceptance criteria, omit `ac_compliance`. "
+        "Do not add commentary or markdown."
     )
     user_prompt = (
         f"# Code Review Notes ({perspective})\n\n"

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -253,6 +254,13 @@ def truncate(text: object, *, max_len: int) -> str:
     if len(raw) <= max_len:
         return raw
     return raw[: max_len - 1].rstrip() + "…"
+
+
+def escape_inline_markdown(text: object) -> str:
+    """Escape untrusted inline markdown content for safe checklist rendering."""
+    collapsed = " ".join(str(text or "").split())
+    escaped = html.escape(collapsed, quote=False)
+    return re.sub(r"([\\`*_{}\[\]()#+!|])", r"\\\1", escaped)
 
 
 def top_findings(reviewer: dict, *, max_findings: int) -> list[dict]:
@@ -677,6 +685,43 @@ def format_hotspots_lines(reviewers: list[dict], *, max_files: int) -> list[str]
     return lines
 
 
+def format_ac_compliance(ac_compliance: object) -> tuple[str, list[str]]:
+    """Format aggregated AC compliance as a checklist."""
+    if not isinstance(ac_compliance, dict):
+        return "", []
+
+    details = ac_compliance.get("details")
+    if not isinstance(details, list) or not details:
+        return "", []
+
+    total = as_int(ac_compliance.get("total")) or len(details)
+    satisfied = as_int(ac_compliance.get("satisfied")) or 0
+    title = f"### AC Compliance ({satisfied}/{total} satisfied)"
+    icon_by_status = {
+        "SATISFIED": "✅",
+        "NOT_SATISFIED": "❌",
+        "CANNOT_DETERMINE": "❓",
+    }
+
+    lines: list[str] = []
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        ac_text = escape_inline_markdown(detail.get("ac"))
+        status = str(detail.get("status") or "").strip().upper()
+        if not ac_text or status not in icon_by_status:
+            continue
+        evidence = escape_inline_markdown(truncate(detail.get("evidence"), max_len=240))
+        line = f"- {icon_by_status[status]} {ac_text}"
+        if evidence and status != "SATISFIED":
+            line += f" — *{evidence}*"
+        lines.append(line)
+
+    if not lines:
+        return "", []
+    return title, lines
+
+
 def format_key_findings_lines(reviewers: list[dict], *, max_total: int) -> list[str]:
     """Format key findings lines."""
     items = collect_unique_findings(reviewers)[:max_total]
@@ -797,6 +842,8 @@ def _build_comment(
     size_note: str = "",
     advisory_banner: str = "",
     skip_diagnostics_table: list[str],
+    ac_compliance_title: str = "",
+    ac_compliance_lines: list[str],
 ) -> str:
     verdict_label = f"{verdict} (advisory)" if advisory_banner else verdict
     lines = [
@@ -840,6 +887,9 @@ def _build_comment(
 
     if skip_diagnostics_table:
         lines.extend(["", *skip_diagnostics_table])
+
+    if ac_compliance_title and ac_compliance_lines:
+        lines.extend(["", ac_compliance_title, *ac_compliance_lines])
 
     wave_summary_lines = format_wave_summary_lines(reviewers)
     if wave_summary_lines:
@@ -933,6 +983,7 @@ def render_comment(
 
     skip_reviewers_list = [r for r in reviewers if normalize_verdict(r.get("verdict")) == "SKIP"]
     skip_diagnostics_table = format_skip_diagnostics_table(skip_reviewers_list)
+    ac_compliance_title, ac_compliance_lines = format_ac_compliance(verdict_data.get("ac_compliance"))
 
     advisory_banner = ""
     if (
@@ -990,6 +1041,8 @@ def render_comment(
         raw_output_note=raw_note,
         advisory_banner=advisory_banner,
         skip_diagnostics_table=skip_diagnostics_table,
+        ac_compliance_title=ac_compliance_title,
+        ac_compliance_lines=ac_compliance_lines,
     )
 
     result = _build_comment(**common)

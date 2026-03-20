@@ -139,6 +139,9 @@ Override: `/cerberus override sha=<sha>` comment on PR with reason. SHA must mat
 
 Every reviewer must end with a JSON block containing: `reviewer`, `perspective`, `verdict`, `confidence` (0-1), `summary`, `findings[]` (each with severity/category/file/line/title/description/suggestion), `stats` (files_reviewed, files_with_issues, critical, major, minor, info).
 
+Optional reviewer root fields:
+- `ac_compliance` (object) — structured acceptance-criteria evaluation with `total`, `satisfied`, `not_satisfied`, `cannot_determine`, and `details[]` (`ac`, `status`, `evidence`). Omit it when the review context had no acceptance criteria or the notes never evaluated them.
+
 Optional finding fields:
 - `evidence` (string) — exact code quote backing the claim
 - `scope` (string) — `diff` or `defaults-change`
