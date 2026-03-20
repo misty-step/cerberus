@@ -259,6 +259,50 @@ defmodule Cerberus.StoreReviewRunTest do
       assert {:ok, []} = Store.review_run_verdicts(store, id)
     end
 
+    test "batch verdict inserts roll back on SQL errors", %{store: store, db_path: db_path} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      with_raw_db(db_path, fn conn ->
+        :ok =
+          Exqlite.Sqlite3.execute(
+            conn,
+            """
+            CREATE TRIGGER verdicts_abort_on_guard
+            BEFORE INSERT ON verdicts
+            WHEN NEW.reviewer = 'guard'
+            BEGIN
+              SELECT RAISE(ABORT, 'forced verdict insert failure');
+            END;
+            """
+          )
+      end)
+
+      assert {:error, reason} =
+               Store.insert_verdicts(store, [
+                 %{
+                   review_run_id: id,
+                   reviewer: "trace",
+                   perspective: "correctness",
+                   verdict: "PASS",
+                   confidence: 1.0,
+                   summary: "Healthy verdict",
+                   findings: []
+                 },
+                 %{
+                   review_run_id: id,
+                   reviewer: "guard",
+                   perspective: "security",
+                   verdict: "WARN",
+                   confidence: 0.5,
+                   summary: "Triggered rollback",
+                   findings: []
+                 }
+               ])
+
+      assert inspect(reason) =~ "forced verdict insert failure"
+      assert {:ok, []} = Store.review_run_verdicts(store, id)
+    end
+
     test "returns an error when findings cannot be JSON encoded", %{store: store} do
       id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
 
@@ -286,6 +330,23 @@ defmodule Cerberus.StoreReviewRunTest do
 
       assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
       assert stored.summary == "Store still healthy"
+    end
+
+    test "rejects non-list findings payloads on write", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      assert {:error, {:invalid_findings, :not_a_list}} =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.4,
+                 summary: "Malformed findings payload",
+                 findings: %{oops: true}
+               })
+
+      assert {:ok, []} = Store.review_run_verdicts(store, id)
     end
 
     test "normalizes malformed findings on the read path", %{store: store, db_path: db_path} do

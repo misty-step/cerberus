@@ -603,8 +603,8 @@ defmodule Cerberus.Store do
 
   defp normalize_findings(nil), do: []
 
-  defp normalize_findings(findings) do
-    Logger.warning("dropping invalid findings payload of type #{inspect(findings)}")
+  defp normalize_findings(_findings) do
+    Logger.warning("dropping invalid findings payload during read normalization: expected list")
     []
   end
 
@@ -697,12 +697,8 @@ defmodule Cerberus.Store do
   end
 
   defp prepare_verdict_binding(attrs) do
-    findings =
-      attrs
-      |> Map.get(:findings, [])
-      |> normalize_findings()
-
-    with {:ok, findings_json} <- Jason.encode(findings) do
+    with {:ok, findings} <- validate_findings(Map.get(attrs, :findings, [])),
+         {:ok, findings_json} <- Jason.encode(findings) do
       {:ok,
        [
          attrs[:review_run_id],
@@ -714,9 +710,17 @@ defmodule Cerberus.Store do
          findings_json
        ]}
     else
-      {:error, reason} -> {:error, {:invalid_findings, reason}}
+      {:error, :not_a_list} ->
+        Logger.warning("invalid findings payload on write: expected list")
+        {:error, {:invalid_findings, :not_a_list}}
+
+      {:error, reason} ->
+        {:error, {:invalid_findings, reason}}
     end
   end
+
+  defp validate_findings(findings) when is_list(findings), do: {:ok, normalize_findings(findings)}
+  defp validate_findings(_findings), do: {:error, :not_a_list}
 
   defp verdict_insert_sql do
     """
