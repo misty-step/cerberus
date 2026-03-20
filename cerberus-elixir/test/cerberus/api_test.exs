@@ -1,34 +1,211 @@
 defmodule Cerberus.APITest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import Plug.Test
   import Plug.Conn
 
-  alias Cerberus.API
+  alias Cerberus.{API, Pipeline}
 
   @api_key "test-cerberus-api-key"
+  @valid_verdict_json """
+  ```json
+  {
+    "reviewer": "trace",
+    "perspective": "correctness",
+    "verdict": "PASS",
+    "confidence": 0.85,
+    "summary": "No issues found",
+    "findings": [],
+    "stats": {
+      "files_reviewed": 1,
+      "files_with_issues": 0,
+      "critical": 0,
+      "major": 0,
+      "minor": 0,
+      "info": 0
+    }
+  }
+  ```
+  """
+  @diff """
+  diff --git a/lib/foo.ex b/lib/foo.ex
+  --- a/lib/foo.ex
+  +++ b/lib/foo.ex
+  @@ -1,3 +1,4 @@
+   defmodule Foo do
+  +  def bar, do: :ok
+   end
+  """
 
   setup do
-    db_path = Path.join(System.tmp_dir!(), "cerberus_api_test_#{System.unique_integer([:positive])}.db")
+    uid = System.unique_integer([:positive])
+    db_path = Path.join(System.tmp_dir!(), "cerberus_api_test_#{uid}.db")
     {:ok, store} = Cerberus.Store.start_link(database_path: db_path)
+
+    repo_root = Application.fetch_env!(:cerberus_elixir, :repo_root)
+    config_name = :"api_test_config_#{uid}"
+    {:ok, _config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
+
+    :sys.replace_state(config_name, fn state ->
+      correctness_persona =
+        Enum.find(state.personas, fn persona -> persona.perspective == :correctness end)
+
+      %{
+        state
+        | personas: [correctness_persona],
+          routing: %{
+            state.routing
+            | panel_size: 1,
+              fallback_panel: ["correctness"],
+              always_include: [],
+              include_if_code_changed: []
+          }
+      }
+    end)
+
+    router_llm = fn _params ->
+      {:ok, ["correctness"]}
+    end
+
+    router_name = :"api_test_router_#{uid}"
+
+    {:ok, router} =
+      Cerberus.Router.start_link(
+        name: router_name,
+        config_server: config_name,
+        call_llm: router_llm
+      )
+
+    {:ok, supervisor} = DynamicSupervisor.start_link(strategy: :one_for_one)
+    {:ok, task_sup} = Task.Supervisor.start_link()
+
     on_exit(fn -> File.rm(db_path) end)
-    %{store: store}
+
+    %{
+      store: store,
+      config: config_name,
+      router: router,
+      supervisor: supervisor,
+      task_sup: task_sup,
+      repo_root: repo_root
+    }
   end
 
-  defp call(conn, store) do
-    API.call(conn, API.init(api_key: @api_key, store: store))
+  defp call(conn, store, api_opts \\ []) do
+    API.call(conn, API.init([api_key: @api_key, store: store] ++ api_opts))
   end
 
-  defp json_post(path, body, store) do
+  defp json_post(path, body, store, api_opts \\ []) do
     conn(:post, path, Jason.encode!(body))
     |> put_req_header("content-type", "application/json")
     |> put_req_header("authorization", "Bearer #{@api_key}")
-    |> call(store)
+    |> call(store, api_opts)
   end
 
   defp authed_get(path, store) do
     conn(:get, path)
     |> put_req_header("authorization", "Bearer #{@api_key}")
     |> call(store)
+  end
+
+  defp mock_github_req(responses) do
+    pid = self()
+
+    Req.new(
+      adapter: fn request ->
+        send(pid, {:github_request, request.method, request.url})
+        {request, find_response(request, responses)}
+      end
+    )
+  end
+
+  defp find_response(request, responses) do
+    url = to_string(request.url)
+    method = request.method
+    headers = request.headers
+
+    accept =
+      headers
+      |> Enum.find_value(fn
+        {"accept", [value | _]} -> value
+        {"accept", value} when is_binary(value) -> value
+        _ -> nil
+      end)
+
+    cond do
+      method == :get and String.match?(url, ~r{/pulls/\d+$}) and
+          accept == "application/vnd.github.diff" ->
+        Map.get(responses, :diff, %Req.Response{status: 200, body: @diff})
+
+      method == :get and String.match?(url, ~r{/pulls/\d+$}) ->
+        Map.get(responses, :pr_context, default_pr_context_response())
+
+      method == :get and String.contains?(url, "/issues/") and String.contains?(url, "/comments") ->
+        Map.get(responses, :comments, %Req.Response{status: 200, body: []})
+
+      method == :get and String.contains?(url, "/pulls/") and String.contains?(url, "/files") ->
+        Map.get(responses, :files, %Req.Response{status: 200, body: []})
+
+      method == :post and String.contains?(url, "/check-runs") ->
+        Map.get(responses, :create_check, %Req.Response{status: 201, body: %{"id" => 999}})
+
+      method == :patch and String.contains?(url, "/check-runs") ->
+        Map.get(responses, :update_check, %Req.Response{status: 200, body: %{}})
+
+      method == :post and String.contains?(url, "/reviews") ->
+        Map.get(responses, :create_review, %Req.Response{status: 200, body: %{}})
+
+      method == :post and String.contains?(url, "/comments") ->
+        Map.get(responses, :create_comment, %Req.Response{status: 201, body: %{"id" => 1}})
+
+      true ->
+        %Req.Response{status: 404, body: %{"error" => "not found"}}
+    end
+  end
+
+  defp default_pr_context_response do
+    %Req.Response{
+      status: 200,
+      body: %{
+        "title" => "Test PR",
+        "user" => %{"login" => "testuser"},
+        "head" => %{"ref" => "feat/test", "sha" => "abc123def456"},
+        "base" => %{"ref" => "main"},
+        "body" => "Test PR body"
+      }
+    }
+  end
+
+  defp pipeline_opts(ctx, overrides) do
+    [
+      store: ctx.store,
+      config_server: ctx.config,
+      router_server: ctx.router,
+      supervisor: ctx.supervisor,
+      task_supervisor: ctx.task_sup,
+      github_opts: [req: mock_github_req(Keyword.get(overrides, :github_responses, %{}))],
+      call_llm: Keyword.fetch!(overrides, :call_llm),
+      repo_root: ctx.repo_root,
+      reviewer_timeout: Keyword.get(overrides, :reviewer_timeout, 5_000)
+    ]
+  end
+
+  defp wait_for_status(store, review_id, expected, attempts \\ 50)
+
+  defp wait_for_status(_store, review_id, expected, 0) do
+    flunk("timed out waiting for review #{review_id} to reach status #{expected}")
+  end
+
+  defp wait_for_status(store, review_id, expected, attempts) do
+    conn = authed_get("/api/reviews/#{review_id}", store)
+    assert conn.status == 200
+    body = Jason.decode!(conn.resp_body)
+
+    if body["status"] == expected do
+      body
+    else
+      Process.sleep(20)
+      wait_for_status(store, review_id, expected, attempts - 1)
+    end
   end
 
   # --- Authentication ---
@@ -100,17 +277,27 @@ defmodule Cerberus.APITest do
     end
 
     test "rejects non-integer pr_number", %{store: store} do
-      conn = json_post("/api/reviews", %{repo: "org/repo", pr_number: "abc", head_sha: "abc123"}, store)
+      conn =
+        json_post(
+          "/api/reviews",
+          %{repo: "org/repo", pr_number: "abc", head_sha: "abc123"},
+          store
+        )
+
       assert conn.status == 422
     end
 
     test "accepts valid review request and returns 202", %{store: store} do
       conn =
-        json_post("/api/reviews", %{
-          repo: "org/repo",
-          pr_number: 42,
-          head_sha: "abc123def456"
-        }, store)
+        json_post(
+          "/api/reviews",
+          %{
+            repo: "org/repo",
+            pr_number: 42,
+            head_sha: "abc123def456"
+          },
+          store
+        )
 
       assert conn.status == 202
       body = Jason.decode!(conn.resp_body)
@@ -136,11 +323,15 @@ defmodule Cerberus.APITest do
 
     test "returns queued review status after creation", %{store: store} do
       post_conn =
-        json_post("/api/reviews", %{
-          repo: "org/repo",
-          pr_number: 42,
-          head_sha: "abc123def456"
-        }, store)
+        json_post(
+          "/api/reviews",
+          %{
+            repo: "org/repo",
+            pr_number: 42,
+            head_sha: "abc123def456"
+          },
+          store
+        )
 
       assert post_conn.status == 202
       %{"review_id" => id} = Jason.decode!(post_conn.resp_body)
@@ -156,18 +347,78 @@ defmodule Cerberus.APITest do
 
     test "ignores unrecognized fields in request", %{store: store} do
       post_conn =
-        json_post("/api/reviews", %{
-          repo: "org/repo",
-          pr_number: 42,
-          head_sha: "abc123",
-          extra_field: "should-be-ignored"
-        }, store)
+        json_post(
+          "/api/reviews",
+          %{
+            repo: "org/repo",
+            pr_number: 42,
+            head_sha: "abc123",
+            extra_field: "should-be-ignored"
+          },
+          store
+        )
 
       %{"review_id" => id} = Jason.decode!(post_conn.resp_body)
 
       conn = authed_get("/api/reviews/#{id}", store)
       body = Jason.decode!(conn.resp_body)
       refute Map.has_key?(body, "extra_field")
+    end
+
+    test "returns running during async execution and completed after release", ctx do
+      test_pid = self()
+      blocker = make_ref()
+
+      call_llm = fn _params ->
+        send(test_pid, {:reviewer_blocked, self(), blocker})
+
+        receive do
+          {:release_reviewer, ^blocker} ->
+            {:ok,
+             %{
+               content: @valid_verdict_json,
+               tool_calls: nil,
+               usage: %{prompt_tokens: 100, completion_tokens: 50}
+             }}
+        after
+          5_000 -> {:error, :timeout}
+        end
+      end
+
+      pipeline_fn = fn review_id, params ->
+        spawn(fn ->
+          send(test_pid, {:pipeline_started, review_id})
+          result = Pipeline.run(review_id, params, pipeline_opts(ctx, call_llm: call_llm))
+          send(test_pid, {:pipeline_finished, review_id, result})
+        end)
+      end
+
+      post_conn =
+        json_post(
+          "/api/reviews",
+          %{repo: "org/repo", pr_number: 42, head_sha: "abc123def456"},
+          ctx.store,
+          pipeline: pipeline_fn
+        )
+
+      assert post_conn.status == 202
+      %{"review_id" => id, "status" => "queued"} = Jason.decode!(post_conn.resp_body)
+
+      assert_receive {:pipeline_started, ^id}, 1_000
+      assert_receive {:reviewer_blocked, reviewer_pid, ^blocker}, 1_000
+
+      running_body = wait_for_status(ctx.store, id, "running")
+      assert running_body["review_id"] == id
+      assert running_body["status"] == "running"
+
+      send(reviewer_pid, {:release_reviewer, blocker})
+
+      assert_receive {:pipeline_finished, ^id, {:ok, _aggregated}}, 5_000
+
+      completed_body = wait_for_status(ctx.store, id, "completed")
+      assert completed_body["review_id"] == id
+      assert completed_body["status"] == "completed"
+      assert is_map(completed_body["aggregated_verdict"])
     end
   end
 
@@ -180,7 +431,11 @@ defmodule Cerberus.APITest do
       Agent.stop(dead_store)
 
       conn =
-        conn(:post, "/api/reviews", Jason.encode!(%{repo: "org/repo", pr_number: 42, head_sha: "abc"}))
+        conn(
+          :post,
+          "/api/reviews",
+          Jason.encode!(%{repo: "org/repo", pr_number: 42, head_sha: "abc"})
+        )
         |> put_req_header("content-type", "application/json")
         |> put_req_header("authorization", "Bearer #{@api_key}")
         |> API.call(API.init(api_key: @api_key, store: dead_store))

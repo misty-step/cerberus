@@ -97,7 +97,7 @@ defmodule Cerberus.PipelineTest do
     # Config (unique name to avoid clash with Application-started one)
     repo_root = Application.fetch_env!(:cerberus_elixir, :repo_root)
     config_name = :"pipeline_test_config_#{uid}"
-    {:ok, config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
+    {:ok, _config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
 
     # Router (mock LLM, unique name)
     router_llm = fn _params ->
@@ -262,7 +262,7 @@ defmodule Cerberus.PipelineTest do
       assert run.completed_at != nil
     end
 
-    test "GET returns running during execution, completed after", ctx do
+    test "run completes a queued review and persists final status", ctx do
       review_id = create_run(ctx.store)
 
       # Verify starts as queued
