@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Run sync-v1-tag tests
         run: |
           chmod +x scripts/tests/sync-v1-tag.test.sh

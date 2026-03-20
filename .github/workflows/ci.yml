@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shellcheck
-        run: shellcheck scripts/*.sh api/*.sh
+        run: shellcheck scripts/*.sh api/*.sh cerberus-elixir/*.sh
 
       - name: Python syntax
         run: |
@@ -34,11 +34,24 @@ jobs:
           pip install pyyaml
           python3 -c "
           import yaml, sys
-          for path in ['action.yml', 'draft-check/action.yml', 'preflight/action.yml', 'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml', 'validate/action.yml', 'templates/triage-workflow.yml', 'templates/consumer-workflow-reusable.yml', 'templates/consumer-workflow-minimal.yml', 'templates/workflow-lint.yml', 'coverage-policy.yml']:
+          paths = [
+              'action.yml', 'draft-check/action.yml', 'preflight/action.yml',
+              'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml',
+              'validate/action.yml', 'templates/triage-workflow.yml',
+              'templates/consumer-workflow-reusable.yml',
+              'templates/consumer-workflow-minimal.yml',
+              'templates/workflow-lint.yml', 'coverage-policy.yml',
+          ]
+          for path in paths:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'{path}: valid')
           "
+
+      - name: Yamllint
+        run: |
+          pip install yamllint -q
+          yamllint .github/workflows/*.yml
 
       - name: Validate template parity
         run: tests/validate-template-parity.sh
