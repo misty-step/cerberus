@@ -4,6 +4,8 @@ defmodule Cerberus.StoreReviewRunTest do
   alias Cerberus.Store
   alias Cerberus.Verdict.Finding
 
+  @max_findings_json_bytes 65_536
+
   defp with_raw_db(database_path, fun) do
     {:ok, conn} = Exqlite.Sqlite3.open(database_path)
 
@@ -24,6 +26,27 @@ defmodule Cerberus.StoreReviewRunTest do
     {:ok, store} = Store.start_link(database_path: db_path)
     on_exit(fn -> File.rm(db_path) end)
     %{store: store, db_path: db_path}
+  end
+
+  defp persisted_finding(attrs) do
+    Map.merge(
+      %{
+        severity: "major",
+        category: "correctness",
+        file: "lib/foo.ex",
+        line: 12,
+        title: "Nil guard missing",
+        description: "The code dereferences a maybe-nil value.",
+        suggestion: "Guard the value before dereferencing."
+      },
+      attrs
+    )
+  end
+
+  defp encoded_findings_size(findings) do
+    findings
+    |> Jason.encode!()
+    |> byte_size()
   end
 
   describe "create_review_run/2" do
@@ -153,10 +176,10 @@ defmodule Cerberus.StoreReviewRunTest do
       assert {:ok, []} = Store.review_run_verdicts(store, 99999)
     end
 
-    test "drops invalid findings before storing", %{store: store} do
+    test "rejects malformed findings before storing", %{store: store} do
       id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
 
-      assert :ok =
+      assert {:error, {:invalid_findings, {:invalid_finding, 1, {:non_scalar_value, "metadata"}}}} =
                Store.insert_verdict(store, %{
                  review_run_id: id,
                  reviewer: "trace",
@@ -165,31 +188,17 @@ defmodule Cerberus.StoreReviewRunTest do
                  confidence: 0.4,
                  summary: "Mixed findings",
                  findings: [
-                   %{
+                   persisted_finding(%{
                      severity: "minor",
-                     category: "correctness",
-                     file: "lib/foo.ex",
                      line: 9,
                      title: "Guard missing",
                      description: "Add a guard clause."
-                   },
-                   nil,
-                   123
+                   }),
+                   persisted_finding(%{metadata: %{nested: true}})
                  ]
                })
 
-      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
-
-      assert stored.findings == [
-               %{
-                 "severity" => "minor",
-                 "category" => "correctness",
-                 "file" => "lib/foo.ex",
-                 "line" => 9,
-                 "title" => "Guard missing",
-                 "description" => "Add a guard clause."
-               }
-             ]
+      assert {:ok, []} = Store.review_run_verdicts(store, id)
     end
 
     test "normalizes struct findings before storing", %{store: store} do
@@ -231,10 +240,65 @@ defmodule Cerberus.StoreReviewRunTest do
              ]
     end
 
+    test "rejects findings payloads that exceed the byte limit", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      base_finding = persisted_finding(%{description: ""})
+      padding = @max_findings_json_bytes - encoded_findings_size([base_finding])
+
+      oversized_finding =
+        persisted_finding(%{
+          description: String.duplicate("x", padding + 1)
+        })
+
+      assert {:error, {:invalid_findings, {:payload_too_large, size, @max_findings_json_bytes}}} =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.4,
+                 summary: "Oversized findings payload",
+                 findings: [oversized_finding]
+               })
+
+      assert size == encoded_findings_size([oversized_finding])
+      assert {:ok, []} = Store.review_run_verdicts(store, id)
+    end
+
+    test "accepts findings payloads at the byte limit", %{store: store} do
+      id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
+
+      base_finding = persisted_finding(%{description: ""})
+      padding = @max_findings_json_bytes - encoded_findings_size([base_finding])
+
+      limit_finding = persisted_finding(%{description: String.duplicate("x", padding)})
+
+      assert encoded_findings_size([limit_finding]) == @max_findings_json_bytes
+
+      assert :ok =
+               Store.insert_verdict(store, %{
+                 review_run_id: id,
+                 reviewer: "trace",
+                 perspective: "correctness",
+                 verdict: "WARN",
+                 confidence: 0.4,
+                 summary: "Boundary findings payload",
+                 findings: [limit_finding]
+               })
+
+      assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
+      assert stored.summary == "Boundary findings payload"
+
+      assert stored.findings == [
+               Map.new(limit_finding, fn {key, value} -> {Atom.to_string(key), value} end)
+             ]
+    end
+
     test "batch verdict inserts are atomic when one payload is invalid", %{store: store} do
       id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
 
-      assert {:error, {:invalid_findings, _}} =
+      assert {:error, {:invalid_findings, {:invalid_finding, 0, {:non_scalar_value, "raw"}}}} =
                Store.insert_verdicts(store, [
                  %{
                    review_run_id: id,
@@ -303,10 +367,10 @@ defmodule Cerberus.StoreReviewRunTest do
       assert {:ok, []} = Store.review_run_verdicts(store, id)
     end
 
-    test "returns an error when findings cannot be JSON encoded", %{store: store} do
+    test "returns an error when findings contain non-scalar values", %{store: store} do
       id = Store.create_review_run(store, %{repo: "org/repo", pr_number: 42, head_sha: "abc123"})
 
-      assert {:error, {:invalid_findings, _}} =
+      assert {:error, {:invalid_findings, {:invalid_finding, 0, {:non_scalar_value, "raw"}}}} =
                Store.insert_verdict(store, %{
                  review_run_id: id,
                  reviewer: "trace",
@@ -359,13 +423,31 @@ defmodule Cerberus.StoreReviewRunTest do
             """
             INSERT INTO verdicts
               (review_run_id, reviewer, verdict, perspective, confidence, summary, findings_json)
-            VALUES (#{id}, 'trace', 'WARN', 'correctness', 0.3, 'Malformed findings payload', '[null, 123, {}]')
+            VALUES (
+              #{id},
+              'trace',
+              'WARN',
+              'correctness',
+              0.3,
+              'Malformed findings payload',
+              '[null, 123, {}, {\"severity\":\"minor\",\"category\":\"correctness\",\"file\":\"lib/foo.ex\",\"line\":9,\"title\":\"Valid\",\"description\":\"kept\"}, {\"severity\":\"minor\",\"metadata\":{\"nested\":true}}]'
+            )
             """
           )
       end)
 
       assert {:ok, [stored]} = Store.review_run_verdicts(store, id)
-      assert stored.findings == []
+
+      assert stored.findings == [
+               %{
+                 "severity" => "minor",
+                 "category" => "correctness",
+                 "file" => "lib/foo.ex",
+                 "line" => 9,
+                 "title" => "Valid",
+                 "description" => "kept"
+               }
+             ]
     end
 
     test "normalizes integer and invalid confidence values on the read path", %{
