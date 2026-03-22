@@ -177,6 +177,9 @@ jobs:
       - name: Run Elixir tests
         run: mix test
 
+      - name: Verify release contract
+        run: ./test/release_contract.sh
+
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   merge-gate:
     name: merge-gate

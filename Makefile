@@ -55,7 +55,7 @@ yamllint:
 elixir-test:
 	$(call require,mix,Install Elixir to validate cerberus-elixir)
 	@echo "🔍 Running cerberus-elixir checks..."
-	@cd cerberus-elixir && mix deps.get && mix compile && mix test
+	@cd cerberus-elixir && mix deps.get && mix compile && mix test && ./test/release_contract.sh
 
 # Full local validation (test + lint + shellcheck + yamllint + elixir-test)
 validate: test lint shellcheck yamllint elixir-test

@@ -21,5 +21,7 @@ defmodule Cerberus.ApplicationTest do
 
     assert release[:include_executables_for] == [:unix]
     assert release[:applications][:runtime_tools] == :permanent
+    assert release[:steps] |> hd() == :assemble
+    assert release[:steps] |> List.last() |> is_function(1)
   end
 end
