@@ -126,10 +126,10 @@ defmodule Cerberus.Engine do
     supervisor = Keyword.get(opts, :supervisor, Cerberus.ReviewSupervisor)
     timeout = Keyword.get(opts, :reviewer_timeout, @default_reviewer_timeout_ms)
     task_sup = Keyword.get(opts, :task_supervisor, Cerberus.TaskSupervisor)
-    personas = Config.personas(config)
-    pool = resolve_model_pool(routing.model_tier, config)
 
     try do
+      personas = Config.personas(config)
+      pool = resolve_model_pool(routing.model_tier, config)
       review_ctx = build_review_context(context, diff, diff_file)
 
       panel =
@@ -249,7 +249,7 @@ defmodule Cerberus.Engine do
   defp pick_model(persona, pool) do
     case persona.model_policy do
       :pool ->
-        if pool == [], do: @default_model, else: Enum.random(pool)
+        if Enum.empty?(pool), do: @default_model, else: Enum.random(pool)
 
       model when is_binary(model) and model != "" ->
         model

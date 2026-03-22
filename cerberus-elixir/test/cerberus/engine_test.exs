@@ -35,6 +35,8 @@ defmodule Cerberus.EngineTest do
    end
   """
 
+  @default_model "openrouter/moonshotai/kimi-k2.5"
+
   defmodule StoreSpy do
     use GenServer
 
@@ -49,6 +51,31 @@ defmodule Cerberus.EngineTest do
     def handle_call(message, _from, test_pid) do
       send(test_pid, {:unexpected_store_call, message})
       {:reply, :ok, test_pid}
+    end
+  end
+
+  defmodule StaticConfig do
+    use GenServer
+
+    def start_link(opts) do
+      GenServer.start_link(__MODULE__, opts)
+    end
+
+    @impl true
+    def init(opts), do: {:ok, opts}
+
+    @impl true
+    def handle_call(:personas, _from, state) do
+      case Keyword.fetch!(state, :personas) do
+        {:raise, message} -> raise message
+        personas -> {:reply, personas, state}
+      end
+    end
+
+    @impl true
+    def handle_call({:model_pool, tier}, _from, state) do
+      pools = Keyword.get(state, :model_pools, %{})
+      {:reply, Map.get(pools, tier, []), state}
     end
   end
 
@@ -108,7 +135,7 @@ defmodule Cerberus.EngineTest do
   end
 
   defp engine_opts(ctx, overrides \\ []) do
-    [
+    base = [
       config_server: ctx.config,
       router_server: ctx.router,
       supervisor: ctx.supervisor,
@@ -116,7 +143,15 @@ defmodule Cerberus.EngineTest do
       call_llm: Keyword.get(overrides, :call_llm, &mock_llm_pass/1),
       repo_root: ctx.repo_root,
       reviewer_timeout: Keyword.get(overrides, :reviewer_timeout, 30_000)
-    ] ++ Keyword.drop(overrides, [:call_llm, :reviewer_timeout])
+    ]
+
+    Keyword.merge(base, Keyword.drop(overrides, [:call_llm, :reviewer_timeout]))
+  end
+
+  defp temp_diff_paths do
+    Path.join(System.tmp_dir!(), "cerberus-diff-*")
+    |> Path.wildcard()
+    |> Enum.sort()
   end
 
   describe "review/3" do
@@ -178,6 +213,116 @@ defmodule Cerberus.EngineTest do
         end)
 
       assert log =~ "Reviewer correctness failed: {:permanent, :boom}"
+    end
+
+    test "degrades reviewer crashes to skip results", ctx do
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   Engine.review(
+                     @diff,
+                     context(),
+                     engine_opts(ctx, call_llm: fn _params -> Process.exit(self(), :kill) end)
+                   )
+
+          assert result.verdict == "SKIP"
+          assert Enum.all?(result.reviewer_results, &(&1.status == :error))
+        end)
+
+      assert log =~ "Reviewer correctness crashed"
+    end
+
+    test "degrades reviewer timeouts to skip results", ctx do
+      call_count = :counters.new(1, [:atomics])
+
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   Engine.review(
+                     @diff,
+                     context(),
+                     engine_opts(ctx,
+                       call_llm: fn _params ->
+                         count = :counters.get(call_count, 1)
+                         :counters.add(call_count, 1, 1)
+
+                         if count == 0 do
+                           Process.sleep(5_200)
+                         end
+
+                         {:ok,
+                          %{
+                            content: @valid_verdict_json,
+                            tool_calls: nil,
+                            usage: %{prompt_tokens: 100, completion_tokens: 50}
+                          }}
+                       end,
+                       reviewer_timeout: 50
+                     )
+                   )
+
+          assert Enum.any?(result.reviewer_results, &(&1.status == :timeout))
+          assert Enum.any?(result.reviewers, &(&1.verdict == "SKIP"))
+        end)
+
+      assert log =~ "Reviewer correctness timed out"
+    end
+
+    test "raises when routing returns a perspective without a matching persona", ctx do
+      personas =
+        ctx.config
+        |> Cerberus.Config.personas()
+        |> Enum.reject(&(to_string(&1.perspective) == "testing"))
+
+      {:ok, config} = StaticConfig.start_link(personas: personas, model_pools: %{wave2: []})
+
+      assert_raise ArgumentError, ~r/unknown perspective: "testing"/, fn ->
+        Engine.review(@diff, context(), engine_opts(ctx, config_server: config))
+      end
+    end
+
+    test "falls back to the default model when the selected pool is empty", ctx do
+      personas = Cerberus.Config.personas(ctx.config)
+
+      {:ok, config} =
+        StaticConfig.start_link(
+          personas: personas,
+          model_pools: %{wave1: [], wave2: [], wave3: []}
+        )
+
+      test_pid = self()
+
+      assert {:ok, _result} =
+               Engine.review(
+                 @diff,
+                 context(),
+                 engine_opts(ctx,
+                   config_server: config,
+                   call_llm: fn params ->
+                     send(test_pid, {:review_model, params.model})
+
+                     {:ok,
+                      %{
+                        content: @valid_verdict_json,
+                        tool_calls: nil,
+                        usage: %{prompt_tokens: 100, completion_tokens: 50}
+                      }}
+                   end
+                 )
+               )
+
+      for _ <- 1..4 do
+        assert_receive {:review_model, @default_model}
+      end
+    end
+
+    test "cleans up the temp diff file when config lookup crashes", ctx do
+      before_paths = temp_diff_paths()
+      {:ok, config} = StaticConfig.start_link(personas: {:raise, "boom"})
+
+      assert catch_exit(Engine.review(@diff, context(), engine_opts(ctx, config_server: config)))
+
+      assert temp_diff_paths() == before_paths
     end
   end
 end
