@@ -25,4 +25,30 @@ defmodule Cerberus.LocalRepoReadHandlerTest do
       File.rm_rf(repo_root)
     end
   end
+
+  test "search_code falls back to grep when rg is unavailable" do
+    repo_root =
+      Path.join(System.tmp_dir!(), "cerberus_local_repo_#{System.unique_integer([:positive])}")
+
+    grep = System.find_executable("grep")
+    assert is_binary(grep)
+
+    try do
+      lib_dir = Path.join(repo_root, "lib")
+      File.mkdir_p!(lib_dir)
+      File.write!(Path.join(lib_dir, "sample.ex"), "defmodule Sample do\n  @tag \"-n\"\nend\n")
+
+      handler = LocalRepoReadHandler.build(repo_root, rg: nil, grep: grep)
+
+      assert {:ok, output} =
+               handler.(%{
+                 name: "search_code",
+                 arguments: %{"query" => "-n"}
+               })
+
+      assert output =~ "lib/sample.ex"
+    after
+      File.rm_rf(repo_root)
+    end
+  end
 end
