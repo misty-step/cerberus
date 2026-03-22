@@ -55,6 +55,25 @@ defmodule Cerberus.PipelineTest do
     end
   end
 
+  defmodule SpyEngine do
+    def review(diff, context, opts) do
+      send(Keyword.fetch!(opts, :notify), {:engine_called, diff, context})
+
+      {:ok,
+       %Cerberus.Engine.Result{
+         verdict: "PASS",
+         summary: "All reviewers passed.",
+         reviewers: [],
+         findings: [],
+         override: Keyword.get(opts, :override),
+         reserves: [],
+         stats: %{total: 0, fail: 0, warn: 0, pass: 0, skip: 0},
+         cost: %{total_usd: 0.0, per_reviewer: %{}},
+         reviewer_results: []
+       }}
+    end
+  end
+
   @valid_verdict_json """
   ```json
   {
@@ -260,6 +279,21 @@ defmodule Cerberus.PipelineTest do
       assert run.status == "completed"
       assert run.aggregated_verdict != nil
       assert run.completed_at != nil
+    end
+
+    test "delegates review execution to Engine.review/3", ctx do
+      review_id = create_run(ctx.store)
+      opts = pipeline_opts(ctx) ++ [engine: SpyEngine, notify: self()]
+
+      assert {:ok, result} = Pipeline.run(review_id, params(), opts)
+
+      assert_receive {:engine_called, diff, context}
+      assert diff == @diff
+      assert context.title == "Test PR"
+      assert context.author == "testuser"
+      assert context.head_ref == "feat/test"
+      assert context.base_ref == "main"
+      assert result.verdict == "PASS"
     end
 
     test "run completes a queued review and persists final status", ctx do
@@ -588,6 +622,8 @@ defmodule Cerberus.PipelineTest do
         assert c.prompt_tokens >= 0
         assert c.completion_tokens >= 0
       end)
+
+      assert Enum.sort(Map.keys(result.cost.per_reviewer)) == ["atlas", "guard", "proof", "trace"]
     end
 
     test "persists per-reviewer verdicts", ctx do

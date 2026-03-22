@@ -1,6 +1,6 @@
 defmodule Cerberus.Pipeline do
   @moduledoc """
-  Orchestrates a complete review run: fetch → route → review → aggregate → post.
+  Orchestrates a complete review run: fetch → review → post.
 
   Launched asynchronously by the API after `POST /api/reviews`. Updates the
   review run row through its lifecycle (queued → running → completed | failed)
@@ -8,30 +8,26 @@ defmodule Cerberus.Pipeline do
 
   ## DI seams (all via `opts`)
 
-      :store           — Store GenServer (default: Cerberus.Store)
-      :github_opts     — keyword list forwarded to all GitHub calls (inject :req here)
-      :config_server   — Config GenServer (default: Cerberus.Config)
-      :router_server   — Router GenServer (default: Cerberus.Router)
-      :supervisor      — DynamicSupervisor for reviewers (default: Cerberus.ReviewSupervisor)
-      :call_llm        — LLM function passed to each Reviewer
-      :tool_handler    — tool handler passed to each Reviewer
+      :store            — Store GenServer (default: Cerberus.Store)
+      :github_opts      — keyword list forwarded to all GitHub calls (inject :req here)
+      :config_server    — Config GenServer (default: Cerberus.Config)
+      :router_server    — Router GenServer (default: Cerberus.Router)
+      :supervisor       — DynamicSupervisor for reviewers (default: Cerberus.ReviewSupervisor)
+      :call_llm         — LLM function passed to each Reviewer
+      :tool_handler     — tool handler passed to each Reviewer
+      :engine           — review execution module (default: Cerberus.Engine)
       :task_supervisor  — TaskSupervisor for async start (default: Cerberus.TaskSupervisor)
       :reviewer_timeout — per-reviewer timeout in ms (default: 600_000)
-      :repo_root       — for template loading
+      :repo_root        — for template loading
   """
 
   require Logger
 
-  alias Cerberus.{Config, GitHub, Reviewer, Router, Store, Telemetry}
-  alias Cerberus.Verdict.{Aggregator, Cost, Override}
+  alias Cerberus.{Engine, GitHub, Store}
+  alias Cerberus.Verdict.{Cost, Override}
 
-  @tier_to_pool %{flash: :wave1, standard: :wave2, pro: :wave3}
-  @default_reviewer_timeout_ms 600_000
-  @default_model "openrouter/moonshotai/kimi-k2.5"
   @check_name "Cerberus / Verdict"
   @verdict_marker "<!-- cerberus-verdict -->"
-
-  # --- Public API ---
 
   @doc "Start the pipeline asynchronously. Returns `{:ok, pid}`."
   def start(review_id, params, opts \\ []) do
@@ -47,10 +43,7 @@ defmodule Cerberus.Pipeline do
   def run(review_id, params, opts \\ []) do
     store = Keyword.get(opts, :store, Store)
     gh = Keyword.get(opts, :github_opts, [])
-    config = Keyword.get(opts, :config_server, Config)
-    router = Keyword.get(opts, :router_server, Router)
-    supervisor = Keyword.get(opts, :supervisor, Cerberus.ReviewSupervisor)
-    timeout = Keyword.get(opts, :reviewer_timeout, @default_reviewer_timeout_ms)
+    engine = Keyword.get(opts, :engine, Engine)
 
     repo = params.repo
     pr = params.pr_number
@@ -59,38 +52,25 @@ defmodule Cerberus.Pipeline do
     try do
       Store.update_review_run(store, review_id, %{status: "running"})
 
-      # 1. Fetch PR context + diff
       {:ok, pr_ctx} = GitHub.fetch_pr_context(repo, pr, gh)
       {:ok, diff} = GitHub.fetch_pr_diff(repo, pr, gh)
 
-      # 2. Check run (best-effort)
       check_id = start_check_run(repo, sha, gh)
-
-      # 3. Route
-      {:ok, routing} = Router.route(diff, [metadata: %{repo: repo}], router)
-
-      # 4. Run reviewers in parallel
-      results =
-        Telemetry.with_review_run(pr, fn otel_ctx ->
-          run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts)
-        end)
-
-      # 5. Persist reviewer artifacts
-      persist_verdicts(results, review_id, store)
-      persist_costs(results, review_id, store)
-
-      # 6. Resolve override
       override = resolve_override(repo, pr, sha, pr_ctx.author, gh)
 
-      # 7. Aggregate
-      verdicts = Enum.map(results, & &1.verdict)
-      usage = Map.new(results, &{&1.perspective, Map.merge(&1.usage, %{model: &1.model})})
-      aggregated = Aggregator.aggregate(verdicts, override: override, usage: usage)
+      {:ok, engine_result} =
+        engine.review(
+          diff,
+          engine_context(pr_ctx, params),
+          engine_opts(opts, params, gh, override)
+        )
 
-      # 8. Post to GitHub (best-effort)
+      persist_verdicts(engine_result.reviewer_results, review_id, store)
+      persist_costs(engine_result.reviewer_results, review_id, store)
+
+      aggregated = aggregated_result(engine_result)
       post_to_github(repo, pr, sha, aggregated, check_id, gh)
 
-      # 9. Finalize DB
       Store.update_review_run(store, review_id, %{
         status: "completed",
         aggregated_verdict_json: Jason.encode!(to_stored_json(aggregated)),
@@ -104,7 +84,6 @@ defmodule Cerberus.Pipeline do
         message = Exception.format(kind, reason, stacktrace)
         Logger.error("Pipeline #{review_id} failed: #{message}")
 
-        # Store updates are best-effort — Store GenServer may itself be dead
         try do
           Store.update_review_run(store, review_id, %{status: "failed"})
 
@@ -124,151 +103,36 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  # --- Reviewer Dispatch ---
-
-  defp run_panel(routing, pr_ctx, diff, params, config, supervisor, timeout, otel_ctx, opts) do
-    diff_file = write_temp_diff(diff)
-    task_sup = Keyword.get(opts, :task_supervisor, Cerberus.TaskSupervisor)
-    personas = Config.personas(config)
-    pool = resolve_model_pool(routing.model_tier, config)
-
-    # Build tool handler from review context unless injected (tests)
-    gh = Keyword.get(opts, :github_opts, [])
-
-    opts =
-      Keyword.put_new_lazy(opts, :tool_handler, fn ->
-        Cerberus.Tools.GithubReadHandler.build(params.repo, params.head_sha, gh)
-      end)
-
-    try do
-      review_ctx = %{
-        title: pr_ctx.title,
-        author: pr_ctx.author,
-        head_branch: pr_ctx.head_ref,
-        base_branch: pr_ctx.base_ref,
-        body: pr_ctx.body,
-        diff_file: diff_file,
-        diff: diff,
-        repo: params.repo,
-        pr_number: params.pr_number,
-        head_sha: params.head_sha
-      }
-
-      # Resolve each perspective to its persona once (avoids repeated Config GenServer calls)
-      panel =
-        Enum.map(routing.panel, fn perspective ->
-          persona = Enum.find(personas, &(to_string(&1.perspective) == perspective))
-
-          unless persona do
-            known = Enum.map(personas, &to_string(&1.perspective))
-
-            raise ArgumentError,
-                  "unknown perspective: #{inspect(perspective)} (known: #{inspect(known)})"
-          end
-
-          model = pick_model(persona, pool)
-          {persona.name, perspective, persona, model}
-        end)
-
-      tasks =
-        Enum.map(panel, fn {_reviewer, perspective, persona, model} ->
-          Task.Supervisor.async_nolink(task_sup, fn ->
-            Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
-              spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts)
-            end)
-          end)
-        end)
-
-      tasks
-      |> Enum.zip(panel)
-      |> Enum.map(fn {task, {reviewer, perspective, _persona, _model}} ->
-        collect_result(task, reviewer, perspective, timeout)
-      end)
-    after
-      File.rm(diff_file)
-    end
-  end
-
-  defp spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts) do
-    reviewer_opts =
-      [
-        perspective: persona.perspective,
-        model: model,
-        config_server: Keyword.get(opts, :config_server, Config),
-        timeout_ms: timeout
-      ] ++ Keyword.take(opts, [:call_llm, :tool_handler, :repo_root])
-
-    {:ok, pid} = DynamicSupervisor.start_child(supervisor, {Reviewer, reviewer_opts})
-
-    try do
-      Reviewer.review(pid, review_ctx, timeout)
-    after
-      try do
-        GenServer.stop(pid, :normal, 5_000)
-      catch
-        :exit, _ -> :ok
-      end
-    end
-  end
-
-  defp collect_result(task, reviewer, perspective, timeout) do
-    case Task.yield(task, timeout + 5_000) || Task.shutdown(task) do
-      {:ok, {:ok, result}} ->
-        %{
-          reviewer: reviewer,
-          perspective: perspective,
-          verdict: %{result.verdict | reviewer: reviewer, perspective: perspective},
-          usage: result.usage,
-          model: result[:model] || "unknown",
-          status: :ok
-        }
-
-      {:ok, {:error, reason}} ->
-        Logger.warning("Reviewer #{perspective} failed: #{inspect(reason)}")
-        degraded_result(reviewer, perspective, :error)
-
-      {:exit, reason} ->
-        Logger.warning("Reviewer #{perspective} crashed: #{inspect(reason)}")
-        degraded_result(reviewer, perspective, :error)
-
-      nil ->
-        Logger.warning("Reviewer #{perspective} timed out")
-        degraded_result(reviewer, perspective, :timeout)
-    end
-  end
-
-  defp degraded_result(reviewer, perspective, status) do
+  defp engine_context(pr_ctx, params) do
     %{
-      reviewer: reviewer,
-      perspective: perspective,
-      verdict: skip_verdict(reviewer, perspective),
-      usage: zero_usage(),
-      model: "unknown",
-      status: status
+      title: pr_ctx.title,
+      author: pr_ctx.author,
+      head_ref: pr_ctx.head_ref,
+      base_ref: pr_ctx.base_ref,
+      body: pr_ctx.body,
+      repo: params.repo,
+      pr_number: params.pr_number,
+      head_sha: params.head_sha
     }
   end
 
-  # --- Model Resolution ---
-
-  defp resolve_model_pool(tier, config) do
-    pool_tier = Map.get(@tier_to_pool, tier, :wave2)
-    Config.model_pool(pool_tier, config)
+  defp engine_opts(opts, params, gh, override) do
+    opts
+    |> Keyword.put_new_lazy(:tool_handler, fn ->
+      Cerberus.Tools.GithubReadHandler.build(params.repo, params.head_sha, gh)
+    end)
+    |> Keyword.put_new(:routing_metadata, %{repo: params.repo})
+    |> Keyword.put(:override, override)
   end
 
-  defp pick_model(persona, pool) do
-    case persona.model_policy do
-      :pool ->
-        if pool == [], do: @default_model, else: Enum.random(pool)
-
-      model when is_binary(model) and model != "" ->
-        model
-
-      _ ->
-        @default_model
-    end
+  defp aggregated_result(%{reviewer_results: _} = result) do
+    result
+    |> to_map()
+    |> Map.delete(:reviewer_results)
   end
 
-  # --- Override ---
+  defp to_map(struct) when is_struct(struct), do: Map.from_struct(struct)
+  defp to_map(map) when is_map(map), do: map
 
   defp resolve_override(repo, pr, sha, pr_author, gh) do
     with {:ok, comments} <- GitHub.fetch_comments(repo, pr, gh) do
@@ -286,12 +150,10 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  # --- Cost ---
-
-  defp persist_verdicts(results, review_id, store) do
+  defp persist_verdicts(reviewer_results, review_id, store) do
     case Store.insert_verdicts(
            store,
-           Enum.map(results, fn r ->
+           Enum.map(reviewer_results, fn r ->
              %{
                review_run_id: review_id,
                reviewer: r.reviewer,
@@ -311,10 +173,10 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  defp persist_costs(results, review_id, store) do
+  defp persist_costs(reviewer_results, review_id, store) do
     case Store.insert_costs(
            store,
-           Enum.map(results, fn r ->
+           Enum.map(reviewer_results, fn r ->
              cost = Cost.calculate(r.usage.prompt_tokens, r.usage.completion_tokens, r.model)
 
              %{
@@ -343,8 +205,6 @@ defmodule Cerberus.Pipeline do
   defp status_label(:timeout), do: "timeout"
   defp status_label(other), do: to_string(other)
 
-  # --- GitHub Posting ---
-
   defp start_check_run(repo, sha, gh) do
     case GitHub.create_check_run(repo, sha, @check_name, gh ++ [status: "in_progress"]) do
       {:ok, %{body: %{"id" => id}}} -> id
@@ -353,16 +213,13 @@ defmodule Cerberus.Pipeline do
   end
 
   defp post_to_github(repo, pr, sha, aggregated, check_id, gh) do
-    # Verdict comment (idempotent upsert)
     body = format_verdict_comment(aggregated)
     GitHub.upsert_comment(repo, pr, @verdict_marker, body, gh)
 
-    # PR review with inline comments
     inline = build_inline_comments(aggregated, repo, pr, gh)
     review_body = "Cerberus: #{aggregated.verdict} — #{aggregated.summary}"
     GitHub.create_pr_review(repo, pr, sha, review_body, inline, gh)
 
-    # Check run conclusion
     if check_id do
       conclusion = verdict_to_conclusion(aggregated.verdict)
 
@@ -415,8 +272,6 @@ defmodule Cerberus.Pipeline do
         []
     end
   end
-
-  # --- Formatting ---
 
   defp format_verdict_comment(agg) do
     s = agg.stats
@@ -480,40 +335,6 @@ defmodule Cerberus.Pipeline do
   defp verdict_to_conclusion("FAIL"), do: "failure"
   defp verdict_to_conclusion("SKIP"), do: "skipped"
   defp verdict_to_conclusion(_), do: "neutral"
-
-  # --- Helpers ---
-
-  defp skip_verdict(reviewer, perspective) do
-    %Cerberus.Verdict{
-      reviewer: reviewer,
-      perspective: perspective,
-      verdict: "SKIP",
-      confidence: 0.0,
-      summary: "Reviewer did not complete",
-      findings: [],
-      stats: %{
-        "files_reviewed" => 0,
-        "files_with_issues" => 0,
-        "critical" => 0,
-        "major" => 0,
-        "minor" => 0,
-        "info" => 0
-      }
-    }
-  end
-
-  defp zero_usage, do: %{prompt_tokens: 0, completion_tokens: 0}
-
-  defp write_temp_diff(diff) do
-    path =
-      Path.join(
-        System.tmp_dir!(),
-        "cerberus-diff-#{System.unique_integer([:positive])}.diff"
-      )
-
-    File.write!(path, diff)
-    path
-  end
 
   defp to_stored_json(agg) do
     %{
