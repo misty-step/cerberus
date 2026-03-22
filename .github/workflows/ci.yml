@@ -180,6 +180,32 @@ jobs:
       - name: Verify release contract
         run: ./test/release_contract.sh
 
+      - name: Build Docker image
+        run: docker build -f Dockerfile -t cerberus ..
+
+      - name: Enforce Docker image size
+        run: |
+          size=$(docker image inspect cerberus --format '{{.Size}}')
+          test "$size" -lt 100000000
+
+      - name: Smoke test Docker release
+        run: |
+          docker run --rm -e CERBERUS_API_KEY=test cerberus eval 'Application.ensure_all_started(:cerberus_elixir); IO.puts(length(Cerberus.Config.personas()))' | tee /tmp/cerberus-eval.log
+          grep -Fx '6' /tmp/cerberus-eval.log
+
+          docker rm -f cerberus-smoke >/dev/null 2>&1 || true
+          docker run --rm -d --name cerberus-smoke -p 8080:8080 -e CERBERUS_API_KEY=test cerberus start
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health > /tmp/cerberus-health.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep -F '{"status":"ok"}' /tmp/cerberus-health.json
+          docker rm -f cerberus-smoke
+
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   merge-gate:
     name: merge-gate
