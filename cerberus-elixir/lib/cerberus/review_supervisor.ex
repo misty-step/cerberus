@@ -4,7 +4,13 @@ defmodule Cerberus.ReviewSupervisor do
   use DynamicSupervisor
 
   def start_link(opts \\ []) do
-    DynamicSupervisor.start_link(__MODULE__, opts, name: __MODULE__)
+    {name, opts} = Keyword.pop(opts, :name)
+
+    if name do
+      DynamicSupervisor.start_link(__MODULE__, opts, name: name)
+    else
+      DynamicSupervisor.start_link(__MODULE__, opts)
+    end
   end
 
   @impl true
