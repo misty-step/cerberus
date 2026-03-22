@@ -21,12 +21,14 @@ COPY cerberus-elixir/config ./config
 RUN mix deps.compile
 
 COPY cerberus-elixir/lib ./lib
+
+RUN mix compile
+
 COPY cerberus-elixir/rel ./rel
 COPY defaults ../defaults
 COPY pi ../pi
 COPY templates ../templates
 
-RUN mix compile
 RUN mix release cerberus
 
 FROM ${ALPINE_IMAGE} AS runtime
