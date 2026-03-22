@@ -22,14 +22,15 @@
 - Added `mix cerberus.review` as the Mix-task surface for local review runs.
 - Added a named `cerberus` release plus `rel/env.sh.eex` and `rel/overlays/bin/review` so `bin/cerberus review ...` reuses the same CLI path.
 - Split application startup into `:server` and `:cli` child-spec modes so local review boots only the runtime pieces it needs.
-- Added `Cerberus.Tools.LocalRepoReadHandler` so reviewer exploration tools read from the current working tree instead of GitHub.
-- Added focused CLI, mix-task, and local repo tool tests, plus a `Makefile` shellcheck prune so release artifacts do not poison the repo gate.
+- Added `Cerberus.Tools.LocalRepoReadHandler` so reviewer exploration tools read from the current working tree instead of GitHub, while canonical path checks reject traversal and symlink escapes outside the repo root.
+- Added focused CLI, mix-task, and local repo tool tests for empty diff files, runtime startup failures, traversal rejection, and grep fallback when `rg` is unavailable.
+- Hardened the repo gate with a `Makefile` shellcheck prune so release artifacts do not poison validation after building a release.
 
 ### What is true after
 
 - Developers can run a non-interactive local review from a diff file or stdin.
 - Mix-task and release execution share the same CLI implementation instead of drifting.
-- The local review path avoids starting Bandit or the store while still giving reviewers read-only repository exploration tools.
+- The local review path avoids starting Bandit or the store while still giving reviewers read-only repository exploration tools that stay confined to the repository boundary.
 - The repo gate stays green even after building a release in `cerberus-elixir/_build`.
 
 ## Execution Proof
@@ -47,7 +48,7 @@ Each command ran on this branch and the transcript shows the expected PASS-shape
 
 - `make validate`
 
-The recorded run finished with `326 tests, 0 failures` for `cerberus-elixir` and `✓ All validation checks passed` for the full repository gate.
+The recorded run finished with `333 tests, 0 failures` for `cerberus-elixir` and `✓ All validation checks passed` for the full repository gate.
 
 ## Before / After Shape
 
@@ -83,3 +84,4 @@ graph TD
 ## Residual Gap
 
 - The walkthrough uses deterministic test-time LLM overrides for repeatable proof, so it proves the CLI/release path and output contract more than live-model variability. That is acceptable for this issue because the contract change is the entrypoint and runtime boundary, not reviewer semantics.
+- CLI timeout configurability remains a follow-up and is tracked separately in issue `#454`.

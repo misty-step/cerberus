@@ -63,11 +63,11 @@ defmodule Cerberus.CLITest do
     |> Keyword.merge(extra)
   end
 
-  defp write_diff! do
+  defp write_diff!(content \\ @diff) do
     path =
       Path.join(System.tmp_dir!(), "cerberus_cli_diff_#{System.unique_integer([:positive])}.diff")
 
-    File.write!(path, @diff)
+    File.write!(path, content)
     path
   end
 
@@ -123,5 +123,29 @@ defmodule Cerberus.CLITest do
     assert output =~ "Verdict: PASS"
     assert output =~ "Summary: All reviewers passed."
     assert output =~ "Findings:"
+  end
+
+  test "run/2 rejects empty diff files" do
+    diff_path = write_diff!("")
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               ["--diff", diff_path],
+               cli_opts()
+             )
+
+    assert message =~ "Diff file is empty"
+  end
+
+  test "run/2 surfaces runtime startup failures" do
+    diff_path = write_diff!()
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               ["--diff", diff_path],
+               cli_opts(review_supervisor_name: self())
+             )
+
+    assert message =~ "Failed to start CLI runtime"
   end
 end

@@ -111,10 +111,7 @@ defmodule Cerberus.CLI do
     ]
 
     with :ok <- ensure_runtime_dependencies(),
-         {:ok, supervisor} <-
-           Supervisor.start_link(Cerberus.Application.child_specs(:cli, child_opts),
-             strategy: :one_for_one
-           ) do
+         {:ok, supervisor} <- start_runtime_supervisor(child_opts) do
       runtime = %{
         config: child_opts[:config_name],
         review_supervisor: child_opts[:review_supervisor_name],
@@ -131,6 +128,30 @@ defmodule Cerberus.CLI do
     else
       {:error, reason} ->
         {:error, {"Failed to start CLI runtime: #{inspect(reason)}", 1}}
+    end
+  end
+
+  defp start_runtime_supervisor(child_opts) do
+    previous = Process.flag(:trap_exit, true)
+
+    result =
+      try do
+        Supervisor.start_link(Cerberus.Application.child_specs(:cli, child_opts),
+          strategy: :one_for_one
+        )
+      after
+        Process.flag(:trap_exit, previous)
+      end
+
+    receive do
+      {:EXIT, _pid, _reason} -> :ok
+    after
+      0 -> :ok
+    end
+
+    case result do
+      {:error, reason} -> {:error, reason}
+      other -> other
     end
   end
 

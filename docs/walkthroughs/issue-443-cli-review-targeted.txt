@@ -1,8 +1,16 @@
-{"stats":{"skip":0,"total":1,"pass":1,"warn":0,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
+{"stats":{"skip":0,"total":1,"warn":0,"pass":1,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
 
 ---
 
 {"stats":{"skip":0,"total":1,"warn":0,"pass":1,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
+
+---
+
+Verdict: PASS
+Summary: All reviewers passed.
+
+Findings:
+- none
 
 ---
 
@@ -32,4 +40,4 @@ To list all commands:
 
 ---
 
-{"stats":{"skip":0,"total":1,"warn":0,"pass":1,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
+{"stats":{"skip":0,"total":1,"pass":1,"warn":0,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
