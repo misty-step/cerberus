@@ -2,4 +2,4 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec "${SCRIPT_DIR}/cerberus" eval "Application.ensure_all_started(:cerberus_elixir); IO.puts(\"No database migrations configured for cerberus_elixir\")"
+exec "${SCRIPT_DIR}/cerberus" eval "{:ok, _started} = Application.ensure_all_started(:cerberus_elixir); IO.puts(\"No database migrations configured for cerberus_elixir\")"

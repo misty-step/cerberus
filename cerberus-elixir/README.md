@@ -102,7 +102,7 @@ Build from the repository root so the image can include `defaults/`, `pi/`, and
 ```bash
 docker build -f cerberus-elixir/Dockerfile -t cerberus .
 
-docker run --rm cerberus eval "Application.ensure_all_started(:cerberus_elixir); IO.puts(:ok)"
+docker run --rm -e CERBERUS_API_KEY=test cerberus eval "Application.ensure_all_started(:cerberus_elixir); IO.puts(:ok)"
 docker run --rm -p 8080:8080 -e CERBERUS_API_KEY=test cerberus start
 ```
 
