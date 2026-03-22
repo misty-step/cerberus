@@ -63,6 +63,8 @@ defmodule Cerberus.Store do
     {"findings_json", "ALTER TABLE verdicts ADD COLUMN findings_json TEXT NOT NULL DEFAULT '[]'"}
   ]
   @known_tables ~w(events review_costs review_runs verdicts)
+  # Persisted findings stay schema-light on purpose: flat JSON objects only, bounded by byte size.
+  @max_findings_json_bytes 65_536
 
   def start_link(opts) do
     {name, opts} = Keyword.pop(opts, :name)
@@ -588,7 +590,7 @@ defmodule Cerberus.Store do
   defp normalize_findings(findings) when is_list(findings) do
     {normalized, dropped} =
       Enum.reduce(findings, {[], 0}, fn finding, {acc, dropped} ->
-        case normalize_finding(finding) do
+        case normalize_finding_for_read(finding) do
           {:ok, normalized_finding} -> {[normalized_finding | acc], dropped}
           :drop -> {acc, dropped + 1}
         end
@@ -608,18 +610,18 @@ defmodule Cerberus.Store do
     []
   end
 
-  defp normalize_finding(%_{} = finding), do: finding |> Map.from_struct() |> normalize_finding()
+  defp normalize_finding_for_read(%_{} = finding),
+    do: finding |> Map.from_struct() |> normalize_finding_for_read()
 
-  defp normalize_finding(finding) when is_map(finding) do
-    normalized =
-      finding
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Map.new()
-
-    if map_size(normalized) == 0, do: :drop, else: {:ok, normalized}
+  defp normalize_finding_for_read(finding) when is_map(finding) do
+    case normalize_finding_map(finding) do
+      {:ok, normalized} when map_size(normalized) > 0 -> {:ok, normalized}
+      {:ok, _normalized} -> :drop
+      {:error, _reason} -> :drop
+    end
   end
 
-  defp normalize_finding(_), do: :drop
+  defp normalize_finding_for_read(_), do: :drop
 
   defp parse_cost_row([
          reviewer,
@@ -698,7 +700,8 @@ defmodule Cerberus.Store do
 
   defp prepare_verdict_binding(attrs) do
     with {:ok, findings} <- validate_findings(Map.get(attrs, :findings, [])),
-         {:ok, findings_json} <- Jason.encode(findings) do
+         {:ok, findings_json} <- Jason.encode(findings),
+         :ok <- validate_findings_json_size(findings_json) do
       {:ok,
        [
          attrs[:review_run_id],
@@ -719,8 +722,71 @@ defmodule Cerberus.Store do
     end
   end
 
-  defp validate_findings(findings) when is_list(findings), do: {:ok, normalize_findings(findings)}
+  defp validate_findings(findings) when is_list(findings) do
+    findings
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, []}, fn {finding, index}, {:ok, acc} ->
+      case validate_finding_for_write(finding) do
+        {:ok, normalized_finding} -> {:cont, {:ok, [normalized_finding | acc]}}
+        {:error, reason} -> {:halt, {:error, {:invalid_finding, index, reason}}}
+      end
+    end)
+    |> case do
+      {:ok, normalized} -> {:ok, Enum.reverse(normalized)}
+      error -> error
+    end
+  end
+
   defp validate_findings(_findings), do: {:error, :not_a_list}
+
+  defp validate_finding_for_write(%_{} = finding),
+    do: finding |> Map.from_struct() |> validate_finding_for_write()
+
+  defp validate_finding_for_write(finding) when is_map(finding) do
+    case normalize_finding_map(finding) do
+      {:ok, normalized} when map_size(normalized) > 0 -> {:ok, normalized}
+      {:ok, _normalized} -> {:error, :empty_finding}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_finding_for_write(_), do: {:error, :not_a_map}
+
+  defp normalize_finding_map(finding) do
+    Enum.reduce_while(finding, {:ok, %{}}, fn
+      {_key, nil}, {:ok, acc} ->
+        {:cont, {:ok, acc}}
+
+      {key, value}, {:ok, acc} ->
+        with {:ok, normalized_key} <- normalize_finding_key(key),
+             {:ok, normalized_value} <- validate_finding_value(normalized_key, value) do
+          {:cont, {:ok, Map.put(acc, normalized_key, normalized_value)}}
+        else
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+    end)
+  end
+
+  defp normalize_finding_key(key) when is_binary(key) and key != "", do: {:ok, key}
+
+  defp normalize_finding_key(key) when is_atom(key),
+    do: key |> Atom.to_string() |> normalize_finding_key()
+
+  defp normalize_finding_key(_), do: {:error, :invalid_key}
+
+  defp validate_finding_value(_key, value)
+       when is_binary(value) or is_boolean(value) or is_integer(value) or is_float(value),
+       do: {:ok, value}
+
+  defp validate_finding_value(key, _value), do: {:error, {:non_scalar_value, key}}
+
+  defp validate_findings_json_size(findings_json)
+       when byte_size(findings_json) <= @max_findings_json_bytes,
+       do: :ok
+
+  defp validate_findings_json_size(findings_json) do
+    {:error, {:payload_too_large, byte_size(findings_json), @max_findings_json_bytes}}
+  end
 
   defp verdict_insert_sql do
     """
