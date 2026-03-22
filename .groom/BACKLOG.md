@@ -5,31 +5,45 @@ Reviewed each /groom session for promotion candidates.
 
 ## High Potential
 
+### Triage port to Elixir
+Formerly `scripts/triage.py` (505 LOC). Post-verdict diagnosis, circuit breaker, optional fix command. Currently Python-only — defer until after Python decommission, then port or redesign as an Elixir pipeline stage. XL effort.
+
 ### Auto-skip bot and WIP PRs
-Formerly #258. Skip dependabot/renovate/github-actions[bot] PRs and WIP title patterns in preflight. Implement in Elixir router/preflight logic post-migration.
+Formerly #258. Skip dependabot/renovate/github-actions[bot] PRs and WIP title patterns. Implement in Elixir API preflight logic. S effort.
 
 ### Incremental review awareness
-Formerly #291. Skip/narrow re-reviews for small delta commits. Delta-based depth, scope narrowing, "sanity check" mode. Requires stable routing layer first. XL effort.
-
-### AC compliance in verdict rendering
-Formerly #312 partially. Parse AC compliance findings, render as checklist in PR comment. Depends on migration + #311 trace enhancement.
+Formerly #291. Skip/narrow re-reviews for small delta commits. Delta-based depth, scope narrowing, "sanity check" mode. Requires stable Engine module first. XL effort.
 
 ### AC-aware escalation
-Formerly #313. If any AC is NOT_SATISFIED by primary panel, trigger reserve reviewers with unsatisfied ACs as context. Replaces wave gating with smarter reserve trigger.
+Formerly #313. If any AC is NOT_SATISFIED by primary panel, trigger reserve reviewers with unsatisfied ACs as context. Replaces wave gating with smarter reserve trigger. M effort.
+
+## Quality Phase (Post-Migration)
+
+### Eval suite hardening
+Port and expand the 31 promptfoo eval test cases. Add SWR-Bench and CR-Bench integration. Measure recall/precision per perspective. Target: >= 85% recall on gold-standard set.
+
+### Prompt engineering audit
+Use /context-engineering to audit all persona prompts (pi/agents/*.md) for signal density, instruction clarity, and grounding. Optimize token budget per perspective.
+
+### Observability dashboard
+Phoenix LiveView dashboard for review runs, costs, latency, model performance. Already scaffolded (#394 closed) but needs real data + deployment.
+
+### Review transparency
+Structured trace of review execution: which tools were called, what the reviewer saw, how confidence was computed. Surface in PR comment or dashboard.
+
+### Consumer workflow validator (Elixir)
+Port `validate-consumer-workflow.py` to a mix task or API endpoint. Low priority — only useful for onboarding new repos.
 
 ## Someday / Maybe
 
 ### Adversarial testing ("Angry Mob" pattern)
-Formerly #21. Concurrent adversarial attack patterns against the review system. Race conditions in verdict aggregation, comment parsing under concurrent overrides, resource exhaustion. P3 research.
-
-### Auto-detect consumer package manager
-Formerly #261. Auto-detect and set up correct tool (bun, pnpm, yarn, npm) in GHA action. May not be relevant if execution moves to Fly.io.
+Formerly #21. Concurrent adversarial attack patterns against the review system. Race conditions in verdict aggregation, resource exhaustion. P3 research.
 
 ### Cross-model confirmation
-Wave3 ran the same perspectives as wave1 with pro-tier models. In single-pass mode, consider an optional "confirmation" mode where a second model reviews high-severity findings.
+Optional "confirmation" mode where a second model reviews high-severity findings. Could be a reserve trigger variant.
 
 ### Parallel permission lookups for overrides
-Formerly #126. Sequential gh API calls per actor. Trivial to parallelize in Elixir with Task.async.
+Formerly #126. Trivial in Elixir with Task.async — already natural in the current architecture.
 
 ## Research Prompts
 
@@ -38,31 +52,10 @@ Formerly #126. Sequential gh API calls per actor. Trivial to parallelize in Elix
 - How does model diversity (different providers) compare to model homogeneity for finding quality?
 - SWR-Bench shows +43.67% F1 from multi-review aggregation — what's the diminishing returns curve?
 - Can we use a cheap model to pre-filter/summarize diffs before sending to perspective reviewers (CodeRabbit pattern)?
+- What's the right local-run experience? Should `mix cerberus.review` support reviewing uncommitted changes (git diff)?
+- How should the CLI handle GitHub tool calls when running locally (mock, skip, or require token)?
 
-## Archived This Session (2026-03-14)
+## Archived This Session (2026-03-22)
 
-- ~~#256 Remove phantom perspectives~~ -> subsumed by migration
-- ~~#257 Extract magic numbers~~ -> Python eliminated
-- ~~#260 Rename consumer-workflow-minimal~~ -> new workflow surface
-- ~~#264 craft parse recovery fails~~ -> parser rewritten
-- ~~#266 Skip diagnostics edge case~~ -> renderer rewritten
-- ~~#267 Consolidate skip classification~~ -> renderer rewritten
-- ~~#283 minimax-m2.5 fails JSON~~ -> model pool redesign
-- ~~#284 Comment cleanup/positioning~~ -> GH integration rewritten
-- ~~#287 Extract runtime state machine~~ -> GenServer
-- ~~#288 Clarify capability policy~~ -> config module
-- ~~#320 Fix set -e bypass~~ -> bash eliminated
-- ~~#322 Expose draft/path skips~~ -> new preflight
-- ~~#327 Unify consumer contract~~ -> new contract
-- ~~#354 Refactor finding equivalence~~ -> rewritten in Elixir
-- ~~#366 Align make validate~~ -> Python tooling eliminated
-- ~~#239 Tighten validator test~~ -> new workflow surface
-- ~~#57 Read-only context broker~~ -> Elixir tool definitions
-- ~~#323 Extract engine from GHA~~ -> IS the migration
-- ~~#343 Bench-aware router~~ -> new router design
-- ~~#344 Configurable benches epic~~ -> persona registry
-- ~~#345 Repo-defined bench manifests~~ -> per-repo config
-- ~~#321 Seed router with priors~~ -> new router design
-- ~~#346 Replace wave orchestration~~ -> core migration goal
-- ~~#313 AC-aware wave gating~~ -> waves eliminated
-- ~~#126 Parallel permission lookups~~ -> trivial in Elixir
+- ~~AC compliance in verdict rendering~~ → #312 retargeted to Elixir engine (ac_compliance not yet in Elixir)
+- ~~Auto-detect consumer package manager~~ → irrelevant post-GHA-decommission

@@ -8,7 +8,7 @@
 
 **Target user:** Engineering teams shipping production software who want CI-integrated code review that catches what humans miss.
 
-**Current focus:** Migrate from Python/Shell/GitHub Actions to Elixir/OTP. Converge architecture with Bitterblossom for dual-mode operation (standalone + BB module).
+**Current focus:** Complete Elixir migration — portability (Engine extraction, CLI, Dockerfile), cleanup (decommission Python, restructure repo), then review quality (evals, prompts, observability).
 
 **Differentiators:**
 - Multi-reviewer with provider/model diversity (not single-model like competitors)
@@ -32,14 +32,13 @@
 
 ## Active Focus
 
-**Milestone:** Elixir Migration
+**Milestone:** Elixir Migration (completion phase)
 **Key themes:**
-1. Port engine to Elixir/OTP (ReqLLM + Instructor + sprites-ex)
-2. Eliminate waves — single-pass routed execution with reserve escalation
-3. Add observability (OpenTelemetry -> Langfuse) and cost monitoring
-4. Phoenix LiveView dashboard
-5. Bitterblossom Worker behaviour for dual-mode operation
-6. Eval suite hardening (SWR-Bench, CR-Bench, promptfoo)
+1. Extract `Cerberus.Engine` — infrastructure-agnostic review core (#442)
+2. Portability — Dockerfile, mix release, CLI entrypoint (#443, #444)
+3. Cleanup — decommission Python (40K LOC), restructure repo (#446, #447, #448)
+4. BYOK GitHub access — thread github_token per-request (#445)
+5. Then: review quality, evals, prompt engineering, observability
 
 ## Quality Bar
 
@@ -51,10 +50,12 @@
 
 ## Patterns to Follow
 
-- Bitterblossom conductor patterns (GenServer per run, DynamicSupervisor, SQLite store)
-- ReqLLM for OpenRouter calls, Instructor for structured output
+- Livebook dual-mode pattern (CLI + server from same codebase, conditional supervision tree)
+- GenServer per reviewer, DynamicSupervisor for pool, SQLite store
+- ReqLLM for OpenRouter calls, direct API (no Pi CLI)
 - OpenTelemetry GenAI semantic conventions for LLM span attributes
 - Persona prompts as plain files with hot-reload via OTP
+- Alpine multi-stage Dockerfile for portable releases
 
 ## Lessons Learned
 
@@ -66,4 +67,4 @@
 | GHA matrix for execution | Expensive, slow startup | Fly.io (Sprites or Machines) for burst compute |
 | BB Python->Elixir | 6,506->1,649 LOC, first-try success | Elixir/OTP is the right stack for agent orchestration |
 
-**Last updated:** 2026-03-14
+**Last updated:** 2026-03-22
