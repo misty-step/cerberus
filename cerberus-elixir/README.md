@@ -79,10 +79,47 @@ mix run --no-halt
 # or: iex -S mix
 ```
 
+## Release
+
+```bash
+cd cerberus-elixir
+MIX_ENV=prod mix release
+
+_build/prod/rel/cerberus/bin/cerberus start
+_build/prod/rel/cerberus/bin/server
+_build/prod/rel/cerberus/bin/migrate
+```
+
+The release bundles the repo-owned runtime assets it needs under `repo/`, so
+it can boot without a source checkout as long as `CERBERUS_API_KEY` and the LLM
+credentials are set in the environment.
+
+## Docker
+
+Build from the repository root so the image can include `defaults/`, `pi/`, and
+`templates/` alongside `cerberus-elixir/`:
+
+```bash
+docker build -f cerberus-elixir/Dockerfile -t cerberus .
+
+docker run --rm -e CERBERUS_API_KEY=test cerberus eval "Application.ensure_all_started(:cerberus_elixir); IO.puts(:ok)"
+docker run --rm -p 8080:8080 -e CERBERUS_API_KEY=test cerberus start
+```
+
+The image exposes port `8080`, defaults `CERBERUS_DB_PATH` to `/app/data/cerberus.sqlite3`,
+and uses `bin/cerberus` as its entrypoint so release commands such as `start`
+and `eval` work directly through `docker run`.
+
 ## Deployment
 
-Deployed to a Fly Sprite via `deploy-sprite.sh`. CI/CD auto-deploys on merge to
-master when `cerberus-elixir/`, `defaults/`, `pi/`, or `templates/` change.
+Cerberus now supports two portable deployment artifacts:
+
+- a raw OTP release via `MIX_ENV=prod mix release`
+- a container image via `docker build -f cerberus-elixir/Dockerfile -t cerberus .`
+
+The existing Fly Sprite path remains available via `deploy-sprite.sh`. CI/CD
+auto-deploys that path on merge to master when `cerberus-elixir/`, `defaults/`,
+`pi/`, or `templates/` change.
 
 See `fly.toml` for the declarative deployment config (port, health check, region).
 

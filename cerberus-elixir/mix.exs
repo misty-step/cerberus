@@ -7,6 +7,7 @@ defmodule Cerberus.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
+      releases: releases(),
       deps: deps()
     ]
   end
@@ -17,6 +18,34 @@ defmodule Cerberus.MixProject do
       extra_applications: [:logger],
       mod: {Cerberus.Application, []}
     ]
+  end
+
+  defp releases do
+    [
+      cerberus: [
+        include_executables_for: [:unix],
+        applications: [runtime_tools: :permanent],
+        steps: [:assemble, &copy_runtime_assets/1]
+      ]
+    ]
+  end
+
+  # Bundle the repo-owned reviewer assets into the assembled release so
+  # container and tarball deployments do not depend on a source checkout.
+  defp copy_runtime_assets(%Mix.Release{} = release) do
+    repo_root = Path.expand("..", __DIR__)
+    runtime_root = Path.join(release.path, "repo")
+
+    for relative_path <- ["defaults", "pi/agents", "templates"] do
+      source = Path.join(repo_root, relative_path)
+      target = Path.join(runtime_root, relative_path)
+
+      File.rm_rf!(target)
+      File.mkdir_p!(Path.dirname(target))
+      File.cp_r!(source, target)
+    end
+
+    release
   end
 
   defp deps do
