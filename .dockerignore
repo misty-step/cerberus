@@ -1,5 +1,7 @@
 .git
 .github
+.env*
+!.env.example
 .pytest_cache
 __pycache__
 cerberus-elixir/_build
