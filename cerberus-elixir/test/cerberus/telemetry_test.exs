@@ -24,7 +24,12 @@ defmodule Cerberus.TelemetryTest do
 
     ExUnit.Callbacks.on_exit(fn ->
       if Process.alive?(store) do
-        GenServer.stop(store)
+        try do
+          GenServer.stop(store)
+        catch
+          :exit, {:noproc, _} -> :ok
+          :exit, :noproc -> :ok
+        end
       end
 
       File.rm(path)
