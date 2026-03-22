@@ -2,6 +2,7 @@ defmodule Cerberus.CLITest do
   use ExUnit.Case, async: false
 
   alias Cerberus.CLI
+  import ExUnit.CaptureIO
 
   @repo_root Path.expand("../../..", __DIR__)
   @diff """
@@ -147,5 +148,58 @@ defmodule Cerberus.CLITest do
              )
 
     assert message =~ "Failed to start CLI runtime"
+  end
+
+  test "main/2 prints successful output without halting when halt is false" do
+    diff_path = write_diff!()
+
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main(
+                   ["--diff", diff_path, "--format", "json"],
+                   cli_opts(halt: false)
+                 )
+      end)
+
+    decoded = Jason.decode!(output)
+    assert decoded["verdict"] == "PASS"
+  end
+
+  test "main/2 prints errors to stderr without halting when halt is false" do
+    missing_path =
+      Path.join(System.tmp_dir!(), "cerberus_cli_missing_#{System.unique_integer([:positive])}.diff")
+
+    message =
+      capture_io(:stderr, fn ->
+        assert {:error, returned_message} =
+                 CLI.main(
+                   ["--diff", missing_path],
+                   cli_opts(halt: false)
+                 )
+
+        assert returned_message =~ "Failed to read diff file"
+      end)
+
+    assert message =~ "Failed to read diff file"
+    assert message =~ missing_path
+  end
+
+  test "run/2 validates CLI argument errors" do
+    diff_path = write_diff!()
+
+    assert {:error, {message, 1}} = CLI.run(["--unknown"], cli_opts())
+    assert message =~ "Unsupported options"
+
+    assert {:error, {message, 1}} = CLI.run(["--diff", diff_path, "extra"], cli_opts())
+    assert message =~ "Unexpected arguments"
+
+    assert {:error, {message, 1}} = CLI.run([], cli_opts())
+    assert message =~ "Missing required --diff option"
+
+    assert {:error, {message, 1}} =
+             CLI.run(["--diff", diff_path, "--format", "yaml"], cli_opts())
+
+    assert message =~ "Unsupported format: yaml"
   end
 end
