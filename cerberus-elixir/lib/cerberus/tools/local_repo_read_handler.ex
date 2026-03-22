@@ -10,12 +10,17 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
   @search_limit "20"
 
   @doc "Build a tool handler closure rooted at the local repository."
-  @spec build(String.t()) :: (map() -> {:ok, String.t()} | {:error, String.t()})
-  def build(repo_root) do
-    fn call -> dispatch(call, repo_root) end
+  @spec build(String.t(), keyword()) :: (map() -> {:ok, String.t()} | {:error, String.t()})
+  def build(repo_root, opts \\ []) do
+    executables = %{
+      rg: Keyword.get(opts, :rg, System.find_executable("rg")),
+      grep: Keyword.get(opts, :grep, System.find_executable("grep"))
+    }
+
+    fn call -> dispatch(call, repo_root, executables) end
   end
 
-  defp dispatch(%{name: "get_file_contents", arguments: args}, repo_root) do
+  defp dispatch(%{name: "get_file_contents", arguments: args}, repo_root, _executables) do
     path = args["path"] || ""
 
     with {:ok, resolved} <- resolve_path(repo_root, path),
@@ -27,22 +32,25 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
     end
   end
 
-  defp dispatch(%{name: "search_code", arguments: args}, repo_root) do
+  defp dispatch(%{name: "search_code", arguments: args}, repo_root, executables) do
     query = args["query"] || ""
 
     cond do
       query == "" ->
         {:error, "Error: empty query"}
 
-      executable = System.find_executable("rg") ->
+      executable = executables.rg ->
         run_ripgrep(executable, repo_root, query, args["path_filter"])
 
+      executable = executables.grep ->
+        run_grep(executable, repo_root, query, args["path_filter"])
+
       true ->
-        {:error, "Error: rg is not available in this runtime"}
+        {:error, "Error: rg or grep is not available in this runtime"}
     end
   end
 
-  defp dispatch(%{name: "list_directory", arguments: args}, repo_root) do
+  defp dispatch(%{name: "list_directory", arguments: args}, repo_root, _executables) do
     path = args["path"] || ""
 
     with {:ok, resolved} <- resolve_directory(repo_root, path),
@@ -59,7 +67,7 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
     end
   end
 
-  defp dispatch(%{name: name}, _repo_root) do
+  defp dispatch(%{name: name}, _repo_root, _executables) do
     {:error, "Unknown tool: #{name}"}
   end
 
@@ -83,9 +91,31 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
     end
   end
 
+  defp run_grep(executable, repo_root, query, path_filter) do
+    args =
+      [
+        "-R",
+        "-n",
+        "-m",
+        @search_limit
+      ]
+      |> maybe_put_include(path_filter)
+      |> Kernel.++(["--", query, "."])
+
+    case System.cmd(executable, args, cd: repo_root, stderr_to_stdout: true) do
+      {"", 1} -> {:ok, "No results found for: #{query}"}
+      {output, 0} -> {:ok, String.trim_trailing(output)}
+      {output, _status} -> {:error, "Error: #{String.trim(output)}"}
+    end
+  end
+
   defp maybe_put_glob(args, nil), do: args
   defp maybe_put_glob(args, ""), do: args
   defp maybe_put_glob(args, glob), do: args ++ ["--glob", glob]
+
+  defp maybe_put_include(args, nil), do: args
+  defp maybe_put_include(args, ""), do: args
+  defp maybe_put_include(args, glob), do: args ++ ["--include", glob]
 
   defp resolve_directory(repo_root, ""), do: {:ok, repo_root}
 
