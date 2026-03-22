@@ -12,18 +12,21 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
   @doc "Build a tool handler closure rooted at the local repository."
   @spec build(String.t(), keyword()) :: (map() -> {:ok, String.t()} | {:error, String.t()})
   def build(repo_root, opts \\ []) do
-    executables = %{
-      rg: Keyword.get(opts, :rg, System.find_executable("rg")),
-      grep: Keyword.get(opts, :grep, System.find_executable("grep"))
+    context = %{
+      repo_root: Path.expand(repo_root),
+      executables: %{
+        rg: Keyword.get(opts, :rg, System.find_executable("rg")),
+        grep: Keyword.get(opts, :grep, System.find_executable("grep"))
+      }
     }
 
-    fn call -> dispatch(call, repo_root, executables) end
+    fn call -> dispatch(call, context) end
   end
 
-  defp dispatch(%{name: "get_file_contents", arguments: args}, repo_root, _executables) do
+  defp dispatch(%{name: "get_file_contents", arguments: args}, context) do
     path = args["path"] || ""
 
-    with {:ok, resolved} <- resolve_path(repo_root, path),
+    with {:ok, resolved} <- resolve_path(context.repo_root, path),
          true <- File.regular?(resolved) or {:error, {:not_a_file, path}},
          {:ok, content} <- File.read(resolved) do
       {:ok, slice_lines(content, args["start_line"], args["end_line"])}
@@ -32,28 +35,28 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
     end
   end
 
-  defp dispatch(%{name: "search_code", arguments: args}, repo_root, executables) do
+  defp dispatch(%{name: "search_code", arguments: args}, context) do
     query = args["query"] || ""
 
     cond do
       query == "" ->
         {:error, "Error: empty query"}
 
-      executable = executables.rg ->
-        run_ripgrep(executable, repo_root, query, args["path_filter"])
+      executable = context.executables.rg ->
+        run_ripgrep(executable, context.repo_root, query, args["path_filter"])
 
-      executable = executables.grep ->
-        run_grep(executable, repo_root, query, args["path_filter"])
+      executable = context.executables.grep ->
+        run_grep(executable, context.repo_root, query, args["path_filter"])
 
       true ->
         {:error, "Error: rg or grep is not available in this runtime"}
     end
   end
 
-  defp dispatch(%{name: "list_directory", arguments: args}, repo_root, _executables) do
+  defp dispatch(%{name: "list_directory", arguments: args}, context) do
     path = args["path"] || ""
 
-    with {:ok, resolved} <- resolve_directory(repo_root, path),
+    with {:ok, resolved} <- resolve_directory(context.repo_root, path),
          {:ok, entries} <- File.ls(resolved) do
       {:ok,
        entries
@@ -67,7 +70,7 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
     end
   end
 
-  defp dispatch(%{name: name}, _repo_root, _executables) do
+  defp dispatch(%{name: name}, _context) do
     {:error, "Unknown tool: #{name}"}
   end
 
@@ -137,10 +140,15 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
         {:error, {:invalid_path, path}}
 
       true ->
-        resolved = Path.expand(path, repo_root)
+        expanded = Path.expand(path, repo_root)
 
-        if resolved == repo_root or String.starts_with?(resolved, repo_root <> "/") do
-          {:ok, resolved}
+        if within_repo_root?(expanded, repo_root) do
+          case resolve_existing_path(repo_root, expanded) do
+            {:ok, resolved} -> {:ok, resolved}
+            {:error, :enoent} -> {:error, {:enoent, path}}
+            {:error, :invalid_path} -> {:error, {:invalid_path, path}}
+            {:error, reason} -> {:error, {reason, path}}
+          end
         else
           {:error, {:invalid_path, path}}
         end
@@ -148,6 +156,42 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
   end
 
   defp resolve_path(_repo_root, path), do: {:error, {:invalid_path, inspect(path)}}
+
+  defp resolve_existing_path(repo_root, candidate) do
+    if within_repo_root?(candidate, repo_root) do
+      candidate
+      |> Path.relative_to(repo_root)
+      |> Path.split()
+      |> walk_segments(repo_root, repo_root)
+    else
+      {:error, :invalid_path}
+    end
+  end
+
+  defp walk_segments([], _repo_root, current), do: {:ok, current}
+
+  defp walk_segments([segment | rest], repo_root, current) do
+    next = Path.join(current, segment)
+
+    case File.lstat(next) do
+      {:ok, %File.Stat{type: :symlink}} ->
+        with {:ok, link} <- File.read_link(next) do
+          target = Path.expand(link, Path.dirname(next))
+          remainder = Enum.join(rest, "/")
+          resolve_existing_path(repo_root, Path.join(target, remainder))
+        end
+
+      {:ok, _stat} ->
+        walk_segments(rest, repo_root, next)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp within_repo_root?(resolved, repo_root) do
+    resolved == repo_root or String.starts_with?(resolved, repo_root <> "/")
+  end
 
   defp slice_lines(content, nil, nil), do: content
 
@@ -177,5 +221,6 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
   defp format_error({:not_a_file, path}), do: "Path is a directory, not a file: #{path}"
   defp format_error({:not_a_directory, path}), do: "Path is a file, not a directory: #{path}"
   defp format_error({:enoent, path}), do: "Path not found: #{path}"
+  defp format_error({reason, path}), do: "Error reading #{path}: #{:file.format_error(reason)}"
   defp format_error(other), do: "Error: #{inspect(other)}"
 end

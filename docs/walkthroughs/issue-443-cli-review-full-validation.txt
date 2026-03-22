@@ -1968,14 +1968,14 @@ tests/test_verdict_action.py::test_fail_on_verdict_is_wired_in_review_action PAS
 tests/test_verdict_action.py::test_review_prompt_references_diff_file_placeholder PASSED [ 99%]
 tests/test_verdict_action.py::test_review_action_writes_review_run_contract PASSED [100%]
 
-================== 1955 passed, 1 skipped in 88.06s (0:01:28) ==================
+================= 1955 passed, 1 skipped in 115.22s (0:01:55) ==================
 🔍 Running ruff...
 All checks passed!
 🔍 Running shellcheck...
 🔍 Running yamllint...
 🔍 Running cerberus-elixir checks...
 Resolving Hex dependencies...
-Resolution completed in 0.05s
+Resolution completed in 0.114s
 Unchanged:
   abnf_parsec 2.1.0
   acceptor_pool 1.0.1
@@ -2025,627 +2025,347 @@ Unchanged:
   yaml_elixir 2.12.1
   zoi 0.17.1
 All dependencies have been fetched
-Compiling 1 file (.ex)
+Compiling 2 files (.ex)
 Generated cerberus_elixir app
 
-11:05:43.539 [info] Loading 160 CA(s) from :otp store
+11:44:37.368 [info] Loading 160 CA(s) from :otp store
 
-11:05:43.966 [info] Running Cerberus.API with Bandit 1.10.3 at 0.0.0.0:64302 (http)
-Running ExUnit with seed: 973108, max_cases: 22
+11:44:39.011 [info] Running Cerberus.API with Bandit 1.10.3 at 0.0.0.0:60297 (http)
+Running ExUnit with seed: 32644, max_cases: 22
 
-..........................................................................................................................
-11:05:44.178 [warning] dropped 4 invalid reviewer finding(s) during normalization
-.
-11:05:44.183 [warning] Router LLM call raised: connection timeout
-....
-11:05:44.187 [warning] Router LLM call failed: :api_unavailable
-
-11:05:44.187 [warning] Router LLM call failed: :api_unavailable
-
-11:05:44.187 [warning] Router LLM call failed: :api_unavailable
-..........
-11:05:44.194 [warning] Config reload failed: %YamlElixir.FileNotFoundError{message: "Failed to open file \"/nonexistent/path/defaults/config.yml\": no such file or directory"}, keeping current state
-.
-11:05:44.194 [warning] invalid findings payload on write: expected list
-...............
-11:05:44.209 [warning] Router LLM call failed: :api_unavailable
-......
-11:05:44.215 [warning] failed to decode persisted JSON payload: %Jason.DecodeError{position: 0, token: nil, data: "not-json"}
-......
-11:05:44.221 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-..
-11:05:44.221 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.222 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-............
-11:05:44.232 [warning] Router LLM call failed: :api_unavailable
-.......................
-11:05:44.260 [warning] normalizing unexpected confidence value to 0.0: "bogus"
-......
-11:05:44.273 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.......
-11:05:44.278 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.278 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.................
-11:05:44.283 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.283 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+...........................................................................................................................
+11:44:39.803 [warning] Router LLM call failed: :api_unavailable
 ................
-11:05:44.287 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.287 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-..........
-11:05:44.290 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.290 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.293 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.294 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.296 [info] The function passed as a handler with ID "test-reviewer-error" is a local function.
-This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
-
-https://hexdocs.pm/telemetry/telemetry.html#attach/4
-
-11:05:44.296 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.296 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.299 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.299 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.302 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.302 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.305 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.305 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.307 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.307 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.313 [info] The function passed as a handler with ID "test-reviewer-fallback-model" is a local function.
-This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
-
-https://hexdocs.pm/telemetry/telemetry.html#attach/4
-.
-11:05:44.313 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.313 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.319 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.319 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.......
-11:05:44.422 [info] The function passed as a handler with ID "test-reviewer-complete" is a local function.
-This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
-
-https://hexdocs.pm/telemetry/telemetry.html#attach/4
-
-11:05:44.422 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.422 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.425 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.425 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.427 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.428 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:39.819 [warning] failed to decode persisted JSON payload: %Jason.DecodeError{position: 0, token: nil, data: "not-json"}
+............................................................
+11:44:39.878 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 ..
-11:05:44.430 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.430 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.434 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.434 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-..
-11:05:44.442 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.442 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.452 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.452 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.455 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.455 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.458 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.458 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-.
-11:05:44.461 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.461 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:39.879 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .....
-11:05:44.474 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:39.897 [warning] Router LLM call failed: :api_unavailable
+....
+11:44:39.918 [warning] Config reload failed: %YamlElixir.FileNotFoundError{message: "Failed to open file \"/nonexistent/path/defaults/config.yml\": no such file or directory"}, keeping current state
+.......
+11:44:39.925 [info] The function passed as a handler with ID "test-reviewer-fallback-model" is a local function.
+This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
 
-11:05:44.474 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+https://hexdocs.pm/telemetry/telemetry.html#attach/4
+..
+11:44:39.936 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:39.937 [warning] invalid findings payload on write: expected list
+.......
+11:44:39.996 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+..
+11:44:40.011 [info] The function passed as a handler with ID "test-reviewer-error" is a local function.
+This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
+
+https://hexdocs.pm/telemetry/telemetry.html#attach/4
+
+11:44:40.012 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+...
+11:44:40.024 [warning] dropped 4 invalid reviewer finding(s) during normalization
+.
+11:44:40.032 [warning] Router LLM call failed: :api_unavailable
+.
+11:44:40.032 [warning] Router LLM call failed: :api_unavailable
+.
+11:44:40.032 [warning] Router LLM call failed: :api_unavailable
+
+11:44:40.036 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 ......
-11:05:44.501 [error] Store unavailable: {:noproc, {GenServer, :call, [#PID<0.1569.0>, {:create_review_run, %{repo: "org/repo", model: nil, pr_number: 42, head_sha: "abc"}}, 5000]}}
-........
-11:05:44.531 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.531 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-......
-11:05:44.556 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.556 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.556 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.556 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.557 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.557 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/traces returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.721 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.722 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.722 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.722 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.722 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.722 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.723 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.723 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.723 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.724 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.724 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.725 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.725 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.725 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.726 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.726 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.727 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.727 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.729 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.729 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.729 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.730 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.730 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.730 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.731 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.732 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.732 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.733 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.733 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.734 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.734 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.734 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.734 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.780 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.782 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.782 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.783 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.783 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.785 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.785 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.785 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.839 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.839 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.840 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.840 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.840 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.840 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.841 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.841 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.841 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.841 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.841 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.842 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.842 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.842 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.842 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.842 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.843 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.843 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.843 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.844 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.845 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.845 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.846 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.846 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.847 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.847 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.847 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.848 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.848 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.848 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.849 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.851 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.851 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.852 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.852 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.852 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:44.852 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
-
-11:05:51.556 [warning] Reviewer correctness timed out
+11:44:40.041 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.562 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.041 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.562 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.044 [warning] Router LLM call raised: connection timeout
+.........
+11:44:40.054 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.562 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.054 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.....
+11:44:40.059 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.562 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.059 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.562 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.562 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.563 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.563 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.059 [warning] normalizing unexpected confidence value to 0.0: "bogus"
+...
+11:44:40.096 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.568 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.096 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+....
+11:44:40.112 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.573 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.573 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.573 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.573 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.573 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.574 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.574 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.574 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.113 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.578 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.120 [info] The function passed as a handler with ID "test-reviewer-complete" is a local function.
+This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
 
-11:05:51.578 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.579 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.579 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.579 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.579 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.579 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.579 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+https://hexdocs.pm/telemetry/telemetry.html#attach/4
+..
+11:44:40.120 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Reviewer correctness failed: :all_models_exhausted
-
-11:05:51.584 [warning] Reviewer security failed: :all_models_exhausted
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.584 [warning] Reviewer architecture failed: :all_models_exhausted
-
-11:05:51.584 [warning] Reviewer testing failed: :all_models_exhausted
+11:44:40.120 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.........
+11:44:40.160 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.589 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.160 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+..
+11:44:40.171 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.171 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.594 [error] Pipeline 1 failed: ** (RuntimeError) failed to persist reviewer verdict: :boom
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:310: Cerberus.Pipeline.persist_verdicts/3
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:79: Cerberus.Pipeline.run/3
-    test/cerberus/pipeline_test.exs:629: Cerberus.PipelineTest."test cost tracking fails the pipeline when verdict persistence fails"/1
-    (ex_unit 1.19.5) lib/ex_unit/runner.ex:528: ExUnit.Runner.exec_test/2
-    (stdlib 7.3) timer.erl:599: :timer.tc/2
-    (ex_unit 1.19.5) lib/ex_unit/runner.ex:450: anonymous fn/6 in ExUnit.Runner.spawn_test_monitor/4
-
+11:44:40.180 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.599 [error] Pipeline 1 failed: ** (RuntimeError) failed to persist reviewer cost: :boom
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:337: Cerberus.Pipeline.persist_costs/3
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:80: Cerberus.Pipeline.run/3
-    test/cerberus/pipeline_test.exs:646: Cerberus.PipelineTest."test cost tracking fails the pipeline when cost persistence fails"/1
-    (ex_unit 1.19.5) lib/ex_unit/runner.ex:528: ExUnit.Runner.exec_test/2
-    (stdlib 7.3) timer.erl:599: :timer.tc/2
-    (ex_unit 1.19.5) lib/ex_unit/runner.ex:450: anonymous fn/6 in ExUnit.Runner.spawn_test_monitor/4
-
+11:44:40.180 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.603 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.603 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.604 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.604 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.604 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.604 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.604 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.604 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.186 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.608 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.608 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.608 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.608 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.608 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.608 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.609 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.609 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.609 [warning] GitHub posting failed (non-fatal): GitHub API unavailable
+11:44:40.186 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.196 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.196 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+....
+11:44:40.356 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.356 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+...........
+11:44:40.599 [error] Store unavailable: {:noproc, {GenServer, :call, [#PID<0.1542.0>, {:create_review_run, %{repo: "org/repo", model: nil, pr_number: 42, head_sha: "abc"}}, 5000]}}
+....
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.613 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/traces returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.674 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.678 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.677 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.680 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.682 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.686 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.688 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.688 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
 .
-11:05:51.617 [error] Task #PID<0.2103.0> started from #PID<0.2094.0> terminating
-** (stop) exited in: GenServer.call(#PID<0.2107.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000)
-    ** (EXIT) killed
-    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
-    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
-    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
-    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
-Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
-    Args: []
-
-11:05:51.617 [error] Task #PID<0.2102.0> started from #PID<0.2094.0> terminating
-** (stop) exited in: GenServer.call(#PID<0.2106.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000)
-    ** (EXIT) killed
-    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
-    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
-    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
-    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
-Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
-    Args: []
-
-11:05:51.618 [error] Task #PID<0.2104.0> started from #PID<0.2094.0> terminating
-** (stop) exited in: GenServer.call(#PID<0.2108.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000)
-    ** (EXIT) killed
-    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
-    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
-    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
-    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
-Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
-    Args: []
-
-11:05:51.619 [warning] Reviewer correctness crashed: {:killed, {GenServer, :call, [#PID<0.2106.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000]}}
-
-11:05:51.619 [warning] Reviewer security crashed: {:killed, {GenServer, :call, [#PID<0.2107.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000]}}
-
-11:05:51.619 [warning] Reviewer architecture crashed: {:killed, {GenServer, :call, [#PID<0.2108.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000]}}
-
-11:05:51.618 [error] Task #PID<0.2105.0> started from #PID<0.2094.0> terminating
-** (stop) exited in: GenServer.call(#PID<0.2109.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000)
-    ** (EXIT) killed
-    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
-    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
-    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
-    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
-    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
-    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
-Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
-    Args: []
-
-11:05:51.620 [warning] Reviewer testing crashed: {:killed, {GenServer, :call, [#PID<0.2109.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-3463.diff"}}, 5000]}}
+11:44:40.705 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 .
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.706 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.708 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.712 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
-
-11:05:51.624 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+11:44:40.712 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
 .
-11:05:51.629 [error] Pipeline 1 failed: ** (MatchError) no match of right hand side value:
+11:44:40.725 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:40.726 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.726 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.....
+11:44:40.788 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.788 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+11:44:40.802 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.803 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+..
+11:44:40.806 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.808 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.814 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.814 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+11:44:40.816 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.827 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.827 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+11:44:40.848 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.848 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.848 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.848 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.849 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.849 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.849 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.849 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+11:44:40.873 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.873 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.873 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.873 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.874 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.874 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.874 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.874 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+11:44:40.897 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.897 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.897 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.897 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.898 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.898 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.898 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.898 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.908 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.908 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.908 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.920 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.923 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.923 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:40.932 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.934 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.945 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.945 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.946 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.946 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.946 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.946 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.946 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.946 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.947 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.948 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.948 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:40.966 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.967 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.967 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.967 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.968 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.968 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.969 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.969 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.969 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.969 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.969 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.969 [error] Pipeline 1 failed: ** (MatchError) no match of right hand side value:
 
     {:error, {:transient, "GitHub API 500 after 0 retries"}}
 
@@ -2656,6 +2376,474 @@ Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
     (ex_unit 1.19.5) lib/ex_unit/runner.ex:450: anonymous fn/6 in ExUnit.Runner.spawn_test_monitor/4
 
 .
-Finished in 7.6 seconds (0.4s async, 7.1s sync)
-327 tests, 0 failures
+11:44:40.975 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.986 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.986 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.987 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.987 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.987 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.987 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.987 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.987 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:40.992 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.992 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.993 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.993 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.994 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.994 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.994 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.994 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.995 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:40.997 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:40.998 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.013 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.015 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.016 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.016 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.016 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.017 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.017 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.017 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.017 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.018 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.018 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.018 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.018 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.018 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.018 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.018 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.019 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.020 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.020 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.020 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.025 [error] Pipeline 1 failed: ** (RuntimeError) failed to persist reviewer cost: :boom
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:337: Cerberus.Pipeline.persist_costs/3
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:80: Cerberus.Pipeline.run/3
+    test/cerberus/pipeline_test.exs:646: Cerberus.PipelineTest."test cost tracking fails the pipeline when cost persistence fails"/1
+    (ex_unit 1.19.5) lib/ex_unit/runner.ex:528: ExUnit.Runner.exec_test/2
+    (stdlib 7.3) timer.erl:599: :timer.tc/2
+    (ex_unit 1.19.5) lib/ex_unit/runner.ex:450: anonymous fn/6 in ExUnit.Runner.spawn_test_monitor/4
+
+.
+11:44:41.037 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.037 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.038 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.038 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.039 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.039 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.039 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.039 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.049 [warning] GitHub posting failed (non-fatal): GitHub API unavailable
+.
+11:44:41.063 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.063 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.063 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.063 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.064 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.064 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.065 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.065 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.065 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.065 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.066 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.066 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.066 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.066 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.066 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.066 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.066 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.067 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.069 [error] Pipeline 1 failed: ** (RuntimeError) failed to persist reviewer verdict: :boom
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:310: Cerberus.Pipeline.persist_verdicts/3
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:79: Cerberus.Pipeline.run/3
+    test/cerberus/pipeline_test.exs:629: Cerberus.PipelineTest."test cost tracking fails the pipeline when verdict persistence fails"/1
+    (ex_unit 1.19.5) lib/ex_unit/runner.ex:528: ExUnit.Runner.exec_test/2
+    (stdlib 7.3) timer.erl:599: :timer.tc/2
+    (ex_unit 1.19.5) lib/ex_unit/runner.ex:450: anonymous fn/6 in ExUnit.Runner.spawn_test_monitor/4
+
+
+11:44:41.071 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.072 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:41.074 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.097 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.097 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.098 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.098 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.099 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.099 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.099 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.099 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.105 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.106 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.106 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.106 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.106 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.105 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.107 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.107 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.107 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.109 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.109 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:41.113 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.130 [error] Task #PID<0.2017.0> started from #PID<0.2007.0> terminating
+** (stop) exited in: GenServer.call(#PID<0.2021.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000)
+    ** (EXIT) killed
+    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
+    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
+    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
+    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
+Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
+    Args: []
+
+11:44:41.129 [error] Task #PID<0.2016.0> started from #PID<0.2007.0> terminating
+** (stop) exited in: GenServer.call(#PID<0.2020.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000)
+    ** (EXIT) killed
+    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
+    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
+    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
+    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
+Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
+    Args: []
+
+11:44:41.131 [error] Task #PID<0.2018.0> started from #PID<0.2007.0> terminating
+** (stop) exited in: GenServer.call(#PID<0.2022.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000)
+    ** (EXIT) killed
+    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
+    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
+    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
+    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
+Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
+    Args: []
+
+11:44:41.129 [error] Task #PID<0.2015.0> started from #PID<0.2007.0> terminating
+** (stop) exited in: GenServer.call(#PID<0.2019.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000)
+    ** (EXIT) killed
+    (elixir 1.19.5) lib/gen_server.ex:1142: GenServer.call/3
+    (cerberus_elixir 0.1.0) lib/cerberus/pipeline.ex:204: Cerberus.Pipeline.spawn_reviewer/6
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:69: anonymous fn/3 in Cerberus.Telemetry.with_reviewer/4
+    (opentelemetry 1.7.0) /Users/phaedrus/.codex/worktrees/ef79/cerberus/cerberus-elixir/deps/opentelemetry/src/otel_tracer_default.erl:47: :otel_tracer_default.with_span/5
+    (cerberus_elixir 0.1.0) lib/cerberus/telemetry.ex:63: Cerberus.Telemetry.with_reviewer/4
+    (elixir 1.19.5) lib/task/supervised.ex:105: Task.Supervised.invoke_mfa/2
+    (elixir 1.19.5) lib/task/supervised.ex:40: Task.Supervised.reply/4
+Function: #Function<14.27780610/0 in Cerberus.Pipeline.run_panel/9>
+    Args: []
+
+11:44:41.135 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.135 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.135 [warning] Reviewer correctness crashed: {:killed, {GenServer, :call, [#PID<0.2019.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000]}}
+
+11:44:41.135 [warning] Reviewer security crashed: {:killed, {GenServer, :call, [#PID<0.2020.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000]}}
+
+11:44:41.135 [warning] Reviewer architecture crashed: {:killed, {GenServer, :call, [#PID<0.2021.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000]}}
+
+11:44:41.135 [warning] Reviewer testing crashed: {:killed, {GenServer, :call, [#PID<0.2022.0>, {:review, %{title: "Test PR", author: "testuser", body: "Test PR body", diff: "diff --git a/lib/foo.ex b/lib/foo.ex\n--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@ -1,3 +1,4 @@\n defmodule Foo do\n+  def bar, do: :ok\n end\n", repo: "org/repo", pr_number: 42, head_sha: "abc123def456", head_branch: "feat/test", base_branch: "main", diff_file: "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/cerberus-diff-2947.diff"}}, 5000]}}
+
+11:44:41.135 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.137 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.137 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.137 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.138 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+.
+11:44:41.140 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.140 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.140 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.145 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.145 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.155 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.155 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.155 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.156 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.155 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.160 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Reviewer correctness failed: :all_models_exhausted
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Reviewer security failed: :all_models_exhausted
+
+11:44:41.166 [warning] Reviewer architecture failed: :all_models_exhausted
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.166 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.167 [warning] Reviewer testing failed: :all_models_exhausted
+.
+11:44:41.180 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.180 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.180 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.180 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.181 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.181 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:41.182 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.183 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.185 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.185 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.186 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.186 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.186 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.186 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.187 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.187 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.187 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.190 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.215 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.224 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.225 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.225 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.225 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.225 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.225 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.225 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.226 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.227 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.228 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.229 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.285 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.286 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.286 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.287 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.287 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.288 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.296 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.300 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.300 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.300 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.300 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.300 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.300 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.303 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.304 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:41.306 [warning] Langfuse POST /api/public/generations returned 401: %{"message" => "Invalid credentials. Confirm that you've configured the correct host."}
+
+11:44:48.180 [warning] Reviewer correctness timed out
+.
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.191 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+
+11:44:48.201 [warning] Langfuse host "http://localhost:9999" uses http scheme — only HTTPS is allowed. Falling back to https://cloud.langfuse.com
+.
+Finished in 9.0 seconds (1.1s async, 7.9s sync)
+333 tests, 0 failures
 ✓ All validation checks passed
