@@ -43,7 +43,10 @@ lint:
 shellcheck:
 	$(call require,shellcheck,brew install shellcheck (macOS) or apt install shellcheck (Linux))
 	@echo "🔍 Running shellcheck..."
-	@find scripts tests api cerberus-elixir -name "*.sh" -type f -exec shellcheck {} +
+	@find scripts tests api cerberus-elixir \
+		-path 'cerberus-elixir/_build' -prune -o \
+		-path 'cerberus-elixir/deps' -prune -o \
+		-name "*.sh" -type f -exec shellcheck {} +
 
 # Run yamllint on workflow YAML
 yamllint:
