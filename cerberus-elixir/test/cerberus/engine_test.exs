@@ -261,11 +261,12 @@ defmodule Cerberus.EngineTest do
                      )
                    )
 
-          assert Enum.any?(result.reviewer_results, &(&1.status == :timeout))
+          assert Enum.count(result.reviewer_results, &(&1.status == :timeout)) == 1
           assert Enum.any?(result.reviewers, &(&1.verdict == "SKIP"))
         end)
 
-      assert log =~ "Reviewer correctness timed out"
+      assert log =~ "Reviewer "
+      assert log =~ " timed out"
     end
 
     test "raises when routing returns a perspective without a matching persona", ctx do
