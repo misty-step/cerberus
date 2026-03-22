@@ -38,6 +38,7 @@ The action dispatches a review via `POST /api/reviews`, polls until completion, 
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
+| `github-token` | no | `''` | GitHub token forwarded to the hosted Cerberus pipeline for per-request PR reads and writes |
 | `api-key` | yes | - | Cerberus API authentication key |
 | `cerberus-url` | yes | - | API base URL (e.g., `https://cerberus.fly.dev`) |
 | `model` | no | `''` | Reserved; accepted but not yet wired to reviewer selection |
