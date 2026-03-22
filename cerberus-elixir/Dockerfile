@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG ELIXIR_IMAGE=hexpm/elixir:1.19.1-erlang-27.3.4.1-alpine-3.20.6
+ARG ELIXIR_IMAGE=hexpm/elixir:1.19.1-erlang-27.3.4.1-alpine-3.20.8
 ARG ALPINE_IMAGE=alpine:3.20
 
 FROM ${ELIXIR_IMAGE} AS build
