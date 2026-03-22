@@ -12,4 +12,14 @@ defmodule Cerberus.ApplicationTest do
     assert Cerberus.ReviewSupervisor in children
     assert Cerberus.Router in children
   end
+
+  test "defines a unix release with runtime tools" do
+    release =
+      Mix.Project.config()
+      |> Keyword.fetch!(:releases)
+      |> Keyword.fetch!(:cerberus)
+
+    assert release[:include_executables_for] == [:unix]
+    assert release[:applications][:runtime_tools] == :permanent
+  end
 end

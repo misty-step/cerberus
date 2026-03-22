@@ -1,0 +1,9 @@
+.git
+.github
+.pytest_cache
+__pycache__
+cerberus-elixir/_build
+cerberus-elixir/deps
+cerberus-elixir/tmp
+docs
+evals
