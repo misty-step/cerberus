@@ -461,7 +461,7 @@ defmodule Cerberus.APITest do
             repo: "org/repo",
             pr_number: 42,
             head_sha: "abc123def456",
-            github_token: " \n\t "
+            github_token: " \t "
           },
           ctx.store,
           pipeline: pipeline_fn
