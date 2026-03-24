@@ -535,6 +535,7 @@ defmodule Cerberus.ReviewerTest do
 
       assert_receive {:telemetry, [:cerberus, :reviewer, :complete], measurements,
                       %{perspective: :correctness, model: "test-model"} = metadata}
+
       assert measurements.prompt_tokens == 500
       assert measurements.completion_tokens == 200
       assert measurements.duration_ms >= 0
@@ -571,6 +572,7 @@ defmodule Cerberus.ReviewerTest do
 
       assert_receive {:telemetry, [:cerberus, :reviewer, :error], measurements,
                       %{perspective: :correctness, model: "test-model"}}
+
       assert measurements.duration_ms >= 0
 
       :telemetry.detach("test-reviewer-error")

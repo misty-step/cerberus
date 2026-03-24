@@ -22,7 +22,7 @@ Presence classification taxonomy:
 - `absent` is operational noise — no recall claim in either direction.
 - `skipped` is partially operational (draft skips expected, key-missing skips are bugs).
 - Core repos and minimum presence targets: `defaults/dogfood.yml`.
-- Presence check: `python3 scripts/check-dogfood-presence.py`.
+- Presence check: currently tracked from `defaults/dogfood.yml` plus scorecard observation; the old repo-local Python checker was retired with the matrix pipeline.
 
 Collector contract:
 - Output JSON includes top-level provenance: `org`, `since`, `repo_limit`, `pull_request_limit`, and `repo_listing_truncated`.

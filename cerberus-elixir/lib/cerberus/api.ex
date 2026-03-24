@@ -14,10 +14,10 @@ defmodule Cerberus.API do
 
   use Plug.Router
 
-  plug :match
-  plug Plug.Parsers, parsers: [:json], json_decoder: Jason
-  plug :check_auth
-  plug :dispatch
+  plug(:match)
+  plug(Plug.Parsers, parsers: [:json], json_decoder: Jason)
+  plug(:check_auth)
+  plug(:dispatch)
 
   @impl true
   def init(opts), do: opts
@@ -142,8 +142,7 @@ defmodule Cerberus.API do
         {:error, "missing required field: head_sha"}
 
       true ->
-        {:ok, %{repo: repo, pr_number: pr_number, head_sha: head_sha,
-                model: params["model"]}}
+        {:ok, %{repo: repo, pr_number: pr_number, head_sha: head_sha, model: params["model"]}}
     end
   end
 

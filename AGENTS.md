@@ -23,34 +23,34 @@ I am **Cerberus**, the guardian of the codebase. I am not a passive reviewer; I 
 
 ## Scope
 
-- **cerberus** repository-specific Pi foundation.
-- Optimized for Python, Shell, and GitHub Action workflows.
+- **cerberus** repository-specific foundation.
+- Optimized for Elixir/OTP, a thin shell-based GitHub Action client, and a small Node scaffolder.
 
 ---
 
 ## Stack & Capabilities
 
-- **Primary Stack:** Python 3.12+, Shell (POSIX/Bash), YAML (GitHub Actions).
-- **Key Tools:** `ruff`, `shellcheck`, `pytest`, `pytest-cov`, `yaml-lint`.
-- **Review Pipeline:** `scripts/run-reviewer.sh` → `scripts/run-reviewer.py` → `scripts/lib/runtime_facade.py` (via Pi CLI).
-- **Automation Scripts:**
-  - `make test` — Full suite (requires `pytest`).
-  - `make lint` — `ruff` on scripts, matrix, and tests.
-  - `make shellcheck` — Validate all `.sh` files.
-  - `make validate` — Combined test + lint + shellcheck.
+- **Primary Stack:** Elixir 1.19 / OTP 28, Shell (POSIX/Bash), YAML (GitHub Actions), Node.js for the scaffolder CLI.
+- **Key Tools:** `mix`, `shellcheck`, `yamllint`, `node --check`.
+- **Review Path:** `action.yml` → `dispatch.sh` → Cerberus API → `cerberus-elixir/`.
+- **Main Verification Commands:**
+  - `cd cerberus-elixir && mix test`
+  - `cd cerberus-elixir && mix format --check-formatted`
+  - `shellcheck dispatch.sh`
+  - `node --check bin/cerberus.js`
 
 ---
 
 ## Engineering Doctrine
 
 ### 1. Root-Cause Remediation Over Symptom Patching
-We do not silence warnings or wrap unstable code in `try-except` blocks. If the runtime facade is failing, we fix the interface, not the caller.
+We do not paper over broken dispatch, review, or API semantics. Fix the interface or contract that is wrong.
 
 ### 2. High-Leverage Strategic Simplification
-Prefer Unix-style composition. If a script is becoming a monolith, break it into focused primitives. Remove accidental complexity; if a feature isn't paying for itself in signal, it should be deleted.
+Prefer one thin client and one real engine over duplicated orchestration layers. Delete dead compatibility surface aggressively.
 
 ### 3. Test-First Workflow
-For non-trivial changes, start with a reproduction or a failing test. We do not lower the coverage floor (currently 70% for `scripts/`).
+For non-trivial changes, start with a reproduction or a failing test. Favor Elixir tests and fast static verification over prose-only guarantees.
 
 ### 4. LLM-First Semantics (Hard Rule)
 Do not implement semantic classification, prioritization, extraction, or judgment with deterministic heuristics when an LLM can do it.
@@ -85,21 +85,20 @@ If one of these does not apply to the current task, say why briefly instead of s
 ## Quality Gates
 
 Before any change is committed to the gate:
-- `make validate` must pass.
-- Coverage must not regress below 70%.
-- `shellcheck` must be clean.
-- If a gate fails on a local blocker, debug and fix it before stopping. Do not
-  stop at merely reporting a red gate unless the blocker is external or unsafe
-  to resolve in the current lane.
+- `cd cerberus-elixir && mix test` must pass.
+- `cd cerberus-elixir && mix format --check-formatted` must pass.
+- `shellcheck` on the active shell scripts must be clean.
+- The root action, consumer template, and CLI must stay aligned.
+- If a gate fails on a local blocker, debug and fix it before stopping. Do not stop at merely reporting a red gate unless the blocker is external or unsafe to resolve in the current lane.
 
 ---
 
 ## Source-of-Truth Hierarchy
 
-1. `defaults/config.yml` (Model pools, wave definitions, verdict thresholds).
-2. `pi/agents/*.md` (Reviewer system prompts).
-3. `CLAUDE.md` (Project overview and commands).
-4. `README.md` (Usage and architecture).
+1. `action.yml` and `dispatch.sh` (consumer contract)
+2. `cerberus-elixir/` (engine behavior)
+3. `defaults/config.yml` and `pi/agents/*.md` (review data and prompts)
+4. `CLAUDE.md` and `README.md` (maintainer and consumer docs)
 
 ---
 

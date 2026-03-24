@@ -1,9 +1,4 @@
-# Workflow Lint (Cerberus)
-#
-# Catches the GitHub "workflow file issue" class early by validating YAML + common
-# Cerberus misconfigs from a separate workflow.
-#
-# Recommended: keep this even if Cerberus is disabled on fork PRs.
+# Workflow Lint (Cerberus API mode)
 name: Cerberus Workflow Lint
 
 on:
@@ -23,6 +18,6 @@ jobs:
   cerberus-workflow:
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/validate@master
-        with:
-          workflow: .github/workflows/cerberus.yml
+      - uses: actions/checkout@v4
+      - run: pip install yamllint -q
+      - run: yamllint .github/workflows/*.yml

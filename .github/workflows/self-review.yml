@@ -1,6 +1,4 @@
-# Cerberus AI Code Review
-# https://github.com/misty-step/cerberus
-name: Cerberus
+name: Cerberus Self Review
 
 on:
   pull_request:
@@ -17,8 +15,15 @@ concurrency:
 
 jobs:
   review:
-    uses: ./.github/workflows/cerberus.yml
-    with:
-      timeout: 600
-    secrets:
-      api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: misty-step/cerberus
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.CERBERUS_API_KEY }}
+          cerberus-url: ${{ vars.CERBERUS_URL }}

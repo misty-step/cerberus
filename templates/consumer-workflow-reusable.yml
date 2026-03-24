@@ -1,41 +1,25 @@
-# Cerberus AI Code Review
-# https://github.com/misty-step/cerberus
+# Cerberus API-mode consumer workflow.
 #
-# Drop this file into .github/workflows/cerberus.yml in your repository.
-# Set CERBERUS_OPENROUTER_API_KEY in your repository secrets and you're done.
-# Keep this file as-is (no `with:` block) to run Cerberus with full defaults.
+# Single-step review via the hosted Cerberus API.
+# Prerequisites:
+#   - `CERBERUS_API_KEY` secret for API authentication
+#   - `CERBERUS_URL` repository variable or secret
 #
 # Optional inputs:
-#   timeout:     Max seconds per reviewer (default: 600)
-#   model:       Override LLM model for all reviewers
-#   context:     Project context to calibrate reviewer severity (no secrets)
-#   reviewers:   Force specific reviewers, bypassing routing (e.g. trace,guard)
-#   fail-on-verdict: Fail when verdict is FAIL (default: true)
-#   fail-on-skip:    Fail when verdict is SKIP (default: false)
-#                    Recommended: set to "true" so timeout/API failures don't
-#                    silently appear as green checks.
-#
-# Example with options:
-#   jobs:
-#     review:
-#       uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
-#       permissions:
-#         contents: read
-#         issues: write
-#         pull-requests: write
-#       with:
-#         context: "Single-user personal finance app. Data bounded to ~500 tx/year."
-#         timeout: 900
-#       secrets:
-#         api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
-#
-# Power-user option (decomposed pipeline with full control):
-#   See templates/consumer-workflow-minimal.yml
-name: Cerberus
+#   - `model`
+#   - `timeout`
+#   - `poll-interval`
+#   - `fail-on-verdict`
+name: Cerberus Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
@@ -43,10 +27,12 @@ concurrency:
 
 jobs:
   review:
-    uses: misty-step/cerberus/.github/workflows/cerberus.yml@master
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    secrets:
-      api-key: ${{ secrets.CERBERUS_OPENROUTER_API_KEY }}
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: misty-step/cerberus@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          api-key: ${{ secrets.CERBERUS_API_KEY }}
+          cerberus-url: ${{ vars.CERBERUS_URL }}
+          fail-on-verdict: 'true'

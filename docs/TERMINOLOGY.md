@@ -103,5 +103,5 @@ When describing Cerberus behavior:
 
 Example:
 
-- Good: "The reviewer emitted one major finding with exact evidence from `scripts/run-reviewer.py:84`."
+- Good: "The reviewer emitted one major finding with exact evidence from the dispatch or engine path."
 - Bad: "Cerberus produced an unverified warning-ish thing."

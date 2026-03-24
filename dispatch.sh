@@ -1,28 +1,21 @@
 #!/usr/bin/env bash
 # Thin Cerberus API dispatcher for GitHub Actions.
 #
-# Preflight → POST /api/reviews → poll GET /api/reviews/:id → set outputs.
+# Preflight -> POST /api/reviews -> poll GET /api/reviews/:id -> set outputs.
 # All review execution happens server-side.
 
 set -euo pipefail
 
-# --- Helpers ---
-
 parse_json() {
-  # Extract a value from JSON using jq. Falls back to empty string on error.
   local filter="$1"
   jq -r "$filter // empty" 2>/dev/null || echo ""
 }
 
 bail_skip() {
-  # Write SKIP outputs and exit. Every early-exit path must use this
-  # to maintain the action output contract.
   echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
   echo "review-id=" >> "$GITHUB_OUTPUT"
   exit "$1"
 }
-
-# --- Preflight ---
 
 if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
   echo "::notice::Cerberus: skipping fork PR (no secrets available)"
@@ -49,8 +42,6 @@ if [ -z "${PR_NUMBER:-}" ] || [ -z "${HEAD_SHA:-}" ]; then
   bail_skip 1
 fi
 
-# --- Dispatch ---
-
 REPO="${BASE_REPO}"
 TIMEOUT="${CERBERUS_TIMEOUT:-600}"
 POLL_INTERVAL="${CERBERUS_POLL_INTERVAL:-5}"
@@ -60,6 +51,7 @@ if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
   echo "::error::Cerberus: TIMEOUT must be a positive integer (got: ${TIMEOUT})"
   bail_skip 1
 fi
+
 if ! [[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || [ "$POLL_INTERVAL" -eq 0 ]; then
   echo "::error::Cerberus: POLL_INTERVAL must be a positive integer (got: ${POLL_INTERVAL})"
   bail_skip 1
@@ -92,8 +84,6 @@ fi
 review_id=$(echo "$body" | parse_json '.review_id')
 echo "Review dispatched: id=${review_id}"
 echo "review-id=${review_id}" >> "$GITHUB_OUTPUT"
-
-# --- Poll ---
 
 elapsed=0
 consecutive_errors=0
@@ -135,14 +125,12 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
       echo "Review complete: verdict=${verdict} (${elapsed}s)"
       echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
 
-      # Write verdict JSON to RUNNER_TEMP for downstream consumption
       if [ -n "${RUNNER_TEMP:-}" ]; then
         verdict_path="${RUNNER_TEMP}/cerberus-api-verdict.json"
         echo "$poll_body" > "$verdict_path"
         echo "Verdict JSON written to ${verdict_path}"
       fi
 
-      # Fail on FAIL verdict if configured
       if [ "${CERBERUS_FAIL_ON_VERDICT:-true}" = "true" ] && [ "$verdict" = "FAIL" ]; then
         echo "::error::Cerberus verdict: FAIL"
         exit 1

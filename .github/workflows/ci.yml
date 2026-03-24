@@ -12,138 +12,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shellcheck
-        run: shellcheck scripts/*.sh api/*.sh cerberus-elixir/*.sh
-
-      - name: Python syntax
         run: |
-          python3 -m py_compile scripts/parse-review.py
-          python3 -m py_compile scripts/aggregate-verdict.py
-          python3 -m py_compile scripts/run-reviewer.py
-          python3 -m py_compile scripts/triage.py
-          python3 -m py_compile scripts/validate-perspective.py
-          python3 -m py_compile scripts/validate-consumer-workflow.py
-          python3 -m py_compile scripts/read-reviewer-profile.py
-          python3 -m py_compile scripts/lib/consumer_workflow_validator.py
-          python3 -m py_compile scripts/lib/coverage_policy.py
-          python3 -m py_compile scripts/lib/reviewer_profiles.py
-          python3 -m py_compile scripts/lib/runtime_facade.py
-          python3 -m py_compile matrix/generate-matrix.py
-
-      - name: YAML validity
-        run: |
-          pip install pyyaml
-          python3 -c "
-          import yaml, sys
-          paths = [
-              'action.yml', 'draft-check/action.yml', 'preflight/action.yml',
-              'verdict/action.yml', 'triage/action.yml', 'matrix/action.yml',
-              'validate/action.yml', 'templates/triage-workflow.yml',
-              'templates/consumer-workflow-reusable.yml',
-              'templates/consumer-workflow-minimal.yml',
-              'templates/workflow-lint.yml', 'coverage-policy.yml',
-          ]
-          for path in paths:
-              with open(path) as f:
-                  yaml.safe_load(f)
-              print(f'{path}: valid')
-          "
-
-      - name: Yamllint
-        run: |
-          pip install yamllint -q
-          yamllint .github/workflows/*.yml
-
-      - name: Validate template parity
-        run: tests/validate-template-parity.sh
-
-      - name: Validate matrix generation
-        run: tests/matrix/test-matrix-generation.sh
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+          find . -type f -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
 
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Run extension tests
-        run: npx -y tsx --test tests/extensions/*.test.ts
+      - name: Check CLI syntax
+        run: npm test
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install test deps
-        run: pip install pytest pytest-cov pyyaml
-
-      - name: Run tests with coverage
-        env:
-          COVERAGE_PROCESS_START: ${{ github.workspace }}/.coveragerc
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage
+      - name: Yamllint
         run: |
-          python3 -m pytest tests/ -v --cov=scripts --cov=matrix --cov-report=term-missing
-          if ls .coverage.* >/dev/null 2>&1; then
-            python3 -m coverage combine
-          fi
-          python3 -m coverage report --show-missing
-          python3 -m coverage xml
-          python3 -m coverage html
-          python3 -c "
-          import xml.etree.ElementTree as ET, sys
-          from pathlib import Path
-          sys.path.insert(0, str(Path.cwd() / 'scripts'))
-          from lib.coverage_policy import load_policy
-          policy = load_policy()
-          floor = int(policy.global_floor)
-          root = ET.parse('coverage.xml').getroot()
-          branch_rate = float(root.get('branch-rate', 0)) * 100
-          line_rate = float(root.get('line-rate', 0)) * 100
-          failed = False
-          if branch_rate < floor:
-              print(f'::error::Branch coverage {branch_rate:.1f}% is below the {floor}% floor')
-              failed = True
-          else:
-              print(f'Branch coverage {branch_rate:.1f}% meets the {floor}% floor')
-          if line_rate < floor:
-              print(f'::error::Line coverage {line_rate:.1f}% is below the {floor}% floor')
-              failed = True
-          else:
-              print(f'Line coverage {line_rate:.1f}% meets the {floor}% floor')
-          if failed:
-              sys.exit(1)
-          "
-
-      - name: Patch coverage check
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --no-tags --prune origin "${{ github.base_ref }}"
-          BASE_REF="origin/${{ github.base_ref }}"
-          if ! git rev-parse --verify --quiet "$BASE_REF" >/dev/null; then
-            BASE_REF="FETCH_HEAD"
-          fi
-          FLOOR=$(python3 -c "import sys; from pathlib import Path; sys.path.insert(0, str(Path.cwd() / 'scripts')); from lib.coverage_policy import load_policy; print(load_policy().patch_threshold)")
-          pip install diff-cover --quiet
-          diff-cover coverage.xml \
-            --compare-branch="${BASE_REF}" \
-            --fail-under=${FLOOR} \
-            --markdown-report=patch-coverage.md
-
-      - name: Upload coverage artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: |
-            htmlcov/
-            coverage.xml
-            .coverage
-            patch-coverage.md
-          retention-days: 30
+          pip install yamllint -q
+          yamllint action.yml .github/workflows/*.yml templates/*.yml
 
   elixir:
     runs-on: ubuntu-latest
@@ -209,102 +92,16 @@ jobs:
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   merge-gate:
     name: merge-gate
-    needs: [lint, test, elixir]
+    needs: [lint, elixir]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: All checks passed
         run: |
           if [[ "${{ needs.lint.result }}" == "success" && \
-                "${{ needs.test.result }}" == "success" && \
                 "${{ needs.elixir.result }}" == "success" ]]; then
             echo "merge-gate green"
           else
-            echo "merge-gate red (lint=${{ needs.lint.result }}, test=${{ needs.test.result }}, elixir=${{ needs.elixir.result }})"
+            echo "merge-gate red (lint=${{ needs.lint.result }}, elixir=${{ needs.elixir.result }})"
             exit 1
-          fi
-
-  coverage-comment:
-    runs-on: ubuntu-latest
-    needs: test
-    if: always() && github.event_name == 'pull_request'
-    permissions:
-      pull-requests: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download coverage artifact
-        id: download
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-        continue-on-error: true
-
-      - name: Install comment deps
-        run: pip install pyyaml
-
-      - name: Post coverage comment
-        if: steps.download.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          BODY=$(python3 -c "
-          import os
-          import sys
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-          sys.path.insert(0, str(Path.cwd() / 'scripts'))
-          from lib.coverage_policy import load_policy
-          policy = load_policy()
-          floor = int(policy.global_floor)
-          patch_threshold = int(policy.patch_threshold)
-          ratchet_steps = policy.ratchet_steps
-          try:
-              idx = ratchet_steps.index(floor)
-              next_target = ratchet_steps[idx + 1] if idx + 1 < len(ratchet_steps) else None
-          except (ValueError, IndexError):
-              next_target = None
-          root = ET.parse('coverage.xml').getroot()
-          line_rate = float(root.get('line-rate', 0)) * 100
-          branch_rate = float(root.get('branch-rate', 0)) * 100
-          lines_valid = int(root.get('lines-valid', 0))
-          lines_covered = int(root.get('lines-covered', 0))
-          ok = line_rate >= floor and branch_rate >= floor
-          icon = ':white_check_mark:' if ok else ':x:'
-          line_icon = ':white_check_mark:' if line_rate >= floor else ':x:'
-          branch_icon = ':white_check_mark:' if branch_rate >= floor else ':x:'
-          print(f'## {icon} Test Coverage')
-          print()
-          print(f'| Metric | Value | Threshold | Status |')
-          print(f'|--------|-------|-----------|--------|')
-          print(f'| Line coverage | {line_rate:.1f}% ({lines_covered}/{lines_valid} lines) | {floor}% | {line_icon} |')
-          print(f'| Branch coverage | {branch_rate:.1f}% | {floor}% | {branch_icon} |')
-          print()
-          ratchet_display = ' → '.join(
-              f'**{s}%**' if s == floor else (f'~~{s}%~~' if s < floor else f'{s}%')
-              for s in ratchet_steps
-          )
-          print(f'**Ratchet:** {ratchet_display}')
-          if next_target:
-              print(f'_Next target: **{next_target}%** — advance \`global_floor\` in \`coverage-policy.yml\`_')
-          print()
-          if os.path.exists('patch-coverage.md'):
-              with open('patch-coverage.md') as f:
-                  patch_content = f.read(2000)
-              print(f'### Patch Coverage (≥{patch_threshold}% required for changed lines)')
-              print(patch_content)
-              print()
-          print('<!-- cerberus:coverage -->')
-          ")
-          # Upsert comment using marker
-          EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-            --jq '.[] | select(.body | contains("<!-- cerberus:coverage -->")) | .id' | head -1)
-          if [ -n "$EXISTING" ]; then
-            gh api "repos/${{ github.repository }}/issues/comments/${EXISTING}" \
-              -X PATCH -f body="$BODY"
-          else
-            gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-              -f body="$BODY"
           fi

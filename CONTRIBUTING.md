@@ -1,213 +1,58 @@
-# Contributing to Cerberus
+# Contributing
 
-Thanks for contributing to Cerberus.
+Cerberus now has two active code surfaces:
 
-This guide covers local development, testing, release behavior, and consumer setup.
+- the thin GitHub Action client at repo root
+- the Elixir review engine in `cerberus-elixir/`
 
-## Local Development
+If you change the consumer contract, update the docs and templates in the same lane.
 
-### Git Hooks (Quality Gates)
-
-Cerberus uses git hooks to catch issues before they reach CI:
-
-**Install hooks:**
-```bash
-make setup
-```
-
-Or use the setup script directly:
-```bash
-./scripts/setup-hooks.sh
-```
-
-**Hook summary:**
-
-| Hook | When | Duration | Checks |
-|------|------|----------|--------|
-| `pre-commit` | Every commit | <5s | Staged files only: shellcheck, py_compile, ruff, YAML/JSON validation (Python) |
-| `pre-push` | Every push | <60s | Full test suite, shellcheck on all scripts, ruff on all Python files |
-
-**Emergency bypass:**
-```bash
-git commit --no-verify    # Skip pre-commit
-git push --no-verify      # Skip pre-push
-```
-
-### Python Version
-
-Cerberus CI runs on Python 3.12 (`.github/workflows/ci.yml`), and the
-scripts use modern type syntax.
-Use Python 3.12+ locally.
+## Local Setup
 
 ```bash
-uv venv --python 3.12 .venv
-source .venv/bin/activate
-python --version
-uv pip install pytest pyyaml
+node --check bin/cerberus.js
+shellcheck dispatch.sh
+
+cd cerberus-elixir
+mix deps.get
+mix test
+mix format --check-formatted
 ```
 
-### Local Repo Validation
+## Change Rules
 
-These checks mirror lightweight parts of CI:
+- Keep the root action thin. Engine logic belongs in `cerberus-elixir/`, not in GitHub workflow glue.
+- Update `README.md`, `CLAUDE.md`, and `templates/consumer-workflow-reusable.yml` whenever the action contract changes.
+- Preserve `defaults/` and `pi/agents/` unless the engine contract actually changed.
+- Prefer deleting dead compatibility layers over extending them.
+
+## Typical Lanes
+
+### GitHub Action / Dispatch
+
+Touched files usually include:
+
+- `action.yml`
+- `dispatch.sh`
+- `templates/consumer-workflow-reusable.yml`
+- `bin/cerberus.js`
+- `README.md`
+
+Verify with:
 
 ```bash
-python -m py_compile \
-  scripts/parse-review.py \
-  scripts/aggregate-verdict.py \
-  scripts/triage.py
+node --check bin/cerberus.js
+shellcheck dispatch.sh
 ```
+
+### Elixir Engine
+
+Touched files usually live under `cerberus-elixir/`.
+
+Verify with:
 
 ```bash
-python - <<'PY'
-import yaml
-for path in [
-    "action.yml",
-    "verdict/action.yml",
-    "triage/action.yml",
-    "templates/triage-workflow.yml",
-]:
-    with open(path, encoding="utf-8") as f:
-        yaml.safe_load(f)
-    print(f"{path}: valid")
-PY
+cd cerberus-elixir
+mix test
+mix format --check-formatted
 ```
-
-### Run Review Pipeline Scripts Locally
-
-Parse a sample reviewer output:
-
-```bash
-python scripts/parse-review.py tests/fixtures/sample-output-pass.txt > /tmp/correctness-verdict.json
-```
-
-Aggregate sample reviewer verdicts:
-
-```bash
-mkdir -p /tmp/cerberus-docs-verdicts
-cp tests/fixtures/sample-verdicts/*.json /tmp/cerberus-docs-verdicts/
-python scripts/aggregate-verdict.py /tmp/cerberus-docs-verdicts
-```
-
-Render a verdict comment from the aggregated verdict:
-
-```bash
-python scripts/render-verdict-comment.py \
-  --verdict-json /tmp/verdict.json \
-  --output /tmp/verdict-comment.md
-```
-
-Run one real reviewer locally (requires credentials and Pi CLI):
-
-```bash
-export CERBERUS_ROOT="$PWD"
-export CERBERUS_OPENROUTER_API_KEY="<your-openrouter-api-key>"
-export OPENROUTER_API_KEY="$CERBERUS_OPENROUTER_API_KEY"  # optional legacy alias
-export GH_TOKEN="$(gh auth token)"
-export GITHUB_REPOSITORY="$(gh repo view --jq .nameWithOwner)"
-gh pr diff <pr-number> --repo "$GITHUB_REPOSITORY" > /tmp/pr.diff
-gh pr view <pr-number> --repo "$GITHUB_REPOSITORY" --json title,author,headRefName,baseRefName,body > /tmp/pr-context.json
-export GH_DIFF_FILE=/tmp/pr.diff
-export GH_PR_CONTEXT=/tmp/pr-context.json
-export PI_MODEL="openrouter/moonshotai/kimi-k2.5"
-export OPENCODE_MODEL="$PI_MODEL"  # optional legacy alias
-export OPENCODE_MAX_STEPS=1
-export REVIEW_TIMEOUT=60
-scripts/run-reviewer.sh security
-python scripts/parse-review.py /tmp/security-output.txt > /tmp/security-verdict.json
-```
-
-## Testing
-
-### Unit Tests
-
-Run all tests:
-
-```bash
-tests/run-tests.sh
-```
-
-or:
-
-```bash
-python -m pytest tests/ -v
-```
-
-### Coverage
-
-CI enforces a minimum coverage threshold (see `.coveragerc`). Run locally:
-
-```bash
-COVERAGE=1 ./tests/run-tests.sh
-```
-
-This wrapper exports `COVERAGE_PROCESS_START`/`COVERAGE_FILE` so Python subprocess script runs count toward coverage.
-
-### Security Regression Tests (#56)
-
-```bash
-python -m pytest tests/security/ -v
-```
-
-### Real PR Dry-Run Mode
-
-Use the consumer workflow template and keep reviewer comments disabled:
-
-- Start from [`templates/consumer-workflow-reusable.yml`](templates/consumer-workflow-reusable.yml).
-- Keep `comment-policy: 'never'` in the review job.
-- Optionally set `fail-on-verdict: 'false'` in the verdict step while testing.
-- Open a same-repo PR (fork PRs are intentionally blocked by the action).
-
-## Release Workflow Notes
-
-### Versioning Model (`v1` vs `v2`)
-
-- Semantic release metadata is in [`.releaserc.json`](.releaserc.json).
-- [`.github/workflows/release.yml`](.github/workflows/release.yml)
-  runs release automation on pushes to `master` and on manual dispatch.
-- [`.github/workflows/sync-v2-tag.yml`](.github/workflows/sync-v2-tag.yml)
-  force-moves floating `v2` to the latest green default-branch commit.
-- [`.github/workflows/sync-v1-tag.yml`](.github/workflows/sync-v1-tag.yml)
-  runs [`scripts/sync-v1-tag.sh`](scripts/sync-v1-tag.sh) to move floating
-  `v1` to the latest `v1.x.x` tag.
-
-Inspect tag state locally:
-
-```bash
-git fetch origin --tags --force
-git tag -l 'v1*' | sort -V
-git tag -l 'v2*' | sort -V
-git rev-parse --verify refs/tags/v1^{commit}
-git rev-parse --verify refs/tags/v2^{commit}
-```
-
-### Triggering a Release
-
-- Automatic: merge to `master`.
-- Manual: run the **Release** workflow
-  (`.github/workflows/release.yml`) via GitHub Actions UI
-  (`workflow_dispatch`).
-
-## Consumer Setup
-
-### Add Cerberus to Another Repository
-
-Use [`templates/consumer-workflow-reusable.yml`](templates/consumer-workflow-reusable.yml)
-as the baseline workflow:
-
-- Review jobs must have read-only permissions.
-- Verdict job is the only job that needs `pull-requests: write`.
-
-### Required Secrets and Permissions
-
-- `CERBERUS_OPENROUTER_API_KEY` secret in the consumer repository.
-- `GITHUB_TOKEN` is provided by GitHub Actions.
-- Use the least-privilege permissions split shown in the template.
-
-### Configuration Options
-
-Primary references:
-
-- Review action inputs: [`action.yml`](action.yml)
-- Verdict action inputs: [`verdict/action.yml`](verdict/action.yml)
-- Triage action inputs: [`triage/action.yml`](triage/action.yml)
-- Default policy/config: [`defaults/config.yml`](defaults/config.yml)
