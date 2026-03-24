@@ -15,7 +15,7 @@ defmodule Cerberus.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :telemetry],
       mod: {Cerberus.Application, []}
     ]
   end
@@ -24,7 +24,7 @@ defmodule Cerberus.MixProject do
     [
       cerberus: [
         include_executables_for: [:unix],
-        applications: [runtime_tools: :permanent],
+        applications: [runtime_tools: :permanent, cerberus_elixir: :permanent],
         steps: [:assemble, &copy_runtime_assets/1]
       ]
     ]

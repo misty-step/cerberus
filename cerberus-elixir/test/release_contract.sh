@@ -28,6 +28,22 @@ diff -qr "${RELEASE_ROOT}/repo/templates" "${REPO_ROOT}/templates" >/dev/null
 
 sh -n "${RELEASE_ROOT}/bin/server"
 sh -n "${RELEASE_ROOT}/bin/migrate"
+sh -n "${RELEASE_ROOT}/bin/review"
+
+REVIEW_HELP_OUTPUT=$(
+  CERBERUS_API_KEY=test CERBERUS_REPO_ROOT='' CERBERUS_DB_PATH='' \
+    "${RELEASE_ROOT}/bin/review" --help 2>&1
+)
+
+printf '%s\n' "${REVIEW_HELP_OUTPUT}" | grep -F "Usage:" >/dev/null
+printf '%s\n' "${REVIEW_HELP_OUTPUT}" | grep -F -- "--diff <path|->" >/dev/null
+
+CERBERUS_REVIEW_HELP_OUTPUT=$(
+  CERBERUS_API_KEY=test CERBERUS_REPO_ROOT='' CERBERUS_DB_PATH='' \
+    "${RELEASE_ROOT}/bin/cerberus" review --help 2>&1
+)
+
+printf '%s\n' "${CERBERUS_REVIEW_HELP_OUTPUT}" | grep -F "Usage:" >/dev/null
 
 MIGRATE_OUTPUT=$(
   CERBERUS_API_KEY=test CERBERUS_REPO_ROOT='' CERBERUS_DB_PATH='' \

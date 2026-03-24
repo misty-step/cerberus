@@ -17,6 +17,7 @@ defmodule Cerberus.Pipeline do
       :tool_handler     — tool handler passed to each Reviewer
       :engine           — review execution module (default: Cerberus.Engine)
       :task_supervisor  — TaskSupervisor for async start (default: Cerberus.TaskSupervisor)
+      :github_req_builder — optional `(github_token, github_opts) -> %Req.Request{}` seam for request-scoped GitHub auth
       :reviewer_timeout — per-reviewer timeout in ms (default: 600_000)
       :repo_root        — for template loading
   """
@@ -28,6 +29,8 @@ defmodule Cerberus.Pipeline do
 
   @check_name "Cerberus / Verdict"
   @verdict_marker "<!-- cerberus-verdict -->"
+  @github_api_url "https://api.github.com"
+  @github_api_version "2022-11-28"
 
   @doc "Start the pipeline asynchronously. Returns `{:ok, pid}`."
   def start(review_id, params, opts \\ []) do
@@ -42,7 +45,6 @@ defmodule Cerberus.Pipeline do
   """
   def run(review_id, params, opts \\ []) do
     store = Keyword.get(opts, :store, Store)
-    gh = Keyword.get(opts, :github_opts, [])
     engine = Keyword.get(opts, :engine, Engine)
 
     repo = params.repo
@@ -50,6 +52,7 @@ defmodule Cerberus.Pipeline do
     sha = params.head_sha
 
     try do
+      gh = github_opts_for_request(params, opts)
       Store.update_review_run(store, review_id, %{status: "running"})
 
       {:ok, pr_ctx} = GitHub.fetch_pr_context(repo, pr, gh)
@@ -115,6 +118,63 @@ defmodule Cerberus.Pipeline do
       head_sha: params.head_sha
     }
   end
+
+  defp github_opts_for_request(params, opts) do
+    gh = Keyword.get(opts, :github_opts, [])
+    github_token = normalize_github_token!(Map.get(params, :github_token))
+    github_req_builder = Keyword.get(opts, :github_req_builder)
+
+    req =
+      cond do
+        is_function(github_req_builder, 2) ->
+          github_req_builder.(github_token, gh)
+
+        is_binary(github_token) and github_token != "" ->
+          build_request_scoped_req(github_token, gh)
+
+        true ->
+          nil
+      end
+
+    if match?(%Req.Request{}, req), do: Keyword.put(gh, :req, req), else: gh
+  end
+
+  defp build_request_scoped_req(github_token, github_opts) do
+    case Keyword.get(github_opts, :req) do
+      %Req.Request{} = req ->
+        req
+        |> Req.Request.put_header("authorization", "Bearer #{github_token}")
+        |> Req.Request.put_header("x-github-api-version", @github_api_version)
+
+      _ ->
+        Req.new(
+          base_url: @github_api_url,
+          headers: [
+            {"accept", "application/vnd.github+json"},
+            {"authorization", "Bearer #{github_token}"},
+            {"x-github-api-version", @github_api_version}
+          ],
+          receive_timeout: 20_000
+        )
+    end
+  end
+
+  defp normalize_github_token!(value) when is_binary(value) do
+    case String.trim(value) do
+      "" ->
+        nil
+
+      token ->
+        if String.contains?(token, ["\r", "\n"]) do
+          raise ArgumentError, "invalid github_token header value"
+        end
+
+        token
+    end
+  end
+
+  defp normalize_github_token!(nil), do: nil
+  defp normalize_github_token!(_), do: nil
 
   defp engine_opts(opts, params, gh, override) do
     opts

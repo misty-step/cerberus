@@ -1,0 +1,43 @@
+{"stats":{"skip":0,"total":1,"warn":0,"pass":1,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
+
+---
+
+{"stats":{"skip":0,"total":1,"warn":0,"pass":1,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}
+
+---
+
+Verdict: PASS
+Summary: All reviewers passed.
+
+Findings:
+- none
+
+---
+
+* assembling cerberus-0.1.0 on MIX_ENV=test
+* using config/runtime.exs to configure the release at runtime
+* creating _build/test/rel/cerberus/releases/0.1.0/env.sh
+* skipping elixir.bat for windows (bin/elixir.bat not found in the Elixir installation)
+* skipping iex.bat for windows (bin/iex.bat not found in the Elixir installation)
+
+Release created at _build/test/rel/cerberus
+
+    # To start your system
+    _build/test/rel/cerberus/bin/cerberus start
+
+Once the release is running:
+
+    # To connect to it remotely
+    _build/test/rel/cerberus/bin/cerberus remote
+
+    # To stop it gracefully (you may also send SIGINT/SIGTERM)
+    _build/test/rel/cerberus/bin/cerberus stop
+
+To list all commands:
+
+    _build/test/rel/cerberus/bin/cerberus
+
+
+---
+
+{"stats":{"skip":0,"total":1,"pass":1,"warn":0,"fail":0},"verdict":"PASS","findings":[],"summary":"All reviewers passed."}

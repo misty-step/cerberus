@@ -1,13 +1,13 @@
 ## Reviewer Evidence
-- Start here: [issue-448 walkthrough](../blob/cx/issue-448-elixir-cleanup/artifacts/issue-448-elixir-cleanup-walkthrough.md?raw=true)
+- Start here: [issue-448 walkthrough](https://github.com/misty-step/cerberus/blob/cx/issue-448-elixir-cleanup/artifacts/issue-448-elixir-cleanup-walkthrough.md)
 - Direct video download: n/a (`markdown walkthrough` is the right proof shape for this internal Elixir refactor)
-- Walkthrough notes: [issue-448 walkthrough](../blob/cx/issue-448-elixir-cleanup/artifacts/issue-448-elixir-cleanup-walkthrough.md?raw=true)
-- Fast claim: this branch removes dead BB worker code, deletes the shallow review supervisor wrapper, and preserves the runtime supervisor name by inlining the dynamic supervisor child spec.
+- Walkthrough notes: [issue-448 walkthrough](https://github.com/misty-step/cerberus/blob/cx/issue-448-elixir-cleanup/artifacts/issue-448-elixir-cleanup-walkthrough.md)
+- Fast claim: this branch removes dead BB worker code, deletes the shallow review supervisor wrapper, and preserves the runtime supervisor name and child ID by constructing the dynamic supervisor child spec directly in `Cerberus.Application`.
 
 ## Why This Matters
 - Problem: the Elixir app carried dead BB integration code and a pass-through `ReviewSupervisor` module that added surface area without behavior.
 - Value: the supervision tree is now simpler, dead modules and dead tests are gone, and the application test asserts the real runtime contract instead of a wrapper module name.
-- Why now: `#448` is a small `p1` cleanup in the Elixir migration epic, and it is exactly the kind of shallow-module debt that compounds if left behind.
+- Why now: `#448` is a small `p1` cleanup in the Elixir migration epic, and it is particularly the kind of shallow-module debt that compounds if left behind.
 - Issue: closes `#448`
 
 ## Trade-offs / Risks
@@ -17,7 +17,7 @@
 - Reviewer watch-outs: pressure-test whether any remaining `ReviewSupervisor` references imply a missing deeper simplification, or whether they are the legitimate runtime-name dependency this lane intentionally keeps.
 
 ## What Changed
-This branch deletes the abandoned BB worker path, inlines the review dynamic supervisor directly in `Cerberus.Application`, and updates the supervision-tree test to verify the registered supervisor process instead of a wrapper module.
+This branch deletes the abandoned BB worker path, constructs the review dynamic supervisor child spec directly in `Cerberus.Application`, and updates the supervision-tree test to verify the registered supervisor process instead of a wrapper module.
 
 ### Base Branch
 ```mermaid
@@ -110,8 +110,8 @@ Issue link: [#448](https://github.com/misty-step/cerberus/issues/448)
 
 ## Acceptance Criteria
 
-- [x] [command] `cd cerberus-elixir && grep -R "BB.Worker\\|Conductor.Worker" lib/ test/` returns no matches.
-- [x] [command] The `Cerberus.ReviewSupervisor` wrapper module is deleted and `application.ex` now inlines `{DynamicSupervisor, name: Cerberus.ReviewSupervisor, strategy: :one_for_one}`. Remaining references preserve the runtime name required by the issue boundary.
+- [x] [command] `cd cerberus-elixir && grep -R "BB.Worker\|Conductor.Worker" lib/ test/` returns no matches.
+- [x] [command] The `Cerberus.ReviewSupervisor` wrapper module is deleted and `application.ex` now constructs the `DynamicSupervisor` child spec directly while preserving both the stable name and child ID. Remaining references preserve the runtime name required by the issue boundary.
 - [x] [test] `cd cerberus-elixir && mix test` passes.
 
 </details>
@@ -143,7 +143,7 @@ Expected results:
 ## Walkthrough
 
 - Renderer: markdown walkthrough
-- Artifact: [issue-448 walkthrough](../blob/cx/issue-448-elixir-cleanup/artifacts/issue-448-elixir-cleanup-walkthrough.md?raw=true)
+- Artifact: [issue-448 walkthrough](https://github.com/misty-step/cerberus/blob/cx/issue-448-elixir-cleanup/artifacts/issue-448-elixir-cleanup-walkthrough.md)
 - Claim: the Elixir supervision tree is simpler because the wrapper module is gone, while the stable runtime supervisor name still exists for reviewer execution
 - Before / After scope: dead modules, application child spec, and supervision-tree test contract
 - Persistent verification: `cd cerberus-elixir && mix test && mix compile --warnings-as-errors`

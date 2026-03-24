@@ -9,6 +9,7 @@ defmodule Cerberus.ApplicationTest do
 
     assert Cerberus.Config in children
     assert Cerberus.Store in children
+    assert Cerberus.ReviewSupervisor in children
     assert Cerberus.Router in children
     assert is_pid(Process.whereis(Cerberus.ReviewSupervisor))
     assert %{supervisors: 0, workers: 0} =

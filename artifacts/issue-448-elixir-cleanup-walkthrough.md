@@ -13,14 +13,14 @@ Delete dead Elixir worker code, remove the shallow `Cerberus.ReviewSupervisor` w
 
 ## After
 
-- The dead BB worker module, its behaviour, and the dead worker test are gone.
-- `Cerberus.Application` now starts `{DynamicSupervisor, name: Cerberus.ReviewSupervisor, strategy: :one_for_one}` directly.
+- The dead BB worker module, its behavior, and the dead worker test are gone.
+- `Cerberus.Application` now builds the named `DynamicSupervisor` child spec directly and preserves the stable child ID.
 - `test/application_test.exs` now verifies the registered `Cerberus.ReviewSupervisor` process and its empty child counts instead of the deleted wrapper module.
 - The runtime name `Cerberus.ReviewSupervisor` is preserved for engine, pipeline, and reviewer code that starts reviewer processes under that supervisor.
 
 ## Verification
 
-- `cd cerberus-elixir && grep -R "BB.Worker\\|Conductor.Worker" lib/ test/`
+- `cd cerberus-elixir && grep -R "BB.Worker\|Conductor.Worker" lib/ test/`
   - Outcome: no matches
 - `cd cerberus-elixir && mix compile --warnings-as-errors`
   - Outcome: passed
