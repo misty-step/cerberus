@@ -233,7 +233,9 @@ defmodule Cerberus.EngineTest do
     end
 
     test "degrades reviewer timeouts to skip results", ctx do
-      call_count = :counters.new(1, [:atomics])
+      call_count = :atomics.new(1, [])
+      reviewer_timeout = 50
+      sleep_ms = reviewer_timeout + 5_000 + 1_000
 
       log =
         capture_log(fn ->
@@ -243,11 +245,11 @@ defmodule Cerberus.EngineTest do
                      context(),
                      engine_opts(ctx,
                        call_llm: fn _params ->
-                         count = :counters.get(call_count, 1)
-                         :counters.add(call_count, 1, 1)
+                         count = :atomics.add_get(call_count, 1, 1)
 
-                         if count == 0 do
-                           Process.sleep(5_200)
+                         if count == 1 do
+                           # Exceed the engine's timeout + shutdown grace window.
+                           Process.sleep(sleep_ms)
                          end
 
                          {:ok,
@@ -256,8 +258,8 @@ defmodule Cerberus.EngineTest do
                             tool_calls: nil,
                             usage: %{prompt_tokens: 100, completion_tokens: 50}
                           }}
-                       end,
-                       reviewer_timeout: 50
+                        end,
+                       reviewer_timeout: reviewer_timeout
                      )
                    )
 
