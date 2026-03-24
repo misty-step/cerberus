@@ -14,10 +14,10 @@ defmodule Cerberus.API do
 
   use Plug.Router
 
-  plug :match
-  plug Plug.Parsers, parsers: [:json], json_decoder: Jason
-  plug :check_auth
-  plug :dispatch
+  plug(:match)
+  plug(Plug.Parsers, parsers: [:json], json_decoder: Jason)
+  plug(:check_auth)
+  plug(:dispatch)
 
   @impl true
   def init(opts), do: opts
@@ -142,6 +142,9 @@ defmodule Cerberus.API do
       not is_binary(head_sha) or head_sha == "" ->
         {:error, "missing required field: head_sha"}
 
+      invalid_header_value?(github_token) ->
+        {:error, "invalid field: github_token"}
+
       true ->
         {:ok,
          %{
@@ -162,6 +165,11 @@ defmodule Cerberus.API do
   end
 
   defp normalize_optional_string(_), do: nil
+
+  defp invalid_header_value?(value) when is_binary(value),
+    do: String.contains?(value, ["\r", "\n"])
+
+  defp invalid_header_value?(_), do: false
 
   defp maybe_start_pipeline(nil, _id, _params), do: :ok
   defp maybe_start_pipeline(pipeline_fn, id, params), do: pipeline_fn.(id, params)

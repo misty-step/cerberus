@@ -45,7 +45,6 @@ defmodule Cerberus.Pipeline do
   """
   def run(review_id, params, opts \\ []) do
     store = Keyword.get(opts, :store, Store)
-    gh = github_opts_for_request(params, opts)
     engine = Keyword.get(opts, :engine, Engine)
 
     repo = params.repo
@@ -53,6 +52,7 @@ defmodule Cerberus.Pipeline do
     sha = params.head_sha
 
     try do
+      gh = github_opts_for_request(params, opts)
       Store.update_review_run(store, review_id, %{status: "running"})
 
       {:ok, pr_ctx} = GitHub.fetch_pr_context(repo, pr, gh)
@@ -121,7 +121,7 @@ defmodule Cerberus.Pipeline do
 
   defp github_opts_for_request(params, opts) do
     gh = Keyword.get(opts, :github_opts, [])
-    github_token = Map.get(params, :github_token)
+    github_token = normalize_github_token!(Map.get(params, :github_token))
     github_req_builder = Keyword.get(opts, :github_req_builder)
 
     req =
@@ -143,8 +143,8 @@ defmodule Cerberus.Pipeline do
     case Keyword.get(github_opts, :req) do
       %Req.Request{} = req ->
         req
-        |> put_request_header("authorization", "Bearer #{github_token}")
-        |> put_request_header("x-github-api-version", @github_api_version)
+        |> Req.Request.put_header("authorization", "Bearer #{github_token}")
+        |> Req.Request.put_header("x-github-api-version", @github_api_version)
 
       _ ->
         Req.new(
@@ -159,18 +159,22 @@ defmodule Cerberus.Pipeline do
     end
   end
 
-  defp put_request_header(%Req.Request{} = req, header_name, value) do
-    normalized = String.downcase(header_name)
+  defp normalize_github_token!(value) when is_binary(value) do
+    case String.trim(value) do
+      "" ->
+        nil
 
-    headers =
-      req.headers
-      |> Enum.reject(fn {name, _value} ->
-        String.downcase(to_string(name)) == normalized
-      end)
-      |> Kernel.++([{normalized, value}])
+      token ->
+        if String.contains?(token, ["\r", "\n"]) do
+          raise ArgumentError, "invalid github_token header value"
+        end
 
-    %{req | headers: headers}
+        token
+    end
   end
+
+  defp normalize_github_token!(nil), do: nil
+  defp normalize_github_token!(_), do: nil
 
   defp engine_opts(opts, params, gh, override) do
     opts

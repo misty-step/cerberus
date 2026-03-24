@@ -448,6 +448,65 @@ defmodule Cerberus.APITest do
       end)
     end
 
+    test "treats whitespace-only github_token as omitted and falls back to GH_TOKEN", ctx do
+      test_pid = self()
+
+      with_env("GH_TOKEN", "server-env-token", fn ->
+        pipeline_fn =
+          async_pipeline_fn(test_pid, ctx,
+            github_req_builder: fn token, _github_opts ->
+              send(test_pid, {:github_req_builder_token, token})
+
+              auth_token = token || System.get_env("GH_TOKEN")
+
+              mock_github_req(%{}, test_pid)
+              |> Req.merge(headers: [{"authorization", "Bearer #{auth_token}"}])
+            end
+          )
+
+        conn =
+          json_post(
+            "/api/reviews",
+            %{
+              repo: "org/repo",
+              pr_number: 42,
+              head_sha: "abc123def456",
+              github_token: " \n\t "
+            },
+            ctx.store,
+            pipeline: pipeline_fn
+          )
+
+        assert conn.status == 202
+        %{"review_id" => review_id} = Jason.decode!(conn.resp_body)
+
+        assert_receive {:github_req_builder_token, nil}, 1_000
+        assert_receive {:pipeline_finished, ^review_id, {:ok, _aggregated}}, 5_000
+
+        auth_headers = collect_github_auth_headers()
+        assert auth_headers != []
+        assert Enum.uniq(auth_headers) == ["Bearer server-env-token"]
+      end)
+    end
+
+    test "rejects github_token values that would break request headers", %{store: store} do
+      conn =
+        json_post(
+          "/api/reviews",
+          %{
+            repo: "org/repo",
+            pr_number: 42,
+            head_sha: "abc123def456",
+            github_token: "good\r\nbad"
+          },
+          store
+        )
+
+      assert conn.status == 422
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"] == "invalid field: github_token"
+    end
+
     test "fails clearly when the request github_token is invalid", ctx do
       test_pid = self()
 
@@ -457,12 +516,15 @@ defmodule Cerberus.APITest do
             github_req_builder: fn token, _github_opts ->
               send(test_pid, {:github_req_builder_token, token})
 
-              mock_github_req(%{
-                pr_context: %Req.Response{
-                  status: 401,
-                  body: %{"message" => "Bad credentials"}
-                }
-              }, test_pid)
+              mock_github_req(
+                %{
+                  pr_context: %Req.Response{
+                    status: 401,
+                    body: %{"message" => "Bad credentials"}
+                  }
+                },
+                test_pid
+              )
               |> Req.merge(headers: [{"authorization", "Bearer #{token}"}])
             end
           )
@@ -484,7 +546,10 @@ defmodule Cerberus.APITest do
         %{"review_id" => review_id} = Jason.decode!(conn.resp_body)
 
         assert_receive {:github_req_builder_token, "bad-request-token"}, 1_000
-        assert_receive {:pipeline_finished, ^review_id, {:error, {:pipeline_failed, message}}}, 5_000
+
+        assert_receive {:pipeline_finished, ^review_id, {:error, {:pipeline_failed, message}}},
+                       5_000
+
         assert message =~ "Authentication failed (401)"
 
         failed_body = wait_for_status(ctx.store, review_id, "failed")

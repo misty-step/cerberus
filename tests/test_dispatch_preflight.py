@@ -114,11 +114,31 @@ class TestDispatchAttempt:
         # curl will fail to connect — script should exit non-zero
         assert result.returncode != 0
 
+    def test_dispatch_payload_omits_or_includes_github_token(self):
+        requests = []
+
+        result, _outputs = _run_with_mock(
+            [(200, {"status": "completed", "aggregated_verdict": {"verdict": "PASS"}})],
+            requests=requests,
+        )
+        assert result.returncode == 0
+        assert requests[0]["github_token"] == "test-token-fixture"
+
+        requests = []
+
+        result, _outputs = _run_with_mock(
+            [(200, {"status": "completed", "aggregated_verdict": {"verdict": "PASS"}})],
+            extra_env={"GITHUB_TOKEN": ""},
+            requests=requests,
+        )
+        assert result.returncode == 0
+        assert "github_token" not in requests[0]
+
 
 # --- Mock API for polling tests ---
 
 
-def _make_handler(responses):
+def _make_handler(responses, requests=None):
     """Build a request handler that replays canned responses in order.
 
     `responses` is a list of (status_code, body_dict) tuples.
@@ -132,6 +152,11 @@ def _make_handler(responses):
             pass  # suppress request logs
 
         def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
+
+            if requests is not None:
+                requests.append(json.loads(body or "{}"))
+
             self.send_response(202)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -149,9 +174,9 @@ def _make_handler(responses):
     return Handler
 
 
-def _run_with_mock(responses, extra_env=None, timeout=20):
+def _run_with_mock(responses, extra_env=None, timeout=20, requests=None):
     """Start a mock HTTP server, run dispatch.sh against it, return (result, outputs)."""
-    handler = _make_handler(responses)
+    handler = _make_handler(responses, requests=requests)
     server = HTTPServer(("127.0.0.1", 0), handler)
     port = server.server_address[1]
     t = threading.Thread(target=server.serve_forever)
