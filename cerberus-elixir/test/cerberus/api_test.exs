@@ -408,85 +408,70 @@ defmodule Cerberus.APITest do
       end)
     end
 
-    test "falls back to GH_TOKEN when request github_token is omitted", ctx do
+    test "passes nil github_token to the injected builder when request github_token is omitted",
+         ctx do
       test_pid = self()
 
-      with_env("GH_TOKEN", "server-env-token", fn ->
-        pipeline_fn =
-          async_pipeline_fn(test_pid, ctx,
-            github_req_builder: fn token, _github_opts ->
-              send(test_pid, {:github_req_builder_token, token})
+      pipeline_fn =
+        async_pipeline_fn(test_pid, ctx,
+          github_req_builder: fn token, _github_opts ->
+            send(test_pid, {:github_req_builder_token, token})
 
-              auth_token = token || System.get_env("GH_TOKEN")
+            mock_github_req(%{}, test_pid)
+            |> Req.merge(headers: [{"authorization", "Bearer test-token"}])
+          end
+        )
 
-              mock_github_req(%{}, test_pid)
-              |> Req.merge(headers: [{"authorization", "Bearer #{auth_token}"}])
-            end
-          )
+      conn =
+        json_post(
+          "/api/reviews",
+          %{
+            repo: "org/repo",
+            pr_number: 42,
+            head_sha: "abc123def456"
+          },
+          ctx.store,
+          pipeline: pipeline_fn
+        )
 
-        conn =
-          json_post(
-            "/api/reviews",
-            %{
-              repo: "org/repo",
-              pr_number: 42,
-              head_sha: "abc123def456"
-            },
-            ctx.store,
-            pipeline: pipeline_fn
-          )
+      assert conn.status == 202
+      %{"review_id" => review_id} = Jason.decode!(conn.resp_body)
 
-        assert conn.status == 202
-        %{"review_id" => review_id} = Jason.decode!(conn.resp_body)
-
-        assert_receive {:github_req_builder_token, nil}, 1_000
-        assert_receive {:pipeline_finished, ^review_id, {:ok, _aggregated}}, 5_000
-
-        auth_headers = collect_github_auth_headers()
-        assert auth_headers != []
-        assert Enum.uniq(auth_headers) == ["Bearer server-env-token"]
-      end)
+      assert_receive {:github_req_builder_token, nil}, 1_000
+      assert_receive {:pipeline_finished, ^review_id, {:ok, _aggregated}}, 5_000
     end
 
-    test "treats whitespace-only github_token as omitted and falls back to GH_TOKEN", ctx do
+    test "treats whitespace-only github_token as omitted before calling the injected builder", ctx do
       test_pid = self()
 
-      with_env("GH_TOKEN", "server-env-token", fn ->
-        pipeline_fn =
-          async_pipeline_fn(test_pid, ctx,
-            github_req_builder: fn token, _github_opts ->
-              send(test_pid, {:github_req_builder_token, token})
+      pipeline_fn =
+        async_pipeline_fn(test_pid, ctx,
+          github_req_builder: fn token, _github_opts ->
+            send(test_pid, {:github_req_builder_token, token})
 
-              auth_token = token || System.get_env("GH_TOKEN")
+            mock_github_req(%{}, test_pid)
+            |> Req.merge(headers: [{"authorization", "Bearer test-token"}])
+          end
+        )
 
-              mock_github_req(%{}, test_pid)
-              |> Req.merge(headers: [{"authorization", "Bearer #{auth_token}"}])
-            end
-          )
+      conn =
+        json_post(
+          "/api/reviews",
+          %{
+            repo: "org/repo",
+            pr_number: 42,
+            head_sha: "abc123def456",
+            github_token: " \n\t "
+          },
+          ctx.store,
+          pipeline: pipeline_fn
+        )
 
-        conn =
-          json_post(
-            "/api/reviews",
-            %{
-              repo: "org/repo",
-              pr_number: 42,
-              head_sha: "abc123def456",
-              github_token: " \n\t "
-            },
-            ctx.store,
-            pipeline: pipeline_fn
-          )
+      assert conn.status == 202
+      %{"review_id" => review_id} = Jason.decode!(conn.resp_body)
 
-        assert conn.status == 202
-        %{"review_id" => review_id} = Jason.decode!(conn.resp_body)
-
-        assert_receive {:github_req_builder_token, nil}, 1_000
-        assert_receive {:pipeline_finished, ^review_id, {:ok, _aggregated}}, 5_000
-
-        auth_headers = collect_github_auth_headers()
-        assert auth_headers != []
-        assert Enum.uniq(auth_headers) == ["Bearer server-env-token"]
-      end)
+      assert_receive {:github_req_builder_token, nil}, 1_000
+      assert_receive {:pipeline_finished, ^review_id, {:ok, _aggregated}}, 5_000
     end
 
     test "rejects github_token values that would break request headers", %{store: store} do
