@@ -8,6 +8,7 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
   """
 
   @search_limit "20"
+  @max_symlink_hops 40
 
   @doc "Build a tool handler closure rooted at the local repository."
   @spec build(String.t(), keyword()) :: (map() -> {:ok, String.t()} | {:error, String.t()})
@@ -97,7 +98,7 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
   defp run_grep(executable, repo_root, query, path_filter) do
     args =
       [
-        "-R",
+        "-r",
         "-n",
         "-m",
         @search_limit
@@ -157,20 +158,26 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
 
   defp resolve_path(_repo_root, path), do: {:error, {:invalid_path, inspect(path)}}
 
-  defp resolve_existing_path(repo_root, candidate) do
+  defp resolve_existing_path(repo_root, candidate, hops \\ 0)
+
+  defp resolve_existing_path(_repo_root, _candidate, hops) when hops > @max_symlink_hops do
+    {:error, :eloop}
+  end
+
+  defp resolve_existing_path(repo_root, candidate, hops) do
     if within_repo_root?(candidate, repo_root) do
       candidate
       |> Path.relative_to(repo_root)
       |> Path.split()
-      |> walk_segments(repo_root, repo_root)
+      |> walk_segments(repo_root, repo_root, hops)
     else
       {:error, :invalid_path}
     end
   end
 
-  defp walk_segments([], _repo_root, current), do: {:ok, current}
+  defp walk_segments([], _repo_root, current, _hops), do: {:ok, current}
 
-  defp walk_segments([segment | rest], repo_root, current) do
+  defp walk_segments([segment | rest], repo_root, current, hops) do
     next = Path.join(current, segment)
 
     case File.lstat(next) do
@@ -178,11 +185,11 @@ defmodule Cerberus.Tools.LocalRepoReadHandler do
         with {:ok, link} <- File.read_link(next) do
           target = Path.expand(link, Path.dirname(next))
           remainder = Enum.join(rest, "/")
-          resolve_existing_path(repo_root, Path.join(target, remainder))
+          resolve_existing_path(repo_root, Path.join(target, remainder), hops + 1)
         end
 
       {:ok, _stat} ->
-        walk_segments(rest, repo_root, next)
+        walk_segments(rest, repo_root, next, hops)
 
       {:error, reason} ->
         {:error, reason}

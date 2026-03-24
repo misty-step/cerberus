@@ -61,6 +61,33 @@ defmodule Cerberus.LocalRepoReadHandlerTest do
     end)
   end
 
+  test "search_code grep fallback does not follow symlinks outside the repo root" do
+    grep = System.find_executable("grep")
+    assert is_binary(grep)
+
+    with_temp_repo(fn repo_root ->
+      outside_root =
+        Path.join(System.tmp_dir!(), "cerberus_outside_dir_#{System.unique_integer([:positive])}")
+
+      try do
+        File.mkdir_p!(Path.join(repo_root, "inside"))
+        File.mkdir_p!(outside_root)
+        File.write!(Path.join(outside_root, "secret.txt"), "needle\n")
+        File.ln_s!(outside_root, Path.join(repo_root, "inside/outside-link"))
+
+        handler = LocalRepoReadHandler.build(repo_root, rg: nil, grep: grep)
+
+        assert {:ok, "No results found for: needle"} =
+                 handler.(%{
+                   name: "search_code",
+                   arguments: %{"query" => "needle"}
+                 })
+      after
+        File.rm_rf(outside_root)
+      end
+    end)
+  end
+
   test "get_file_contents rejects absolute and traversal paths" do
     with_temp_repo(fn repo_root ->
       handler = LocalRepoReadHandler.build(repo_root)
@@ -114,6 +141,24 @@ defmodule Cerberus.LocalRepoReadHandlerTest do
     end)
   end
 
+  test "get_file_contents rejects symlink cycles" do
+    with_temp_repo(fn repo_root ->
+      File.mkdir_p!(Path.join(repo_root, "safe"))
+      File.ln_s!("loop", Path.join(repo_root, "safe/loop"))
+      eloop_message = List.to_string(:file.format_error(:eloop))
+
+      handler = LocalRepoReadHandler.build(repo_root)
+
+      assert {:error, message} =
+               handler.(%{
+                 name: "get_file_contents",
+                 arguments: %{"path" => "safe/loop"}
+               })
+
+      assert message =~ eloop_message
+    end)
+  end
+
   test "list_directory rejects traversal outside the repo root" do
     with_temp_repo(fn repo_root ->
       handler = LocalRepoReadHandler.build(repo_root)
@@ -125,6 +170,24 @@ defmodule Cerberus.LocalRepoReadHandlerTest do
                })
 
       assert message =~ "Invalid path"
+    end)
+  end
+
+  test "list_directory rejects symlink cycles" do
+    with_temp_repo(fn repo_root ->
+      File.mkdir_p!(Path.join(repo_root, "safe"))
+      File.ln_s!("loop", Path.join(repo_root, "safe/loop"))
+      eloop_message = List.to_string(:file.format_error(:eloop))
+
+      handler = LocalRepoReadHandler.build(repo_root)
+
+      assert {:error, message} =
+               handler.(%{
+                 name: "list_directory",
+                 arguments: %{"path" => "safe/loop"}
+               })
+
+      assert message =~ eloop_message
     end)
   end
 end

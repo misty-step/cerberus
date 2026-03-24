@@ -72,6 +72,11 @@ defmodule Cerberus.CLITest do
     path
   end
 
+  defp decode_run!(argv, opts) do
+    assert {:ok, output} = CLI.run(argv ++ ["--format", "json"], opts)
+    Jason.decode!(output)
+  end
+
   test "run/2 emits machine-parseable JSON for a diff file" do
     diff_path = write_diff!()
 
@@ -148,6 +153,75 @@ defmodule Cerberus.CLITest do
              )
 
     assert message =~ "Failed to start CLI runtime"
+  end
+
+  test "run/2 degrades reviewer failures to a skip verdict" do
+    diff_path = write_diff!()
+
+    decoded =
+      decode_run!(
+        ["--diff", diff_path],
+        cli_opts(call_llm: fn _params -> {:error, :boom} end)
+      )
+
+    assert decoded["verdict"] == "SKIP"
+    assert decoded["summary"] =~ "1 skipped"
+    assert decoded["stats"]["skip"] == 1
+  end
+
+  test "run/2 degrades reviewer crashes to a skip verdict" do
+    diff_path = write_diff!()
+
+    decoded =
+      decode_run!(
+        ["--diff", diff_path],
+        cli_opts(call_llm: fn _params -> Process.exit(self(), :kill) end)
+      )
+
+    assert decoded["verdict"] == "SKIP"
+    assert decoded["stats"]["skip"] == 1
+  end
+
+  test "run/2 degrades reviewer timeouts to a skip verdict" do
+    diff_path = write_diff!()
+    reviewer_timeout = 50
+    sleep_ms = reviewer_timeout + 5_000 + 1_000
+
+    decoded =
+      decode_run!(
+        ["--diff", diff_path],
+        cli_opts(
+          reviewer_timeout: reviewer_timeout,
+          call_llm: fn _params ->
+            Process.sleep(sleep_ms)
+
+            {:ok,
+             %{
+               content: valid_verdict_json(),
+               tool_calls: [],
+               usage: %{prompt_tokens: 100, completion_tokens: 25}
+             }}
+          end
+        )
+      )
+
+    assert decoded["verdict"] == "SKIP"
+    assert decoded["stats"]["skip"] == 1
+  end
+
+  test "run/2 surfaces routing failures when the router crashes" do
+    diff_path = write_diff!()
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               ["--diff", diff_path],
+               cli_opts(
+                 routing_result: nil,
+                 router_call_llm: fn _params -> Process.exit(self(), :kill) end
+               )
+             )
+
+    assert message =~ "Routing failed"
   end
 
   test "main/2 prints successful output without halting when halt is false" do

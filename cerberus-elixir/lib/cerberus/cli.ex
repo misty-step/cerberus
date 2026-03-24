@@ -159,14 +159,7 @@ defmodule Cerberus.CLI do
     routing =
       case Keyword.get(opts, :routing_result) do
         nil ->
-          case Cerberus.Router.route(
-                 diff_input.text,
-                 [metadata: %{repo: "local"}],
-                 runtime.router
-               ) do
-            {:ok, result} -> result
-            {:error, reason} -> {:error, {"Routing failed: #{inspect(reason)}", 1}}
-          end
+          route_diff(diff_input.text, runtime.router)
 
         result ->
           result
@@ -222,6 +215,18 @@ defmodule Cerberus.CLI do
   rescue
     e ->
       {:error, {"CLI review failed: #{Exception.message(e)}", 1}}
+  end
+
+  defp route_diff(diff_text, router) do
+    try do
+      case Cerberus.Router.route(diff_text, [metadata: %{repo: "local"}], router) do
+        {:ok, result} -> result
+        {:error, reason} -> {:error, {"Routing failed: #{inspect(reason)}", 1}}
+      end
+    catch
+      :exit, reason ->
+        {:error, {"Routing failed: #{inspect(reason)}", 1}}
+    end
   end
 
   defp review_one(persona, model, request, diff_input, runtime, opts, timeout, tool_handler) do
