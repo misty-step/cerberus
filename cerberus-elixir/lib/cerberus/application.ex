@@ -10,7 +10,7 @@ defmodule Cerberus.Application do
     children = [
       Cerberus.Config,
       {Cerberus.Store, name: Cerberus.Store, database_path: Cerberus.database_path()},
-      Cerberus.ReviewSupervisor,
+      {DynamicSupervisor, name: Cerberus.ReviewSupervisor, strategy: :one_for_one},
       {Task.Supervisor, name: Cerberus.TaskSupervisor},
       Cerberus.Router,
       Cerberus.Telemetry,
