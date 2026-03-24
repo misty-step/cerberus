@@ -33,6 +33,7 @@ the pipeline executes in the background.
   "repo": "owner/repo",
   "pr_number": 42,
   "head_sha": "abc123def456",
+  "github_token": "ghs_...",
   "model": "openrouter/moonshotai/kimi-k2.5"
 }
 ```
@@ -42,6 +43,7 @@ the pipeline executes in the background.
 | `repo` | string | yes | GitHub repository (`owner/repo`) |
 | `pr_number` | integer | yes | Pull request number |
 | `head_sha` | string | yes | HEAD commit SHA |
+| `github_token` | string | no | Request-scoped GitHub token for PR reads and writes. When omitted, the server falls back to `GH_TOKEN` / `GITHUB_TOKEN`. |
 | `model` | string | no | Reserved for model override. Accepted but not yet wired to reviewer selection; reviewers use configured pool/policy. |
 
 **Response: `202 Accepted`**

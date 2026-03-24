@@ -57,7 +57,8 @@ def reviewer_env(tmp_path, stub_pi, large_diff):
     env = os.environ.copy()
     env["PATH"] = str(stub_pi.parent) + ":" + env.get("PATH", "")
     env["CERBERUS_ROOT"] = str(REPO_ROOT)
-    env["CERBERUS_TMP"] = "/tmp"
+    env["CERBERUS_TMP"] = str(tmp_path / "cerberus-tmp")
+    Path(env["CERBERUS_TMP"]).mkdir(parents=True, exist_ok=True)
     env["GH_DIFF_FILE"] = str(large_diff)
     env["OPENROUTER_API_KEY"] = "test-key-not-real"
     env["OPENCODE_MAX_STEPS"] = "5"
@@ -102,14 +103,15 @@ class TestLargeDiffStdin:
 
     def test_parse_input_file_has_json(self, reviewer_env):
         """The parse-input file should reference a file with valid JSON."""
-        subprocess.run(
+        result = subprocess.run(
             [str(RUN_REVIEWER), "correctness"],
             env=reviewer_env,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        parse_input_ref = Path("/tmp/correctness-parse-input")
+        assert result.returncode == 0, result.stderr
+        parse_input_ref = Path(reviewer_env["CERBERUS_TMP"]) / "correctness-parse-input"
         assert parse_input_ref.exists(), "parse-input reference file missing"
         parse_file = Path(parse_input_ref.read_text().strip())
         assert parse_file.exists(), f"Parse input file {parse_file} missing"

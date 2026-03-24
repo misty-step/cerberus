@@ -163,11 +163,32 @@ defmodule Cerberus.PipelineTest do
 
     Req.new(
       adapter: fn request ->
-        send(pid, {:github_request, request.method, request.url})
+        send(
+          pid,
+          {:github_request, request.method, request.url, authorization_header(request.headers)}
+        )
+
         response = find_response(request, responses)
         {request, response}
       end
     )
+  end
+
+  defp authorization_header(headers) do
+    Enum.find_value(headers, fn
+      {"authorization", [value | _]} -> value
+      {"authorization", value} when is_binary(value) -> value
+      _ -> nil
+    end)
+  end
+
+  defp collect_github_auth_headers(acc \\ []) do
+    receive do
+      {:github_request, _method, _url, auth_header} ->
+        collect_github_auth_headers([auth_header | acc])
+    after
+      50 -> Enum.reverse(acc)
+    end
   end
 
   defp find_response(request, responses) do
@@ -308,6 +329,40 @@ defmodule Cerberus.PipelineTest do
 
       {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
       assert run.status == "completed"
+    end
+  end
+
+  describe "GitHub auth scoping" do
+    test "replaces authorization on an injected Req.Request for request-scoped auth", ctx do
+      review_id = create_run(ctx.store)
+
+      assert {:ok, _result} =
+               Pipeline.run(
+                 review_id,
+                 params(%{github_token: "request-scope-token"}),
+                 pipeline_opts(ctx)
+               )
+
+      auth_headers = collect_github_auth_headers()
+      assert auth_headers != []
+      assert Enum.uniq(auth_headers) == ["Bearer request-scope-token"]
+    end
+
+    test "fails cleanly when direct pipeline params contain a header-breaking github_token",
+         ctx do
+      review_id = create_run(ctx.store)
+
+      assert {:error, {:pipeline_failed, message}} =
+               Pipeline.run(
+                 review_id,
+                 params(%{github_token: "bad\r\ntoken"}),
+                 pipeline_opts(ctx)
+               )
+
+      assert message =~ "invalid github_token header value"
+
+      {:ok, run} = Cerberus.Store.get_review_run(ctx.store, review_id)
+      assert run.status == "failed"
     end
   end
 
