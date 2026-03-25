@@ -20,13 +20,12 @@ Use this skill for features that:
 
 ## Required Skills
 
-- `cerberus-terminology` — invoke before changing user-facing reviewer/output terminology, prompt/config nouns, or help-text vocabulary.
-- `refactoring-playbook` — invoke before large structural refactors such as root lift, deep module collapse, or aggressive legacy-surface deletion.
+- `cerberus-terminology` — invoke before substantive terminology, reviewer-vocabulary, prompt, or config-naming changes. Routine flag/help-text adjustments that do not introduce or rename Cerberus concepts do not require it.
 
 ## Work Procedure
 
 1. Read the assigned feature, `mission.md`, mission `AGENTS.md`, `validation-contract.md`, repo `AGENTS.md`, and the relevant `.factory/library/*.md` files before editing anything.
-2. Invoke `cerberus-terminology` if the feature changes user-facing nouns, reviewer/config vocabulary, or prompt wording. Invoke `refactoring-playbook` if the feature moves modules/files, deletes legacy surfaces, or reshapes the runtime boundary.
+2. Invoke `cerberus-terminology` only when the feature changes substantive user-facing nouns, reviewer/config vocabulary, or prompt wording. For large structural refactors, create characterization tests first, move one boundary at a time, and delete legacy surfaces only after the replacement path is green.
 3. Inspect the current code/tests for the touched surface and decide the smallest characterization/failing tests needed to pin behavior before implementation.
 4. Add or update tests first (red). For planner/config features, use deterministic doubles and fixed fixture repos/ref ranges. For cleanup features, add tests or assertions that fail until the legacy surface is actually removed or the root move is complete.
 5. Implement in small cohesive steps. Keep the product CLI-only:
@@ -50,8 +49,9 @@ Use this skill for features that:
    - feature-relevant targeted tests
    - `.factory/services.yaml` commands for `compile`, `test`, `format`, and `package` when relevant
    - `legacy-surface-sanity` only while legacy files still exist
-9. Do not leave background processes or temp services running. If you create fixture repos, worktrees, or packaging artifacts, clean them up unless the feature explicitly needs them to persist in-repo.
-10. In the handoff, be explicit about what changed, what was verified, what was left undone, and any structural risks discovered.
+9. Keep git-mutating fixtures and other test-only helpers out of runtime `lib/` paths unless runtime packaging truly requires them; if an exception is necessary, explain it explicitly in the handoff.
+10. Do not leave background processes or temp services running. If you create fixture repos, worktrees, or packaging artifacts, clean them up unless the feature explicitly needs them to persist in-repo.
+11. In the handoff, be explicit about what changed, what was verified, what was left undone, and any structural risks discovered.
 
 ## Example Handoff
 
