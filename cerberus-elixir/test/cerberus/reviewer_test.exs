@@ -308,6 +308,39 @@ defmodule Cerberus.ReviewerTest do
       assert params.model_id == "deterministic_review"
       assert params.model == "deterministic/review-pass"
     end
+
+    test "fixed-model reviewers ignore unrelated pool override sources" do
+      %{config: config} =
+        setup_config(%{}, %{
+          model_pools: %{
+            wave2: ["gemini_3_flash_preview"]
+          }
+        })
+
+      :sys.replace_state(config, fn state ->
+        trace =
+          state.persona_by_id
+          |> Map.fetch!("trace")
+          |> Map.put(:model_policy, "kimi_k2_5")
+          |> Map.put(:model_id, "kimi_k2_5")
+
+        personas =
+          Enum.map(state.personas, fn persona ->
+            if persona.id == "trace", do: trace, else: persona
+          end)
+
+        state
+        |> Map.put(:personas, personas)
+        |> Map.put(:persona_by_id, Map.put(state.persona_by_id, "trace", trace))
+      end)
+
+      {:ok, [entry]} = Cerberus.Config.resolve_panel(["trace"], :standard, config)
+
+      assert entry.model_id == "kimi_k2_5"
+      assert entry.model_name == "openrouter/moonshotai/kimi-k2.5"
+      assert entry.sources.model == "default"
+      assert entry.sources.provider == "default"
+    end
   end
 
   # --- Tool definitions ---

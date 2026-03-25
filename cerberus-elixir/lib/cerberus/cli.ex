@@ -66,7 +66,7 @@ defmodule Cerberus.CLI do
             {:error, %{message: message, exit_code: code}}
 
           aggregated ->
-            {:ok, completed_result(aggregated, request.format)}
+            {:ok, completed_result(aggregated, request, workspace, request.format)}
         end
       after
         ReviewWorkspace.cleanup(workspace)
@@ -243,17 +243,21 @@ defmodule Cerberus.CLI do
     }
   end
 
-  defp render_output(result, "json") do
+  defp render_output(result, request, workspace, "json") do
     Jason.encode!(%{
       verdict: result.verdict,
       summary: result.summary,
       findings: Enum.map(result.findings, &finding_to_json/1),
       stats: result.stats,
-      planner_trace: result.planner_trace
+      refs: refs_to_json(request, workspace),
+      planner_trace: Map.get(result, :planner_trace),
+      resolved_config: Map.get(result, :resolved_config),
+      reviewer_execution_ledger:
+        reviewer_execution_ledger_to_json(Map.get(result, :reviewer_results, []))
     })
   end
 
-  defp render_output(result, "text") do
+  defp render_output(result, _request, _workspace, "text") do
     findings =
       case result.findings do
         [] ->
@@ -312,9 +316,9 @@ defmodule Cerberus.CLI do
     end
   end
 
-  defp completed_result(result, format) do
+  defp completed_result(result, request, workspace, format) do
     %{
-      output: render_output(result, format),
+      output: render_output(result, request, workspace, format),
       exit_code: exit_code_for_verdict(result.verdict),
       verdict: result.verdict
     }
@@ -358,8 +362,49 @@ defmodule Cerberus.CLI do
       summary:
         "No changes to review between #{workspace.base_ref} (#{workspace.base_sha}) and #{workspace.head_ref} (#{workspace.head_sha}).",
       findings: [],
-      stats: %{"total" => 0, "pass" => 0, "warn" => 0, "fail" => 0, "skip" => 0}
+      stats: %{"total" => 0, "pass" => 0, "warn" => 0, "fail" => 0, "skip" => 0},
+      planner_trace: nil,
+      resolved_config: nil,
+      reviewer_results: []
     }
+  end
+
+  defp refs_to_json(request, workspace) do
+    %{
+      repo: workspace.repo_root,
+      requested: %{
+        base: request.base,
+        head: request.head
+      },
+      resolved: %{
+        base: workspace.base_sha,
+        head: workspace.head_sha
+      }
+    }
+  end
+
+  defp reviewer_execution_ledger_to_json(results) do
+    Enum.map(results, fn result ->
+      %{
+        reviewer: result.reviewer,
+        perspective: result.perspective,
+        provider: result.provider,
+        model: %{
+          id: result.model_id,
+          value: result.model
+        },
+        prompt: %{
+          id: result.prompt_id,
+          digest: result.prompt_digest
+        },
+        template: %{
+          id: result.template_id,
+          digest: result.template_digest
+        },
+        verdict: result.verdict.verdict,
+        status: Atom.to_string(result.status)
+      }
+    end)
   end
 
   defp ensure_runtime_dependencies do

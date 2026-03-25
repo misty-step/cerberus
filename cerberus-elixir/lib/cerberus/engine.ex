@@ -25,13 +25,23 @@ defmodule Cerberus.Engine do
   defmodule ReviewerExecution do
     @moduledoc false
 
-    @enforce_keys [:reviewer, :perspective, :verdict, :usage, :model, :provider, :status]
+    @enforce_keys [
+      :reviewer,
+      :perspective,
+      :verdict,
+      :usage,
+      :model,
+      :model_id,
+      :provider,
+      :status
+    ]
     defstruct [
       :reviewer,
       :perspective,
       :verdict,
       :usage,
       :model,
+      :model_id,
       :provider,
       :prompt_id,
       :prompt_digest,
@@ -46,6 +56,7 @@ defmodule Cerberus.Engine do
             verdict: Verdict.t(),
             usage: %{prompt_tokens: non_neg_integer(), completion_tokens: non_neg_integer()},
             model: String.t(),
+            model_id: String.t() | nil,
             provider: String.t(),
             prompt_id: String.t() | nil,
             prompt_digest: String.t() | nil,

@@ -92,6 +92,21 @@ defmodule Cerberus.CLITest do
     Jason.decode!(output)
   end
 
+  defp routed_cli_opts(extra \\ []) do
+    cli_opts(
+      [routing_result: nil, router_call_llm: fn _params -> {:error, :api_unavailable} end] ++
+        extra
+    )
+  end
+
+  defp resolved_reviewer(snapshot, reviewer_id) do
+    Enum.find(snapshot["reviewers"], &(&1["id"] == reviewer_id))
+  end
+
+  defp executed_reviewer(ledger, reviewer_id) do
+    Enum.find(ledger, &(&1["reviewer"] == reviewer_id))
+  end
+
   defp sequence_mock(responses) do
     {:ok, agent} = Agent.start_link(fn -> responses end)
 
@@ -118,6 +133,122 @@ defmodule Cerberus.CLITest do
     assert is_list(decoded["findings"])
     assert is_map(decoded["stats"])
     assert decoded["planner_trace"]["selected_team"] == ["trace"]
+  end
+
+  test "run/2 exposes planner, resolved-config, refs, and reviewer ledger artifacts for bench override reruns",
+       %{fixture: fixture} do
+    default_run = decode_run!(review_args(fixture), routed_cli_opts())
+
+    bench_override_run =
+      decode_run!(
+        review_args(fixture),
+        routed_cli_opts(
+          config_overrides: %{
+            reviewers: %{
+              atlas: %{enabled: false},
+              craft: %{enabled: false},
+              fuse: %{enabled: false}
+            },
+            routing: %{
+              fallback_panel: ["trace", "guard", "proof"],
+              always_include: ["trace"],
+              include_if_code_changed: ["guard"]
+            }
+          }
+        )
+      )
+
+    assert default_run["refs"]["requested"] == %{
+             "base" => fixture.base_sha,
+             "head" => fixture.head_sha
+           }
+
+    assert default_run["refs"]["resolved"] == bench_override_run["refs"]["resolved"]
+
+    assert default_run["planner_trace"]["selected_team"] !=
+             bench_override_run["planner_trace"]["selected_team"]
+
+    assert bench_override_run["planner_trace"]["eligible_bench"] == ["trace", "guard", "proof"]
+    assert bench_override_run["planner_trace"]["selected_team"] == ["trace", "guard", "proof"]
+
+    assert Enum.map(bench_override_run["resolved_config"]["reviewers"], & &1["id"]) == [
+             "trace",
+             "guard",
+             "proof"
+           ]
+
+    assert Enum.map(bench_override_run["reviewer_execution_ledger"], & &1["reviewer"]) == [
+             "trace",
+             "guard",
+             "proof"
+           ]
+  end
+
+  test "run/2 preserves the selected team while provider/model/prompt overrides change execution settings",
+       %{fixture: fixture} do
+    baseline = decode_run!(review_args(fixture), routed_cli_opts())
+
+    override_run =
+      decode_run!(
+        review_args(fixture),
+        routed_cli_opts(
+          config_overrides: %{
+            providers: %{
+              deterministic: %{adapter: "deterministic"}
+            },
+            models: %{
+              deterministic_review: %{
+                provider: "deterministic",
+                name: "deterministic/review-pass"
+              }
+            },
+            prompts: %{
+              alt_correctness: %{content: "ALT correctness prompt"}
+            },
+            templates: %{
+              alt_review: %{content: "ALT template for {{PERSPECTIVE}}"}
+            },
+            reviewers: %{
+              trace: %{
+                model: "deterministic_review",
+                prompt: "alt_correctness",
+                template: "alt_review"
+              }
+            }
+          }
+        )
+      )
+
+    assert baseline["refs"]["resolved"] == override_run["refs"]["resolved"]
+
+    assert baseline["planner_trace"]["selected_team"] ==
+             override_run["planner_trace"]["selected_team"]
+
+    baseline_trace = resolved_reviewer(baseline["resolved_config"], "trace")
+    override_trace = resolved_reviewer(override_run["resolved_config"], "trace")
+    baseline_guard = resolved_reviewer(baseline["resolved_config"], "guard")
+    override_guard = resolved_reviewer(override_run["resolved_config"], "guard")
+
+    assert baseline_trace["model"]["id"] != override_trace["model"]["id"]
+    assert override_trace["model"]["id"] == "deterministic_review"
+    assert override_trace["provider"]["value"] == "deterministic"
+    assert override_trace["prompt"]["id"] == "alt_correctness"
+    assert override_trace["template"]["id"] == "alt_review"
+    assert baseline_guard["model"] == override_guard["model"]
+    assert baseline_guard["prompt"] == override_guard["prompt"]
+    assert baseline_guard["template"] == override_guard["template"]
+
+    baseline_trace_execution = executed_reviewer(baseline["reviewer_execution_ledger"], "trace")
+
+    override_trace_execution =
+      executed_reviewer(override_run["reviewer_execution_ledger"], "trace")
+
+    assert baseline_trace_execution["provider"] == "openrouter"
+    assert override_trace_execution["provider"] == "deterministic"
+    assert baseline_trace_execution["model"]["id"] != override_trace_execution["model"]["id"]
+    assert override_trace_execution["model"]["id"] == "deterministic_review"
+    assert override_trace_execution["prompt"]["id"] == "alt_correctness"
+    assert override_trace_execution["template"]["id"] == "alt_review"
   end
 
   test "run/2 tolerates the release subcommand prefix", %{fixture: fixture} do

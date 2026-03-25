@@ -641,6 +641,53 @@ defmodule Cerberus.RouterTest do
       refute Enum.any?(["atlas", "craft", "fuse"], &(&1 in result.panel))
     end
 
+    test "provider, model, prompt, and template overrides preserve routing selection" do
+      default_config = start_config!()
+
+      override_config =
+        start_config!(%{
+          providers: %{
+            deterministic: %{adapter: "deterministic"}
+          },
+          models: %{
+            deterministic_review: %{
+              provider: "deterministic",
+              name: "deterministic/review-pass"
+            }
+          },
+          prompts: %{
+            alt_correctness: %{content: "ALT correctness prompt"}
+          },
+          templates: %{
+            alt_review: %{content: "ALT template for {{PERSPECTIVE}}"}
+          },
+          reviewers: %{
+            trace: %{
+              model: "deterministic_review",
+              prompt: "alt_correctness",
+              template: "alt_review"
+            }
+          }
+        })
+
+      default_router = start_router!(default_config, fn _params -> {:error, :api_unavailable} end)
+
+      override_router =
+        start_router!(override_config, fn _params -> {:error, :api_unavailable} end)
+
+      {:ok, default_result} = Router.route(@simple_diff, [], default_router)
+      {:ok, override_result} = Router.route(@simple_diff, [], override_router)
+
+      assert override_result.panel == default_result.panel
+      assert override_result.model_tier == default_result.model_tier
+
+      assert override_result.planner_trace.selected_team ==
+               default_result.planner_trace.selected_team
+
+      assert override_result.planner_trace.eligible_bench ==
+               default_result.planner_trace.eligible_bench
+    end
+
     test "repository context changes routing for the same patch shape" do
       plain_repo =
         create_repo_fixture!(%{

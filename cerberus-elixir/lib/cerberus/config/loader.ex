@@ -137,13 +137,7 @@ defmodule Cerberus.Config.Loader do
                       template_asset.sources[:path],
                       template_asset.sources[:content]
                     ]),
-                  model:
-                    effective_source([
-                      reviewer.sources[:model],
-                      state.model_pool_sources[tier],
-                      model.sources[:provider],
-                      model.sources[:name]
-                    ]),
+                  model: effective_source(model_sources(state, reviewer, tier, model)),
                   provider: effective_source([model.sources[:provider]])
                 }
               }
@@ -234,6 +228,15 @@ defmodule Cerberus.Config.Loader do
 
   defp parse_defaults(raw) do
     {nil, [diagnostic("default", "defaults/config.yml", "expected map", raw)]}
+  end
+
+  defp model_sources(state, reviewer, tier, model) do
+    base_sources = [reviewer.sources[:model], model.sources[:provider], model.sources[:name]]
+
+    case reviewer.model_policy do
+      :pool -> [state.model_pool_sources[tier] | base_sources]
+      _ -> base_sources
+    end
   end
 
   defp parse_overrides(%{} = raw) do
