@@ -1,0 +1,237 @@
+{
+  "groupId": "cli-contract",
+  "testedAt": "2026-03-25T18:27:13.863991+00:00",
+  "isolation": {
+    "sessionPrefix": "utv_cli_contract_71457f7b",
+    "repoRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus",
+    "appRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus/cerberus-elixir",
+    "targetRepo": "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/utv_cli_contract_71457f7b_jm_vb3dq/utv_cli_contract_71457f7b_target_repo",
+    "callerRepo": "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/utv_cli_contract_71457f7b_jm_vb3dq/utv_cli_contract_71457f7b_caller_repo",
+    "nonGitDir": "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/utv_cli_contract_71457f7b_jm_vb3dq/utv_cli_contract_71457f7b_plain_dir",
+    "evidenceDir": "/Users/phaedrus/.factory/missions/9ba62a98-6bca-42e0-b0e5-54452c2cc9a2/evidence/cli-core/cli-contract"
+  },
+  "toolsUsed": [
+    "Execute"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-CLI-001",
+      "title": "Help shows canonical ref-based review usage",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run the CLI help surface with `review --help`.",
+          "expected": "Exit 0 and advertise only `--repo`, `--base`, and `--head` review inputs.",
+          "observed": "Usage:   mix cerberus.review --repo <path> --base <ref> --head <ref> [--format json|text]   bin/cerberus review --repo <path> --base <ref> --head <ref> [--format json|text]"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-001-help.txt"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-002",
+      "title": "Review a local repository by refs from any working directory",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run a ref-range review from the separate caller repo using `--repo <target>`.",
+          "expected": "The CLI should succeed from outside the target repo and print a human-readable verdict and summary.",
+          "observed": "Verdict: PASS Summary: All reviewers passed.  Findings: - none"
+        },
+        {
+          "action": "Inspect resolved refs and tool-read content.",
+          "expected": "The run should resolve the requested target refs and read the head commit content, not the dirty target worktree.",
+          "observed": "Resolved 89179bfd215a16d453cb158e989aea8a664f11ca..70bdd788b4340fd0184df2938c836b273d70da2a; tool content matched head commit=True, differed from dirty worktree=True"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-002-review-outside-repo.txt"
+        ],
+        "refs": "cli-core/cli-contract/VAL-CLI-002-refs.json",
+        "workspaceDiffProof": "cli-core/cli-contract/VAL-CLI-002-workspace-diff-proof.json"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-003",
+      "title": "Commit-ish refs use an isolated materialized workspace",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run representative commit-ish pairs (revision expression\u2192branch, tag, full SHA, short SHA) from the caller repo.",
+          "expected": "Each ref form should succeed.",
+          "observed": "revision-expression-to-branch=>0, base-sha-to-tag=>0, base-sha-to-full-sha=>0, base-sha-to-short-sha=>0"
+        },
+        {
+          "action": "Compare caller git state before and after the runs.",
+          "expected": "Caller HEAD, status, and worktree list remain unchanged.",
+          "observed": "HEAD unchanged=True, status unchanged=True, worktrees unchanged=True"
+        },
+        {
+          "action": "Inspect tool-read content for the revision-expression case.",
+          "expected": "Workspace materialization should expose the committed head content rather than dirty target files.",
+          "observed": "Matched head commit=True, differed from dirty worktree=True"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-003-commitish.txt"
+        ],
+        "refs": "cli-core/cli-contract/VAL-CLI-003-refs.json",
+        "workspaceDiffProof": "cli-core/cli-contract/VAL-CLI-003-workspace-diff-proof.json",
+        "gitBefore": "cli-core/cli-contract/VAL-CLI-003-caller-git-before.json",
+        "gitAfter": "cli-core/cli-contract/VAL-CLI-003-caller-git-after.json"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-004",
+      "title": "Empty change ranges are explicit",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run a review where `--base` and `--head` resolve to the same commit.",
+          "expected": "Exit 0 with a no-changes message.",
+          "observed": "Verdict: SKIP Summary: No changes to review between 70bdd788b4340fd0184df2938c836b273d70da2a (70bdd788b4340fd0184df2938c836b273d70da2a) and 70bdd788b4340fd0184df2938c836b273d70da2a (70bdd788b4340fd0184df2938c836b273d70da2a).  Findings: -..."
+        },
+        {
+          "action": "Check planner/reviewer marker files and workspace temp entries.",
+          "expected": "No planner/reviewer work and no review workspace materialization.",
+          "observed": "reviewer marker=False, router marker=False, workspace entries=[]"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-004-empty-range.txt"
+        ],
+        "diffProof": "cli-core/cli-contract/VAL-CLI-004-diff-proof.json"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-005",
+      "title": "Invalid invocation errors are actionable",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run missing-flags, unknown-flag, legacy `--diff`, nonexistent `--repo`, and non-git-directory invocations.",
+          "expected": "Each case should fail non-zero with actionable diagnostics.",
+          "observed": "missing-flags=>exit 1 (Missing required options: --repo, --base, --head.  Usage:   mix cerberus.review --repo <path> --base <ref> --head <ref> [--format json|text]   bin/cerberus review --repo <path> --base <ref> --head <ref> [--format json|text]); unknown-flag=>exit 1 (Unsupported options: ----unknown  Usage:   mix cerberus.review --repo <path> --base <ref> --head <ref> [--format json|text]   bin/cerberus review --repo <path> --base <ref> --head <ref> [--format json|text]); legacy-diff=>exit 1 (Legacy --diff input is no longer supported. Use --repo <path> --base <ref> --head <ref>.  Usage:   mix cerberus.review --repo <path> --base <ref> --head <ref> [--format json|text]   bin/cerberus review --repo <path> --base <ref> --head <...); missing-repo=>exit 1 (Repository path not found for --repo: /definitely/missing/repo); non-git-dir=>exit 1 (--repo is not inside a Git repository: /var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/utv_cli_contract_71457f7b_jm_vb3dq/utv_cli_contract_71457f7b_plain_dir)"
+        },
+        {
+          "action": "Inspect marker files and temp workspace prefixes for each invalid case.",
+          "expected": "No review work should start.",
+          "observed": "missing-flags: reviewer=False, router=False, workspaces=[]; unknown-flag: reviewer=False, router=False, workspaces=[]; legacy-diff: reviewer=False, router=False, workspaces=[]; missing-repo: reviewer=False, router=False, workspaces=[]; non-git-dir: reviewer=False, router=False, workspaces=[]"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-005-invalid-invocations.txt"
+        ],
+        "ledger": "cli-core/cli-contract/VAL-CLI-005-ledger.json"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-006",
+      "title": "Invalid refs fail fast",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run a review with an unresolvable `--head` ref.",
+          "expected": "The CLI should fail non-zero and name the bad ref.",
+          "observed": "Could not resolve --head ref \"missing-ref\" inside /private/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/utv_cli_contract_71457f7b_jm_vb3dq/utv_cli_contract_71457f7b_target_repo: fatal: Needed a single revision"
+        },
+        {
+          "action": "Inspect workspace/planner/reviewer side-effect markers.",
+          "expected": "No workspace, planner, or reviewer work should start.",
+          "observed": "reviewer marker=False, router marker=False, workspace entries=[]"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-006-invalid-ref.txt"
+        ],
+        "refs": "cli-core/cli-contract/VAL-CLI-006-attempted-refs.json"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-007",
+      "title": "Local review is service-free",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run a successful local review with GitHub/server bootstrap variables removed from the environment.",
+          "expected": "The review should still succeed.",
+          "observed": "Verdict: PASS Summary: All reviewers passed.  Findings: - none"
+        },
+        {
+          "action": "Compare process/port snapshots before and after the run.",
+          "expected": "No Cerberus listener or new interesting port binding should remain.",
+          "observed": "new interesting listener ports=[], new cerberus processes=[]"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-007-service-free.txt"
+        ],
+        "envSnapshot": "cli-core/cli-contract/VAL-CLI-007-env-snapshot.json",
+        "processPortSnapshot": "cli-core/cli-contract/VAL-CLI-007-process-port-snapshot.json"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CLI-008",
+      "title": "Completed review exit statuses are deterministic",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run representative PASS, WARN, and SKIP completions.",
+          "expected": "All should exit 0.",
+          "observed": "PASS=0, WARN=0, SKIP=0"
+        },
+        {
+          "action": "Run representative FAIL, invocation-failure, and runtime-failure cases.",
+          "expected": "FAIL exits a distinct non-zero code from invocation/runtime failures.",
+          "observed": "FAIL=2, invocation=1, runtime=1"
+        }
+      ],
+      "evidence": {
+        "transcripts": [
+          "cli-core/cli-contract/VAL-CLI-008-pass.txt",
+          "cli-core/cli-contract/VAL-CLI-008-warn.txt",
+          "cli-core/cli-contract/VAL-CLI-008-skip.txt",
+          "cli-core/cli-contract/VAL-CLI-008-fail.txt",
+          "cli-core/cli-contract/VAL-CLI-008-invocation-failure.txt",
+          "cli-core/cli-contract/VAL-CLI-008-runtime-failure.txt"
+        ],
+        "exitCodes": "cli-core/cli-contract/VAL-CLI-008-exit-codes.json"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Deterministic CLI validation required a temporary `mix run` wrapper script so the supported `:cli_overrides` runtime surface could inject anonymous-function doubles and unique supervisor names per run.",
+      "resolved": true,
+      "resolution": "Executed every assertion through `mix run --no-start --no-compile <temp-runner>.exs -- review ...` with isolated temp repos and per-run names, without modifying repository source files.",
+      "affectedAssertions": [
+        "VAL-CLI-002",
+        "VAL-CLI-003",
+        "VAL-CLI-004",
+        "VAL-CLI-005",
+        "VAL-CLI-006",
+        "VAL-CLI-007",
+        "VAL-CLI-008"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 8 assertions: 8 passed, 0 failed, 0 blocked."
+}

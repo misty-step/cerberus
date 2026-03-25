@@ -34,3 +34,13 @@ Validation surface, tools, and resource guidance for user-testing validators.
 - Local Elixir/Mix toolchain is present and usable
 - Current legacy CLI/release path is not the final target and is partially broken in dry-run mode; that is expected because the mission replaces it
 - No long-running validation service is required
+
+## Flow Validator Guidance: terminal-cli
+
+- Isolation boundary: terminal-only validation against repo-local Mix commands plus unique temp fixture repos under `$(mktemp -d)` or `System.tmp_dir!()`. Do not reuse another validator's temp repo, worktree, or evidence directory.
+- Current product root for `cli-core` is `/Users/phaedrus/Development/cerberus-mono/cerberus/cerberus-elixir`; run Mix commands there until the later root-lift milestone changes the app root.
+- Prefer `mix run --no-start --no-compile` when invoking `Cerberus.CLI.main/2` directly so the command stays CLI-only and does not boot the app supervisor or start Bandit unnecessarily.
+- Deterministic review execution is allowed through the existing CLI runtime override surface (`Application.put_env(:cerberus_elixir, :cli_overrides, ...)`) so validators can inject fixed `call_llm`, `router_call_llm`, `routing_result`, and `config_overrides` values without making live provider calls.
+- When invoking repeated deterministic CLI runs in one validation session, give each run unique `config_name`, `router_name`, `review_supervisor_name`, and `task_supervisor_name` values inside `:cli_overrides` to avoid cross-run process-name collisions.
+- Capture terminal transcripts, resolved refs, config snapshots/diffs, planner/reviewer ledgers, and git before/after state as files under `.factory/validation/<milestone>/user-testing/flows/` plus the assigned mission evidence directory.
+- Validation concurrency for this surface remains `1`; run assertion groups serially.
