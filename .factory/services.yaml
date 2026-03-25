@@ -1,0 +1,36 @@
+commands:
+  install: >
+    REPO="/Users/phaedrus/Development/cerberus-mono/cerberus";
+    APP="$REPO/cerberus-elixir";
+    [ -f "$REPO/mix.exs" ] && APP="$REPO";
+    cd "$APP" && mix deps.get
+  compile: >
+    REPO="/Users/phaedrus/Development/cerberus-mono/cerberus";
+    APP="$REPO/cerberus-elixir";
+    [ -f "$REPO/mix.exs" ] && APP="$REPO";
+    cd "$APP" && mix compile --warnings-as-errors
+  test: >
+    REPO="/Users/phaedrus/Development/cerberus-mono/cerberus";
+    APP="$REPO/cerberus-elixir";
+    [ -f "$REPO/mix.exs" ] && APP="$REPO";
+    cd "$APP" && mix test --max-cases 4
+  format: >
+    REPO="/Users/phaedrus/Development/cerberus-mono/cerberus";
+    APP="$REPO/cerberus-elixir";
+    [ -f "$REPO/mix.exs" ] && APP="$REPO";
+    cd "$APP" && mix format --check-formatted
+  package: >
+    REPO="/Users/phaedrus/Development/cerberus-mono/cerberus";
+    APP="$REPO/cerberus-elixir";
+    [ -f "$REPO/mix.exs" ] && APP="$REPO";
+    if rg -n "escript:" "$APP/mix.exs" >/dev/null 2>&1; then
+      cd "$APP" && mix escript.build;
+    else
+      cd "$APP" && MIX_ENV=prod mix release --overwrite;
+    fi
+  legacy-surface-sanity: >
+    REPO="/Users/phaedrus/Development/cerberus-mono/cerberus";
+    if [ -f "$REPO/dispatch.sh" ]; then shellcheck "$REPO/dispatch.sh"; else echo "dispatch.sh retired"; fi &&
+    if [ -f "$REPO/bin/cerberus.js" ]; then node --check "$REPO/bin/cerberus.js"; else echo "node scaffolder retired"; fi
+
+services: {}
