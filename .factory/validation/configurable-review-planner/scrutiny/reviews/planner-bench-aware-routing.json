@@ -1,0 +1,22 @@
+{
+  "featureId": "planner-bench-aware-routing",
+  "reviewedAt": "2026-03-25T19:27:13Z",
+  "commitId": "73dcc4ac0bc0ef31a5b2ff70729a9d44a6c78112",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The planner refactor adds bench-aware routing, repo-context inspection, and auditable planner traces, but it still violates the feature contract for minimal docs/test-only changes. Repository-level sensitivity currently forces doc-only and test-only ranges onto a four-reviewer panel even when the diff itself is low-risk, so the router no longer guarantees the smaller/cheaper team that the milestone requires unless configuration explicitly broadens coverage.",
+    "issues": [
+      {
+        "file": "cerberus-elixir/lib/cerberus/router.ex",
+        "line": 758,
+        "severity": "blocking",
+        "description": "`determine_panel_size/5` hard-escalates any repo with `public_contract_surface` or `security_sensitive_repo` markers to at least four reviewers (`max(desired, 4)` at lines 758-760), even after lines 750-753 have already classified the change as `doc_only` (size 1) or `test_only` (size 2). That violates the feature requirement that docs/test-only changes stay smaller or cheaper than comparable code changes unless configuration explicitly broadens coverage. In a quick reproduction during review, routing the commit's docs-only diff against a repo containing `priv/openapi/openapi.yaml` returned `%{panel: [\"trace\", \"craft\", \"atlas\", \"fuse\"], model_tier: :flash}` instead of a minimal team, proving the repo-context escalation overrides the low-risk diff classification. The added tests cover plain-repo doc/test minimization (`cerberus-elixir/test/cerberus/router_test.exs:524-539`) and repo-aware routing for ordinary code (`router_test.exs:691-721`), but they miss this combined repo-sensitive docs/test-only case."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the worker handoff, transcript skeleton, skill file, shared-state files, and commit `73dcc4ac0bc0ef31a5b2ff70729a9d44a6c78112`. The feature is close, but I found one blocking contract-compliance bug: repo-sensitive markers currently override docs/test-only minimization and can expand those low-risk ranges to a four-reviewer panel without any config opt-in. I wrote the scrutiny report with a failing status and no separate shared-state gaps."
+}

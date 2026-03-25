@@ -1,0 +1,42 @@
+{
+  "milestone": "configurable-review-planner",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix test --max-cases 4",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix compile --warnings-as-errors",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix format --check-formatted",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": [
+      "planner-bench-aware-routing"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "planner-bench-aware-routing",
+      "severity": "blocking",
+      "description": "Docs-only and test-only ranges can still be escalated to a four-reviewer panel when the repository has `public_contract_surface` or `security_sensitive_repo` markers, because `determine_panel_size/5` applies `max(desired, 4)` after already classifying the diff as low-risk. This violates the milestone contract that docs/test-only changes stay smaller or cheaper unless configuration explicitly broadens coverage."
+    }
+  ],
+  "nonBlockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": null
+}

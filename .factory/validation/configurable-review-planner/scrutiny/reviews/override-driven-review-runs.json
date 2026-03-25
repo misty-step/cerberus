@@ -1,0 +1,15 @@
+{
+  "featureId": "override-driven-review-runs",
+  "reviewedAt": "2026-03-25T19:27:39Z",
+  "commitId": "1dfc4812531c1b0e77547233396c6979376b8f35",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Reviewed the CLI JSON artifact expansion, the resolved-config source-attribution fix, and the new CLI/router/reviewer coverage for override reruns. The implementation matches the feature contract: bench overrides change the selected team for the same resolved refs, execution-setting overrides preserve planner selection while changing the observed execution settings, and fixed-model reviewers no longer inherit unrelated pool-override source labels.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the worker handoff, transcript skeleton, skill procedure, shared-state files, and commit 1dfc4812531c1b0e77547233396c6979376b8f35. I found no high-confidence correctness, security, maintainability, or contract-compliance issues in this first-run feature review."
+}
