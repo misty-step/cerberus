@@ -735,16 +735,12 @@ defmodule Cerberus.Router do
     end
   end
 
-  defp determine_panel_size(routing, personas, required, diff_classification, repo_context) do
+  defp determine_panel_size(routing, personas, required, diff_classification, _repo_context) do
     max_size = min(routing.panel_size, length(personas))
 
     if max_size == 0 do
       0
     else
-      repo_sensitive =
-        repo_context.signals.public_contract_surface or
-          repo_context.signals.security_sensitive_repo
-
       desired =
         cond do
           diff_classification.doc_only -> 1
@@ -755,8 +751,7 @@ defmodule Cerberus.Router do
         end
 
       desired =
-        if diff_classification.risky_change or diff_classification.contract_surface_change or
-             repo_sensitive do
+        if diff_classification.risky_change or diff_classification.contract_surface_change do
           max(desired, 4)
         else
           desired

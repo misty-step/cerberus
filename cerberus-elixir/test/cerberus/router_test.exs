@@ -721,6 +721,77 @@ defmodule Cerberus.RouterTest do
       assert public_result.planner_trace.repo_context.signals.public_contract_surface == true
     end
 
+    test "docs-only changes stay minimal in public-contract repositories" do
+      public_repo =
+        create_repo_fixture!(%{
+          "priv/openapi/openapi.yaml" => "openapi: 3.0.0\ninfo:\n  title: Billing\n"
+        })
+
+      config_name = start_config!()
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      on_exit(fn ->
+        File.rm_rf(public_repo)
+      end)
+
+      {:ok, result} = Router.route(@doc_only_diff, [metadata: %{repo: public_repo}], router)
+
+      assert result.model_tier == :flash
+      assert result.panel == ["trace"]
+      assert result.planner_trace.repo_context.signals.public_contract_surface == true
+      assert result.planner_trace.diff_classification.doc_only == true
+      assert result.planner_trace.required_reviewers == ["trace"]
+    end
+
+    test "test-only changes stay minimal in security-sensitive repositories" do
+      security_repo =
+        create_repo_fixture!(%{
+          "lib/app/auth/policy.ex" => "defmodule App.Auth.Policy do\nend\n"
+        })
+
+      config_name = start_config!()
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      on_exit(fn ->
+        File.rm_rf(security_repo)
+      end)
+
+      {:ok, result} = Router.route(@test_only_diff, [metadata: %{repo: security_repo}], router)
+
+      assert result.model_tier == :flash
+      assert result.panel == ["trace", "proof"]
+      assert result.planner_trace.repo_context.signals.security_sensitive_repo == true
+      assert result.planner_trace.diff_classification.test_only == true
+      assert result.planner_trace.required_reviewers == ["trace"]
+    end
+
+    test "routing config can explicitly broaden docs-only coverage in repo-sensitive repos" do
+      public_repo =
+        create_repo_fixture!(%{
+          "priv/openapi/openapi.yaml" => "openapi: 3.0.0\ninfo:\n  title: Billing\n"
+        })
+
+      config_name =
+        start_config!(%{
+          routing: %{
+            always_include: ["trace", "guard", "proof"]
+          }
+        })
+
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      on_exit(fn ->
+        File.rm_rf(public_repo)
+      end)
+
+      {:ok, result} = Router.route(@doc_only_diff, [metadata: %{repo: public_repo}], router)
+
+      assert result.model_tier == :flash
+      assert result.panel == ["trace", "guard", "proof"]
+      assert result.planner_trace.repo_context.signals.public_contract_surface == true
+      assert result.planner_trace.required_reviewers == ["trace", "guard", "proof"]
+    end
+
     test "risky changes escalate to higher-risk coverage" do
       config_name = start_config!()
       router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)

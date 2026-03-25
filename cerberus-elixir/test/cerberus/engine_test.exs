@@ -35,6 +35,28 @@ defmodule Cerberus.EngineTest do
    end
   """
 
+  @doc_only_diff """
+  diff --git a/README.md b/README.md
+  --- a/README.md
+  +++ b/README.md
+  @@ -1,2 +1,4 @@
+   # Project
+  +
+  +Added docs.
+  """
+
+  @test_only_diff """
+  diff --git a/test/sample_test.exs b/test/sample_test.exs
+  --- a/test/sample_test.exs
+  +++ b/test/sample_test.exs
+  @@ -1,3 +1,5 @@
+   defmodule SampleTest do
+  +  test "returns ok" do
+  +    assert :ok == :ok
+  +  end
+   end
+  """
+
   defmodule StoreSpy do
     use GenServer
 
@@ -169,6 +191,22 @@ defmodule Cerberus.EngineTest do
     Path.join(System.tmp_dir!(), "cerberus-diff-*")
     |> Path.wildcard()
     |> Enum.sort()
+  end
+
+  defp create_repo_fixture!(files) do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus_engine_repo_#{System.unique_integer([:positive])}"
+      )
+
+    Enum.each(files, fn {relative_path, content} ->
+      path = Path.join(root, relative_path)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, content)
+    end)
+
+    root
   end
 
   describe "review/3" do
@@ -349,6 +387,52 @@ defmodule Cerberus.EngineTest do
       assert result.planner_trace.fallback.used == true
       assert result.planner_trace.fallback.reason == "invalid_panel"
       assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace", "guard"]
+    end
+
+    test "keeps docs-only reviews minimal in public-contract repositories", ctx do
+      public_repo =
+        create_repo_fixture!(%{
+          "priv/openapi/openapi.yaml" => "openapi: 3.0.0\ninfo:\n  title: Billing\n"
+        })
+
+      on_exit(fn ->
+        File.rm_rf(public_repo)
+      end)
+
+      assert {:ok, result} =
+               Engine.review(
+                 @doc_only_diff,
+                 context(),
+                 engine_opts(ctx, routing_metadata: %{repo: public_repo})
+               )
+
+      assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace"]
+      assert result.planner_trace.repo_context.signals.public_contract_surface == true
+      assert result.planner_trace.diff_classification.doc_only == true
+      assert result.planner_trace.model_tier == "flash"
+    end
+
+    test "keeps test-only reviews minimal in security-sensitive repositories", ctx do
+      security_repo =
+        create_repo_fixture!(%{
+          "lib/app/auth/policy.ex" => "defmodule App.Auth.Policy do\nend\n"
+        })
+
+      on_exit(fn ->
+        File.rm_rf(security_repo)
+      end)
+
+      assert {:ok, result} =
+               Engine.review(
+                 @test_only_diff,
+                 context(),
+                 engine_opts(ctx, routing_metadata: %{repo: security_repo})
+               )
+
+      assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace", "proof"]
+      assert result.planner_trace.repo_context.signals.security_sensitive_repo == true
+      assert result.planner_trace.diff_classification.test_only == true
+      assert result.planner_trace.model_tier == "flash"
     end
 
     test "cleans up the temp diff file when config lookup crashes", ctx do
