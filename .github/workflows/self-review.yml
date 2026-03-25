@@ -17,13 +17,20 @@ jobs:
   review:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    env:
+      CERBERUS_API_KEY: ${{ secrets.CERBERUS_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+        if: env.CERBERUS_API_KEY != ''
         with:
           repository: misty-step/cerberus
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./
+        if: env.CERBERUS_API_KEY != ''
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.CERBERUS_API_KEY }}
+          api-key: ${{ env.CERBERUS_API_KEY }}
           cerberus-url: ${{ vars.CERBERUS_URL || 'https://cerberus.fly.dev' }}
+      - name: Skip when self-review is not configured
+        if: env.CERBERUS_API_KEY == ''
+        run: echo "::notice::Cerberus self-review skipped because CERBERUS_API_KEY is not configured"
