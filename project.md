@@ -1,17 +1,18 @@
 # Project: Cerberus
 
 ## Vision
-Agentic code review platform — multi-perspective review, auto-triage, and observability that developers actually want to pay for.
 
-**North Star:** Replace CodeRabbit. Ship a GitHub-native platform where AI agents review code, fix their own findings, monitor production health, and track errors — all through agentic workflows, not dashboards.
-**Target User:** Engineering teams (2–50 devs) who want automated code review that catches what humans miss, without drowning in noise. Willing to pay for quality signal.
-**Current Focus:** v2.x — Review Quality & Reliability. World-class reviews. Fix reliability (SKIPs, parse failures), improve formatting (inline comments, scannable verdicts), reduce noise (hallucinations, false positives). Match CodeRabbit UX, then exceed it.
-**Key Differentiators:**
-- Multi-perspective review (6 specialized reviewers vs single-pass)
-- Model diversity (each reviewer uses a different model via OpenRouter)
-- Aggregated verdict with override protocol — not binary pass/fail
-- Fully OSS (single codebase, BYOK GitHub Action)
-- Agentic triage — findings auto-remediated via fix PRs
+Cerberus is a GitHub-native, multi-agent code review product. This repository now exposes that product through a thin GitHub Action client plus the Elixir review engine that backs it.
+
+**North Star:** replace noisy AI review with a merge gate teams can trust.
+
+## Product Shape
+
+- **Client:** root `action.yml` + `dispatch.sh`
+- **Engine:** `cerberus-elixir/`
+- **Data:** `defaults/`, `pi/agents/`, `templates/`
+
+The retired Python/Shell matrix pipeline is no longer part of the supported repo surface.
 
 ## Domain Glossary
 
@@ -19,77 +20,27 @@ Canonical source: `docs/TERMINOLOGY.md`
 
 | Term | Definition |
 |------|-----------|
-| Perspective | One reviewer's analytical lens: correctness, security, testing, architecture, resilience, maintainability |
-| Wave | A tier of reviewers that runs in sequence. wave1=flash, wave2=standard, wave3=pro. wave N runs only when wave N-1 exits clean |
-| Verdict | The aggregated outcome: PASS / WARN / FAIL. Emitted by aggregate-verdict.py from all reviewer verdicts |
-| Reviewer | One agentic LLM-powered code reviewer. Emits a JSON verdict block. Six per full run (trace, guard, proof, atlas, fuse, craft). |
-| Finding | A first-class issue claim emitted by a reviewer. Evidence, citations, scope, and severity support the finding; Cerberus should not model separate "verified" vs "unverified" finding types. |
-| SKIP | A reviewer that failed to produce a verdict (timeout, parse failure, etc.) |
-| [stale-knowledge] | Pipeline-added tag indicating a finding may assert stale training-data knowledge (version claims, release dates). Severity preserved — human judges |
-| Override | A `/cerberus override sha=<sha>` comment from an authorized actor, suppressing a FAIL verdict |
-| OSS action | The GitHub Action distribution (BYOK — bring your own key). This repo |
-| ~~Cerberus Cloud~~ | Archived. See `docs/adr/005-single-codebase-oss-only.md` |
-| Pi runtime | The LLM invocation layer used by reviewers. Invoked via `scripts/run-reviewer.py` → `scripts/lib/runtime_facade.py` |
-| Pool | A set of models that reviewers draw from randomly each run, for model diversity |
+| Perspective | One review lens such as correctness, security, testing, or architecture |
+| Reviewer | One LLM-powered reviewer agent inside the Cerberus engine |
+| Verdict | Aggregated outcome for a review run: `PASS`, `WARN`, `FAIL`, or `SKIP` |
+| Finding | A first-class issue claim emitted by a reviewer |
+| Override | Authorized suppression of a failing verdict for a specific SHA |
+| OSS action | The GitHub Action in this repository that dispatches to the hosted API |
+| Engine | The Elixir service in `cerberus-elixir/` that runs reviewers and aggregates results |
 
 ## Active Focus
 
-- **Milestone:** PRIMARY 1: OSS Production Readiness (due 2026-03-14)
-- **Key Issues:** #305 (p1, now), #256 (now), #293 (now), #278 (now)
-- **Theme:** Stop false positives and false negatives. Make verdicts trustworthy enough to use as a merge gate.
+- Make the API-dispatch path reliable enough to be a real merge gate.
+- Keep docs, templates, and the action contract aligned with the Elixir engine.
+- Remove stale compatibility surface whenever it stops paying for itself.
 
 ## Quality Bar
 
-- [ ] Every reviewer produces a verdict (no unexplained SKIPs)
-- [ ] FAIL verdicts contain at least one finding at minor or higher severity
-- [ ] No real bug rated below `minor` when 2+ reviewers agree on it
-- [ ] PR comment is visible (not buried) after each push
-- [ ] Verdict check accurately reflects failure mode (timeout ≠ auth error)
-- [ ] Tests pass at 70%+ coverage: `python3 -m pytest tests/ --cov=scripts`
-
-## Patterns to Follow
-
-### Reviewer prompt structure (in pi/agents/*.md)
-YAML frontmatter (ignored), then body is the system prompt trusted by Pi runtime.
-
-### Error classification in run-reviewer.py
-```python
-# Classify exit codes to retry/skip/fail
-if exit_code == 124:  # timeout
-    error_class = "timeout"
-elif exit_code == 0:
-    error_class = "success"
-else:
-    # fix: unknown error types now retry at least once (2 attempts total)
-    # also classified "Request was aborted" as transient network error
-    error_class = "unknown"
-```
-
-### Verdict comment idempotency pattern (post-comment.sh)
-```bash
-# HTML marker used to find/update existing comment
-MARKER="<!-- cerberus:verdict -->"
-# Find existing comment ID by marker, then edit or create
-```
-
-### Model pool config (defaults/config.yml)
-```yaml
-model:
-  default: openrouter/moonshot-ai/kimi-k2
-  tiers:
-    flash: [...]
-    standard: [...]
-    pro: [...]
-```
-
-## Lessons Learned
-
-| Decision | Outcome | Lesson |
-|----------|---------|--------|
-| Evidence-gated finding severity hid real bugs | Real P1 bugs disappeared behind weaker fallback handling | Findings are first-class claims; evidence supports them, but should not create a second finding category |
-| minimax-m2.5 and mimo-v2-flash in flash pool | Consistent JSON contract failures = SKIP | Remove unreliable models; replace with proven ones |
-| Reusable workflow @master ref with secret forwarding | Supply-chain risk rated info by reviewers | guard.md needs explicit mutable-ref + secret = major |
+- Draft and fork PRs skip cleanly.
+- Completed reviews return a stable aggregated verdict.
+- Consumer docs and templates match the actual action contract.
+- `cd cerberus-elixir && mix test` passes.
+- `shellcheck dispatch.sh` passes.
 
 ---
-*Last updated: 2026-03-12*
-*Updated during: /groom session*
+*Last updated: 2026-03-24*

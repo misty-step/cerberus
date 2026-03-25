@@ -258,7 +258,7 @@ defmodule Cerberus.EngineTest do
                             tool_calls: nil,
                             usage: %{prompt_tokens: 100, completion_tokens: 50}
                           }}
-                        end,
+                       end,
                        reviewer_timeout: reviewer_timeout
                      )
                    )

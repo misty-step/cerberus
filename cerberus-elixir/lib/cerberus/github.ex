@@ -313,7 +313,12 @@ defmodule Cerberus.GitHub do
       req = build_req(opts)
       params = if ref, do: [ref: ref], else: []
 
-      case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
+      case request_with_retry(
+             :get,
+             req,
+             [url: "/repos/#{repo}/contents/#{path}", params: params],
+             opts
+           ) do
         {:ok, %{body: items}} when is_list(items) ->
           {:error, {:not_a_file, path}}
 
@@ -340,12 +345,18 @@ defmodule Cerberus.GitHub do
 
   @doc "Search code in a repository. Returns list of matching items."
   def search_code(repo, query, opts \\ []) do
-    req = build_req(opts) |> Req.merge(headers: [{"accept", "application/vnd.github.text-match+json"}])
+    req =
+      build_req(opts)
+      |> Req.merge(headers: [{"accept", "application/vnd.github.text-match+json"}])
+
     path_filter = Keyword.get(opts, :path_filter)
 
     sanitized = String.replace(query, ~r/(repo|org|user|fork):\S+/i, "")
 
-    safe_filter = if path_filter, do: String.replace(path_filter, ~r/(repo|org|user|fork):\S+/i, ""), else: nil
+    safe_filter =
+      if path_filter,
+        do: String.replace(path_filter, ~r/(repo|org|user|fork):\S+/i, ""),
+        else: nil
 
     q =
       "#{sanitized} repo:#{repo}" <>
@@ -363,7 +374,12 @@ defmodule Cerberus.GitHub do
       req = build_req(opts)
       params = if ref, do: [ref: ref], else: []
 
-      case request_with_retry(:get, req, [url: "/repos/#{repo}/contents/#{path}", params: params], opts) do
+      case request_with_retry(
+             :get,
+             req,
+             [url: "/repos/#{repo}/contents/#{path}", params: params],
+             opts
+           ) do
         {:ok, %{body: items}} when is_list(items) ->
           {:ok, items}
 

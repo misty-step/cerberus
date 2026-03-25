@@ -9,7 +9,8 @@ defmodule Cerberus.Tools.GithubReadHandler do
   alias Cerberus.GitHub
 
   @doc "Build a tool handler closure for the given repo and ref."
-  @spec build(String.t(), String.t(), keyword()) :: (map() -> {:ok, String.t()} | {:error, String.t()})
+  @spec build(String.t(), String.t(), keyword()) :: (map() ->
+                                                       {:ok, String.t()} | {:error, String.t()})
   def build(repo, ref, github_opts) do
     fn call -> dispatch(call, repo, ref, github_opts) end
   end
@@ -25,7 +26,9 @@ defmodule Cerberus.Tools.GithubReadHandler do
 
   defp dispatch(%{name: "search_code", arguments: args}, repo, _ref, opts) do
     query = args["query"] || ""
-    search_opts = if args["path_filter"], do: Keyword.put(opts, :path_filter, args["path_filter"]), else: opts
+
+    search_opts =
+      if args["path_filter"], do: Keyword.put(opts, :path_filter, args["path_filter"]), else: opts
 
     case GitHub.search_code(repo, query, search_opts) do
       {:ok, []} -> {:ok, "No results found for: #{query}"}
@@ -79,7 +82,10 @@ defmodule Cerberus.Tools.GithubReadHandler do
     items
     |> Enum.map(fn item ->
       path = item["path"] || item["name"] || "?"
-      fragments = (get_in(item, ["text_matches", Access.all(), "fragment"]) || []) |> Enum.reject(&is_nil/1)
+
+      fragments =
+        (get_in(item, ["text_matches", Access.all(), "fragment"]) || []) |> Enum.reject(&is_nil/1)
+
       frag_text = if fragments == [], do: "", else: "\n  " <> Enum.join(fragments, "\n  ")
       "#{path}#{frag_text}"
     end)
@@ -102,7 +108,10 @@ defmodule Cerberus.Tools.GithubReadHandler do
   defp format_error({:invalid_path, path}), do: "Invalid path (traversal or absolute): #{path}"
   defp format_error({:decode_error, path}), do: "Failed to decode file content: #{path}"
   defp format_error({:unexpected_response, path}), do: "Unexpected API response for: #{path}"
-  defp format_error({:file_too_large, path, size}), do: "File too large for contents API (#{size} bytes): #{path}"
+
+  defp format_error({:file_too_large, path, size}),
+    do: "File too large for contents API (#{size} bytes): #{path}"
+
   defp format_error({:not_a_file, path}), do: "Path is a directory, not a file: #{path}"
   defp format_error({:not_a_directory, path}), do: "Path is a file, not a directory: #{path}"
   defp format_error(other), do: "Error: #{inspect(other)}"

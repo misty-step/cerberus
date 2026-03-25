@@ -41,7 +41,10 @@ defmodule Cerberus.Tools.GithubReadHandlerTest do
         end)
 
       handler = GithubReadHandler.build(@repo, @ref, gh_opts(req))
-      assert {:ok, text} = handler.(%{name: "get_file_contents", arguments: %{"path" => "lib/foo.ex"}})
+
+      assert {:ok, text} =
+               handler.(%{name: "get_file_contents", arguments: %{"path" => "lib/foo.ex"}})
+
       assert text == "hello world\n"
     end
 
@@ -72,7 +75,10 @@ defmodule Cerberus.Tools.GithubReadHandlerTest do
         end)
 
       handler = GithubReadHandler.build(@repo, @ref, gh_opts(req))
-      assert {:error, msg} = handler.(%{name: "get_file_contents", arguments: %{"path" => "missing.ex"}})
+
+      assert {:error, msg} =
+               handler.(%{name: "get_file_contents", arguments: %{"path" => "missing.ex"}})
+
       assert is_binary(msg)
       assert msg =~ "404"
     end
@@ -110,7 +116,10 @@ defmodule Cerberus.Tools.GithubReadHandlerTest do
 
     test "rejects path traversal" do
       handler = GithubReadHandler.build(@repo, @ref, [])
-      assert {:error, msg} = handler.(%{name: "get_file_contents", arguments: %{"path" => "../etc/passwd"}})
+
+      assert {:error, msg} =
+               handler.(%{name: "get_file_contents", arguments: %{"path" => "../etc/passwd"}})
+
       assert msg =~ "traversal"
     end
 
@@ -209,7 +218,10 @@ defmodule Cerberus.Tools.GithubReadHandlerTest do
         end)
 
       handler = GithubReadHandler.build(@repo, @ref, gh_opts(req))
-      assert {:error, msg} = handler.(%{name: "list_directory", arguments: %{"path" => "nonexistent"}})
+
+      assert {:error, msg} =
+               handler.(%{name: "list_directory", arguments: %{"path" => "nonexistent"}})
+
       assert is_binary(msg)
     end
   end

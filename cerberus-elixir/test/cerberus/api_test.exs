@@ -441,7 +441,8 @@ defmodule Cerberus.APITest do
       assert_receive {:pipeline_finished, ^review_id, {:ok, _aggregated}}, 5_000
     end
 
-    test "treats whitespace-only github_token as omitted before calling the injected builder", ctx do
+    test "treats whitespace-only github_token as omitted before calling the injected builder",
+         ctx do
       test_pid = self()
 
       pipeline_fn =

@@ -1,206 +1,68 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This repository now has one supported delivery path:
 
-## What This Is
+- root `action.yml` is the Cerberus GitHub Action
+- root `dispatch.sh` is its polling client
+- `cerberus-elixir/` contains the review engine and HTTP API
 
-Cerberus is a multi-agent AI code review system shipped as a GitHub Action. Six parallel Pi-runtime reviewers (powered by Kimi K2.5 via OpenRouter by default) each analyze a PR diff from a specialized perspective, then a verdict action aggregates their verdicts into a single merge-gating check.
-
-Repo scope: this is the single Cerberus codebase. OSS GitHub Action, BYOK model key. See `docs/adr/005-single-codebase-oss-only.md`.
-
-## LLM-First Policy (Mandatory)
-
-For semantic tasks (classification, relevance, intent mapping, finding triage, acceptance-criteria compliance), default to LLM reasoning instead of deterministic heuristics.
-
-Do not ship heuristic-only semantic systems (regex ladders, keyword scorecards, static decision trees) unless the problem is strictly syntactic.
-
-Deterministic logic is reserved for:
-- hard validation (schema/type/range)
-- exact protocol parsing
-- security and permission constraints
-
-If deterministic logic is used for semantics anyway, PR must include explicit rationale and quantified risk.
-
-### Review Context Boundary
-
-Deterministic bootstrap in workflow steps is limited to prompt scaffolding data:
-- PR diff
-- PR metadata (title/author/branches/body)
-
-Semantic review context must be retrieved by reviewer agents through the read-only `github_read` tool:
-- linked issues and acceptance criteria
-- PR discussion/comments
-- broader issue/backlog context
-
-Do not reintroduce regex/keyword linked-issue inference or acceptance-criteria injection in action glue code.
-
-## Default Operating Frame
-
-For most Cerberus work, use these companion frames by default:
-- `context-engineering` for prompt/instruction quality, retrieval boundaries, and memory hygiene
-- `llm-infrastructure` for model currency, prompt discipline, eval coverage, routing, and trace review
-- `harness-engineering` for feedback loops, mechanical enforcement, and agent-friendly repo ergonomics
-
-If one of these frames does not apply to a task, say why briefly instead of silently skipping it.
+The retired Python/Shell matrix pipeline has been removed from the active repo surface.
 
 ## Architecture
 
 ```text
-PR opened/synced
+pull_request event
     │
     ▼
-consumer workflow (.github/workflows/cerberus.yml)
+action.yml
     │
-    ├── preflight job (always runs first)
-    │   └── uses: misty-step/cerberus/preflight@master  (preflight/action.yml)
-    │       ├── check: fork PR? → skip (no secrets available)
-    │       ├── check: draft PR? → skip + optional PR comment
-    │       ├── check: missing API key? → skip + optional PR comment
-    │       └── outputs: should_run (bool), skip_reason (enum)
+    ▼
+dispatch.sh
     │
-    ├── matrix job × N reviewers (if: should_run, parallel, fail-fast: false)
-    │   └── uses: misty-step/cerberus@master  (action.yml)
-    │       ├── fetch PR diff/context
-    │       ├── run-reviewer.sh   (prompt + Pi runtime invocation)
-    │       ├── parse-review.py   (extract + validate JSON verdict)
-    │       ├── post-comment.sh   (optional per-reviewer PR comment)
-    │       └── upload verdict artifact
-    │
-    ├── verdict job (needs: review, if: always() && should_run)
-    │   └── uses: misty-step/cerberus/verdict@master  (verdict/action.yml)
-    │       ├── download verdict artifacts
-    │       ├── aggregate-verdict.py  (override handling + verdict decision)
-    │       ├── post verdict comment
-    │       ├── post PR review w/ inline comments
-    │       └── optional fail on FAIL
-    │
-    └── triage job (optional, separate workflow/job)
-        └── uses: misty-step/cerberus/triage@master  (triage/action.yml)
-            ├── read verdict/comment state
-            ├── enforce loop guards (`[triage]`, per-SHA attempt cap)
-            ├── post diagnosis
-            └── optional fix command + `[triage]` commit push
+    ├── POST /api/reviews
+    ├── poll GET /api/reviews/:id
+    └── emit verdict output
+
+cerberus-elixir/
+    ├── API endpoint
+    ├── reviewer orchestration
+    ├── verdict aggregation
+    └── persistence / telemetry
 ```
 
-The consumer defines the reviewer matrix in its own workflow. This repository provides only the reusable actions and support files.
+## Key Files
 
-Inside the review action, `CERBERUS_ROOT` is set to `${{ github.action_path }}`. Scripts, agent configs, and templates are resolved relative to that root (`scripts/`, `pi/agents/`, `templates/`, `defaults/`).
+- `action.yml` - thin GitHub Action entrypoint
+- `dispatch.sh` - preflight + API dispatch + polling loop
+- `cerberus-elixir/lib/cerberus/` - engine modules
+- `cerberus-elixir/config/` - runtime config
+- `defaults/config.yml` - product/model defaults consumed by the engine
+- `pi/agents/*.md` - reviewer personas
+- `templates/consumer-workflow-reusable.yml` - recommended consumer workflow
+- `bin/cerberus.js` - scaffolder CLI
 
-### The Six Reviewers
-
-The router selects a focused panel from the full bench per PR, dispatched in parallel.
-Model tier (flash/standard/pro) is assigned by the router based on PR complexity.
-
-| Codename | Perspective | Focus |
-|----------|-------------|-------|
-| trace | correctness | Logic bugs, edge cases, type mismatches |
-| guard | security | Threat model, injection, auth flaws |
-| proof | testing | Test coverage gaps, regression risk |
-| atlas | architecture | Design patterns, module boundaries, coupling |
-| fuse | resilience | Failure handling, retries, graceful degradation |
-| craft | maintainability | DX, readability, future maintenance cost |
-
-Shell/bash access is denied per agent via `permission` in the agent markdown frontmatter.
-
-### Key Files
-
-- `action.yml` - review composite action entrypoint
-- `preflight/action.yml` - skip-condition gate (fork/draft/missing key) with PR comment support
-- `verdict/action.yml` - verdict composite action entrypoint
-- `triage/action.yml` - triage composite action entrypoint
-- `validate/action.yml` - consumer workflow validator (misconfig guardrail)
-- `defaults/config.yml` - verdict settings, reviewer list, verdict thresholds, override rules
-- `pi/agents/<perspective>.md` - perspective system prompts (YAML frontmatter + body)
-- `defaults/reviewer-profiles.yml` - Pi runtime profile settings (provider/model/tools/extensions/skills)
-- `templates/review-prompt.md` - user prompt template with `{{PLACEHOLDER}}` vars filled from PR context
-- `templates/consumer-workflow-reusable.yml` - recommended workflow for downstream repositories
-- `templates/workflow-lint.yml` - optional workflow to catch YAML/syntax issues early
-- `scripts/fetch-pr-bootstrap.py` - adapter-backed bootstrap fetch for `pr.diff` and `pr-context.json`
-- `scripts/lib/review_run_bootstrap.py` - shared bootstrap module for PR artifact persistence and `review-run.json` assembly
-- `scripts/run-reviewer.sh` - orchestrates one reviewer via `scripts/run-reviewer.py` and Pi runtime
-- `scripts/parse-review.py` - extracts last ` ```json ` block, validates required fields/types
-- `scripts/post-comment.sh` - formats findings as markdown, upserts comment using HTML marker for idempotency
-- `scripts/lib/github_platform.py` - GitHub adapter for shared `gh` transport, bootstrap PR reads, PR comments, review reads/writes, and PR file metadata
-- `scripts/lib/github.py` - review-path GitHub helpers (comment marker/idempotency, PR reviews, PR file metadata) layered on the GitHub platform adapter
-- `scripts/aggregate-verdict.py` - reads verdict JSON artifacts, applies override logic, writes aggregated verdict
-- `scripts/post-verdict-review.py` - posts a single PR review with inline comments (best-effort) for verdict findings
-- `scripts/triage.py` - triage trigger router + circuit breaker + diagnosis/fix runtime
-
-## Verdict Logic
-
-Each reviewer emits: `FAIL` (any critical OR 2+ major) | `WARN` (1 major OR 5+ minor OR 3+ minor in same category) | `PASS`.
-Only findings from reviews with confidence >= 0.7 count toward these thresholds.
-
-Cerberus verdict: `FAIL` on a critical reviewer FAIL or 2+ reviewer FAILs (unless overridden) | `WARN` on any WARN or a single non-critical FAIL | `PASS` otherwise.
-
-Override: `/cerberus override sha=<sha>` comment on PR with reason. SHA must match HEAD. Actor constraints per `defaults/config.yml`.
-
-## Output Schema
-
-Every reviewer must end with a JSON block containing: `reviewer`, `perspective`, `verdict`, `confidence` (0-1), `summary`, `findings[]` (each with severity/category/file/line/title/description/suggestion), `stats` (files_reviewed, files_with_issues, critical, major, minor, info).
-
-Optional reviewer root fields:
-- `ac_compliance` (object) — structured acceptance-criteria evaluation with `total`, `satisfied`, `not_satisfied`, `cannot_determine`, and `details[]` (`ac`, `status`, `evidence`). Omit it when the review context had no acceptance criteria or the notes never evaluated them.
-
-Optional finding fields:
-- `evidence` (string) — exact code quote backing the claim
-- `scope` (string) — `diff` or `defaults-change`
-- `suggestion_verified` (boolean) — `true` if the suggestion was traced through the codebase and confirmed feasible; `false` if speculative
-
-Findings are first-class review items. Evidence, citations, and scope support the finding; Cerberus should not model separate "verified" vs "unverified" finding types.
-Unsupported reviewer root or finding fields fail validation. Deprecated finding-marker fields and title prefixes such as `[unverified]` or `[speculative]` are invalid input, not compatibility aliases.
-
-Optional fields added by the pipeline:
-- `_diagnostics` (object) — explicit parser/runtime diagnostics envelope for pipeline-only metadata such as stats corrections or stale-knowledge annotations; not part of the reviewer-authored contract.
-- `_extraction_usage` (object) — structured-extraction token usage, preserved for downstream cost reporting.
-- `runtime_seconds` (int) — wall-clock seconds for the review, injected by action.yml after parsing.
-- `raw_review` (string, max 50 KB) — preserved when JSON parsing fails but the model produced substantive text. Stored in fallback/partial verdicts for debugging via workflow logs/artifacts (not rendered in PR comments).
-
-## Pi Runtime
-
-- Model: selected in `defaults/config.yml` (`reviewers[].model` or `model.default`), overridable via action input `model`. Set `model: pool` on a reviewer to randomly assign from `model.pool`/`model.tiers` each run.
-- Env vars: `CERBERUS_OPENROUTER_API_KEY` (preferred), `OPENROUTER_API_KEY` (legacy)
-- Perspective prompt: `pi/agents/<perspective>.md` (frontmatter ignored, body used as trusted system prompt)
-- Runtime profile config: `defaults/reviewer-profiles.yml`
-- Invocation path: `scripts/run-reviewer.sh` -> `scripts/run-reviewer.py` -> `scripts/lib/runtime_facade.py` (Pi CLI `--print` mode)
-- Runtime executes in isolated HOME and emits telemetry to `${CERBERUS_TMP}/<perspective>-runtime-telemetry.ndjson`
-
-## Testing Locally
+## Local Commands
 
 ```bash
-# Run test suite
-pip install pytest pytest-cov pyyaml
-python3 -m pytest tests/ -v
+node --check bin/cerberus.js
+shellcheck dispatch.sh
 
-# Or use the helper script
-./tests/run-tests.sh
-
-# Run with coverage
-COVERAGE=1 ./tests/run-tests.sh
-# Or directly:
-python3 -m pytest tests/ --cov=scripts --cov-report=term-missing
-
-# Lint
-shellcheck scripts/*.sh
-python3 -m py_compile scripts/parse-review.py
-python3 -m py_compile scripts/aggregate-verdict.py
+cd cerberus-elixir
+mix deps.get
+mix test
+mix format --check-formatted
 ```
 
-Coverage is enforced in CI at 70% (see `.coveragerc`). Configuration: `pytest.ini`, `.coveragerc`.
+## Default Operating Frame
 
-End-to-end testing requires pushing to a branch and having a target repo use `misty-step/cerberus@<branch>`. Current test target: `misty-step/moonbridge`.
+For most Cerberus work, use these companion frames by default:
 
-## GitHub Actions Gotchas
+- `context-engineering`
+- `llm-infrastructure`
+- `harness-engineering`
 
-- `gh pr view --json comments` returns GraphQL node IDs - use `gh api repos/.../issues/N/comments` for REST numeric IDs
-- REST issue comment payloads expose actor as `user.login`; `author.login` is GraphQL-specific
-- When testing workflow `--jq` snippets in YAML, assert key field usage (e.g. `.user.login`) without exact full-string matching to avoid whitespace-only test failures
-- `pull-requests: write` permission is required for posting PR comments
-- Secrets are snapshotted per workflow run - push a new commit to pick up secret changes
-- `set -e` in steps means any command failure stops the step; review step uses `set +e` around `run-reviewer.sh` deliberately
+If one does not apply, say why briefly.
 
-## Deployment
+## LLM-First Rule
 
-Consumers reference this repo as a GitHub Action. See `templates/consumer-workflow-reusable.yml` for the recommended setup. The only required secret is `CERBERUS_OPENROUTER_API_KEY`.
-
-Tagged releases follow semver. Organization repos can track `@master` when they intentionally want latest defaults.
+For semantic tasks such as review classification, prioritization, or intent mapping, prefer LLM reasoning over deterministic heuristics. Use deterministic logic only for strict syntax, schema, safety, or protocol enforcement.

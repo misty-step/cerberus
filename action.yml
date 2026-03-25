@@ -1,5 +1,5 @@
-name: 'Cerberus Review'
-description: 'Run a single Cerberus code review perspective'
+name: 'Cerberus Review (API)'
+description: 'Dispatch a Cerberus code review via the hosted API. Replaces the heavy GHA pipeline with a thin HTTP client.'
 author: 'misty-step'
 
 branding:
@@ -7,476 +7,56 @@ branding:
   color: 'red'
 
 inputs:
-  perspective:
-    description: 'Review perspective (must match defaults/config.yml reviewer perspectives)'
-    required: true
   github-token:
-    description: 'GitHub token for PR comments'
-    required: true
+    description: 'GitHub token used by the hosted Cerberus pipeline for PR reads and writes. Sent per request; not persisted.'
+    required: false
+    default: ''
   api-key:
-    description: 'OpenRouter API key (optional if CERBERUS_API_KEY, CERBERUS_OPENROUTER_API_KEY, or OPENROUTER_API_KEY env is set)'
+    description: 'Cerberus API authentication key'
+    required: true
+  cerberus-url:
+    description: 'Cerberus API base URL override for self-hosted or non-default deployments'
     required: false
-  kimi-api-key:
-    description: 'Deprecated alias for api-key (OpenRouter API key)'
-    required: false
+    default: 'https://cerberus.fly.dev'
   model:
-    description: 'Model name (optional). If set, overrides per-reviewer config for this review (Cerberus will annotate when overridden).'
+    description: 'Reserved model override. Accepted by the API but not yet wired to reviewer selection.'
     default: ''
-  model-tier:
-    description: 'Model complexity tier propagated from router output (flash, standard, pro).'
-    default: 'standard'
-  model-wave:
-    description: 'Optional wave name for wave-specific model pools (wave1, wave2, wave3).'
-    default: ''
-  artifact-suffix:
-    description: 'Optional suffix used for uploaded artifact names. Defaults to perspective.'
-    default: ''
-  fallback-models:
-    description: 'Comma-separated fallback model names, tried in order when primary model fails with transient errors'
-    default: 'openrouter/google/gemini-3-flash-preview,openrouter/z-ai/glm-5'
-  max-steps:
-    description: 'Max agentic steps per review'
-    default: '25'
   timeout:
-    description: 'Review timeout in seconds'
+    description: 'Maximum seconds to wait for review completion'
     default: '600'
-  pi-version:
-    description: 'Pi CLI version to install'
-    default: '0.55.0'
-  opencode-version:
-    description: 'Deprecated alias for pi-version (only used when pi-version is empty)'
-    default: ''
-  comment-policy:
-    description: 'When to post reviewer comment to PR: never, non-pass (WARN/FAIL/SKIP), or always'
-    default: ''
-  post-comment:
-    description: 'Deprecated alias for comment-policy (back-compat): never, non-pass, always, true/false'
-    default: 'never'
-  fail-on-skip:
-    description: 'Exit with failure if review verdict is SKIP (timeout/API error)'
-    default: 'false'
+  poll-interval:
+    description: 'Seconds between status polls'
+    default: '5'
   fail-on-verdict:
-    description: 'Exit with failure (exit code 1) if the reviewer verdict is FAIL. Enables branch protection on individual reviewer checks.'
-    default: 'false'
-  context:
-    description: 'Optional project context (maintainer-provided). Included in reviewer prompt. Do not include secrets.'
-    default: ''
+    description: 'Exit with failure if aggregated verdict is FAIL'
+    default: 'true'
 
 outputs:
   verdict:
-    description: 'Review verdict (PASS, WARN, FAIL, SKIP)'
-    value: ${{ steps.parse.outputs.verdict }}
-  verdict-json:
-    description: 'Path to verdict JSON file'
-    value: ${{ steps.parse.outputs.verdict-json }}
+    description: 'Aggregated review verdict (PASS, WARN, FAIL, SKIP)'
+    value: ${{ steps.dispatch.outputs.verdict }}
+  review-id:
+    description: 'Cerberus API review run ID'
+    value: ${{ steps.dispatch.outputs.review-id }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Create isolated temp directory
-      shell: bash
-      run: |
-        cerberus_tmp="$(mktemp -d -t cerberus.XXXXXX)"
-        chmod 0700 "$cerberus_tmp"
-        echo "CERBERUS_TMP=${cerberus_tmp}" >> "$GITHUB_ENV"
-
-    - name: Check fork safety
+    - name: Preflight + Dispatch
+      id: dispatch
       shell: bash
       env:
-        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-        BASE_REPO: ${{ github.repository }}
-      run: |
-        if [[ -n "$HEAD_REPO" && "$HEAD_REPO" != "$BASE_REPO" ]]; then
-          echo "::error::Cerberus does not run on fork PRs to protect secrets. Use pull_request trigger (not pull_request_target) and gate on same-repo PRs."
-          exit 1
-        fi
-
-    - name: Resolve API key
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}
-        INPUT_API_KEY: ${{ inputs.api-key }}
-        INPUT_KIMI_API_KEY: ${{ inputs.kimi-api-key }}
-        CERBERUS_API_KEY: ${{ env.CERBERUS_API_KEY }}
-        CERBERUS_OPENROUTER_API_KEY: ${{ env.CERBERUS_OPENROUTER_API_KEY }}
-        OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
-      run: |
-        chmod +x "$CERBERUS_ROOT/scripts/validate-inputs.sh"
-        "$CERBERUS_ROOT/scripts/validate-inputs.sh"
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-
-    - name: Install Python deps
-      shell: bash
-      run: pip install pyyaml --quiet
-
-    - name: Validate perspective
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}
-        PERSPECTIVE: ${{ inputs.perspective }}
-      run: |
-        python3 "$CERBERUS_ROOT/scripts/validate-perspective.py" \
-          --config "$CERBERUS_ROOT/defaults/config.yml" \
-          --perspective "$PERSPECTIVE"
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v5
-      with:
-        node-version: '22'
-        package-manager-cache: false
-
-    - name: Install Pi CLI
-      shell: bash
-      env:
-        PI_VERSION: ${{ inputs.pi-version }}
-        LEGACY_OPENCODE_VERSION: ${{ inputs.opencode-version }}
-      run: |
-        # Must match inputs.pi-version.default above.
-        default_pi_version='0.55.0'
-        resolved_version="$PI_VERSION"
-
-        if [[ -n "$LEGACY_OPENCODE_VERSION" && ( -z "$PI_VERSION" || "$PI_VERSION" == "$default_pi_version" ) ]]; then
-          echo "::warning::Input 'opencode-version' is deprecated. Use 'pi-version'."
-          resolved_version="$LEGACY_OPENCODE_VERSION"
-        elif [[ -n "$LEGACY_OPENCODE_VERSION" && "$PI_VERSION" != "$LEGACY_OPENCODE_VERSION" ]]; then
-          echo "::warning::Both 'pi-version' and deprecated 'opencode-version' were provided; using 'pi-version'."
-        fi
-
-        if [[ ! "$resolved_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid pi-version format: $resolved_version"
-          exit 1
-        fi
-        npm i -g "@mariozechner/pi-coding-agent@${resolved_version}"
-        pi --version
-
-    - name: Fetch PR context
-      id: pr
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}
-        GH_TOKEN: ${{ inputs.github-token }}
-        REPO: ${{ github.repository }}
+        CERBERUS_API_KEY: ${{ inputs.api-key }}
+        CERBERUS_URL: ${{ inputs.cerberus-url }}
+        CERBERUS_MODEL: ${{ inputs.model }}
+        CERBERUS_TIMEOUT: ${{ inputs.timeout }}
+        CERBERUS_POLL_INTERVAL: ${{ inputs.poll-interval }}
+        CERBERUS_FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        IS_DRAFT: ${{ github.event.pull_request.draft }}
       run: |
-        if ! command -v gh >/dev/null 2>&1; then
-          echo "::error::gh CLI not found on runner (required for PR context fetch)"
-          exit 1
-        fi
-        echo "pr-context-error-kind=" >> "$GITHUB_OUTPUT"
-        echo "pr-context-error-message=" >> "$GITHUB_OUTPUT"
-
-        if [[ -z "$PR_NUMBER" ]]; then
-          echo "::error::This action must be triggered by a pull_request event"
-          echo "pr-context-error-kind=other" >> "$GITHUB_OUTPUT"
-          echo "pr-context-error-message=Missing pull request number for gh context fetch." >> "$GITHUB_OUTPUT"
-          exit 1
-        fi
-        # Deterministic bootstrap only: prompt scaffolding data.
-        # Semantic context (issues/comments/acceptance criteria) is fetched in-runtime via github_read.
-        if ! python3 "$CERBERUS_ROOT/scripts/fetch-pr-bootstrap.py" \
-          --repo "$REPO" \
-          --pr "$PR_NUMBER" \
-          --diff-file "$CERBERUS_TMP/pr.diff" \
-          --pr-context-file "$CERBERUS_TMP/pr-context.json" \
-          --result-file "$CERBERUS_TMP/pr-bootstrap-result.json"; then
-          if [[ -f "$CERBERUS_TMP/pr-bootstrap-result.json" ]]; then
-            pr_view_error_kind="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_kind\", \"other\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
-            pr_view_error_text="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding=\"utf-8\")).get(\"error_message\", \"\"))' "$CERBERUS_TMP/pr-bootstrap-result.json")"
-          else
-            pr_view_error_kind="other"
-            pr_view_error_text="Bootstrap helper failed before writing pr-bootstrap-result.json."
-          fi
-          echo "pr-context-error-kind=${pr_view_error_kind}" >> "$GITHUB_OUTPUT"
-          # Keep a larger log breadcrumb, then compress output value.
-          pr_view_error_text="$(echo "$pr_view_error_text" | sed -E 's/[[:space:]]+/ /g')"
-          echo "gh pr view failure detail: $(printf '%s' "$pr_view_error_text" | cut -c1-4000)"
-          pr_view_error_text="$(printf '%s' "$pr_view_error_text" | cut -c1-1000)"
-          echo "pr-context-error-message=${pr_view_error_text}" >> "$GITHUB_OUTPUT"
-          echo "::error::Failed to fetch PR context via gh pr view."
-          case "$pr_view_error_kind" in
-            auth)
-              echo "Likely cause: invalid/expired github-token (Bad credentials / HTTP 401)."
-              ;;
-            permissions)
-              echo "Likely cause: insufficient workflow permissions (pull-requests: read) or incorrect token scope."
-              ;;
-            *)
-              echo "Likely cause: rate limits, transient GitHub outage, or malformed workflow token permissions."
-              ;;
-          esac
-          echo ""
-          echo "Fix (recommended):"
-          echo "permissions:"
-          echo "  contents: read"
-          echo "  pull-requests: read"
-          exit 1
-        fi
-
-        python3 "$CERBERUS_ROOT/scripts/bootstrap-review-run.py" \
-          --repo "$REPO" \
-          --pr "$PR_NUMBER" \
-          --diff-file "$CERBERUS_TMP/pr.diff" \
-          --pr-context-file "$CERBERUS_TMP/pr-context.json" \
-          --output "$CERBERUS_TMP/review-run.json"
-
-        echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-    - name: Run review
-      id: review
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}
-        PERSPECTIVE: ${{ inputs.perspective }}
-        OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
-        PI_MODEL: ${{ inputs.model }}
-        OPENCODE_MODEL: ${{ inputs.model }}
-        MODEL_TIER: ${{ inputs.model-tier }}
-        MODEL_WAVE: ${{ inputs.model-wave }}
-        # GitHub auth forwarded for the github_read extension inside isolated runtime.
-        # Token permissions depend on the caller-supplied github-token input.
-        GH_TOKEN: ${{ inputs.github-token }}
-        CERBERUS_CONTEXT: ${{ inputs.context }}
-        CERBERUS_FALLBACK_MODELS: ${{ inputs.fallback-models }}
-        OPENCODE_MAX_STEPS: ${{ inputs.max-steps }}
-        REVIEW_TIMEOUT: ${{ inputs.timeout }}
-        CERBERUS_REVIEW_RUN: ${{ env.CERBERUS_TMP }}/review-run.json
-      run: |
-        chmod +x "$CERBERUS_ROOT/scripts/run-reviewer.sh"
-        review_started_at=$(date +%s)
-        set +e
-        "$CERBERUS_ROOT/scripts/run-reviewer.sh" "$PERSPECTIVE"
-        review_exit=$?
-        review_finished_at=$(date +%s)
-        runtime_seconds=$((review_finished_at - review_started_at))
-        printf '%s\n' "$runtime_seconds" > "${CERBERUS_TMP}/${PERSPECTIVE}-runtime-seconds"
-        exit "$review_exit"
-
-    - name: Parse review output
-      if: always()
-      id: parse
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}
-        PERSPECTIVE: ${{ inputs.perspective }}
-        PRIMARY_MODEL: ${{ inputs.model }}
-        ARTIFACT_SUFFIX: ${{ inputs.artifact-suffix || inputs.perspective }}
-        GH_DIFF_FILE: ${{ env.CERBERUS_TMP }}/pr.diff
-        MODEL_WAVE: ${{ inputs.model-wave }}
-      run: |
-        # Resolve reviewer name written by run-reviewer.sh (e.g. APOLLO).
-        # Falls back to uppercased perspective if the file is missing.
-        REVIEWER_NAME_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-reviewer-name"
-        if [[ -s "$REVIEWER_NAME_FILE" ]]; then
-          REVIEWER_NAME="$(cat "$REVIEWER_NAME_FILE")"
-        else
-          REVIEWER_NAME="${PERSPECTIVE^^}"
-        fi
-        export REVIEWER_NAME
-
-        # Use scratchpad if available, else stdout
-        PARSE_INPUT="${CERBERUS_TMP}/${PERSPECTIVE}-output.txt"
-        if [[ "${{ steps.pr.outcome }}" != "success" && -n "${{ steps.pr.outputs.pr-context-error-kind }}" ]]; then
-          parse_error_kind="${{ steps.pr.outputs.pr-context-error-kind }}"
-          parse_error_msg="${{ steps.pr.outputs.pr-context-error-message }}"
-          if [[ "$parse_error_kind" == "auth" ]]; then
-            printf '%s\n%s\n%s\n%s\n%s\n' \
-              "API Error: API_KEY_INVALID" \
-              "" \
-              "Unable to fetch PR context because the workflow token is invalid or expired." \
-              "HTTP 401 Bad credentials was returned by GitHub CLI." \
-              "$parse_error_msg" > "$PARSE_INPUT"
-          elif [[ "$parse_error_kind" == "permissions" ]]; then
-            printf '%s\n%s\n%s\n%s\n%s\n' \
-              "API Error: API_ERROR" \
-              "" \
-              "Unable to fetch PR context due to GitHub permissions constraints." \
-              "Run check: workflow token has pull-requests: read access and valid repository scope." \
-              "$parse_error_msg" > "$PARSE_INPUT"
-          else
-            printf '%s\n%s\n%s\n%s\n' \
-              "API Error: API_ERROR" \
-              "" \
-              "Unable to fetch PR context:" \
-              "$parse_error_msg" > "$PARSE_INPUT"
-          fi
-        fi
-        if [[ -f "${CERBERUS_TMP}/${PERSPECTIVE}-parse-input" ]]; then
-          PARSE_INPUT="$(cat "${CERBERUS_TMP}/${PERSPECTIVE}-parse-input")"
-        fi
-        set +e
-        python3 "$CERBERUS_ROOT/scripts/parse-review.py" "$PARSE_INPUT" > "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
-        parse_exit=$?
-        set -e
-        if [[ $parse_exit -ne 0 ]]; then
-          if [[ -s "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" ]] && \
-             jq -e '.verdict' "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" >/dev/null 2>&1; then
-            echo "::warning::parse-review.py exited $parse_exit but wrote fallback verdict"
-          else
-            exit $parse_exit
-          fi
-        fi
-        RUNTIME_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-runtime-seconds"
-        if [[ -f "$RUNTIME_FILE" ]]; then
-          runtime_seconds="$(cat "$RUNTIME_FILE")"
-          if [[ "$runtime_seconds" =~ ^[0-9]+$ ]]; then
-            tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.runtime.json"
-            jq --argjson runtime_seconds "$runtime_seconds" '.runtime_seconds = $runtime_seconds' "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
-            mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
-          fi
-        fi
-        # Inject model metadata from run-reviewer.sh
-        MODEL_USED_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-model-used"
-        if [[ -s "$MODEL_USED_FILE" ]]; then
-          model_used="$(cat "$MODEL_USED_FILE")"
-          PRIMARY_MODEL_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-primary-model"
-          if [[ -s "$PRIMARY_MODEL_FILE" ]]; then
-            primary_model="$(cat "$PRIMARY_MODEL_FILE")"
-          else
-            primary_model="${PRIMARY_MODEL:-openrouter/moonshotai/kimi-k2.5}"
-          fi
-          CONFIGURED_MODEL_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-configured-model"
-          configured_model=""
-          if [[ -s "$CONFIGURED_MODEL_FILE" ]]; then
-            configured_model="$(cat "$CONFIGURED_MODEL_FILE")"
-          fi
-          fallback_used="false"
-          if [[ "$model_used" != "$primary_model" ]]; then
-            fallback_used="true"
-          fi
-          tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.model.json"
-          jq --arg mu "$model_used" --arg pm "$primary_model" --arg cm "$configured_model" --arg mw "$MODEL_WAVE" --argjson fb "$fallback_used" \
-            '.model_used = $mu | .primary_model = $pm | .configured_model = $cm | .fallback_used = $fb | .model_wave = $mw' \
-            "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
-          mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
-        fi
-
-        # Inject reviewer description (human-friendly label) from run-reviewer.sh.
-        REVIEWER_DESC_FILE="${CERBERUS_TMP}/${PERSPECTIVE}-reviewer-desc"
-        if [[ -s "$REVIEWER_DESC_FILE" ]]; then
-          reviewer_desc="$(cat "$REVIEWER_DESC_FILE")"
-          tmp_json="${CERBERUS_TMP}/${PERSPECTIVE}-verdict.desc.json"
-          jq --arg rd "$reviewer_desc" '.reviewer_description = $rd' "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" > "$tmp_json"
-          mv "$tmp_json" "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json"
-        fi
-        VERDICT=$(jq -r .verdict "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json")
-        if [[ ! "$VERDICT" =~ ^(PASS|WARN|FAIL|SKIP)$ ]]; then
-          echo "::error::Invalid verdict value from parser: $VERDICT"
-          exit 1
-        fi
-        # Copy verdict JSON to RUNNER_TEMP so the output path survives CERBERUS_TMP cleanup.
-        artifact_suffix_safe="$(printf '%s' "$ARTIFACT_SUFFIX" | tr -c 'A-Za-z0-9._-' '_')"
-        stable_json="${RUNNER_TEMP}/cerberus-${PERSPECTIVE}-${artifact_suffix_safe}-verdict.json"
-        cp "${CERBERUS_TMP}/${PERSPECTIVE}-verdict.json" "$stable_json"
-        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
-        echo "verdict-json=${stable_json}" >> "$GITHUB_OUTPUT"
-
-    - name: Post PR comment
-      if: steps.parse.outcome == 'success'
-      shell: bash
-      env:
-        CERBERUS_ROOT: ${{ github.action_path }}
-        GH_TOKEN: ${{ inputs.github-token }}
-        PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
-        PERSPECTIVE: ${{ inputs.perspective }}
-        GH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        COMMENT_POLICY: ${{ inputs.comment-policy || inputs.post-comment }}
-        VERDICT: ${{ steps.parse.outputs.verdict }}
-      run: |
-        # Determine if comment should be posted based on comment policy.
-        # Supports: never, non-pass, always (and legacy true/false for back-compat).
-        comment_policy="$(printf '%s' "$COMMENT_POLICY" | tr '[:upper:]' '[:lower:]')"
-        should_post="false"
-        case "$comment_policy" in
-          never|false|0|no|n|off|'')
-            should_post="false"
-            ;;
-          always|true|1|yes|y|on)
-            should_post="true"
-            ;;
-          non-pass)
-            if [[ "$VERDICT" == "WARN" || "$VERDICT" == "FAIL" || "$VERDICT" == "SKIP" ]]; then
-              should_post="true"
-            fi
-            ;;
-          *)
-            echo "::warning::Unknown comment-policy value '$COMMENT_POLICY', defaulting to never"
-            should_post="false"
-            ;;
-        esac
-
-        if [[ "$should_post" != "true" ]]; then
-          echo "Skipping PR comment (comment-policy=$comment_policy, verdict=$VERDICT)"
-          exit 0
-        fi
-
-        chmod +x "$CERBERUS_ROOT/scripts/post-comment.sh"
-        "$CERBERUS_ROOT/scripts/post-comment.sh" "$PERSPECTIVE" "${{ steps.parse.outputs.verdict-json }}"
-
-    - name: Upload verdict artifact
-      if: steps.parse.outcome == 'success'
-      uses: actions/upload-artifact@v4
-      with:
-        name: cerberus-verdict-${{ inputs.artifact-suffix || inputs.perspective }}
-        path: ${{ steps.parse.outputs.verdict-json }}
-        retention-days: 1
-
-    - name: Upload review document
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: cerberus-review-${{ inputs.artifact-suffix || inputs.perspective }}
-        path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-review.md
-        if-no-files-found: ignore
-        retention-days: 3
-
-    - name: Upload runtime telemetry
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: cerberus-runtime-telemetry-${{ inputs.artifact-suffix || inputs.perspective }}
-        path: ${{ env.CERBERUS_TMP }}/${{ inputs.perspective }}-runtime-telemetry.ndjson
-        if-no-files-found: ignore
-        retention-days: 3
-
-    - name: Enforce verdict
-      if: steps.parse.outcome == 'success'
-      shell: bash
-      env:
-        VERDICT: ${{ steps.parse.outputs.verdict }}
-        PERSPECTIVE: ${{ inputs.perspective }}
-        FAIL_ON_SKIP: ${{ inputs.fail-on-skip }}
-        FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
-      run: |
-        # Individual reviewers output their verdict but don't fail the job
-        # unless fail-on-verdict is true (#220). The Cerberus Verdict job
-        # aggregates all reviews and makes the final decision.
-        if [ "$VERDICT" = "FAIL" ]; then
-          if [ "$FAIL_ON_VERDICT" = "true" ]; then
-            echo "::error::${PERSPECTIVE} review verdict: FAIL"
-            exit 1
-          fi
-          echo "::notice::${PERSPECTIVE} review verdict: FAIL (reported to Cerberus)"
-        elif [ "$VERDICT" = "SKIP" ]; then
-          if [ "$FAIL_ON_SKIP" = "true" ]; then
-            echo "::error::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"
-            exit 1
-          fi
-          echo "::warning::${PERSPECTIVE} review verdict: SKIP (timeout/API error)"
-        fi
-
-    - name: Clean up temp directory
-      if: always()
-      shell: bash
-      run: |
-        if [[ -n "${CERBERUS_TMP:-}" && -d "${CERBERUS_TMP}" ]]; then
-          # Best-effort cleanup only: temp deletion failures should not fail review jobs.
-          chmod -R u+rwX "${CERBERUS_TMP}" 2>/dev/null || true
-          rm -rf "${CERBERUS_TMP}" 2>/dev/null || true
-          if [[ -d "${CERBERUS_TMP}" ]]; then
-            echo "::warning::Failed to fully clean temporary directory: ${CERBERUS_TMP}"
-          fi
-        fi
+        bash "${{ github.action_path }}/dispatch.sh"

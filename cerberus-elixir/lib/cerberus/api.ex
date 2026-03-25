@@ -3,7 +3,7 @@ defmodule Cerberus.API do
   HTTP API for dispatching review runs.
 
   Thin REST surface over `Cerberus.Pipeline`. Authenticated via Bearer token.
-  Designed to be called by the thin GHA action (`api/action.yml`).
+  Designed to be called by the thin GHA action (`action.yml`).
 
   ## Endpoints
 

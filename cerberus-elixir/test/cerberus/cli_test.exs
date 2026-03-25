@@ -242,7 +242,10 @@ defmodule Cerberus.CLITest do
 
   test "main/2 prints errors to stderr without halting when halt is false" do
     missing_path =
-      Path.join(System.tmp_dir!(), "cerberus_cli_missing_#{System.unique_integer([:positive])}.diff")
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus_cli_missing_#{System.unique_integer([:positive])}.diff"
+      )
 
     message =
       capture_io(:stderr, fn ->

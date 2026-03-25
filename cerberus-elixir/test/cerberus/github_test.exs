@@ -451,7 +451,12 @@ defmodule Cerberus.GitHubTest do
     test "returns file_too_large when content is null" do
       req =
         mock_req(fn :get, "/repos/owner/repo/contents/big.bin", _req ->
-          json_resp(%{"type" => "file", "size" => 150_000_000, "content" => nil, "encoding" => "none"})
+          json_resp(%{
+            "type" => "file",
+            "size" => 150_000_000,
+            "content" => nil,
+            "encoding" => "none"
+          })
         end)
 
       assert {:error, {:file_too_large, "big.bin", 150_000_000}} =
@@ -464,8 +469,11 @@ defmodule Cerberus.GitHubTest do
   describe "search_code/4" do
     test "returns search results" do
       items = [
-        %{"name" => "foo.ex", "path" => "lib/foo.ex",
-          "text_matches" => [%{"fragment" => "def bar"}]}
+        %{
+          "name" => "foo.ex",
+          "path" => "lib/foo.ex",
+          "text_matches" => [%{"fragment" => "def bar"}]
+        }
       ]
 
       req =
@@ -525,7 +533,13 @@ defmodule Cerberus.GitHubTest do
           json_resp(%{"items" => [], "total_count" => 0})
         end)
 
-      {:ok, _} = GitHub.search_code(@repo, "pattern", test_opts(req) ++ [path_filter: "lib repo:evil/repo"])
+      {:ok, _} =
+        GitHub.search_code(
+          @repo,
+          "pattern",
+          test_opts(req) ++ [path_filter: "lib repo:evil/repo"]
+        )
+
       assert_receive {:query, query}
       params = URI.decode_query(query)
       refute params["q"] =~ "repo:evil"
