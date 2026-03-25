@@ -8,17 +8,18 @@ branding:
 
 inputs:
   github-token:
-    description: 'GitHub token for PR operations. Reserved for server-side posting (#412).'
+    description: 'GitHub token used by the hosted Cerberus pipeline for PR reads and writes. Sent per request; not persisted.'
     required: false
     default: ''
   api-key:
     description: 'Cerberus API authentication key'
     required: true
   cerberus-url:
-    description: 'Cerberus API base URL (e.g., https://cerberus.fly.dev)'
-    required: true
+    description: 'Cerberus API base URL override for self-hosted or non-default deployments'
+    required: false
+    default: 'https://cerberus.fly.dev'
   model:
-    description: 'Model override (optional). Passed to the API for reviewer model selection.'
+    description: 'Reserved model override. Accepted by the API but not yet wired to reviewer selection.'
     default: ''
   timeout:
     description: 'Maximum seconds to wait for review completion'
@@ -51,6 +52,7 @@ runs:
         CERBERUS_TIMEOUT: ${{ inputs.timeout }}
         CERBERUS_POLL_INTERVAL: ${{ inputs.poll-interval }}
         CERBERUS_FAIL_ON_VERDICT: ${{ inputs.fail-on-verdict }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}

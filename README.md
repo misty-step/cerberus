@@ -33,14 +33,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.CERBERUS_API_KEY }}
-          cerberus-url: ${{ vars.CERBERUS_URL }}
           fail-on-verdict: 'true'
 ```
 
 Required repository configuration:
 
 - Secret: `CERBERUS_API_KEY`
-- Variable or secret: `CERBERUS_URL`
 
 The scaffolder CLI writes the same template:
 
@@ -52,13 +50,13 @@ npx @misty-step/cerberus init
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `api-key` | yes | - | Cerberus API authentication token |
-| `cerberus-url` | yes | - | Cerberus API base URL |
-| `github-token` | no | `''` | Reserved for server-side GitHub operations |
-| `model` | no | `''` | Optional model override |
-| `timeout` | no | `600` | Max seconds to wait for completion |
-| `poll-interval` | no | `5` | Poll interval in seconds |
-| `fail-on-verdict` | no | `true` | Exit 1 when the aggregated verdict is `FAIL` |
+| `github-token` | no | `''` | GitHub token forwarded to the hosted Cerberus pipeline for per-request PR reads and writes |
+| `api-key` | yes | - | Cerberus API authentication key |
+| `cerberus-url` | no | `https://cerberus.fly.dev` | API base URL override for self-hosted or non-default deployments |
+| `model` | no | `''` | Reserved; accepted but not yet wired to reviewer selection |
+| `timeout` | no | `600` | Max seconds to wait for review completion |
+| `poll-interval` | no | `5` | Seconds between status polls |
+| `fail-on-verdict` | no | `true` | Exit 1 if aggregated verdict is FAIL |
 
 Outputs:
 

@@ -62,7 +62,16 @@ payload=$(jq -n \
   --argjson pr_number "$PR_NUMBER" \
   --arg head_sha "$HEAD_SHA" \
   --arg model "${CERBERUS_MODEL:-}" \
-  '{repo: $repo, pr_number: $pr_number, head_sha: $head_sha, model: $model}')
+  --arg github_token "${GITHUB_TOKEN:-}" \
+  '
+  {
+    repo: $repo,
+    pr_number: $pr_number,
+    head_sha: $head_sha,
+    model: $model
+  }
+  | if $github_token == "" then . else . + {github_token: $github_token} end
+  ')
 
 echo "Dispatching review for ${REPO}#${PR_NUMBER} (${HEAD_SHA:0:12})..."
 
@@ -112,7 +121,8 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
   fi
   consecutive_errors=0
 
-  status=$(echo "$poll_body" | parse_json '.status // "unknown"')
+  status=$(echo "$poll_body" | parse_json '.status')
+  status="${status:-unknown}"
 
   case "$status" in
     failed)

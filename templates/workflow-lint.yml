@@ -20,4 +20,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install yamllint -q
-      - run: yamllint .github/workflows/*.yml
+      - run: shopt -s nullglob && yamllint .github/workflows/*.yml .github/workflows/*.yaml

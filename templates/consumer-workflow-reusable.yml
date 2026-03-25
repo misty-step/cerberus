@@ -3,9 +3,9 @@
 # Single-step review via the hosted Cerberus API.
 # Prerequisites:
 #   - `CERBERUS_API_KEY` secret for API authentication
-#   - `CERBERUS_URL` repository variable or secret
 #
 # Optional inputs:
+#   - `cerberus-url` for self-hosted or non-default deployments
 #   - `model`
 #   - `timeout`
 #   - `poll-interval`
@@ -34,5 +34,4 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.CERBERUS_API_KEY }}
-          cerberus-url: ${{ vars.CERBERUS_URL }}
           fail-on-verdict: 'true'

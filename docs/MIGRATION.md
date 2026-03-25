@@ -8,7 +8,7 @@ Cerberus now uses one supported GitHub Action path: the root action dispatches t
 |------|--------|-----|
 | Action entrypoint | reusable workflow or decomposed matrix jobs | root `misty-step/cerberus@master` action |
 | Secret | `CERBERUS_OPENROUTER_API_KEY` | `CERBERUS_API_KEY` |
-| URL config | implicit local review pipeline | explicit `CERBERUS_URL` |
+| URL config | implicit local review pipeline | hosted URL default, optional `cerberus-url` override |
 | Review execution | GitHub Actions matrix in this repo | hosted Cerberus API + Elixir engine |
 
 ## New Workflow
@@ -34,15 +34,14 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-key: ${{ secrets.CERBERUS_API_KEY }}
-          cerberus-url: ${{ vars.CERBERUS_URL }}
 ```
 
 ## Migration Steps
 
 1. Delete the old reusable-workflow or decomposed matrix jobs.
 2. Add the `CERBERUS_API_KEY` secret.
-3. Add the `CERBERUS_URL` repository variable or secret.
-4. Replace the workflow with the root-action version above.
+3. Replace the workflow with the root-action version above.
+4. If you self-host Cerberus, add `cerberus-url: https://<your-cerberus>.fly.dev`.
 5. Open a non-draft PR and verify a verdict is returned.
 
 ## Notes
