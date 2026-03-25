@@ -1,7 +1,7 @@
 {
   "milestone": "cli-core",
-  "round": 2,
-  "status": "pass",
+  "round": 1,
+  "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
@@ -25,34 +25,18 @@
     }
   },
   "reviewsSummary": {
-    "total": 4,
-    "passed": 4,
-    "failed": 0,
-    "failedFeatures": []
-  },
-  "rerunDetails": {
-    "reviewedFixFeatures": [
-      {
-        "featureId": "config-override-atom-safety",
-        "status": "pass",
-        "addressesFailureFrom": "reviewer-config-foundation"
-      }
-    ],
-    "resolvedFailures": [
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "failedFeatures": [
       "reviewer-config-foundation"
     ]
   },
-  "blockingIssues": [],
-  "nonBlockingIssues": [
+  "blockingIssues": [
     {
-      "featureId": "cli-ref-range-workspace",
-      "severity": "non_blocking",
-      "description": "The feature still ships `Cerberus.TestSupport.LocalReviewRepo` from `cerberus-elixir/lib/cerberus/cli_test_support.ex`, so production builds package a git-mutating test helper that is only used by tests."
-    },
-    {
-      "featureId": "config-override-atom-safety",
-      "severity": "non_blocking",
-      "description": "`resolved_snapshot/2` can still over-report `model.source` as `override` for fixed-model reviewers when only an unrelated pool tier override changed, so the redacted config evidence may overstate what was actually overridden."
+      "featureId": "reviewer-config-foundation",
+      "severity": "blocking",
+      "description": "The new config loader interns runtime override strings with `String.to_atom/1` in the supported override path (`reviewer_entry/3`, reviewer perspective normalization, override policy parsing, model-pool tier parsing, and asset source tracking), so malformed override input can exhaust the BEAM atom table and crash the VM instead of failing with field-level diagnostics."
     }
   ],
   "appliedUpdates": [
@@ -83,5 +67,5 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/cli-core/scrutiny/synthesis.round-1.json"
+  "previousRound": null
 }
