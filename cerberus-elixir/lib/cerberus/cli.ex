@@ -1,15 +1,15 @@
 defmodule Cerberus.CLI do
   @moduledoc """
-  Local diff review entrypoint shared by the mix task and release wrapper.
+  Local ref-range review entrypoint shared by the mix task and release wrapper.
   """
 
-  alias Cerberus.{Config, Reviewer}
+  alias Cerberus.{Config, Reviewer, ReviewWorkspace}
   alias Cerberus.Tools.LocalRepoReadHandler
   alias Cerberus.Verdict
   alias Cerberus.Verdict.Aggregator
 
-  @switches [diff: :string, format: :string, help: :boolean]
-  @aliases [d: :diff, f: :format, h: :help]
+  @switches [repo: :string, base: :string, head: :string, format: :string, help: :boolean]
+  @aliases [r: :repo, b: :base, f: :format, h: :help]
   @tier_to_pool %{flash: :wave1, standard: :wave2, pro: :wave3}
   @default_timeout_ms 600_000
   @default_model "openrouter/moonshotai/kimi-k2.5"
@@ -20,13 +20,18 @@ defmodule Cerberus.CLI do
     argv = normalize_argv(argv)
 
     with {:ok, request} <- parse_args(argv),
-         {:ok, diff_input} <- load_diff(request.diff, opts) do
+         {:ok, workspace} <- prepare_workspace(request) do
       try do
-        with {:ok, aggregated} <- with_runtime(opts, &review_diff(&1, request, diff_input, opts)) do
-          {:ok, render_output(aggregated, request.format)}
+        if workspace.no_changes? do
+          {:ok, render_output(no_changes_result(workspace), request.format)}
+        else
+          with {:ok, aggregated} <-
+                 with_runtime(opts, &review_workspace(&1, request, workspace, opts)) do
+            {:ok, render_output(aggregated, request.format)}
+          end
         end
       after
-        cleanup_diff(diff_input)
+        ReviewWorkspace.cleanup(workspace)
       end
     end
   end
@@ -47,55 +52,44 @@ defmodule Cerberus.CLI do
   end
 
   defp parse_args(argv) do
-    {opts, rest, invalid} = OptionParser.parse(argv, strict: @switches, aliases: @aliases)
-
-    cond do
-      opts[:help] ->
-        {:error, {usage(), 0}}
-
-      invalid != [] ->
-        {:error, {"Unsupported options: #{format_invalid(invalid)}\n\n#{usage()}", 1}}
-
-      rest != [] ->
-        {:error, {"Unexpected arguments: #{Enum.join(rest, ", ")}\n\n#{usage()}", 1}}
-
-      is_nil(opts[:diff]) ->
-        {:error, {"Missing required --diff option.\n\n#{usage()}", 1}}
-
-      opts[:format] not in [nil, "json", "text"] ->
-        {:error, {"Unsupported format: #{opts[:format]}\n\n#{usage()}", 1}}
-
-      true ->
-        {:ok, %{diff: opts[:diff], format: opts[:format] || "text"}}
-    end
-  end
-
-  defp load_diff("-", opts) do
-    diff = Keyword.get(opts, :stdin, IO.read(:stdio, :eof))
-
-    if blank?(diff) do
-      {:error, {"No diff content received on stdin.", 1}}
+    if legacy_diff_option?(argv) do
+      {:error, {legacy_diff_message(), 1}}
     else
-      path = write_temp_diff(diff)
-      {:ok, %{path: path, text: diff, temporary?: true}}
-    end
-  end
+      {opts, rest, invalid} = OptionParser.parse(argv, strict: @switches, aliases: @aliases)
+      missing = missing_required_opts(opts)
 
-  defp load_diff(path, _opts) do
-    if blank?(path) do
-      {:error, {"Missing required --diff option.\n\n#{usage()}", 1}}
-    else
-      case File.read(path) do
-        {:ok, diff} ->
-          if blank?(diff) do
-            {:error, {"Diff file is empty: #{path}", 1}}
-          else
-            {:ok, %{path: path, text: diff, temporary?: false}}
-          end
+      cond do
+        opts[:help] ->
+          {:error, {usage(), 0}}
 
-        {:error, reason} ->
-          {:error, {"Failed to read diff file #{path}: #{:file.format_error(reason)}", 1}}
+        invalid != [] ->
+          {:error, {"Unsupported options: #{format_invalid(invalid)}\n\n#{usage()}", 1}}
+
+        rest != [] ->
+          {:error, {"Unexpected arguments: #{Enum.join(rest, ", ")}\n\n#{usage()}", 1}}
+
+        missing != [] ->
+          {:error, {"Missing required options: #{Enum.join(missing, ", ")}.\n\n#{usage()}", 1}}
+
+        opts[:format] not in [nil, "json", "text"] ->
+          {:error, {"Unsupported format: #{opts[:format]}\n\n#{usage()}", 1}}
+
+        true ->
+          {:ok,
+           %{
+             repo: opts[:repo],
+             base: opts[:base],
+             head: opts[:head],
+             format: opts[:format] || "text"
+           }}
       end
+    end
+  end
+
+  defp prepare_workspace(request) do
+    case ReviewWorkspace.prepare(request.repo, request.base, request.head) do
+      {:ok, workspace} -> {:ok, workspace}
+      {:error, message} -> {:error, {message, 1}}
     end
   end
 
@@ -117,7 +111,7 @@ defmodule Cerberus.CLI do
         review_supervisor: child_opts[:review_supervisor_name],
         task_supervisor: child_opts[:task_supervisor_name],
         router: child_opts[:router_name],
-        repo_root: child_opts[:repo_root]
+        assets_root: child_opts[:repo_root]
       }
 
       try do
@@ -155,11 +149,11 @@ defmodule Cerberus.CLI do
     end
   end
 
-  defp review_diff(runtime, request, diff_input, opts) do
+  defp review_workspace(runtime, request, workspace, opts) do
     routing =
       case Keyword.get(opts, :routing_result) do
         nil ->
-          route_diff(diff_input.text, runtime.router)
+          route_diff(workspace.diff, runtime.router, workspace)
 
         result ->
           result
@@ -170,18 +164,18 @@ defmodule Cerberus.CLI do
         error
 
       %{} = routing_result ->
-        run_panel(runtime, request, diff_input, routing_result, opts)
+        run_panel(runtime, request, workspace, routing_result, opts)
     end
   end
 
-  defp run_panel(runtime, request, diff_input, routing, opts) do
+  defp run_panel(runtime, request, workspace, routing, opts) do
     personas = Config.personas(runtime.config)
     model_pool = resolve_model_pool(routing.model_tier, runtime.config)
     timeout = Keyword.get(opts, :reviewer_timeout, @default_timeout_ms)
 
     tool_handler =
       Keyword.get_lazy(opts, :tool_handler, fn ->
-        LocalRepoReadHandler.build(runtime.repo_root)
+        LocalRepoReadHandler.build(workspace.workspace_root)
       end)
 
     panel =
@@ -197,7 +191,7 @@ defmodule Cerberus.CLI do
     tasks =
       Enum.map(panel, fn {_reviewer, _perspective, persona, model} ->
         Task.Supervisor.async_nolink(runtime.task_supervisor, fn ->
-          review_one(persona, model, request, diff_input, runtime, opts, timeout, tool_handler)
+          review_one(persona, model, request, workspace, runtime, opts, timeout, tool_handler)
         end)
       end)
 
@@ -217,9 +211,15 @@ defmodule Cerberus.CLI do
       {:error, {"CLI review failed: #{Exception.message(e)}", 1}}
   end
 
-  defp route_diff(diff_text, router) do
+  defp route_diff(diff_text, router, workspace) do
+    metadata = %{
+      repo: workspace.repo_root,
+      base_sha: workspace.base_sha,
+      head_sha: workspace.head_sha
+    }
+
     try do
-      case Cerberus.Router.route(diff_text, [metadata: %{repo: "local"}], router) do
+      case Cerberus.Router.route(diff_text, [metadata: metadata], router) do
         {:ok, result} -> result
         {:error, reason} -> {:error, {"Routing failed: #{inspect(reason)}", 1}}
       end
@@ -229,7 +229,7 @@ defmodule Cerberus.CLI do
     end
   end
 
-  defp review_one(persona, model, request, diff_input, runtime, opts, timeout, tool_handler) do
+  defp review_one(persona, model, request, workspace, runtime, opts, timeout, tool_handler) do
     reviewer_opts =
       [
         perspective: persona.perspective,
@@ -238,7 +238,7 @@ defmodule Cerberus.CLI do
         timeout_ms: timeout,
         call_llm: Keyword.get(opts, :call_llm, &Cerberus.LLM.OpenRouter.call/1),
         tool_handler: tool_handler,
-        repo_root: runtime.repo_root
+        repo_root: runtime.assets_root
       ]
 
     {:ok, pid} =
@@ -246,12 +246,12 @@ defmodule Cerberus.CLI do
 
     try do
       review_context = %{
-        title: "Local diff review",
+        title: "Local change review",
         author: System.get_env("USER") || "local",
-        head_branch: "local",
-        base_branch: "local",
-        body: "Review generated from #{request.diff}",
-        diff_file: diff_input.path
+        head_branch: request.head,
+        base_branch: request.base,
+        body: "Review generated from #{workspace.repo_root} for #{request.base}..#{request.head}",
+        diff_file: workspace.diff_file
       }
 
       Reviewer.review(pid, review_context, timeout)
@@ -382,22 +382,6 @@ defmodule Cerberus.CLI do
     "- #{label} #{finding.title}#{where}"
   end
 
-  defp cleanup_diff(%{temporary?: true, path: path}), do: File.rm(path)
-  defp cleanup_diff(_diff_input), do: :ok
-
-  defp write_temp_diff(diff) do
-    path =
-      Path.join(
-        System.tmp_dir!(),
-        "cerberus-cli-diff-#{System.unique_integer([:positive])}.diff"
-      )
-
-    File.write!(path, diff)
-    path
-  end
-
-  defp blank?(value), do: value in [nil, ""]
-
   defp print_stdout(output) do
     if String.ends_with?(output, "\n") do
       IO.write(output)
@@ -416,8 +400,41 @@ defmodule Cerberus.CLI do
 
   defp format_invalid(invalid) do
     invalid
-    |> Enum.map(fn {key, value} -> "--#{key}=#{value}" end)
+    |> Enum.map(fn
+      {key, nil} -> "--#{key}"
+      {key, value} -> "--#{key}=#{value}"
+    end)
     |> Enum.join(", ")
+  end
+
+  defp missing_required_opts(opts) do
+    []
+    |> maybe_missing(opts[:repo], "--repo")
+    |> maybe_missing(opts[:base], "--base")
+    |> maybe_missing(opts[:head], "--head")
+  end
+
+  defp maybe_missing(missing, value, flag) when value in [nil, ""], do: missing ++ [flag]
+  defp maybe_missing(missing, _value, _flag), do: missing
+
+  defp legacy_diff_option?(argv) do
+    Enum.any?(argv, fn arg ->
+      arg == "--diff" or arg == "-d" or String.starts_with?(arg, "--diff=")
+    end)
+  end
+
+  defp legacy_diff_message do
+    "Legacy --diff input is no longer supported. Use --repo <path> --base <ref> --head <ref>.\n\n#{usage()}"
+  end
+
+  defp no_changes_result(workspace) do
+    %{
+      verdict: "SKIP",
+      summary:
+        "No changes to review between #{workspace.base_ref} (#{workspace.base_sha}) and #{workspace.head_ref} (#{workspace.head_sha}).",
+      findings: [],
+      stats: %{"total" => 0, "pass" => 0, "warn" => 0, "fail" => 0, "skip" => 0}
+    }
   end
 
   defp ensure_runtime_dependencies do
@@ -434,8 +451,8 @@ defmodule Cerberus.CLI do
   defp usage do
     """
     Usage:
-      mix cerberus.review --diff <path|-> [--format json|text]
-      bin/cerberus review --diff <path|-> [--format json|text]
+      mix cerberus.review --repo <path> --base <ref> --head <ref> [--format json|text]
+      bin/cerberus review --repo <path> --base <ref> --head <ref> [--format json|text]
     """
     |> String.trim_trailing()
   end

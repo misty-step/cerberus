@@ -2,18 +2,10 @@ defmodule Cerberus.CLITest do
   use ExUnit.Case, async: false
 
   alias Cerberus.CLI
+  alias Cerberus.TestSupport.LocalReviewRepo
   import ExUnit.CaptureIO
 
   @repo_root Path.expand("../../..", __DIR__)
-  @diff """
-  diff --git a/lib/foo.ex b/lib/foo.ex
-  --- a/lib/foo.ex
-  +++ b/lib/foo.ex
-  @@ -1,3 +1,4 @@
-   defmodule Foo do
-  +  def bar, do: :ok
-   end
-  """
 
   defp valid_verdict_json do
     Jason.encode!(%{
@@ -36,6 +28,12 @@ defmodule Cerberus.CLITest do
 
   defp unique_name(prefix) do
     :"#{prefix}_#{System.unique_integer([:positive])}"
+  end
+
+  setup do
+    fixture = LocalReviewRepo.create!()
+    on_exit(fn -> LocalReviewRepo.cleanup!(fixture) end)
+    %{fixture: fixture}
   end
 
   defp cli_opts(extra \\ []) do
@@ -64,12 +62,15 @@ defmodule Cerberus.CLITest do
     |> Keyword.merge(extra)
   end
 
-  defp write_diff!(content \\ @diff) do
-    path =
-      Path.join(System.tmp_dir!(), "cerberus_cli_diff_#{System.unique_integer([:positive])}.diff")
-
-    File.write!(path, content)
-    path
+  defp review_args(fixture, base_ref \\ nil, head_ref \\ nil) do
+    [
+      "--repo",
+      fixture.root,
+      "--base",
+      base_ref || fixture.base_sha,
+      "--head",
+      head_ref || fixture.head_sha
+    ]
   end
 
   defp decode_run!(argv, opts) do
@@ -77,12 +78,24 @@ defmodule Cerberus.CLITest do
     Jason.decode!(output)
   end
 
-  test "run/2 emits machine-parseable JSON for a diff file" do
-    diff_path = write_diff!()
+  defp sequence_mock(responses) do
+    {:ok, agent} = Agent.start_link(fn -> responses end)
 
+    mock = fn params ->
+      Agent.get_and_update(agent, fn
+        [{:fun, fun} | rest] -> {fun.(params), rest}
+        [resp | rest] -> {resp, rest}
+        [] -> {{:error, :exhausted}, []}
+      end)
+    end
+
+    {mock, agent}
+  end
+
+  test "run/2 emits machine-parseable JSON for a ref range", %{fixture: fixture} do
     assert {:ok, output} =
              CLI.run(
-               ["--diff", diff_path, "--format", "json"],
+               review_args(fixture) ++ ["--format", "json"],
                cli_opts()
              )
 
@@ -92,12 +105,10 @@ defmodule Cerberus.CLITest do
     assert is_map(decoded["stats"])
   end
 
-  test "run/2 tolerates the release subcommand prefix" do
-    diff_path = write_diff!()
-
+  test "run/2 tolerates the release subcommand prefix", %{fixture: fixture} do
     assert {:ok, output} =
              CLI.run(
-               ["review", "--", "--diff", diff_path, "--format", "json"],
+               ["review", "--"] ++ review_args(fixture) ++ ["--format", "json"],
                cli_opts()
              )
 
@@ -105,24 +116,10 @@ defmodule Cerberus.CLITest do
     assert decoded["verdict"] == "PASS"
   end
 
-  test "run/2 reads diff text from stdin when --diff -" do
+  test "run/2 defaults to human-readable text output", %{fixture: fixture} do
     assert {:ok, output} =
              CLI.run(
-               ["--diff", "-", "--format", "json"],
-               cli_opts(stdin: @diff)
-             )
-
-    decoded = Jason.decode!(output)
-    assert decoded["verdict"] == "PASS"
-    assert Map.has_key?(decoded, "stats")
-  end
-
-  test "run/2 defaults to human-readable text output" do
-    diff_path = write_diff!()
-
-    assert {:ok, output} =
-             CLI.run(
-               ["--diff", diff_path],
+               review_args(fixture),
                cli_opts()
              )
 
@@ -131,36 +128,118 @@ defmodule Cerberus.CLITest do
     assert output =~ "Findings:"
   end
 
-  test "run/2 rejects empty diff files" do
-    diff_path = write_diff!("")
+  test "run/2 emits an explicit no-changes result without planner or reviewer work", %{
+    fixture: fixture
+  } do
+    test_pid = self()
 
-    assert {:error, {message, 1}} =
+    assert {:ok, output} =
              CLI.run(
-               ["--diff", diff_path],
-               cli_opts()
+               review_args(fixture, fixture.head_sha, fixture.head_sha),
+               cli_opts(
+                 call_llm: fn _params ->
+                   send(test_pid, :reviewer_called)
+                   {:error, :unexpected}
+                 end,
+                 router_call_llm: fn _params ->
+                   send(test_pid, :router_called)
+                   {:error, :unexpected}
+                 end
+               )
              )
 
-    assert message =~ "Diff file is empty"
+    assert output =~ "No changes to review"
+    refute_receive :reviewer_called
+    refute_receive :router_called
   end
 
-  test "run/2 surfaces runtime startup failures" do
-    diff_path = write_diff!()
+  test "run/2 resolves representative commit-ish refs from outside the target repo without mutation",
+       %{fixture: fixture} do
+    refs = [
+      {fixture.revision_base_ref, fixture.branch_ref},
+      {fixture.base_sha, fixture.tag_ref},
+      {fixture.base_sha, fixture.head_sha},
+      {fixture.base_sha, fixture.short_head_sha}
+    ]
 
+    before_head = LocalReviewRepo.head(fixture.root)
+    before_status = LocalReviewRepo.status(fixture.root)
+    before_worktrees = LocalReviewRepo.worktree_list(fixture.root)
+
+    File.cd!(System.tmp_dir!(), fn ->
+      Enum.each(refs, fn {base_ref, head_ref} ->
+        decoded = decode_run!(review_args(fixture, base_ref, head_ref), cli_opts())
+        assert decoded["verdict"] == "PASS"
+      end)
+    end)
+
+    assert LocalReviewRepo.head(fixture.root) == before_head
+    assert LocalReviewRepo.status(fixture.root) == before_status
+    assert LocalReviewRepo.worktree_list(fixture.root) == before_worktrees
+  end
+
+  test "run/2 uses a materialized workspace instead of the caller checkout", %{fixture: fixture} do
+    tool_call = %{
+      id: "call_1",
+      function: %{name: "get_file_contents", arguments: ~s({"path": "lib/sample.ex"})}
+    }
+
+    test_pid = self()
+
+    {mock, _agent} =
+      sequence_mock([
+        {:ok,
+         %{
+           content: nil,
+           tool_calls: [tool_call],
+           usage: %{prompt_tokens: 100, completion_tokens: 20}
+         }},
+        {:fun,
+         fn params ->
+           send(test_pid, {:tool_messages, params.messages})
+
+           {:ok,
+            %{
+              content: valid_verdict_json(),
+              tool_calls: [],
+              usage: %{prompt_tokens: 200, completion_tokens: 100}
+            }}
+         end}
+      ])
+
+    decoded =
+      decode_run!(
+        review_args(fixture),
+        cli_opts(call_llm: mock)
+      )
+
+    assert decoded["verdict"] == "PASS"
+
+    assert_receive {:tool_messages, messages}
+
+    tool_message =
+      Enum.find(messages, fn message ->
+        message["role"] == "tool" and message["tool_call_id"] == "call_1"
+      end)
+
+    assert tool_message["content"] == fixture.head_content
+    assert tool_message["content"] != fixture.dirty_content
+  end
+
+  test "run/2 surfaces runtime startup failures", %{fixture: fixture} do
     assert {:error, {message, 1}} =
              CLI.run(
-               ["--diff", diff_path],
+               review_args(fixture),
                cli_opts(review_supervisor_name: self())
              )
 
     assert message =~ "Failed to start CLI runtime"
   end
 
-  test "run/2 degrades reviewer failures to a skip verdict" do
-    diff_path = write_diff!()
-
+  test "run/2 degrades reviewer failures to a skip verdict", %{fixture: fixture} do
     decoded =
       decode_run!(
-        ["--diff", diff_path],
+        review_args(fixture),
         cli_opts(call_llm: fn _params -> {:error, :boom} end)
       )
 
@@ -169,12 +248,10 @@ defmodule Cerberus.CLITest do
     assert decoded["stats"]["skip"] == 1
   end
 
-  test "run/2 degrades reviewer crashes to a skip verdict" do
-    diff_path = write_diff!()
-
+  test "run/2 degrades reviewer crashes to a skip verdict", %{fixture: fixture} do
     decoded =
       decode_run!(
-        ["--diff", diff_path],
+        review_args(fixture),
         cli_opts(call_llm: fn _params -> Process.exit(self(), :kill) end)
       )
 
@@ -182,14 +259,13 @@ defmodule Cerberus.CLITest do
     assert decoded["stats"]["skip"] == 1
   end
 
-  test "run/2 degrades reviewer timeouts to a skip verdict" do
-    diff_path = write_diff!()
+  test "run/2 degrades reviewer timeouts to a skip verdict", %{fixture: fixture} do
     reviewer_timeout = 50
     sleep_ms = reviewer_timeout + 5_000 + 1_000
 
     decoded =
       decode_run!(
-        ["--diff", diff_path],
+        review_args(fixture),
         cli_opts(
           reviewer_timeout: reviewer_timeout,
           call_llm: fn _params ->
@@ -209,12 +285,10 @@ defmodule Cerberus.CLITest do
     assert decoded["stats"]["skip"] == 1
   end
 
-  test "run/2 surfaces routing failures when the router crashes" do
-    diff_path = write_diff!()
-
+  test "run/2 surfaces routing failures when the router crashes", %{fixture: fixture} do
     assert {:error, {message, 1}} =
              CLI.run(
-               ["--diff", diff_path],
+               review_args(fixture),
                cli_opts(
                  routing_result: nil,
                  router_call_llm: fn _params -> Process.exit(self(), :kill) end
@@ -224,14 +298,12 @@ defmodule Cerberus.CLITest do
     assert message =~ "Routing failed"
   end
 
-  test "main/2 prints successful output without halting when halt is false" do
-    diff_path = write_diff!()
-
+  test "main/2 prints successful output without halting when halt is false", %{fixture: fixture} do
     output =
       capture_io(fn ->
         assert :ok =
                  CLI.main(
-                   ["--diff", diff_path, "--format", "json"],
+                   review_args(fixture) ++ ["--format", "json"],
                    cli_opts(halt: false)
                  )
       end)
@@ -240,43 +312,86 @@ defmodule Cerberus.CLITest do
     assert decoded["verdict"] == "PASS"
   end
 
-  test "main/2 prints errors to stderr without halting when halt is false" do
-    missing_path =
-      Path.join(
-        System.tmp_dir!(),
-        "cerberus_cli_missing_#{System.unique_integer([:positive])}.diff"
-      )
-
+  test "main/2 prints actionable errors to stderr without halting when halt is false" do
     message =
       capture_io(:stderr, fn ->
         assert {:error, returned_message} =
                  CLI.main(
-                   ["--diff", missing_path],
+                   ["--repo", "/definitely/missing/repo", "--base", "main", "--head", "HEAD"],
                    cli_opts(halt: false)
                  )
 
-        assert returned_message =~ "Failed to read diff file"
+        assert returned_message =~ "Repository path not found for --repo"
       end)
 
-    assert message =~ "Failed to read diff file"
-    assert message =~ missing_path
+    assert message =~ "Repository path not found for --repo"
   end
 
-  test "run/2 validates CLI argument errors" do
-    diff_path = write_diff!()
-
+  test "run/2 validates CLI argument errors", %{fixture: fixture} do
     assert {:error, {message, 1}} = CLI.run(["--unknown"], cli_opts())
     assert message =~ "Unsupported options"
 
-    assert {:error, {message, 1}} = CLI.run(["--diff", diff_path, "extra"], cli_opts())
+    assert {:error, {message, 1}} = CLI.run(review_args(fixture) ++ ["extra"], cli_opts())
     assert message =~ "Unexpected arguments"
 
     assert {:error, {message, 1}} = CLI.run([], cli_opts())
-    assert message =~ "Missing required --diff option"
+    assert message =~ "Missing required options: --repo, --base, --head"
 
     assert {:error, {message, 1}} =
-             CLI.run(["--diff", diff_path, "--format", "yaml"], cli_opts())
+             CLI.run(review_args(fixture) ++ ["--format", "yaml"], cli_opts())
 
     assert message =~ "Unsupported format: yaml"
+
+    assert {:error, {message, 1}} =
+             CLI.run(["--diff", "range.diff"], cli_opts())
+
+    assert message =~ "Legacy --diff input is no longer supported"
+  end
+
+  test "run/2 rejects invalid repo inputs before review work", %{fixture: fixture} do
+    non_git_dir =
+      Path.join(System.tmp_dir!(), "cerberus_non_git_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(non_git_dir)
+    on_exit(fn -> File.rm_rf(non_git_dir) end)
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               ["--repo", "/definitely/missing/repo", "--base", "main", "--head", "HEAD"],
+               cli_opts()
+             )
+
+    assert message =~ "Repository path not found for --repo"
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               ["--repo", non_git_dir, "--base", fixture.base_sha, "--head", fixture.head_sha],
+               cli_opts()
+             )
+
+    assert message =~ "--repo is not inside a Git repository"
+  end
+
+  test "run/2 rejects invalid refs before workspace or review work", %{fixture: fixture} do
+    test_pid = self()
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               ["--repo", fixture.root, "--base", fixture.base_sha, "--head", "missing-ref"],
+               cli_opts(
+                 call_llm: fn _params ->
+                   send(test_pid, :reviewer_called)
+                   {:error, :unexpected}
+                 end,
+                 router_call_llm: fn _params ->
+                   send(test_pid, :router_called)
+                   {:error, :unexpected}
+                 end
+               )
+             )
+
+    assert message =~ ~s(Could not resolve --head ref "missing-ref")
+    refute_receive :reviewer_called
+    refute_receive :router_called
   end
 end

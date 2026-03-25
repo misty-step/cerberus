@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Cerberus.Review do
   use Mix.Task
 
-  @shortdoc "Review a local unified diff with Cerberus"
+  @shortdoc "Review a local repository ref range with Cerberus"
 
   @impl true
   def run(args) do

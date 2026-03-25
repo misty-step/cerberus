@@ -1,24 +1,19 @@
 defmodule Mix.Tasks.Cerberus.ReviewTest do
   use ExUnit.Case, async: false
 
+  alias Cerberus.TestSupport.LocalReviewRepo
   import ExUnit.CaptureIO
 
   @repo_root Path.expand("../../../..", __DIR__)
-  @diff """
-  diff --git a/lib/foo.ex b/lib/foo.ex
-  --- a/lib/foo.ex
-  +++ b/lib/foo.ex
-  @@ -1,3 +1,4 @@
-   defmodule Foo do
-  +  def bar, do: :ok
-   end
-  """
 
   setup do
     Mix.Task.reenable("cerberus.review")
     original = Application.get_env(:cerberus_elixir, :cli_overrides)
+    fixture = LocalReviewRepo.create!()
 
     on_exit(fn ->
+      LocalReviewRepo.cleanup!(fixture)
+
       if original == nil do
         Application.delete_env(:cerberus_elixir, :cli_overrides)
       else
@@ -26,7 +21,7 @@ defmodule Mix.Tasks.Cerberus.ReviewTest do
       end
     end)
 
-    :ok
+    %{fixture: fixture}
   end
 
   defp valid_verdict_json do
@@ -77,24 +72,23 @@ defmodule Mix.Tasks.Cerberus.ReviewTest do
     ]
   end
 
-  defp write_diff! do
-    path =
-      Path.join(
-        System.tmp_dir!(),
-        "cerberus_mix_task_diff_#{System.unique_integer([:positive])}.diff"
-      )
-
-    File.write!(path, @diff)
-    path
+  defp review_args(fixture, base_ref \\ nil, head_ref \\ nil) do
+    [
+      "--repo",
+      fixture.root,
+      "--base",
+      base_ref || fixture.base_sha,
+      "--head",
+      head_ref || fixture.head_sha
+    ]
   end
 
-  test "run/1 delegates to the shared CLI path" do
-    diff_path = write_diff!()
+  test "run/1 delegates to the shared CLI path", %{fixture: fixture} do
     Application.put_env(:cerberus_elixir, :cli_overrides, cli_overrides())
 
     output =
       capture_io(fn ->
-        Mix.Tasks.Cerberus.Review.run(["--diff", diff_path, "--format", "json"])
+        Mix.Tasks.Cerberus.Review.run(review_args(fixture) ++ ["--format", "json"])
       end)
 
     decoded = Jason.decode!(output)
@@ -110,6 +104,7 @@ defmodule Mix.Tasks.Cerberus.ReviewTest do
       end)
 
     assert output =~ "Usage:"
-    assert output =~ "mix cerberus.review --diff <path|->"
+    assert output =~ "mix cerberus.review --repo <path> --base <ref> --head <ref>"
+    refute output =~ "--diff"
   end
 end
