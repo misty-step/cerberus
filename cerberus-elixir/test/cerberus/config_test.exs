@@ -177,6 +177,9 @@ defmodule Cerberus.ConfigTest do
               name: "deterministic/review-pass"
             }
           },
+          model_pools: %{
+            wave2: ["deterministic_review"]
+          },
           prompts: %{
             alt_correctness: %{content: "ALT correctness prompt"}
           },
@@ -222,9 +225,11 @@ defmodule Cerberus.ConfigTest do
       assert trace.template.id == "alt_review"
       assert atlas.prompt.id == "architecture"
       assert atlas.prompt.source == "default"
+      assert atlas.model.id == "deterministic_review"
       assert sentinel.perspective.value == "security"
       assert sentinel.model.id == "deterministic_review"
 
+      assert Config.model_pool(:wave2, server) == ["deterministic/review-pass"]
       assert Config.routing(server).fallback_panel == ["trace", "sentinel", "guard", "atlas"]
     end
   end
@@ -304,6 +309,41 @@ defmodule Cerberus.ConfigTest do
                &(&1.path == "routing.always_include" and
                    &1.reason == "references unknown reviewer")
              )
+    end
+
+    test "rejects unsupported override strings without interning new atoms" do
+      invalid_perspective = "unknown_perspective_#{System.unique_integer([:positive])}"
+      invalid_override = "unknown_override_#{System.unique_integer([:positive])}"
+      invalid_tier = "unknown_wave_#{System.unique_integer([:positive])}"
+      name = unique_name("config_invalid_override_strings")
+      Process.flag(:trap_exit, true)
+
+      assert {:error, {:invalid_config, diagnostics}} =
+               Config.start_link(
+                 repo_root: @repo_root,
+                 name: name,
+                 config_overrides: %{
+                   reviewers: %{
+                     trace: %{
+                       perspective: invalid_perspective,
+                       override: invalid_override
+                     }
+                   },
+                   model_pools: %{
+                     invalid_tier => ["kimi_k2_5"]
+                   }
+                 }
+               )
+
+      paths = Map.new(diagnostics, &{&1.path, &1.reason})
+
+      assert paths["reviewers.trace.perspective"] == "unsupported perspective"
+      assert paths["reviewers.trace.override"] == "unsupported override policy"
+      assert paths["model_pools.#{invalid_tier}"] == "unsupported model pool tier"
+
+      assert_raise ArgumentError, fn -> String.to_existing_atom(invalid_perspective) end
+      assert_raise ArgumentError, fn -> String.to_existing_atom(invalid_override) end
+      assert_raise ArgumentError, fn -> String.to_existing_atom(invalid_tier) end
     end
   end
 

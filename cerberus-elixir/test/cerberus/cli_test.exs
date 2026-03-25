@@ -512,4 +512,49 @@ defmodule Cerberus.CLITest do
     refute_receive :reviewer_called
     refute_receive :router_called
   end
+
+  test "run/2 rejects unsupported override strings before planner or reviewer work", %{
+    fixture: fixture
+  } do
+    test_pid = self()
+    invalid_perspective = "unknown_perspective_#{System.unique_integer([:positive])}"
+    invalid_override = "unknown_override_#{System.unique_integer([:positive])}"
+    invalid_tier = "unknown_wave_#{System.unique_integer([:positive])}"
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               review_args(fixture),
+               cli_opts(
+                 config_overrides: %{
+                   reviewers: %{
+                     trace: %{
+                       perspective: invalid_perspective,
+                       override: invalid_override
+                     }
+                   },
+                   model_pools: %{
+                     invalid_tier => ["kimi_k2_5"]
+                   }
+                 },
+                 call_llm: fn _params ->
+                   send(test_pid, :reviewer_called)
+                   {:error, :unexpected}
+                 end,
+                 router_call_llm: fn _params ->
+                   send(test_pid, :router_called)
+                   {:error, :unexpected}
+                 end
+               )
+             )
+
+    assert message =~ "Invalid Cerberus reviewer configuration"
+    assert message =~ "reviewers.trace.perspective"
+    assert message =~ "unsupported perspective"
+    assert message =~ "reviewers.trace.override"
+    assert message =~ "unsupported override policy"
+    assert message =~ "model_pools.#{invalid_tier}"
+    assert message =~ "unsupported model pool tier"
+    refute_receive :reviewer_called
+    refute_receive :router_called
+  end
 end

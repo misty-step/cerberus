@@ -4,6 +4,21 @@ defmodule Cerberus.Config.Loader do
   alias Cerberus.Config.Diagnostic
   alias Cerberus.Config.Persona
 
+  @supported_perspectives %{
+    "correctness" => :correctness,
+    "security" => :security,
+    "testing" => :testing,
+    "architecture" => :architecture,
+    "resilience" => :resilience,
+    "maintainability" => :maintainability
+  }
+  @supported_override_policies %{
+    "pr_author" => :pr_author,
+    "write_access" => :write_access,
+    "maintainers_only" => :maintainers_only
+  }
+  @supported_model_tiers %{"flash" => :flash, "standard" => :standard, "pro" => :pro}
+  @supported_model_pool_tiers %{"wave1" => :wave1, "wave2" => :wave2, "wave3" => :wave3}
   @supported_provider_adapters MapSet.new(["openrouter", "deterministic"])
   @tier_to_pool %{flash: :wave1, standard: :wave2, pro: :wave3}
 
@@ -21,6 +36,30 @@ defmodule Cerberus.Config.Loader do
   @allowed_override_keys MapSet.new(
                            ~w(providers models model_pools prompts templates reviewers routing verdict)
                          )
+  @provider_source_keys %{"adapter" => :adapter}
+  @model_source_keys %{"provider" => :provider, "name" => :name}
+  @reviewer_source_keys %{
+    "perspective" => :perspective,
+    "prompt" => :prompt,
+    "template" => :template,
+    "model" => :model,
+    "description" => :description,
+    "override" => :override,
+    "tools" => :tools
+  }
+  @routing_source_keys %{
+    "enabled" => :enabled,
+    "model" => :model,
+    "panel_size" => :panel_size,
+    "always_include" => :always_include,
+    "fallback_panel" => :fallback_panel,
+    "include_if_code_changed" => :include_if_code_changed
+  }
+  @verdict_source_keys %{
+    "fail_on" => :fail_on,
+    "warn_on" => :warn_on,
+    "confidence_min" => :confidence_min
+  }
 
   @spec load(String.t(), map()) :: {:ok, map()} | {:error, {:invalid_config, [Diagnostic.t()]}}
   def load(repo_root, overrides \\ %{}) do
@@ -256,7 +295,7 @@ defmodule Cerberus.Config.Loader do
              %{}
              |> Map.put(:id, id)
              |> maybe_put_attr(:adapter, attrs, "adapter")
-             |> Map.put(:sources, attr_sources(attrs, source, ["adapter"]))}
+             |> Map.put(:sources, attr_sources(attrs, source, @provider_source_keys))}
 
           value ->
             {:diagnostic, diagnostic(source, path, "expected map", value)}
@@ -291,7 +330,7 @@ defmodule Cerberus.Config.Loader do
              |> Map.put(:id, id)
              |> maybe_put_attr(:provider_id, attrs, "provider")
              |> maybe_put_attr(:name, attrs, "name")
-             |> Map.put(:sources, attr_sources(attrs, source, ["provider", "name"]))}
+             |> Map.put(:sources, attr_sources(attrs, source, @model_source_keys))}
 
           value ->
             {:diagnostic, diagnostic(source, path, "expected map", value)}
@@ -317,15 +356,20 @@ defmodule Cerberus.Config.Loader do
       Enum.flat_map(raw, fn {tier, models} ->
         path = "model_pools.#{tier}"
 
+        unsupported_tier =
+          if supported_model_pool_tier?(tier),
+            do: [],
+            else: [diagnostic(source, path, "unsupported model pool tier", tier)]
+
         cond do
           not is_list(models) ->
-            [diagnostic(source, path, "expected list", models)]
+            unsupported_tier ++ [diagnostic(source, path, "expected list", models)]
 
           Enum.all?(models, &is_binary/1) ->
-            []
+            unsupported_tier
 
           true ->
-            [diagnostic(source, path, "expected list of strings", models)]
+            unsupported_tier ++ [diagnostic(source, path, "expected list of strings", models)]
         end
       end)
 
@@ -498,7 +542,7 @@ defmodule Cerberus.Config.Loader do
          |> maybe_put_attr(:always_include, raw, "always_include")
          |> maybe_put_attr(:fallback_panel, raw, "fallback_panel")
          |> maybe_put_attr(:include_if_code_changed, raw, "include_if_code_changed"),
-       sources: attr_sources(raw, source, Map.keys(raw))
+       sources: attr_sources(raw, source, @routing_source_keys)
      }}
     |> with_diagnostics(diagnostics)
   end
@@ -545,7 +589,7 @@ defmodule Cerberus.Config.Loader do
          |> maybe_put_attr(:fail_on, raw, "fail_on")
          |> maybe_put_attr(:warn_on, raw, "warn_on")
          |> maybe_put_attr(:confidence_min, raw, "confidence_min"),
-       sources: attr_sources(raw, source, Map.keys(raw))
+       sources: attr_sources(raw, source, @verdict_source_keys)
      }}
     |> with_diagnostics(diagnostics)
   end
@@ -565,13 +609,7 @@ defmodule Cerberus.Config.Loader do
     |> maybe_put_attr(:description, attrs, "description")
     |> maybe_put_attr(:override, attrs, "override")
     |> maybe_put_attr(:tools, attrs, "tools")
-    |> Map.put(
-      :sources,
-      attrs
-      |> Map.keys()
-      |> Enum.reject(&(&1 in ["id", "name"]))
-      |> Map.new(&{String.to_atom(&1), source})
-    )
+    |> Map.put(:sources, attr_sources(attrs, source, @reviewer_source_keys))
   end
 
   defp merge_sections(defaults, overrides) do
@@ -874,9 +912,11 @@ defmodule Cerberus.Config.Loader do
 
         []
         |> require_string(source, "reviewers.#{id}.perspective", reviewer.perspective)
+        |> validate_reviewer_perspective(source, id, reviewer.perspective)
         |> require_string(source, "reviewers.#{id}.prompt", reviewer.prompt_id)
         |> require_string(source, "reviewers.#{id}.template", reviewer.template_id)
         |> require_string(source, "reviewers.#{id}.model", reviewer.model_policy)
+        |> validate_reviewer_override(source, id, reviewer.override)
         |> maybe_require_known(source, "reviewers.#{id}.prompt", reviewer.prompt_id, prompts)
         |> maybe_require_known(
           source,
@@ -947,7 +987,7 @@ defmodule Cerberus.Config.Loader do
         %Persona{
           id: id,
           name: reviewer.name || id,
-          perspective: String.to_atom(reviewer.perspective),
+          perspective: perspective_to_atom!(reviewer.perspective),
           prompt: prompt.content,
           prompt_id: reviewer.prompt_id,
           prompt_path: prompt.path,
@@ -960,7 +1000,7 @@ defmodule Cerberus.Config.Loader do
           model_id: normalize_fixed_model(reviewer.model_policy),
           provider_id: nil,
           description: reviewer.description,
-          override: parse_override(reviewer.override),
+          override: normalize_override_policy(reviewer.override),
           tools: normalize_tools(reviewer.tools),
           sources: reviewer.sources
         }
@@ -1116,6 +1156,38 @@ defmodule Cerberus.Config.Loader do
     diagnostics ++ [diagnostic(source, "reviewers.#{id}.model", "expected string", value)]
   end
 
+  defp validate_reviewer_perspective(diagnostics, _source, _id, nil), do: diagnostics
+  defp validate_reviewer_perspective(diagnostics, _source, _id, ""), do: diagnostics
+
+  defp validate_reviewer_perspective(diagnostics, source, id, value) when is_binary(value) do
+    if Map.has_key?(@supported_perspectives, value) do
+      diagnostics
+    else
+      diagnostics ++
+        [diagnostic(source, "reviewers.#{id}.perspective", "unsupported perspective", value)]
+    end
+  end
+
+  defp validate_reviewer_perspective(diagnostics, source, id, value) do
+    diagnostics ++ [diagnostic(source, "reviewers.#{id}.perspective", "expected string", value)]
+  end
+
+  defp validate_reviewer_override(diagnostics, _source, _id, nil), do: diagnostics
+  defp validate_reviewer_override(diagnostics, _source, _id, ""), do: diagnostics
+
+  defp validate_reviewer_override(diagnostics, source, id, value) when is_binary(value) do
+    if Map.has_key?(@supported_override_policies, value) do
+      diagnostics
+    else
+      diagnostics ++
+        [diagnostic(source, "reviewers.#{id}.override", "unsupported override policy", value)]
+    end
+  end
+
+  defp validate_reviewer_override(diagnostics, source, id, value) do
+    diagnostics ++ [diagnostic(source, "reviewers.#{id}.override", "expected string", value)]
+  end
+
   defp maybe_tools_map(diagnostics, _source, _path, nil), do: diagnostics
   defp maybe_tools_map(diagnostics, _source, _path, value) when is_map(value), do: diagnostics
 
@@ -1152,9 +1224,17 @@ defmodule Cerberus.Config.Loader do
   defp normalize_fixed_model("pool"), do: nil
   defp normalize_fixed_model(value), do: value
 
-  defp parse_override(nil), do: nil
-  defp parse_override(value) when is_binary(value), do: String.to_atom(value)
-  defp parse_override(value) when is_atom(value), do: value
+  defp perspective_to_atom!(value) when is_atom(value), do: value
+
+  defp perspective_to_atom!(value) when is_binary(value),
+    do: Map.fetch!(@supported_perspectives, value)
+
+  defp normalize_override_policy(nil), do: nil
+  defp normalize_override_policy(value) when is_atom(value), do: value
+
+  defp normalize_override_policy(value) when is_binary(value) do
+    Map.fetch!(@supported_override_policies, value)
+  end
 
   defp normalize_tools(nil), do: %{}
   defp normalize_tools(value) when is_map(value), do: value
@@ -1208,12 +1288,28 @@ defmodule Cerberus.Config.Loader do
   end
 
   defp tier_to_atom(value) when is_atom(value), do: value
-  defp tier_to_atom(value) when is_binary(value), do: String.to_atom(value)
+
+  defp tier_to_atom(value) when is_binary(value),
+    do: Map.fetch!(@supported_model_pool_tiers, value)
 
   defp tier_to_string(value) when is_binary(value), do: value
   defp tier_to_string(value) when is_atom(value), do: Atom.to_string(value)
 
-  defp pool_tier_for(value) when is_binary(value), do: pool_tier_for(String.to_atom(value))
+  defp pool_tier_for(value) when is_binary(value) do
+    cond do
+      Map.has_key?(@supported_model_tiers, value) ->
+        @supported_model_tiers
+        |> Map.fetch!(value)
+        |> pool_tier_for()
+
+      Map.has_key?(@supported_model_pool_tiers, value) ->
+        Map.fetch!(@supported_model_pool_tiers, value)
+
+      true ->
+        value
+    end
+  end
+
   defp pool_tier_for(value) when is_atom(value), do: Map.get(@tier_to_pool, value, value)
 
   defp asset_sources(attrs, source) do
@@ -1222,16 +1318,24 @@ defmodule Cerberus.Config.Loader do
     |> maybe_put_source(:content, attrs["content"], source)
   end
 
-  defp attr_sources(attrs, source, keys) do
-    keys
-    |> Enum.reduce(%{}, fn key, acc ->
+  defp attr_sources(attrs, source, key_map) do
+    key_map
+    |> Enum.reduce(%{}, fn {key, source_key}, acc ->
       if Map.has_key?(attrs, key) do
-        Map.put(acc, String.to_atom(key), source)
+        Map.put(acc, source_key, source)
       else
         acc
       end
     end)
   end
+
+  defp supported_model_pool_tier?(value) when is_atom(value),
+    do: value in Map.values(@supported_model_pool_tiers)
+
+  defp supported_model_pool_tier?(value) when is_binary(value),
+    do: Map.has_key?(@supported_model_pool_tiers, value)
+
+  defp supported_model_pool_tier?(_value), do: false
 
   defp maybe_put_source(sources, _key, nil, _source), do: sources
   defp maybe_put_source(sources, key, _value, source), do: Map.put(sources, key, source)

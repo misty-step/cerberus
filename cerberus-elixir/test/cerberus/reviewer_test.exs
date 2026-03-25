@@ -242,6 +242,72 @@ defmodule Cerberus.ReviewerTest do
       assert params.model_id == "deterministic_review"
       assert params.model == "deterministic/review-pass"
     end
+
+    test "uses supported string perspective, override policy, and pool tier overrides" do
+      %{config: config} =
+        setup_config(%{}, %{
+          providers: %{deterministic: %{adapter: "deterministic"}},
+          models: %{
+            deterministic_review: %{
+              provider: "deterministic",
+              name: "deterministic/review-pass"
+            }
+          },
+          model_pools: %{
+            wave2: ["deterministic_review"]
+          },
+          reviewers: %{
+            sentinel: %{
+              perspective: "security",
+              prompt: "security",
+              template: "review",
+              model: "pool",
+              override: "maintainers_only",
+              description: "Sentinel override",
+              tools: %{shell: false}
+            }
+          }
+        })
+
+      {:ok, [entry]} = Cerberus.Config.resolve_panel(["sentinel"], :standard, config)
+      assert entry.reviewer.perspective == :security
+      assert entry.reviewer.override == :maintainers_only
+      assert entry.model_id == "deterministic_review"
+      test_pid = self()
+
+      capturing_llm = fn params ->
+        send(test_pid, {:llm_params, params})
+
+        {:ok,
+         %{
+           content: valid_verdict_json(),
+           tool_calls: [],
+           usage: %{prompt_tokens: 100, completion_tokens: 50}
+         }}
+      end
+
+      {:ok, pid} =
+        Reviewer.start_link(
+          reviewer: entry.reviewer,
+          perspective: entry.reviewer.perspective,
+          model: entry.model_name,
+          model_id: entry.model_id,
+          provider: entry.provider_id,
+          template: entry.template,
+          config_server: config,
+          call_llm: capturing_llm,
+          repo_root: @repo_root
+        )
+
+      {:ok, _} = Reviewer.review(pid, pr_context())
+
+      assert_receive {:llm_params, params}
+      [system_msg, _user_msg | _] = params.messages
+      assert system_msg["content"] =~ "security"
+      assert params.provider == "deterministic"
+      assert params.model_id == "deterministic_review"
+      assert params.model == "deterministic/review-pass"
+    end
   end
 
   # --- Tool definitions ---
