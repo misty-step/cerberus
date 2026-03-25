@@ -23,7 +23,7 @@ defmodule Cerberus.Application do
     [
       {Cerberus.Config, [name: config_name, repo_root: repo_root]},
       {Cerberus.Store, [name: store_name, database_path: database_path]},
-      {Cerberus.ReviewSupervisor, [name: review_supervisor_name]},
+      review_supervisor_child(review_supervisor_name),
       {Task.Supervisor, name: task_supervisor_name},
       {Cerberus.Router, [name: router_name, config_server: config_name]},
       Cerberus.Telemetry,
@@ -44,10 +44,22 @@ defmodule Cerberus.Application do
 
     [
       {Cerberus.Config, [name: config_name, repo_root: repo_root]},
-      {Cerberus.ReviewSupervisor, [name: review_supervisor_name]},
+      review_supervisor_child(review_supervisor_name),
       {Task.Supervisor, name: task_supervisor_name},
       {Cerberus.Router, router_opts}
     ]
+  end
+
+  defp review_supervisor_child(name) do
+    start_opts =
+      [strategy: :one_for_one]
+      |> maybe_put(:name, name)
+
+    %{
+      id: name || DynamicSupervisor,
+      start: {DynamicSupervisor, :start_link, [start_opts]},
+      type: :supervisor
+    }
   end
 
   defp maybe_put(opts, _key, nil), do: opts

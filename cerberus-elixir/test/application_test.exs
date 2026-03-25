@@ -11,6 +11,9 @@ defmodule Cerberus.ApplicationTest do
     assert Cerberus.Store in children
     assert Cerberus.ReviewSupervisor in children
     assert Cerberus.Router in children
+    assert is_pid(Process.whereis(Cerberus.ReviewSupervisor))
+    assert %{supervisors: 0, workers: 0} =
+             DynamicSupervisor.count_children(Cerberus.ReviewSupervisor)
   end
 
   test "defines a unix release with runtime tools" do
