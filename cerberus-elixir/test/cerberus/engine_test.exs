@@ -148,6 +148,16 @@ defmodule Cerberus.EngineTest do
     Keyword.merge(base, Keyword.drop(overrides, [:call_llm, :reviewer_timeout]))
   end
 
+  defp routing_result(panel \\ ["correctness"]) do
+    %{
+      panel: panel,
+      reserves: [],
+      model_tier: :flash,
+      size_bucket: :small,
+      routing_used: false
+    }
+  end
+
   defp temp_diff_paths do
     Path.join(System.tmp_dir!(), "cerberus-diff-*")
     |> Path.wildcard()
@@ -317,6 +327,18 @@ defmodule Cerberus.EngineTest do
       for _ <- 1..4 do
         assert_receive {:review_model, @default_model}
       end
+    end
+
+    test "accepts an injected routing_result for the shared review core", ctx do
+      assert {:ok, result} =
+               Engine.review(
+                 @diff,
+                 context(),
+                 engine_opts(ctx, routing_result: routing_result())
+               )
+
+      assert result.stats.total == 1
+      assert Enum.map(result.reviewer_results, & &1.perspective) == ["correctness"]
     end
 
     test "cleans up the temp diff file when config lookup crashes", ctx do

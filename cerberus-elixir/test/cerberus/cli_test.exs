@@ -7,13 +7,13 @@ defmodule Cerberus.CLITest do
 
   @repo_root Path.expand("../../..", __DIR__)
 
-  defp valid_verdict_json do
+  defp verdict_json(verdict, summary \\ nil) do
     Jason.encode!(%{
       "reviewer" => "trace",
       "perspective" => "correctness",
-      "verdict" => "PASS",
+      "verdict" => verdict,
       "confidence" => 0.85,
-      "summary" => "No issues found.",
+      "summary" => summary || "#{verdict} summary.",
       "findings" => [],
       "stats" => %{
         "files_reviewed" => 1,
@@ -26,8 +26,20 @@ defmodule Cerberus.CLITest do
     })
   end
 
+  defp valid_verdict_json, do: verdict_json("PASS")
+
   defp unique_name(prefix) do
     :"#{prefix}_#{System.unique_integer([:positive])}"
+  end
+
+  defp routing_result(panel \\ ["correctness"]) do
+    %{
+      panel: panel,
+      reserves: [],
+      model_tier: :flash,
+      size_bucket: :small,
+      routing_used: false
+    }
   end
 
   setup do
@@ -43,13 +55,7 @@ defmodule Cerberus.CLITest do
       router_name: unique_name("cli_router"),
       review_supervisor_name: unique_name("cli_review_supervisor"),
       task_supervisor_name: unique_name("cli_task_supervisor"),
-      routing_result: %{
-        panel: ["correctness"],
-        reserves: [],
-        model_tier: :flash,
-        size_bucket: :small,
-        routing_used: false
-      },
+      routing_result: routing_result(),
       call_llm: fn _params ->
         {:ok,
          %{
@@ -283,6 +289,87 @@ defmodule Cerberus.CLITest do
 
     assert decoded["verdict"] == "SKIP"
     assert decoded["stats"]["skip"] == 1
+  end
+
+  test "execute/2 returns deterministic exit codes for completed review verdicts", %{
+    fixture: fixture
+  } do
+    assert {:ok, %{verdict: "PASS", exit_code: 0}} =
+             CLI.execute(review_args(fixture), cli_opts())
+
+    assert {:ok, %{verdict: "WARN", exit_code: 0}} =
+             CLI.execute(
+               review_args(fixture),
+               cli_opts(
+                 call_llm: fn _params ->
+                   {:ok,
+                    %{
+                      content: verdict_json("WARN", "Potential issue found."),
+                      tool_calls: [],
+                      usage: %{prompt_tokens: 100, completion_tokens: 25}
+                    }}
+                 end
+               )
+             )
+
+    assert {:ok, %{verdict: "SKIP", exit_code: 0}} =
+             CLI.execute(
+               review_args(fixture, fixture.head_sha, fixture.head_sha),
+               cli_opts()
+             )
+
+    assert {:ok, %{verdict: "FAIL", exit_code: 2}} =
+             CLI.execute(
+               review_args(fixture),
+               cli_opts(
+                 routing_result: routing_result(["correctness", "security"]),
+                 call_llm: fn _params ->
+                   {:ok,
+                    %{
+                      content: verdict_json("FAIL", "Blocking issue found."),
+                      tool_calls: [],
+                      usage: %{prompt_tokens: 100, completion_tokens: 25}
+                    }}
+                 end
+               )
+             )
+  end
+
+  test "execute/2 uses a distinct non-zero exit code for invocation/runtime failures", %{
+    fixture: fixture
+  } do
+    assert {:ok, %{exit_code: fail_code, verdict: "FAIL"}} =
+             CLI.execute(
+               review_args(fixture),
+               cli_opts(
+                 routing_result: routing_result(["correctness", "security"]),
+                 call_llm: fn _params ->
+                   {:ok,
+                    %{
+                      content: verdict_json("FAIL", "Blocking issue found."),
+                      tool_calls: [],
+                      usage: %{prompt_tokens: 100, completion_tokens: 25}
+                    }}
+                 end
+               )
+             )
+
+    assert {:error, %{exit_code: invocation_code, message: invocation_message}} =
+             CLI.execute(["--unknown"], cli_opts())
+
+    assert invocation_code == 1
+    assert invocation_message =~ "Unsupported options"
+
+    assert {:error, %{exit_code: runtime_code, message: runtime_message}} =
+             CLI.execute(
+               review_args(fixture),
+               cli_opts(review_supervisor_name: self())
+             )
+
+    assert runtime_code == 1
+    assert runtime_message =~ "Failed to start CLI runtime"
+    assert fail_code != invocation_code
+    assert fail_code != runtime_code
   end
 
   test "run/2 surfaces routing failures when the router crashes", %{fixture: fixture} do

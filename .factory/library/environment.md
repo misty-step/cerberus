@@ -12,3 +12,4 @@ Environment variables, external dependencies, and setup notes.
 - Mission target is CLI-only: no HTTP server, database, Sprite, or GitHub Action control plane
 - Current repo starts with the Elixir app nested under `cerberus-elixir/`; workers are expected to move it to repo root during the final simplification milestone
 - Real end-user review runs will need provider credentials, but mission validation should use deterministic doubles/fixtures instead of live provider calls
+- For terminal-only manual checks during the nested-app milestone, prefer `mix run --no-start --no-compile ...`; plain `mix run` boots the app supervisor and starts Bandit, which muddies CLI-only verification.
