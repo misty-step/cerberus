@@ -1,7 +1,7 @@
 {
   "milestone": "configurable-review-planner",
-  "round": 2,
-  "status": "pass",
+  "round": 1,
+  "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
@@ -17,35 +17,26 @@
       "passed": true,
       "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix format --check-formatted",
       "exitCode": 0
-    },
-    "legacySurfaceSanity": {
-      "passed": true,
-      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; if [ -f \"$REPO/dispatch.sh\" ]; then shellcheck \"$REPO/dispatch.sh\"; else echo \"dispatch.sh retired\"; fi && if [ -f \"$REPO/bin/cerberus.js\" ]; then node --check \"$REPO/bin/cerberus.js\"; else echo \"node scaffolder retired\"; fi",
-      "exitCode": 0
     }
   },
   "reviewsSummary": {
-    "total": 3,
-    "passed": 3,
-    "failed": 0,
-    "failedFeatures": []
-  },
-  "rerunDetails": {
-    "reviewedFixFeatures": [
-      {
-        "featureId": "planner-doc-test-minimization",
-        "status": "pass",
-        "addressesFailureFrom": "planner-bench-aware-routing"
-      }
-    ],
-    "resolvedFailures": [
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": [
       "planner-bench-aware-routing"
     ]
   },
-  "blockingIssues": [],
+  "blockingIssues": [
+    {
+      "featureId": "planner-bench-aware-routing",
+      "severity": "blocking",
+      "description": "Docs-only and test-only ranges can still be escalated to a four-reviewer panel when the repository has `public_contract_surface` or `security_sensitive_repo` markers, because `determine_panel_size/5` applies `max(desired, 4)` after already classifying the diff as low-risk. This violates the milestone contract that docs/test-only changes stay smaller or cheaper unless configuration explicitly broadens coverage."
+    }
+  ],
   "nonBlockingIssues": [],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/configurable-review-planner/scrutiny/synthesis.round-1.json"
+  "previousRound": null
 }
