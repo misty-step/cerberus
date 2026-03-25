@@ -1,0 +1,331 @@
+{
+  "assertions": [
+    {
+      "id": "VAL-CONFIG-005",
+      "status": "pass",
+      "title": "Bench composition overrides constrain planner eligibility",
+      "steps": [
+        {
+          "action": "Run the same ordinary code range with the default bench",
+          "expected": "Planner should consider the full active bench",
+          "observed": "Selected [\"trace\", \"guard\", \"craft\"] from eligible bench [\"trace\", \"atlas\", \"guard\", \"craft\"]"
+        },
+        {
+          "action": "Rerun with bench composition overrides that disable atlas/craft/fuse",
+          "expected": "Removed reviewers should disappear from eligibility, selection, and launches",
+          "observed": "Selected [\"trace\", \"guard\", \"proof\"] from eligible bench [\"trace\", \"guard\", \"proof\"]; resolved reviewers [\"trace\", \"guard\", \"proof\"]; launched [\"trace\", \"guard\", \"proof\"]"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-default-bench-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-bench-override-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-default-bench-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-bench-override-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-default-bench-refs.json",
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-bench-override-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-default-bench-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-bench-override-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-default-bench-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-bench-override-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-default-bench-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-CONFIG-005-bench-override-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PLAN-001",
+      "status": "pass",
+      "title": "Routing uses repository plus diff context",
+      "steps": [
+        {
+          "action": "Run an identical code diff in a plain fixture repo",
+          "expected": "Planner trace should reflect only the non-public repo context",
+          "observed": "Selected [\"trace\", \"guard\", \"craft\"] at tier standard with repo signals %{\"config_surface\" => false, \"public_contract_surface\" => false, \"security_sensitive_repo\" => false}"
+        },
+        {
+          "action": "Run the same diff shape in a repo containing a public contract surface",
+          "expected": "Planner trace should mark the repo-local signal and may broaden/escalate coverage",
+          "observed": "Selected [\"trace\", \"guard\", \"atlas\", \"proof\"] at tier pro with repo signals %{\"config_surface\" => false, \"public_contract_surface\" => true, \"security_sensitive_repo\" => false}"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-plain-repo-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-public-contract-repo-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-plain-repo-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-public-contract-repo-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-plain-repo-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-public-contract-repo-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-plain-repo-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-public-contract-repo-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-plain-repo-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-public-contract-repo-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-plain-repo-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-001-public-contract-repo-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PLAN-002",
+      "status": "pass",
+      "title": "Doc/test-only changes stay minimal",
+      "steps": [
+        {
+          "action": "Compare docs-only and code-change ranges in the public-contract repo",
+          "expected": "Docs-only should stay cheaper than code",
+          "observed": "Docs-only selected [\"trace\"] at flash; comparable code selected [\"trace\", \"guard\", \"atlas\", \"proof\"] at pro"
+        },
+        {
+          "action": "Compare test-only and code-change ranges in the security-sensitive repo",
+          "expected": "Test-only should stay cheaper than code",
+          "observed": "Test-only selected [\"trace\", \"proof\"] at flash; comparable code selected [\"trace\", \"guard\", \"proof\", \"fuse\"] at pro"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-docs-only-public-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-public-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-test-only-security-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-security-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-docs-only-public-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-public-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-test-only-security-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-security-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-docs-only-public-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-public-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-test-only-security-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-security-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-docs-only-public-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-public-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-test-only-security-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-security-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-docs-only-public-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-public-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-test-only-security-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-security-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-docs-only-public-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-public-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-test-only-security-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-002-code-security-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PLAN-003",
+      "status": "pass",
+      "title": "Risky or contract-surface changes escalate coverage",
+      "steps": [
+        {
+          "action": "Run a low-risk ordinary code change baseline",
+          "expected": "Baseline should stay below risky coverage",
+          "observed": "Selected [\"trace\", \"guard\", \"craft\"] at tier standard with diff flags %{\"broad_change\" => false, \"ci_change\" => false, \"cli_change\" => false, \"config_change\" => false, \"contract_surface_change\" => false, \"doc_only\" => false, \"non_code_only\" => false, \"risky_change\" => false, \"surface_buckets\" => [\"lib\"], \"test_only\" => false}"
+        },
+        {
+          "action": "Run an auth-surface code change in a security-relevant repo",
+          "expected": "Planner should escalate to higher-risk coverage and include security review",
+          "observed": "Selected [\"trace\", \"guard\", \"proof\", \"fuse\"] at tier pro with diff flags %{\"broad_change\" => false, \"ci_change\" => false, \"cli_change\" => false, \"config_change\" => false, \"contract_surface_change\" => false, \"doc_only\" => false, \"non_code_only\" => false, \"risky_change\" => true, \"surface_buckets\" => [\"lib\"], \"test_only\" => false}"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-ordinary-baseline-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-risky-auth-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-ordinary-baseline-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-risky-auth-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-ordinary-baseline-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-risky-auth-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-ordinary-baseline-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-risky-auth-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-ordinary-baseline-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-risky-auth-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-ordinary-baseline-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-003-risky-auth-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PLAN-004",
+      "status": "pass",
+      "title": "Broad diffs expand beyond narrow diffs",
+      "steps": [
+        {
+          "action": "Run the narrow single-surface range",
+          "expected": "Planner should keep a smaller panel",
+          "observed": "Selected [\"trace\", \"guard\", \"craft\"] at tier standard with surface buckets [\"lib\"]"
+        },
+        {
+          "action": "Run the broad multi-surface range in the same repo",
+          "expected": "Planner should widen the panel beyond the narrow run",
+          "observed": "Selected [\"trace\", \"guard\", \"atlas\", \"fuse\"] at tier pro with surface buckets [\"config\", \"lib\", \"tests\"]"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-narrow-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-broad-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-narrow-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-broad-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-narrow-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-broad-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-narrow-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-broad-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-narrow-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-broad-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-narrow-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-004-broad-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PLAN-005",
+      "status": "pass",
+      "title": "Planner failure degrades safely",
+      "steps": [
+        {
+          "action": "Run the planner with a deterministic router failure double",
+          "expected": "CLI output should show degraded planning and the fallback-selected team only",
+          "observed": "Fallback=%{\"policy\" => \"bench_priority_v1\", \"reason\" => \"llm_error\", \"used\" => true}; selected [\"trace\", \"guard\", \"craft\"]; launched [\"trace\", \"guard\", \"craft\"]"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-005-planner-fallback-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-005-planner-fallback-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-005-planner-fallback-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-005-planner-fallback-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-005-planner-fallback-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-005-planner-fallback-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PLAN-006",
+      "status": "pass",
+      "title": "Planner behavior is replayable under deterministic doubles",
+      "steps": [
+        {
+          "action": "Run the same repo/range/config once under deterministic doubles",
+          "expected": "Planner should emit stable artifacts",
+          "observed": "Selected [\"trace\", \"guard\", \"craft\"] at tier standard"
+        },
+        {
+          "action": "Repeat the exact same run",
+          "expected": "Selected team, model tier, and planner trace should match the first run",
+          "observed": "Selected [\"trace\", \"guard\", \"craft\"] at tier standard"
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-1-terminal.txt",
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-2-terminal.txt"
+        ],
+        "runOutputs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-1-stdout.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-2-stdout.json"
+        ],
+        "refs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-1-refs.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-2-refs.json"
+        ],
+        "plannerTraces": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-1-planner-trace.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-2-planner-trace.json"
+        ],
+        "resolvedConfigs": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-1-resolved-config.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-2-resolved-config.json"
+        ],
+        "reviewerExecutionLedgers": [
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-1-reviewer-ledger.json",
+          "configurable-review-planner/planner-routing/VAL-PLAN-006-replay-2-reviewer-ledger.json"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "groupId": "planner-routing",
+  "testedAt": "2026-03-25T20:02:13Z",
+  "isolation": {
+    "surface": "terminal-cli",
+    "executionMode": "serial",
+    "repoRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus",
+    "appRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus/cerberus-elixir",
+    "missionDir": "/Users/phaedrus/.factory/missions/9ba62a98-6bca-42e0-b0e5-54452c2cc9a2",
+    "wrapperCommand": "MIX_ENV=test mix run --no-start --no-compile /tmp/planner_routing_validation_20260325.exs"
+  },
+  "toolsUsed": [
+    "mix run --no-start --no-compile",
+    "Cerberus.CLI.execute",
+    "git"
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions: 7 passed, 0 failed, 0 blocked, 0 skipped."
+}
