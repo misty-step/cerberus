@@ -3,25 +3,27 @@
 ## Local Checks
 
 ```bash
-node --check bin/cerberus.js
-shellcheck dispatch.sh
-
-cd cerberus-elixir
+mix compile --warnings-as-errors
 mix test
 mix format --check-formatted
+mix escript.build
 ```
 
-## Consumer Smoke Check
+## CLI Smoke Check
 
-1. Install `templates/consumer-workflow-reusable.yml` into a test repository.
-2. Set `CERBERUS_API_KEY`.
-3. If you are not using the hosted default, set `cerberus-url` in the workflow.
-4. Open a non-draft PR from the same repository.
-5. Confirm the workflow runs the root action and receives a verdict.
+1. Build the packaged CLI with `mix escript.build`.
+2. Set `CERBERUS_OPENROUTER_API_KEY` or `OPENROUTER_API_KEY`.
+3. From outside the target repository, run:
+
+   ```bash
+   ./cerberus review --repo /path/to/repo --base main --head HEAD
+   ```
+
+4. Confirm Cerberus prints a human-readable verdict and summary for the requested range.
 
 ## Expected Behavior
 
-- Fork PRs skip with `SKIP`.
-- Draft PRs skip with `SKIP`.
-- Missing `CERBERUS_API_KEY` fails fast.
-- `FAIL` verdicts fail the workflow when `fail-on-verdict` is `true`.
+- `cerberus --help` shows only the CLI command inventory.
+- `cerberus review --help` documents `--repo`, `--base`, and `--head`.
+- Retired commands such as `init`, `start`, `server`, and `migrate` fail clearly.
+- Missing OpenRouter credentials fail at review time without starting any server.

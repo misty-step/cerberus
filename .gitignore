@@ -6,6 +6,17 @@ htmlcov/
 coverage-html/
 *.pyc
 
+# Mix / escript artifacts
+_build/
+cover/
+deps/
+doc/
+tmp/
+erl_crash.dump
+*.ez
+cerberus_elixir-*.tar
+cerberus
+
 # Pi runtime local state
 .pi/state/
 .pi/logs/

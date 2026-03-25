@@ -2,55 +2,44 @@
 
 This repository now has one supported delivery path:
 
-- root `action.yml` is the Cerberus GitHub Action
-- root `dispatch.sh` is its polling client
-- `cerberus-elixir/` contains the review engine and HTTP API
+- the repository root Mix application and packaged CLI
 
-The retired Python/Shell matrix pipeline has been removed from the active repo surface.
+The retired GitHub Action, HTTP API/server, Sprite/Fly, Node scaffolder, and shell dispatch surfaces are no longer part of the active repo surface.
 
 ## Architecture
 
 ```text
-pull_request event
+cerberus review --repo --base --head
     │
     ▼
-action.yml
+Cerberus.Command / Cerberus.CLI
     │
     ▼
-dispatch.sh
+ReviewWorkspace
     │
-    ├── POST /api/reviews
-    ├── poll GET /api/reviews/:id
-    └── emit verdict output
-
-cerberus-elixir/
-    ├── API endpoint
-    ├── reviewer orchestration
-    ├── verdict aggregation
-    └── persistence / telemetry
+    ▼
+Router / Review / Reviewer execution
+    │
+    └── verdict aggregation + terminal rendering
 ```
 
 ## Key Files
 
-- `action.yml` - thin GitHub Action entrypoint
-- `dispatch.sh` - preflight + API dispatch + polling loop
-- `cerberus-elixir/lib/cerberus/` - engine modules
-- `cerberus-elixir/config/` - runtime config
+- `mix.exs` - root Mix project and packaged CLI definition
+- `lib/cerberus/` - engine and CLI modules
+- `config/` - runtime config
 - `defaults/config.yml` - product/model defaults consumed by the engine
 - `pi/agents/*.md` - reviewer personas
-- `templates/consumer-workflow-reusable.yml` - recommended consumer workflow
-- `bin/cerberus.js` - scaffolder CLI
+- `templates/*.md` - CLI review prompt templates
 
 ## Local Commands
 
 ```bash
-node --check bin/cerberus.js
-shellcheck dispatch.sh
-
-cd cerberus-elixir
 mix deps.get
+mix compile --warnings-as-errors
 mix test
 mix format --check-formatted
+mix escript.build
 ```
 
 ## Default Operating Frame

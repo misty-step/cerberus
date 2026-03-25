@@ -1,103 +1,62 @@
 # Cerberus
 
-Multi-agent AI code review for GitHub pull requests.
-
-Cerberus now ships as a thin GitHub Action client that dispatches review runs to the hosted Cerberus API. The heavy Python/Shell matrix pipeline has been retired from this repository.
+Cerberus is a local CLI for reviewing a repository change range.
 
 ## Quick Start
 
-Create `.github/workflows/cerberus.yml`:
+```bash
+mix deps.get
+mix escript.build
 
-```yaml
-name: Cerberus Review
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: cerberus-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    steps:
-      - uses: misty-step/cerberus@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.CERBERUS_API_KEY }}
-          fail-on-verdict: 'true'
+./cerberus review --repo /path/to/repo --base main --head HEAD
 ```
 
-Required repository configuration:
-
-- Secret: `CERBERUS_API_KEY`
-
-The scaffolder CLI writes the same template:
+You can also run the Mix task directly:
 
 ```bash
-npx @misty-step/cerberus init
+mix cerberus.review --repo /path/to/repo --base main --head HEAD
 ```
 
-## Action Inputs
+## Environment
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `github-token` | no | `''` | GitHub token forwarded to the hosted Cerberus pipeline for per-request PR reads and writes |
-| `api-key` | yes | - | Cerberus API authentication key |
-| `cerberus-url` | no | `https://cerberus.fly.dev` | API base URL override for self-hosted or non-default deployments |
-| `model` | no | `''` | Reserved; accepted but not yet wired to reviewer selection |
-| `timeout` | no | `600` | Max seconds to wait for review completion |
-| `poll-interval` | no | `5` | Seconds between status polls |
-| `fail-on-verdict` | no | `true` | Exit 1 if aggregated verdict is FAIL |
+Required for live LLM-backed reviews:
 
-Outputs:
+- `CERBERUS_OPENROUTER_API_KEY` or `OPENROUTER_API_KEY`
 
-- `verdict`
-- `review-id`
+Optional:
 
-## How It Works
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `LANGFUSE_HOST`
 
-1. The root action runs `dispatch.sh`.
-2. `dispatch.sh` validates the PR context, skips fork or draft PRs, and sends `POST /api/reviews`.
-3. The action polls `GET /api/reviews/:id` until the review completes or times out.
-4. The aggregated verdict becomes the GitHub Action result.
-
-The review engine itself lives in [`cerberus-elixir/`](cerberus-elixir/README.md).
+Cerberus no longer requires a GitHub Action, HTTP API, server process, or local port binding.
 
 ## Repository Layout
 
-- `action.yml` / `dispatch.sh`: thin GitHub Action client
-- `cerberus-elixir/`: Elixir API server and review engine
-- `defaults/`: model and product data consumed by the engine
-- `pi/agents/`: reviewer personas
-- `templates/`: consumer workflow templates
-- `bin/cerberus.js`: workflow scaffolder CLI
+- `mix.exs`: root Mix project and packaged CLI definition
+- `lib/`: CLI, review core, planner, reviewers, and supporting runtime modules
+- `config/`: runtime configuration
+- `defaults/`: shipped reviewer/model defaults
+- `pi/agents/`: reviewer prompts
+- `templates/`: review prompt templates
+- `test/`: automated validation
 
 ## Local Verification
 
 ```bash
-node --check bin/cerberus.js
-shellcheck dispatch.sh
-cd cerberus-elixir && mix test
-cd cerberus-elixir && mix format --check-formatted
+mix compile --warnings-as-errors
+mix test
+mix format --check-formatted
+mix escript.build
+./cerberus --help
 ```
 
 ## Docs
 
-- [API contract](docs/api-contract.md)
-- [Migration guide](docs/MIGRATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Terminology](docs/TERMINOLOGY.md)
 - [Docs index](docs/README.md)
 
-## Legacy Note
+## Historical Note
 
-Historical docs, walkthroughs, and ADRs may still mention the retired matrix pipeline. The supported product surface in this repository is now the API-dispatch action plus the Elixir engine.
+Older walkthroughs and ADRs may still mention retired GitHub Action, API, or deployment lanes. Treat those references as historical only.

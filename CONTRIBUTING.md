@@ -1,58 +1,61 @@
 # Contributing
 
-Cerberus now has two active code surfaces:
+Cerberus now has one supported product surface: the CLI-first Elixir application at the repository root.
 
-- the thin GitHub Action client at repo root
-- the Elixir review engine in `cerberus-elixir/`
-
-If you change the consumer contract, update the docs and templates in the same lane.
+If you change the CLI contract, update the active docs and validation lane in the same change.
 
 ## Local Setup
 
 ```bash
-node --check bin/cerberus.js
-shellcheck dispatch.sh
-
-cd cerberus-elixir
 mix deps.get
+mix compile --warnings-as-errors
 mix test
 mix format --check-formatted
+mix escript.build
 ```
 
 ## Change Rules
 
-- Keep the root action thin. Engine logic belongs in `cerberus-elixir/`, not in GitHub workflow glue.
-- Update `README.md`, `CLAUDE.md`, and `templates/consumer-workflow-reusable.yml` whenever the action contract changes.
+- Keep the supported surface CLI-only.
+- Update `README.md`, `QA.md`, and active workflow files whenever the CLI contract changes.
 - Preserve `defaults/` and `pi/agents/` unless the engine contract actually changed.
 - Prefer deleting dead compatibility layers over extending them.
 
 ## Typical Lanes
 
-### GitHub Action / Dispatch
+### CLI / Runtime
 
 Touched files usually include:
 
-- `action.yml`
-- `dispatch.sh`
-- `templates/consumer-workflow-reusable.yml`
-- `bin/cerberus.js`
+- `lib/cerberus/command.ex`
+- `lib/cerberus/cli.ex`
+- `lib/cerberus/review*.ex`
 - `README.md`
+- `QA.md`
 
 Verify with:
 
 ```bash
-node --check bin/cerberus.js
-shellcheck dispatch.sh
+mix compile --warnings-as-errors
+mix test
+mix escript.build
 ```
 
-### Elixir Engine
+### Config / Planner / Reviewers
 
-Touched files usually live under `cerberus-elixir/`.
+Touched files usually live under:
+
+- `lib/cerberus/`
+- `config/`
+- `defaults/`
+- `pi/agents/`
+- `templates/`
+- `test/`
 
 Verify with:
 
 ```bash
-cd cerberus-elixir
+mix compile --warnings-as-errors
 mix test
 mix format --check-formatted
 ```
