@@ -35,8 +35,6 @@ defmodule Cerberus.EngineTest do
    end
   """
 
-  @default_model "openrouter/moonshotai/kimi-k2.5"
-
   defmodule StoreSpy do
     use GenServer
 
@@ -54,10 +52,10 @@ defmodule Cerberus.EngineTest do
     end
   end
 
-  defmodule StaticConfig do
+  defmodule CrashConfig do
     use GenServer
 
-    def start_link(opts) do
+    def start_link(opts \\ []) do
       GenServer.start_link(__MODULE__, opts)
     end
 
@@ -65,17 +63,18 @@ defmodule Cerberus.EngineTest do
     def init(opts), do: {:ok, opts}
 
     @impl true
-    def handle_call(:personas, _from, state) do
-      case Keyword.fetch!(state, :personas) do
+    def handle_call({:resolve_panel, _panel, _tier}, _from, state) do
+      case Keyword.get(state, :resolve_panel) do
         {:raise, message} -> raise message
-        personas -> {:reply, personas, state}
+        reply -> {:reply, reply, state}
       end
     end
 
-    @impl true
-    def handle_call({:model_pool, tier}, _from, state) do
-      pools = Keyword.get(state, :model_pools, %{})
-      {:reply, Map.get(pools, tier, []), state}
+    def handle_call({:resolved_snapshot, _opts}, _from, state) do
+      case Keyword.get(state, :resolved_snapshot, %{}) do
+        {:raise, message} -> raise message
+        reply -> {:reply, reply, state}
+      end
     end
   end
 
@@ -88,7 +87,7 @@ defmodule Cerberus.EngineTest do
     {:ok, _config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
 
     router_llm = fn _params ->
-      {:ok, ["correctness", "security", "architecture", "testing"]}
+      {:ok, ["trace", "guard", "atlas", "proof"]}
     end
 
     router_name = :"engine_test_router_#{uid}"
@@ -148,7 +147,7 @@ defmodule Cerberus.EngineTest do
     Keyword.merge(base, Keyword.drop(overrides, [:call_llm, :reviewer_timeout]))
   end
 
-  defp routing_result(panel \\ ["correctness"]) do
+  defp routing_result(panel \\ ["trace"]) do
     %{
       panel: panel,
       reserves: [],
@@ -222,7 +221,7 @@ defmodule Cerberus.EngineTest do
           assert Enum.all?(result.reviewer_results, &(&1.status == :error))
         end)
 
-      assert log =~ "Reviewer correctness failed: {:permanent, :boom}"
+      assert log =~ "Reviewer trace failed: {:permanent, :boom}"
     end
 
     test "degrades reviewer crashes to skip results", ctx do
@@ -239,7 +238,7 @@ defmodule Cerberus.EngineTest do
           assert Enum.all?(result.reviewer_results, &(&1.status == :error))
         end)
 
-      assert log =~ "Reviewer correctness crashed"
+      assert log =~ "Reviewer trace crashed"
     end
 
     test "degrades reviewer timeouts to skip results", ctx do
@@ -281,52 +280,28 @@ defmodule Cerberus.EngineTest do
       assert log =~ " timed out"
     end
 
-    test "raises when routing returns a perspective without a matching persona", ctx do
-      personas =
-        ctx.config
-        |> Cerberus.Config.personas()
-        |> Enum.reject(&(to_string(&1.perspective) == "testing"))
-
-      {:ok, config} = StaticConfig.start_link(personas: personas, model_pools: %{wave2: []})
-
-      assert_raise ArgumentError, ~r/unknown perspective: "testing"/, fn ->
-        Engine.review(@diff, context(), engine_opts(ctx, config_server: config))
-      end
+    test "raises when routing returns an unknown reviewer id", ctx do
+      assert_raise ArgumentError,
+                   ~r/failed to resolve reviewer panel: \{:unknown_reviewer, "missing"\}/,
+                   fn ->
+                     Engine.review(
+                       @diff,
+                       context(),
+                       engine_opts(ctx, routing_result: routing_result(["missing"]))
+                     )
+                   end
     end
 
-    test "falls back to the default model when the selected pool is empty", ctx do
-      personas = Cerberus.Config.personas(ctx.config)
+    test "raises when the selected model pool is empty", ctx do
+      :sys.replace_state(ctx.config, fn state ->
+        Map.put(state, :model_pools, %{wave1: [], wave2: [], wave3: []})
+      end)
 
-      {:ok, config} =
-        StaticConfig.start_link(
-          personas: personas,
-          model_pools: %{wave1: [], wave2: [], wave3: []}
-        )
-
-      test_pid = self()
-
-      assert {:ok, _result} =
-               Engine.review(
-                 @diff,
-                 context(),
-                 engine_opts(ctx,
-                   config_server: config,
-                   call_llm: fn params ->
-                     send(test_pid, {:review_model, params.model})
-
-                     {:ok,
-                      %{
-                        content: @valid_verdict_json,
-                        tool_calls: nil,
-                        usage: %{prompt_tokens: 100, completion_tokens: 50}
-                      }}
+      assert_raise ArgumentError,
+                   ~r/failed to resolve reviewer panel: \{:empty_model_pool, "wave2"\}/,
+                   fn ->
+                     Engine.review(@diff, context(), engine_opts(ctx))
                    end
-                 )
-               )
-
-      for _ <- 1..4 do
-        assert_receive {:review_model, @default_model}
-      end
     end
 
     test "accepts an injected routing_result for the shared review core", ctx do
@@ -343,9 +318,11 @@ defmodule Cerberus.EngineTest do
 
     test "cleans up the temp diff file when config lookup crashes", ctx do
       before_paths = temp_diff_paths()
-      {:ok, config} = StaticConfig.start_link(personas: {:raise, "boom"})
+      {:ok, crash_config} = CrashConfig.start_link(resolve_panel: {:raise, "boom"})
 
-      assert catch_exit(Engine.review(@diff, context(), engine_opts(ctx, config_server: config)))
+      assert catch_exit(
+               Engine.review(@diff, context(), engine_opts(ctx, config_server: crash_config))
+             )
 
       assert temp_diff_paths() == before_paths
     end

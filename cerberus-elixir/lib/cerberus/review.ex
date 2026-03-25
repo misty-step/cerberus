@@ -10,15 +10,13 @@ defmodule Cerberus.Review do
   alias Cerberus.Verdict
   alias Cerberus.Verdict.Aggregator
 
-  @tier_to_pool %{flash: :wave1, standard: :wave2, pro: :wave3}
   @default_reviewer_timeout_ms 600_000
-  @default_model "openrouter/moonshotai/kimi-k2.5"
 
   @spec review(String.t(), map(), keyword()) :: {:ok, Result.t()}
   def review(diff, context, opts \\ []) when is_binary(diff) and is_map(context) do
     override = Keyword.get(opts, :override)
 
-    reviewer_results =
+    {reviewer_results, resolved_config} =
       Telemetry.with_review_run(Map.get(context, :pr_number, 0), fn otel_ctx ->
         routing = resolve_routing!(diff, context, opts)
         run_panel(routing, context, diff, otel_ctx, opts)
@@ -31,7 +29,11 @@ defmodule Cerberus.Review do
         usage: usage_by_reviewer(reviewer_results)
       )
 
-    {:ok, aggregated |> Map.put(:reviewer_results, reviewer_results) |> then(&struct(Result, &1))}
+    {:ok,
+     aggregated
+     |> Map.put(:reviewer_results, reviewer_results)
+     |> Map.put(:resolved_config, resolved_config)
+     |> then(&struct(Result, &1))}
   end
 
   defp usage_by_reviewer(reviewer_results) do
@@ -75,38 +77,33 @@ defmodule Cerberus.Review do
     task_sup = Keyword.get(opts, :task_supervisor, Cerberus.TaskSupervisor)
 
     with_diff_file(context, diff, fn review_ctx ->
-      personas = Config.personas(config)
-      pool = resolve_model_pool(routing.model_tier, config)
-
       panel =
-        Enum.map(routing.panel, fn perspective ->
-          persona = Enum.find(personas, &(to_string(&1.perspective) == perspective))
+        case Config.resolve_panel(routing.panel, routing.model_tier, config) do
+          {:ok, resolved_panel} ->
+            resolved_panel
 
-          unless persona do
-            known = Enum.map(personas, &to_string(&1.perspective))
+          {:error, reason} ->
+            raise ArgumentError, "failed to resolve reviewer panel: #{inspect(reason)}"
+        end
 
-            raise ArgumentError,
-                  "unknown perspective: #{inspect(perspective)} (known: #{inspect(known)})"
-          end
-
-          model = pick_model(persona, pool)
-          {persona.name, perspective, persona, model}
-        end)
+      resolved_config =
+        Config.resolved_snapshot(config, panel: routing.panel, model_tier: routing.model_tier)
 
       tasks =
-        Enum.map(panel, fn {_reviewer, perspective, persona, model} ->
+        Enum.map(panel, fn entry ->
           Task.Supervisor.async_nolink(task_sup, fn ->
-            Telemetry.with_reviewer(otel_ctx, perspective, model, fn ->
-              spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts)
+            Telemetry.with_reviewer(otel_ctx, entry.perspective, entry.model_name, fn ->
+              spawn_reviewer(entry, review_ctx, supervisor, timeout, opts)
             end)
           end)
         end)
 
       tasks
       |> Enum.zip(panel)
-      |> Enum.map(fn {task, {reviewer, perspective, _persona, _model}} ->
-        collect_result(task, reviewer, perspective, timeout)
+      |> Enum.map(fn {task, entry} ->
+        collect_result(task, entry, timeout)
       end)
+      |> then(&{&1, resolved_config})
     end)
   end
 
@@ -142,11 +139,15 @@ defmodule Cerberus.Review do
     }
   end
 
-  defp spawn_reviewer(persona, model, review_ctx, supervisor, timeout, opts) do
+  defp spawn_reviewer(entry, review_ctx, supervisor, timeout, opts) do
     reviewer_opts =
       [
-        perspective: persona.perspective,
-        model: model,
+        reviewer: entry.reviewer,
+        perspective: entry.reviewer.perspective,
+        model: entry.model_name,
+        model_id: entry.model_id,
+        provider: entry.provider_id,
+        template: entry.template,
         config_server: Keyword.get(opts, :config_server, Config),
         timeout_ms: timeout
       ] ++ Keyword.take(opts, [:call_llm, :tool_handler, :repo_root])
@@ -164,54 +165,51 @@ defmodule Cerberus.Review do
     end
   end
 
-  defp collect_result(task, reviewer, perspective, timeout) do
+  defp collect_result(task, entry, timeout) do
     case Task.yield(task, timeout + 5_000) || Task.shutdown(task) do
       {:ok, {:ok, result}} ->
         %ReviewerExecution{
-          reviewer: reviewer,
-          perspective: perspective,
-          verdict: %{result.verdict | reviewer: reviewer, perspective: perspective},
+          reviewer: entry.reviewer_id,
+          perspective: entry.perspective,
+          verdict: %{result.verdict | reviewer: entry.reviewer_id, perspective: entry.perspective},
           usage: result.usage,
           model: result[:model] || "unknown",
+          provider: result[:provider] || entry.provider_id,
+          prompt_id: entry.prompt_id,
+          prompt_digest: entry.prompt_digest,
+          template_id: entry.template_id,
+          template_digest: entry.template_digest,
           status: :ok
         }
 
       {:ok, {:error, reason}} ->
-        Logger.warning("Reviewer #{perspective} failed: #{inspect(reason)}")
-        degraded_result(reviewer, perspective, :error)
+        Logger.warning("Reviewer #{entry.reviewer_id} failed: #{inspect(reason)}")
+        degraded_result(entry, :error)
 
       {:exit, reason} ->
-        Logger.warning("Reviewer #{perspective} crashed: #{inspect(reason)}")
-        degraded_result(reviewer, perspective, :error)
+        Logger.warning("Reviewer #{entry.reviewer_id} crashed: #{inspect(reason)}")
+        degraded_result(entry, :error)
 
       nil ->
-        Logger.warning("Reviewer #{perspective} timed out")
-        degraded_result(reviewer, perspective, :timeout)
+        Logger.warning("Reviewer #{entry.reviewer_id} timed out")
+        degraded_result(entry, :timeout)
     end
   end
 
-  defp degraded_result(reviewer, perspective, status) do
+  defp degraded_result(entry, status) do
     %ReviewerExecution{
-      reviewer: reviewer,
-      perspective: perspective,
-      verdict: skip_verdict(reviewer, perspective),
+      reviewer: entry.reviewer_id,
+      perspective: entry.perspective,
+      verdict: skip_verdict(entry.reviewer_id, entry.perspective),
       usage: %{prompt_tokens: 0, completion_tokens: 0},
       model: "unknown",
+      provider: entry.provider_id,
+      prompt_id: entry.prompt_id,
+      prompt_digest: entry.prompt_digest,
+      template_id: entry.template_id,
+      template_digest: entry.template_digest,
       status: status
     }
-  end
-
-  defp resolve_model_pool(tier, config) do
-    pool_tier = Map.get(@tier_to_pool, tier, :wave2)
-    Config.model_pool(pool_tier, config)
-  end
-
-  defp pick_model(persona, pool) do
-    case persona.model_policy do
-      :pool -> List.first(pool) || @default_model
-      model when is_binary(model) and model != "" -> model
-      _ -> @default_model
-    end
   end
 
   defp skip_verdict(reviewer, perspective) do

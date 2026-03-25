@@ -137,6 +137,7 @@ defmodule Cerberus.CLI do
   defp with_runtime(opts, fun) do
     child_opts = [
       config_name: Keyword.get(opts, :config_name, Cerberus.Config),
+      config_overrides: Keyword.get(opts, :config_overrides, %{}),
       review_supervisor_name:
         Keyword.get(opts, :review_supervisor_name, Cerberus.ReviewSupervisor),
       task_supervisor_name: Keyword.get(opts, :task_supervisor_name, Cerberus.TaskSupervisor),
@@ -162,7 +163,7 @@ defmodule Cerberus.CLI do
       end
     else
       {:error, reason} ->
-        {:error, {"Failed to start CLI runtime: #{inspect(reason)}", @runtime_failure_exit_code}}
+        {:error, {format_runtime_start_error(reason), @runtime_failure_exit_code}}
     end
   end
 
@@ -373,6 +374,39 @@ defmodule Cerberus.CLI do
 
   defp maybe_put_keyword(opts, _key, nil), do: opts
   defp maybe_put_keyword(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp format_runtime_start_error(reason) do
+    case extract_invalid_config(reason) do
+      {:ok, diagnostics} -> Cerberus.Config.format_diagnostics(diagnostics)
+      :error -> "Failed to start CLI runtime: #{inspect(reason)}"
+    end
+  end
+
+  defp extract_invalid_config({:invalid_config, diagnostics}) when is_list(diagnostics),
+    do: {:ok, diagnostics}
+
+  defp extract_invalid_config({:shutdown, reason}), do: extract_invalid_config(reason)
+
+  defp extract_invalid_config({:failed_to_start_child, _child, reason}),
+    do: extract_invalid_config(reason)
+
+  defp extract_invalid_config({left, right}) do
+    case extract_invalid_config(left) do
+      {:ok, diagnostics} -> {:ok, diagnostics}
+      :error -> extract_invalid_config(right)
+    end
+  end
+
+  defp extract_invalid_config(reason) when is_list(reason) do
+    Enum.find_value(reason, :error, fn item ->
+      case extract_invalid_config(item) do
+        {:ok, diagnostics} -> {:ok, diagnostics}
+        :error -> nil
+      end
+    end) || :error
+  end
+
+  defp extract_invalid_config(_reason), do: :error
 
   defp usage do
     """

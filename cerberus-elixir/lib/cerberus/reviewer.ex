@@ -44,17 +44,15 @@ defmodule Cerberus.Reviewer do
   @impl true
   def init(opts) do
     repo_root = Keyword.get(opts, :repo_root)
-
-    template =
-      case Cerberus.ReviewPrompt.load_template(repo_root || Cerberus.repo_root()) do
-        {:ok, t} -> t
-        {:error, _} -> "Review the PR diff at {{DIFF_FILE}} from the {{PERSPECTIVE}} perspective."
-      end
+    reviewer = Keyword.get(opts, :reviewer)
 
     {:ok,
      %{
+       reviewer: reviewer,
        perspective: Keyword.fetch!(opts, :perspective),
        model: Keyword.fetch!(opts, :model),
+       model_id: Keyword.get(opts, :model_id),
+       provider: Keyword.get(opts, :provider, "openrouter"),
        config_server: Keyword.get(opts, :config_server, Cerberus.Config),
        call_llm: Keyword.get(opts, :call_llm, &Cerberus.LLM.OpenRouter.call/1),
        tool_handler: Keyword.get(opts, :tool_handler, &noop_tool_handler/1),
@@ -63,7 +61,7 @@ defmodule Cerberus.Reviewer do
        timeout_ms: Keyword.get(opts, :timeout_ms, @default_timeout_ms),
        max_steps: Keyword.get(opts, :max_steps, @default_max_steps),
        repo_root: repo_root,
-       template: template
+       template: Keyword.get(opts, :template, load_legacy_template(repo_root))
      }}
   end
 
@@ -92,7 +90,7 @@ defmodule Cerberus.Reviewer do
   defp execute_review(pr_context, state) do
     perspective = to_string(state.perspective)
 
-    case find_persona(perspective, state.config_server) do
+    case find_persona(state, perspective) do
       nil ->
         {:error, {:unknown_perspective, perspective}}
 
@@ -110,8 +108,10 @@ defmodule Cerberus.Reviewer do
     end
   end
 
-  defp find_persona(perspective, config_server) do
-    config_server
+  defp find_persona(%{reviewer: reviewer}, _perspective) when not is_nil(reviewer), do: reviewer
+
+  defp find_persona(state, perspective) do
+    state.config_server
     |> Cerberus.Config.personas()
     |> Enum.find(&(to_string(&1.perspective) == perspective))
   end
@@ -163,7 +163,14 @@ defmodule Cerberus.Reviewer do
   end
 
   defp run_conversation(model, messages, tools, state, step, usage) do
-    params = %{model: model, messages: messages, tools: tools, max_tokens: 16_000}
+    params = %{
+      provider: state.provider,
+      model: model,
+      model_id: state.model_id,
+      messages: messages,
+      tools: tools,
+      max_tokens: 16_000
+    }
 
     case state.call_llm.(params) do
       {:ok, %{tool_calls: tcs} = resp} when is_list(tcs) and tcs != [] ->
@@ -184,8 +191,17 @@ defmodule Cerberus.Reviewer do
         accumulated = accumulate_usage(usage, resp[:usage])
 
         case Cerberus.Verdict.parse(content) do
-          {:ok, verdict} -> {:ok, %{verdict: verdict, usage: accumulated}}
-          {:error, reason} -> {:error, {:invalid_verdict, reason}}
+          {:ok, verdict} ->
+            {:ok,
+             %{
+               verdict: verdict,
+               usage: accumulated,
+               provider: state.provider,
+               model_id: state.model_id
+             }}
+
+          {:error, reason} ->
+            {:error, {:invalid_verdict, reason}}
         end
 
       {:ok, _} ->
@@ -286,5 +302,15 @@ defmodule Cerberus.Reviewer do
 
   defp noop_tool_handler(%{name: name}) do
     {:error, "Tool #{name} not available in this context"}
+  end
+
+  defp load_legacy_template(repo_root) do
+    case Cerberus.ReviewPrompt.load_template(repo_root || Cerberus.repo_root()) do
+      {:ok, template} ->
+        template
+
+      {:error, _reason} ->
+        "Review the PR diff at {{DIFF_FILE}} from the {{PERSPECTIVE}} perspective."
+    end
   end
 end

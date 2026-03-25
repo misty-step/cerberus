@@ -69,7 +69,8 @@ defmodule Cerberus.PipelineTest do
          reserves: [],
          stats: %{total: 0, fail: 0, warn: 0, pass: 0, skip: 0},
          cost: %{total_usd: 0.0, per_reviewer: %{}},
-         reviewer_results: []
+         reviewer_results: [],
+         resolved_config: %{}
        }}
     end
   end
@@ -120,7 +121,7 @@ defmodule Cerberus.PipelineTest do
 
     # Router (mock LLM, unique name)
     router_llm = fn _params ->
-      {:ok, ["correctness", "security", "architecture", "testing"]}
+      {:ok, ["trace", "guard", "atlas", "proof"]}
     end
 
     router_name = :"pipeline_test_router_#{uid}"

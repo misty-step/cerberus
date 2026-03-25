@@ -55,7 +55,7 @@ defmodule Mix.Tasks.Cerberus.ReviewTest do
       review_supervisor_name: unique_name("mix_task_cli_review_supervisor"),
       task_supervisor_name: unique_name("mix_task_cli_task_supervisor"),
       routing_result: %{
-        panel: ["correctness"],
+        panel: ["trace"],
         reserves: [],
         model_tier: :flash,
         size_bucket: :small,

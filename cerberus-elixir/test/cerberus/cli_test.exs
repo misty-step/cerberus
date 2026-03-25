@@ -32,7 +32,7 @@ defmodule Cerberus.CLITest do
     :"#{prefix}_#{System.unique_integer([:positive])}"
   end
 
-  defp routing_result(panel \\ ["correctness"]) do
+  defp routing_result(panel \\ ["trace"]) do
     %{
       panel: panel,
       reserves: [],
@@ -322,7 +322,7 @@ defmodule Cerberus.CLITest do
              CLI.execute(
                review_args(fixture),
                cli_opts(
-                 routing_result: routing_result(["correctness", "security"]),
+                 routing_result: routing_result(["trace", "guard"]),
                  call_llm: fn _params ->
                    {:ok,
                     %{
@@ -342,7 +342,7 @@ defmodule Cerberus.CLITest do
              CLI.execute(
                review_args(fixture),
                cli_opts(
-                 routing_result: routing_result(["correctness", "security"]),
+                 routing_result: routing_result(["trace", "guard"]),
                  call_llm: fn _params ->
                    {:ok,
                     %{
@@ -478,6 +478,37 @@ defmodule Cerberus.CLITest do
              )
 
     assert message =~ ~s(Could not resolve --head ref "missing-ref")
+    refute_receive :reviewer_called
+    refute_receive :router_called
+  end
+
+  test "run/2 rejects invalid config overrides before planner or reviewer work", %{
+    fixture: fixture
+  } do
+    test_pid = self()
+
+    assert {:error, {message, 1}} =
+             CLI.run(
+               review_args(fixture),
+               cli_opts(
+                 config_overrides: %{
+                   unsupported: true,
+                   routing: %{panel_size: "oops"}
+                 },
+                 call_llm: fn _params ->
+                   send(test_pid, :reviewer_called)
+                   {:error, :unexpected}
+                 end,
+                 router_call_llm: fn _params ->
+                   send(test_pid, :router_called)
+                   {:error, :unexpected}
+                 end
+               )
+             )
+
+    assert message =~ "Invalid Cerberus reviewer configuration"
+    assert message =~ "overrides.unsupported"
+    assert message =~ "routing.panel_size"
     refute_receive :reviewer_called
     refute_receive :router_called
   end

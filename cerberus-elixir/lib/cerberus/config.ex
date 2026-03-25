@@ -1,22 +1,15 @@
 defmodule Cerberus.Config do
   @moduledoc """
-  Typed config registry for Cerberus personas, model pools, verdict rules, and routing.
+  Resolved reviewer configuration registry for Cerberus.
 
-  Loads `defaults/config.yml` and `pi/agents/*.md` prompt files at boot.
-  Polls prompt files for changes and hot-reloads on modification.
-
-  ## Public API
-
-      Cerberus.Config.personas()        # => [%Persona{}, ...]
-      Cerberus.Config.model_pool(:wave1) # => ["openrouter/...", ...] (shuffled)
-      Cerberus.Config.verdict_rules()    # => %{fail_on: ..., warn_on: ..., confidence_min: 0.7}
-      Cerberus.Config.routing()          # => %{panel_size: 4, always_include: [...], ...}
-      Cerberus.Config.reload()           # => :ok | {:error, reason}
+  Loads one merged runtime configuration model from shipped defaults plus optional
+  overrides, validates the full reviewer bench up-front, and exposes the
+  resolved reviewer/routing data needed by planner and reviewer execution.
   """
 
   use GenServer
 
-  alias Cerberus.Config.Persona
+  alias Cerberus.Config.{Diagnostic, Loader, Persona}
 
   @poll_interval_ms 5_000
 
@@ -39,6 +32,25 @@ defmodule Cerberus.Config do
   @spec routing(GenServer.server()) :: map()
   def routing(server \\ __MODULE__), do: GenServer.call(server, :routing)
 
+  @spec resolve_panel([String.t()], atom(), GenServer.server()) ::
+          {:ok, [map()]} | {:error, term()}
+  def resolve_panel(panel_ids, model_tier, server \\ __MODULE__) do
+    GenServer.call(server, {:resolve_panel, panel_ids, model_tier})
+  end
+
+  @spec resolved_snapshot(GenServer.server(), keyword()) :: map()
+  def resolved_snapshot(server \\ __MODULE__, opts \\ []) do
+    GenServer.call(server, {:resolved_snapshot, opts})
+  end
+
+  @spec format_diagnostics([Diagnostic.t()]) :: String.t()
+  def format_diagnostics(diagnostics) when is_list(diagnostics) do
+    diagnostics
+    |> Enum.map(&Diagnostic.format/1)
+    |> Enum.join("\n")
+    |> then(fn body -> "Invalid Cerberus reviewer configuration:\n" <> body end)
+  end
+
   @spec reload(GenServer.server()) :: :ok | {:error, term()}
   def reload(server \\ __MODULE__), do: GenServer.call(server, :reload)
 
@@ -47,8 +59,9 @@ defmodule Cerberus.Config do
   @impl true
   def init(opts) do
     repo_root = Keyword.get(opts, :repo_root, Cerberus.repo_root()) |> normalize_repo_root()
+    overrides = Keyword.get(opts, :config_overrides, %{})
 
-    case load_and_parse(repo_root) do
+    case load_and_parse(repo_root, overrides) do
       {:ok, state} ->
         schedule_poll()
         {:ok, state}
@@ -64,8 +77,9 @@ defmodule Cerberus.Config do
   end
 
   def handle_call({:model_pool, tier}, _from, state) do
-    pool = Map.get(state.model_pools, tier, [])
-    {:reply, Enum.shuffle(pool), state}
+    ids = Map.get(state.model_pools, tier, [])
+    pool = Enum.map(ids, &state.models[&1].name)
+    {:reply, pool, state}
   end
 
   def handle_call(:verdict_rules, _from, state) do
@@ -76,8 +90,16 @@ defmodule Cerberus.Config do
     {:reply, state.routing, state}
   end
 
+  def handle_call({:resolve_panel, panel_ids, model_tier}, _from, state) do
+    {:reply, Loader.resolve_panel(state, panel_ids, model_tier), state}
+  end
+
+  def handle_call({:resolved_snapshot, opts}, _from, state) do
+    {:reply, Loader.resolved_snapshot(state, opts), state}
+  end
+
   def handle_call(:reload, _from, state) do
-    case load_and_parse(state.repo_root) do
+    case load_and_parse(state.repo_root, state.overrides) do
       {:ok, new_state} ->
         {:reply, :ok, new_state}
 
@@ -90,7 +112,7 @@ defmodule Cerberus.Config do
 
   @impl true
   def handle_info(:check_prompts, state) do
-    state = maybe_reload_prompts(state)
+    state = maybe_reload_assets(state)
     schedule_poll()
     {:noreply, state}
   end
@@ -101,148 +123,13 @@ defmodule Cerberus.Config do
     Process.send_after(self(), :check_prompts, @poll_interval_ms)
   end
 
-  defp load_and_parse(repo_root) do
-    config_path = Path.join(repo_root, "defaults/config.yml")
-
-    with {:ok, raw} <- YamlElixir.read_from_file(config_path),
-         {:ok, prompts, mtimes} <- load_prompts_with_mtimes(repo_root),
-         {:ok, personas} <- build_personas(raw, prompts) do
-      {:ok,
-       %{
-         repo_root: repo_root,
-         personas: personas,
-         model_pools: build_model_pools(raw),
-         verdict_rules: build_verdict_rules(raw),
-         routing: build_routing(raw),
-         prompt_mtimes: mtimes
-       }}
-    end
+  defp load_and_parse(repo_root, overrides) do
+    Loader.load(repo_root, overrides)
   end
 
-  defp build_personas(raw, prompts) do
-    reviewers = Map.get(raw, "reviewers", [])
-
-    Enum.reduce_while(reviewers, {:ok, []}, fn r, {:ok, acc} ->
-      case Map.fetch(prompts, r["perspective"]) do
-        {:ok, prompt} when byte_size(prompt) > 0 ->
-          persona = %Persona{
-            name: r["name"],
-            perspective: String.to_atom(r["perspective"]),
-            prompt: prompt,
-            model_policy: parse_model_policy(r["model"]),
-            description: r["description"],
-            override: parse_atom(r["override"]),
-            tools: r["tools"] || %{}
-          }
-
-          {:cont, {:ok, [persona | acc]}}
-
-        {:ok, _empty} ->
-          {:halt, {:error, {:empty_prompt, r["perspective"]}}}
-
-        :error ->
-          {:halt, {:error, {:missing_prompt, r["perspective"]}}}
-      end
-    end)
-    |> case do
-      {:ok, personas} -> {:ok, Enum.reverse(personas)}
-      error -> error
-    end
-  end
-
-  defp build_model_pools(raw) do
-    raw
-    |> get_in(["model", "wave_pools"])
-    |> case do
-      nil -> %{}
-      pools -> Map.new(pools, fn {k, v} -> {String.to_atom(k), v} end)
-    end
-  end
-
-  defp build_verdict_rules(raw) do
-    verdict = Map.get(raw, "verdict", %{})
-
-    %{
-      fail_on: verdict["fail_on"] || "any_critical_or_2_major",
-      warn_on: verdict["warn_on"] || "any_major_or_5_minor_or_3_minor_same_category",
-      confidence_min: verdict["confidence_min"] || 0.7
-    }
-  end
-
-  defp build_routing(raw) do
-    routing = Map.get(raw, "routing", %{})
-
-    %{
-      panel_size: routing["panel_size"] || 4,
-      always_include: routing["always_include"] || [],
-      fallback_panel: routing["fallback_panel"] || [],
-      include_if_code_changed: routing["include_if_code_changed"] || [],
-      enabled: routing["enabled"] != false,
-      model: routing["model"]
-    }
-  end
-
-  defp parse_model_policy("pool"), do: :pool
-  defp parse_model_policy(model) when is_binary(model), do: model
-  defp parse_model_policy(_), do: :pool
-
-  defp parse_atom(nil), do: nil
-  defp parse_atom(s) when is_binary(s), do: String.to_atom(s)
-  defp parse_atom(a) when is_atom(a), do: a
-
-  defp load_prompts_with_mtimes(repo_root) do
-    glob = Application.get_env(:cerberus_elixir, :prompt_glob, "pi/agents/*.md")
-
-    paths =
-      repo_root
-      |> Path.join(glob)
-      |> Path.wildcard()
-      |> Enum.sort()
-
-    result =
-      Enum.reduce_while(paths, {:ok, %{}, %{}}, fn path, {:ok, prompts, mtimes} ->
-        with {:ok, content} <- File.read(path),
-             {:ok, stat} <- File.stat(path) do
-          key = Path.basename(path, ".md")
-          {:cont, {:ok, Map.put(prompts, key, content), Map.put(mtimes, path, stat.mtime)}}
-        else
-          {:error, reason} -> {:halt, {:error, {:prompt_read_failed, path, reason}}}
-        end
-      end)
-
-    case result do
-      {:ok, prompts, _mtimes} when map_size(prompts) == 0 -> {:error, :no_prompts_found}
-      {:ok, prompts, mtimes} -> {:ok, prompts, mtimes}
-      error -> error
-    end
-  end
-
-  defp maybe_reload_prompts(state) do
-    glob = Application.get_env(:cerberus_elixir, :prompt_glob, "pi/agents/*.md")
-
-    current_paths =
-      state.repo_root
-      |> Path.join(glob)
-      |> Path.wildcard()
-      |> MapSet.new()
-
-    known_paths = state.prompt_mtimes |> Map.keys() |> MapSet.new()
-
-    # Detect new or removed files
-    files_changed = current_paths != known_paths
-
-    # Detect mtime changes on known files
-    mtimes_changed =
-      not files_changed and
-        Enum.any?(Map.keys(state.prompt_mtimes), fn path ->
-          case File.stat(path) do
-            {:ok, stat} -> stat.mtime != state.prompt_mtimes[path]
-            _ -> true
-          end
-        end)
-
-    if files_changed or mtimes_changed do
-      case load_and_parse(state.repo_root) do
+  defp maybe_reload_assets(state) do
+    if assets_changed?(state.asset_mtimes) do
+      case load_and_parse(state.repo_root, state.overrides) do
         {:ok, new_state} ->
           new_state
 
@@ -254,6 +141,15 @@ defmodule Cerberus.Config do
     else
       state
     end
+  end
+
+  defp assets_changed?(asset_mtimes) do
+    Enum.any?(asset_mtimes, fn {path, mtime} ->
+      case File.stat(path) do
+        {:ok, stat} -> stat.mtime != mtime
+        _ -> true
+      end
+    end)
   end
 
   defp normalize_repo_root(candidate) do

@@ -47,15 +47,17 @@ defmodule Cerberus.APITest do
 
     :sys.replace_state(config_name, fn state ->
       correctness_persona =
-        Enum.find(state.personas, fn persona -> persona.perspective == :correctness end)
+        Enum.find(state.personas, fn persona -> persona.id == "trace" end)
 
       %{
         state
         | personas: [correctness_persona],
+          persona_by_id: %{"trace" => correctness_persona},
+          reviewer_order: ["trace"],
           routing: %{
             state.routing
             | panel_size: 1,
-              fallback_panel: ["correctness"],
+              fallback_panel: ["trace"],
               always_include: [],
               include_if_code_changed: []
           }
@@ -63,7 +65,7 @@ defmodule Cerberus.APITest do
     end)
 
     router_llm = fn _params ->
-      {:ok, ["correctness"]}
+      {:ok, ["trace"]}
     end
 
     router_name = :"api_test_router_#{uid}"

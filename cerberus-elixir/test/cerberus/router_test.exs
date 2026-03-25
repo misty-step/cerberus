@@ -272,8 +272,8 @@ defmodule Cerberus.RouterTest do
       config_name = :"config_router_#{System.unique_integer([:positive])}"
       {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
 
-      # Deterministic mock that always returns required perspectives first
-      preferred = ["correctness", "security", "architecture", "testing"]
+      # Deterministic mock that always returns required reviewer ids first
+      preferred = ["trace", "guard", "atlas", "proof"]
 
       mock_llm = fn params ->
         {:ok, Enum.take(preferred, params.panel_size)}
@@ -296,20 +296,20 @@ defmodule Cerberus.RouterTest do
       assert length(result.panel) == 4
     end
 
-    test "panel contains only valid perspectives", %{router: router, config: config} do
+    test "panel contains only valid reviewer ids", %{router: router, config: config} do
       {:ok, result} = Router.route(@simple_diff, [], router)
-      valid = Cerberus.Config.personas(config) |> Enum.map(&to_string(&1.perspective))
+      valid = Cerberus.Config.personas(config) |> Enum.map(& &1.id)
 
       for p <- result.panel do
-        assert p in valid, "#{p} not a valid perspective"
+        assert p in valid, "#{p} not a valid reviewer id"
       end
     end
 
-    test "reserves contain non-selected perspectives", %{router: router, config: config} do
+    test "reserves contain non-selected reviewer ids", %{router: router, config: config} do
       {:ok, result} = Router.route(@simple_diff, [], router)
 
       all =
-        Cerberus.Config.personas(config) |> Enum.map(&to_string(&1.perspective)) |> MapSet.new()
+        Cerberus.Config.personas(config) |> Enum.map(& &1.id) |> MapSet.new()
 
       panel_set = MapSet.new(result.panel)
       reserve_set = MapSet.new(result.reserves)
@@ -324,16 +324,14 @@ defmodule Cerberus.RouterTest do
       assert result.size_bucket in [:small, :medium, :large, :xlarge]
     end
 
-    test "trace (correctness) always included when code changed", %{router: router} do
+    test "trace reviewer always included when code changed", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
-      assert "correctness" in result.panel
+      assert "trace" in result.panel
     end
 
-    test "guard (security) included when code changed", %{router: router} do
-      # Use a mock that returns exactly what the fallback would, to verify
-      # the required perspectives are enforced
+    test "guard reviewer included when code changed", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
-      assert "security" in result.panel
+      assert "guard" in result.panel
     end
 
     test "routing_used reflects LLM success", %{router: router} do
@@ -368,10 +366,10 @@ defmodule Cerberus.RouterTest do
       assert length(result.panel) == 4
     end
 
-    test "fallback panel still includes required perspectives", %{router: router} do
+    test "fallback panel still includes required reviewers", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
-      assert "correctness" in result.panel
-      assert "security" in result.panel
+      assert "trace" in result.panel
+      assert "guard" in result.panel
     end
 
     test "never crashes on LLM failure", %{router: router} do
@@ -387,7 +385,7 @@ defmodule Cerberus.RouterTest do
       {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
 
       # Mock LLM that returns wrong-sized panel
-      bad_llm = fn _params -> {:ok, ["correctness", "security"]} end
+      bad_llm = fn _params -> {:ok, ["trace", "guard"]} end
 
       router_name = :"router_invalid_#{System.unique_integer([:positive])}"
 
@@ -414,7 +412,7 @@ defmodule Cerberus.RouterTest do
       {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
 
       mock_llm = fn params ->
-        {:ok, Enum.take(params.all_perspectives, params.panel_size)}
+        {:ok, Enum.take(params.all_reviewers, params.panel_size)}
       end
 
       router_name = :"router_doc_#{System.unique_integer([:positive])}"
@@ -452,8 +450,7 @@ defmodule Cerberus.RouterTest do
       mock_llm = fn params ->
         send(test_pid, {:llm_model, params.model})
 
-        {:ok,
-         Enum.take(["correctness", "security", "architecture", "testing"], params.panel_size)}
+        {:ok, Enum.take(["trace", "guard", "atlas", "proof"], params.panel_size)}
       end
 
       router_name = :"router_nilmodel_#{System.unique_integer([:positive])}"
@@ -504,7 +501,7 @@ defmodule Cerberus.RouterTest do
       {:ok, result} = Router.route(@simple_diff, [], router)
       assert result.routing_used == false
       assert length(result.panel) == 4
-      assert "correctness" in result.panel
+      assert "trace" in result.panel
     end
   end
 

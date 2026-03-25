@@ -7,8 +7,16 @@ defmodule Cerberus.ConfigTest do
   @repo_root Path.expand("../../..", __DIR__)
 
   setup do
-    name = :"config_#{System.unique_integer([:positive])}"
+    name = unique_name("config")
     {:ok, pid} = Config.start_link(repo_root: @repo_root, name: name)
+    %{server: name, pid: pid}
+  end
+
+  defp unique_name(prefix), do: :"#{prefix}_#{System.unique_integer([:positive])}"
+
+  defp start_config!(overrides) do
+    name = unique_name("config_override")
+    {:ok, pid} = Config.start_link(repo_root: @repo_root, name: name, config_overrides: overrides)
     %{server: name, pid: pid}
   end
 
@@ -66,9 +74,12 @@ defmodule Cerberus.ConfigTest do
       assert Enum.any?(pool, &String.contains?(&1, "openrouter/"))
     end
 
-    test "returns shuffled list (order may vary across calls)", %{server: server} do
-      results = for _ <- 1..10, do: Config.model_pool(:wave1, server)
-      assert length(Enum.uniq(results)) > 1 or length(hd(results)) <= 1
+    test "returns deterministic configured order", %{server: server} do
+      assert Config.model_pool(:wave1, server) == [
+               "openrouter/x-ai/grok-4.1-fast",
+               "openrouter/inception/mercury-2",
+               "openrouter/minimax/minimax-m2.5"
+             ]
     end
 
     test "returns empty list for unknown tier", %{server: server} do
@@ -129,6 +140,170 @@ defmodule Cerberus.ConfigTest do
     test "includes enabled flag", %{server: server} do
       routing = Config.routing(server)
       assert routing.enabled == true
+    end
+  end
+
+  describe "resolved_snapshot/2" do
+    test "returns deterministic redacted snapshot for the active reviewer bench", %{
+      server: server
+    } do
+      snapshot = Config.resolved_snapshot(server, model_tier: :standard)
+
+      assert snapshot.model_tier == "standard"
+      assert snapshot.planner_model.id == "gemini_3_flash_preview"
+      assert snapshot.planner_model.provider.source == "default"
+
+      trace = Enum.find(snapshot.reviewers, &(&1.id == "trace"))
+      assert trace.perspective.value == "correctness"
+      assert trace.provider.value == "openrouter"
+      assert trace.model.id == "kimi_k2_5"
+      assert trace.prompt.path == "pi/agents/correctness.md"
+      assert trace.template.path == "templates/review-prompt.md"
+      assert String.starts_with?(trace.prompt.digest, "sha256:")
+      assert String.starts_with?(trace.template.digest, "sha256:")
+      refute Map.has_key?(trace.prompt, :content)
+      refute Map.has_key?(trace.template, :content)
+    end
+
+    test "applies partial overrides while preserving inherited defaults" do
+      %{server: server} =
+        start_config!(%{
+          providers: %{
+            deterministic: %{adapter: "deterministic"}
+          },
+          models: %{
+            deterministic_review: %{
+              provider: "deterministic",
+              name: "deterministic/review-pass"
+            }
+          },
+          prompts: %{
+            alt_correctness: %{content: "ALT correctness prompt"}
+          },
+          templates: %{
+            alt_review: %{content: "ALT template for {{PERSPECTIVE}}"}
+          },
+          reviewers: %{
+            trace: %{
+              prompt: "alt_correctness",
+              template: "alt_review",
+              model: "deterministic_review",
+              description: "Trace override"
+            },
+            sentinel: %{
+              perspective: "security",
+              prompt: "security",
+              template: "review",
+              model: "deterministic_review",
+              description: "Sentinel override",
+              override: "maintainers_only",
+              tools: %{shell: false}
+            }
+          },
+          routing: %{
+            fallback_panel: ["trace", "sentinel", "guard", "atlas"]
+          }
+        })
+
+      personas = Config.personas(server)
+      snapshot = Config.resolved_snapshot(server, model_tier: :standard)
+
+      assert Enum.map(personas, & &1.id) |> Enum.sort() ==
+               ~w(atlas craft fuse guard proof sentinel trace)
+
+      trace = Enum.find(snapshot.reviewers, &(&1.id == "trace"))
+      atlas = Enum.find(snapshot.reviewers, &(&1.id == "atlas"))
+      sentinel = Enum.find(snapshot.reviewers, &(&1.id == "sentinel"))
+
+      assert trace.provider.value == "deterministic"
+      assert trace.provider.source == "override"
+      assert trace.model.id == "deterministic_review"
+      assert trace.prompt.id == "alt_correctness"
+      assert trace.template.id == "alt_review"
+      assert atlas.prompt.id == "architecture"
+      assert atlas.prompt.source == "default"
+      assert sentinel.perspective.value == "security"
+      assert sentinel.model.id == "deterministic_review"
+
+      assert Config.routing(server).fallback_panel == ["trace", "sentinel", "guard", "atlas"]
+    end
+  end
+
+  describe "config validation" do
+    test "rejects duplicate reviewer ids in overrides" do
+      name = unique_name("config_duplicate")
+      Process.flag(:trap_exit, true)
+
+      assert {:error, {:invalid_config, diagnostics}} =
+               Config.start_link(
+                 repo_root: @repo_root,
+                 name: name,
+                 config_overrides: %{
+                   reviewers: [
+                     %{id: "trace", description: "first"},
+                     %{id: "trace", description: "second"}
+                   ]
+                 }
+               )
+
+      assert Enum.any?(
+               diagnostics,
+               &(&1.path == "reviewers[1]" and &1.reason == "duplicate reviewer id")
+             )
+    end
+
+    test "rejects invalid provider/model combinations, missing assets, unsupported keys, and wrong value types" do
+      name = unique_name("config_invalid")
+      Process.flag(:trap_exit, true)
+
+      assert {:error, {:invalid_config, diagnostics}} =
+               Config.start_link(
+                 repo_root: @repo_root,
+                 name: name,
+                 config_overrides: %{
+                   unsupported: true,
+                   routing: %{panel_size: "four"},
+                   providers: %{deterministic: %{adapter: "deterministic"}},
+                   models: %{
+                     bad_combo: %{
+                       provider: "deterministic",
+                       name: "openrouter/google/gemini-3-flash-preview"
+                     }
+                   },
+                   prompts: %{
+                     missing_prompt: %{path: "missing/prompt.md"}
+                   },
+                   reviewers: %{
+                     trace: %{prompt: "missing_prompt", model: "bad_combo"}
+                   }
+                 }
+               )
+
+      paths = Map.new(diagnostics, &{&1.path, &1.reason})
+      assert paths["overrides.unsupported"] == "unsupported override key"
+      assert paths["routing.panel_size"] == "expected integer"
+      assert paths["models.bad_combo"] == "invalid provider/model combination"
+      assert paths["prompts.missing_prompt"] == "asset file not found"
+    end
+
+    test "rejects dangling reviewer references before planner work starts" do
+      name = unique_name("config_dangling")
+      Process.flag(:trap_exit, true)
+
+      assert {:error, {:invalid_config, diagnostics}} =
+               Config.start_link(
+                 repo_root: @repo_root,
+                 name: name,
+                 config_overrides: %{
+                   routing: %{always_include: ["ghost-reviewer"]}
+                 }
+               )
+
+      assert Enum.any?(
+               diagnostics,
+               &(&1.path == "routing.always_include" and
+                   &1.reason == "references unknown reviewer")
+             )
     end
   end
 

@@ -75,9 +75,8 @@ defmodule Cerberus.Router do
     size_bucket = classify_size(summary)
     model_tier = classify_model_tier(summary)
 
-    all_perspectives = Enum.map(personas, &Atom.to_string(&1.perspective))
-    name_to_perspective = Map.new(personas, &{&1.name, Atom.to_string(&1.perspective)})
-    required = required_perspectives(routing, name_to_perspective, summary.code_changed)
+    all_reviewers = Enum.map(personas, & &1.id)
+    required = required_reviewers(routing, summary.code_changed)
     panel_size = max(min(routing.panel_size, length(personas)), length(required))
     metadata = opts |> Keyword.get(:metadata, %{}) |> normalize_metadata()
     router_model = non_empty_string(routing[:model], @default_router_model)
@@ -90,7 +89,7 @@ defmodule Cerberus.Router do
           summary,
           panel_size,
           required,
-          all_perspectives,
+          all_reviewers,
           metadata,
           router_model
         )
@@ -102,8 +101,7 @@ defmodule Cerberus.Router do
       if panel == [] do
         {build_fallback_panel(
            routing,
-           name_to_perspective,
-           all_perspectives,
+           all_reviewers,
            panel_size,
            summary.code_changed
          ), false}
@@ -111,7 +109,7 @@ defmodule Cerberus.Router do
         {panel, routing_used}
       end
 
-    reserves = Enum.reject(all_perspectives, &(&1 in panel))
+    reserves = Enum.reject(all_reviewers, &(&1 in panel))
 
     %{
       panel: panel,
@@ -261,29 +259,20 @@ defmodule Cerberus.Router do
   # --- Panel Building ---
 
   @doc false
-  def required_perspectives(routing, name_to_perspective, code_changed?) do
-    always = resolve_names(routing.always_include, name_to_perspective)
+  def required_reviewers(routing, code_changed?) do
+    always = routing.always_include
 
     if code_changed? do
-      code_req =
-        resolve_names(Map.get(routing, :include_if_code_changed, []), name_to_perspective)
-
-      Enum.uniq(always ++ code_req)
+      Enum.uniq(always ++ Map.get(routing, :include_if_code_changed, []))
     else
       always
     end
   end
 
   @doc false
-  def build_fallback_panel(
-        routing,
-        name_to_perspective,
-        all_perspectives,
-        panel_size,
-        code_changed?
-      ) do
-    required = required_perspectives(routing, name_to_perspective, code_changed?)
-    fallback_order = resolve_names(routing.fallback_panel, name_to_perspective)
+  def build_fallback_panel(routing, all_reviewers, panel_size, code_changed?) do
+    required = required_reviewers(routing, code_changed?)
+    fallback_order = routing.fallback_panel
     required_set = MapSet.new(required)
 
     skip_when_no_code =
@@ -292,12 +281,11 @@ defmodule Cerberus.Router do
       else
         routing
         |> Map.get(:include_if_code_changed, [])
-        |> resolve_names(name_to_perspective)
         |> MapSet.new()
       end
 
-    # Start with required, extend from fallback order, then remaining perspectives
-    pool = fallback_order ++ all_perspectives
+    # Start with required, extend from fallback order, then remaining reviewers.
+    pool = fallback_order ++ all_reviewers
     seen = MapSet.new(required)
 
     extras =
@@ -323,7 +311,7 @@ defmodule Cerberus.Router do
          summary,
          panel_size,
          required,
-         all_perspectives,
+         all_reviewers,
          metadata,
          router_model
        ) do
@@ -331,15 +319,16 @@ defmodule Cerberus.Router do
 
     params = %{
       model: router_model,
+      provider: "openrouter",
       prompt: prompt,
       panel_size: panel_size,
-      all_perspectives: all_perspectives
+      all_reviewers: all_reviewers
     }
 
     try do
       case call_llm.(params) do
         {:ok, panel} when is_list(panel) ->
-          validated = validate_panel(panel, required, all_perspectives, panel_size)
+          validated = validate_panel(panel, required, all_reviewers, panel_size)
           if validated != [], do: {validated, true}, else: {[], false}
 
         {:error, reason} ->
@@ -378,7 +367,7 @@ defmodule Cerberus.Router do
     bench_rows =
       Enum.map(personas, fn p ->
         focus = p.description || Atom.to_string(p.perspective)
-        "| #{p.name} | #{p.perspective} | #{focus} |"
+        "| #{p.id} | #{p.perspective} | #{focus} |"
       end)
 
     file_rows =
@@ -401,21 +390,21 @@ defmodule Cerberus.Router do
     You are Cerberus's reviewer router.
 
     ## Objective
-    Choose the smallest useful reviewer subset for this pull request, capped at exactly #{panel_size} reviewers.
+    Choose the smallest useful reviewer subset for this change range, capped at exactly #{panel_size} reviewers.
 
     ## Bench
-    | Codename | Perspective | Focus |
-    |----------|-------------|-------|
+    | Reviewer ID | Perspective | Focus |
+    |-------------|-------------|-------|
     #{Enum.join(bench_rows, "\n")}
 
     ## MUST
-    - Select EXACTLY #{panel_size} perspectives
-    - Include these required perspectives when applicable: #{required_text}
+    - Select EXACTLY #{panel_size} reviewer ids
+    - Include these required reviewer ids when applicable: #{required_text}
     - Use the remaining slots on the reviewers most likely to change the verdict
 
     ## MUST NOT
     - Do not explain your choice
-    - Do not invent perspectives that are not in the bench
+    - Do not invent reviewer ids that are not in the bench
 
     ## PR Metadata
     - Repository: #{repo}
@@ -432,18 +421,18 @@ defmodule Cerberus.Router do
     #{Enum.join(file_rows, "\n")}
 
     ## Output Contract
-    Respond with ONLY a JSON array of exactly #{panel_size} perspective strings.
-    Example: ["correctness","security","architecture","testing"]
+    Respond with ONLY a JSON array of exactly #{panel_size} reviewer id strings.
+    Example: ["trace","guard","atlas","proof"]
     """
   end
 
-  defp validate_panel(panel, required, all_perspectives, panel_size) do
+  defp validate_panel(panel, required, all_reviewers, panel_size) do
     normalized =
       panel
       |> Enum.map(&String.downcase(to_string(&1)))
       |> Enum.uniq()
 
-    valid_set = MapSet.new(all_perspectives)
+    valid_set = MapSet.new(all_reviewers)
     required_set = MapSet.new(required)
     panel_set = MapSet.new(normalized)
 
@@ -547,12 +536,6 @@ defmodule Cerberus.Router do
 
   # --- Helpers ---
 
-  defp resolve_names(names, name_to_perspective) do
-    names
-    |> Enum.map(&Map.get(name_to_perspective, &1))
-    |> Enum.reject(&is_nil/1)
-  end
-
   defp parse_diff_header(line) do
     case String.split(line) do
       ["diff", "--git", _a, b | _] ->
@@ -601,7 +584,7 @@ defmodule Cerberus.Router do
     }
   end
 
-  @default_crash_panel ~w(correctness security architecture testing)
+  @default_crash_panel ~w(trace guard atlas proof)
   defp crash_fallback(summary) do
     %{
       panel: @default_crash_panel,

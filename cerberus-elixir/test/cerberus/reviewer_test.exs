@@ -35,9 +35,16 @@ defmodule Cerberus.ReviewerTest do
     }
   end
 
-  defp setup_config(ctx \\ %{}) do
+  defp setup_config(ctx \\ %{}, overrides \\ %{}) do
     config_name = :"config_reviewer_#{System.unique_integer([:positive])}"
-    {:ok, _} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+
+    {:ok, _} =
+      Cerberus.Config.start_link(
+        repo_root: @repo_root,
+        name: config_name,
+        config_overrides: overrides
+      )
+
     Map.put(ctx, :config, config_name)
   end
 
@@ -175,6 +182,65 @@ defmodule Cerberus.ReviewerTest do
       assert content =~ "fix/null-check"
       assert content =~ "correctness"
       refute content =~ "{{PR_TITLE}}"
+    end
+
+    test "uses resolved override prompt, template, provider, and model settings" do
+      %{config: config} =
+        setup_config(%{}, %{
+          providers: %{deterministic: %{adapter: "deterministic"}},
+          models: %{
+            deterministic_review: %{
+              provider: "deterministic",
+              name: "deterministic/review-pass"
+            }
+          },
+          prompts: %{alt_correctness: %{content: "OVERRIDDEN system prompt"}},
+          templates: %{alt_review: %{content: "OVERRIDDEN template for {{PERSPECTIVE}}"}},
+          reviewers: %{
+            trace: %{
+              prompt: "alt_correctness",
+              template: "alt_review",
+              model: "deterministic_review"
+            }
+          }
+        })
+
+      {:ok, [entry]} = Cerberus.Config.resolve_panel(["trace"], :standard, config)
+      test_pid = self()
+
+      capturing_llm = fn params ->
+        send(test_pid, {:llm_params, params})
+
+        {:ok,
+         %{
+           content: valid_verdict_json(),
+           tool_calls: [],
+           usage: %{prompt_tokens: 100, completion_tokens: 50}
+         }}
+      end
+
+      {:ok, pid} =
+        Reviewer.start_link(
+          reviewer: entry.reviewer,
+          perspective: entry.reviewer.perspective,
+          model: entry.model_name,
+          model_id: entry.model_id,
+          provider: entry.provider_id,
+          template: entry.template,
+          config_server: config,
+          call_llm: capturing_llm,
+          repo_root: @repo_root
+        )
+
+      {:ok, _} = Reviewer.review(pid, pr_context())
+
+      assert_receive {:llm_params, params}
+      [system_msg, user_msg | _] = params.messages
+      assert system_msg["content"] == "OVERRIDDEN system prompt"
+      assert user_msg["content"] =~ "OVERRIDDEN template for correctness"
+      assert params.provider == "deterministic"
+      assert params.model_id == "deterministic_review"
+      assert params.model == "deterministic/review-pass"
     end
   end
 

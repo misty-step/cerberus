@@ -25,8 +25,20 @@ defmodule Cerberus.Engine do
   defmodule ReviewerExecution do
     @moduledoc false
 
-    @enforce_keys [:reviewer, :perspective, :verdict, :usage, :model, :status]
-    defstruct [:reviewer, :perspective, :verdict, :usage, :model, :status]
+    @enforce_keys [:reviewer, :perspective, :verdict, :usage, :model, :provider, :status]
+    defstruct [
+      :reviewer,
+      :perspective,
+      :verdict,
+      :usage,
+      :model,
+      :provider,
+      :prompt_id,
+      :prompt_digest,
+      :template_id,
+      :template_digest,
+      :status
+    ]
 
     @type t :: %__MODULE__{
             reviewer: String.t(),
@@ -34,6 +46,11 @@ defmodule Cerberus.Engine do
             verdict: Verdict.t(),
             usage: %{prompt_tokens: non_neg_integer(), completion_tokens: non_neg_integer()},
             model: String.t(),
+            provider: String.t(),
+            prompt_id: String.t() | nil,
+            prompt_digest: String.t() | nil,
+            template_id: String.t() | nil,
+            template_digest: String.t() | nil,
             status: :ok | :error | :timeout
           }
   end
@@ -50,7 +67,8 @@ defmodule Cerberus.Engine do
       :reserves,
       :stats,
       :cost,
-      :reviewer_results
+      :reviewer_results,
+      :resolved_config
     ]
     defstruct [
       :verdict,
@@ -61,7 +79,8 @@ defmodule Cerberus.Engine do
       :reserves,
       :stats,
       :cost,
-      :reviewer_results
+      :reviewer_results,
+      :resolved_config
     ]
 
     @type t :: %__MODULE__{
@@ -73,7 +92,8 @@ defmodule Cerberus.Engine do
             reserves: [atom()],
             stats: map(),
             cost: %{total_usd: float(), per_reviewer: %{String.t() => float()}},
-            reviewer_results: [ReviewerExecution.t()]
+            reviewer_results: [ReviewerExecution.t()],
+            resolved_config: map()
           }
   end
 
