@@ -1,0 +1,71 @@
+{
+  "milestone": "cli-core",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix test --max-cases 4",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix compile --warnings-as-errors",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix format --check-formatted",
+      "exitCode": 0
+    },
+    "legacySurfaceSanity": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; if [ -f \"$REPO/dispatch.sh\" ]; then shellcheck \"$REPO/dispatch.sh\"; else echo \"dispatch.sh retired\"; fi && if [ -f \"$REPO/bin/cerberus.js\" ]; then node --check \"$REPO/bin/cerberus.js\"; else echo \"node scaffolder retired\"; fi",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "failedFeatures": [
+      "reviewer-config-foundation"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "reviewer-config-foundation",
+      "severity": "blocking",
+      "description": "The new config loader interns runtime override strings with `String.to_atom/1` in the supported override path (`reviewer_entry/3`, reviewer perspective normalization, override policy parsing, model-pool tier parsing, and asset source tracking), so malformed override input can exhaust the BEAM atom table and crash the VM instead of failing with field-level diagnostics."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated `.factory/library/review-config.md` to document that `defaults/config.yml` still ships inert legacy top-level keys and to enumerate the loader's active merged config sections.",
+      "sourceFeature": "reviewer-config-foundation"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add explicit guidance for Elixir test-support modules: keep git-mutating fixtures and helpers in a test-only compile path instead of `lib/`, or document the rare exception when runtime packaging must include them.",
+      "evidence": "The `cli-ref-range-workspace` review found `cerberus-elixir/lib/cerberus/cli_test_support.ex` shipping a test-only fixture because no canonical test-support placement was documented or enforced.",
+      "isSystemic": true
+    },
+    {
+      "target": "skill:cerberus-cli-worker",
+      "suggestion": "Narrow the `cerberus-terminology` prerequisite so it applies to substantive terminology, prompt, or reviewer-vocabulary changes, not routine flag/help-text adjustments needed to satisfy the CLI contract.",
+      "evidence": "The `cli-ref-range-workspace` worker successfully completed a flag/help-text contract change without invoking `cerberus-terminology`, and the review concluded the current skill requirement is broader than necessary.",
+      "isSystemic": true
+    },
+    {
+      "target": "skill:cerberus-cli-worker",
+      "suggestion": "Remove or replace the required `refactoring-playbook` dependency because the skill is not available in this repository, forcing workers to deviate from procedure during structural refactors.",
+      "evidence": "The `review-core-cli-exit-contract` worker handoff reported `followedProcedure: false` because `.factory/skills/cerberus-cli-worker/SKILL.md` requires `refactoring-playbook`, but that skill is absent from the available repository skills.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

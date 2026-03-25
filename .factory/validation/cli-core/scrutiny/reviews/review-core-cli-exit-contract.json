@@ -1,0 +1,21 @@
+{
+  "featureId": "review-core-cli-exit-contract",
+  "reviewedAt": "2026-03-25T17:37:00Z",
+  "commitId": "5c0c0e47278cbf8fdcf5cf96954ff0d510030735",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature meets its stated goal: CLI and engine review execution now flow through the shared `Cerberus.Review` core, and the CLI/mix-task exit contract cleanly distinguishes completed FAIL verdicts from invocation/runtime failures while preserving terminal output.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `cerberus-cli-worker` skill requires invoking `refactoring-playbook` before large structural refactors, but that skill is not present in this repository's available skill set. The worker therefore had to deviate from the written procedure for this refactor lane.",
+      "evidence": ".factory/skills/cerberus-cli-worker/SKILL.md lists `refactoring-playbook` under Required Skills, while `.factory/skills/` only contains `cerberus-cli-worker`; the handoff for worker session `e079264c-953f-412a-bc26-89ae153e5f13` marks `followedProcedure: false` for that reason."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed commit `5c0c0e47278cbf8fdcf5cf96954ff0d510030735` plus the worker transcript skeleton and handoff. I found no blocking correctness, security, or maintainability issues in the shared review-core refactor or the deterministic CLI exit-code contract; the only follow-up is a shared-state skill mismatch around the unavailable `refactoring-playbook` dependency."
+}

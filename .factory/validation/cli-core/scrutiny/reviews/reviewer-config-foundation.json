@@ -1,0 +1,34 @@
+{
+  "featureId": "reviewer-config-foundation",
+  "reviewedAt": "2026-03-25T17:42:07Z",
+  "commitId": "7bc27354df5f397a14d9bf28a81734c4451795e8",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The refactor substantially improves reviewer-config loading and validation, but I found one blocking robustness/security issue in the new loader and one snapshot-accuracy concern. The most serious problem is that the runtime override path now interns user-controlled strings as atoms, so malformed override input can exhaust the BEAM atom table instead of failing cleanly with diagnostics.",
+    "issues": [
+      {
+        "file": "cerberus-elixir/lib/cerberus/config/loader.ex",
+        "line": 573,
+        "severity": "blocking",
+        "description": "The new config loader converts runtime override strings into atoms with `String.to_atom/1` in several places (`reviewer_entry/3` source keys at lines 570-573, reviewer perspectives at 947-950, override policies at 1155-1156, and model-pool tiers at 1210-1216). That is reachable from the supported override surface because `CLI.with_runtime/2` passes `config_overrides` straight into the config child (`cerberus-elixir/lib/cerberus/cli.ex:137-145`), while validation only requires reviewer perspectives to be non-empty strings (`loader.ex:875-879`) and unsupported reviewer keys still flow through `reviewer_entry/3`. Repeated malformed overrides can therefore grow the VM atom table and crash the process instead of returning the field-level diagnostics this feature promises."
+      },
+      {
+        "file": "cerberus-elixir/lib/cerberus/config/loader.ex",
+        "line": 103,
+        "severity": "non_blocking",
+        "description": "Resolved snapshot source tracking is inaccurate for fixed-model reviewers. `resolve_panel/3` always folds `state.model_pool_sources[tier]` into `entry.sources.model` (lines 100-105), even when the reviewer uses an explicit model instead of `pool`. If a caller overrides an unrelated pool tier, a fixed reviewer can be reported as `source: override` in the redacted resolved-config snapshot/diff even though its model, provider, prompt, and template were inherited unchanged."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The active config surface is still ambiguous in shared state: the mission library says Cerberus should have one merged reviewer config model, but `defaults/config.yml` still ships several legacy top-level keys that the new loader silently ignores. Future workers could misread those keys as active configuration because that inert status is not documented anywhere in the mission state.",
+      "evidence": ".factory/library/review-config.md:10-11 says to favor one merged config model; defaults/config.yml:6,8,100,164 still define `required_check`, `cancel_in_progress`, `cerberus_verdict`, and `canary`; `cerberus-elixir/lib/cerberus/config/loader.ex:181-188` only reads `providers`, `models`, `model_pools`, `prompts`, `templates`, `reviewers`, `routing`, and `verdict`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed commit `7bc27354df5f397a14d9bf28a81734c4451795e8`, the worker handoff, the transcript skeleton, and the shared-state files requested by the mission. I found a blocking atom-exhaustion risk in the new config override loader, plus a non-blocking resolved-snapshot source-label bug; I also recorded one shared-state observation about undocumented inert legacy keys still present in `defaults/config.yml`."
+}

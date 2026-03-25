@@ -13,3 +13,4 @@ Guidance for the merged reviewer configuration and planner-facing bench model.
 - Planner must consume the active bench produced by the merged config; removed or disabled reviewers must not remain selectable
 - Prefer built-in defaults plus explicit override surfaces that can work with a packaged CLI artifact
 - Keep prompt/template identity auditable in validation artifacts (path and/or digest), not just human-friendly labels
+- `defaults/config.yml` still contains legacy top-level keys (`required_check`, `cancel_in_progress`, `cerberus_verdict`, `canary`) that the current loader does not consume; the active merged CLI config surface is limited to `providers`, `models`, `model_pools`, `prompts`, `templates`, `reviewers`, `routing`, and `verdict`
