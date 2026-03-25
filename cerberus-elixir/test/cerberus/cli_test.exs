@@ -38,7 +38,15 @@ defmodule Cerberus.CLITest do
       reserves: [],
       model_tier: :flash,
       size_bucket: :small,
-      routing_used: false
+      routing_used: false,
+      planner_trace: %{
+        selected_team: panel,
+        eligible_bench: panel,
+        model_tier: :flash,
+        diff_classification: %{},
+        repo_context: %{available: false, signals: %{}},
+        fallback: %{used: false, reason: nil, policy: "injected"}
+      }
     }
   end
 
@@ -109,6 +117,7 @@ defmodule Cerberus.CLITest do
     assert decoded["verdict"] == "PASS"
     assert is_list(decoded["findings"])
     assert is_map(decoded["stats"])
+    assert decoded["planner_trace"]["selected_team"] == ["trace"]
   end
 
   test "run/2 tolerates the release subcommand prefix", %{fixture: fixture} do

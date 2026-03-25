@@ -37,6 +37,114 @@ defmodule Cerberus.RouterTest do
    end
   """
 
+  @test_only_diff """
+  diff --git a/test/sample_test.exs b/test/sample_test.exs
+  --- a/test/sample_test.exs
+  +++ b/test/sample_test.exs
+  @@ -1,3 +1,5 @@
+   defmodule SampleTest do
+  +  test "returns ok" do
+  +    assert :ok == :ok
+  +  end
+   end
+  """
+
+  @repo_aware_diff """
+  diff --git a/lib/service.ex b/lib/service.ex
+  --- a/lib/service.ex
+  +++ b/lib/service.ex
+  @@ -1,3 +1,5 @@
+   defmodule Service do
+  +  def call(arg), do: {:ok, arg}
+  +  def ready?, do: true
+   end
+  """
+
+  @narrow_diff """
+  diff --git a/lib/billing.ex b/lib/billing.ex
+  --- a/lib/billing.ex
+  +++ b/lib/billing.ex
+  @@ -1,3 +1,9 @@
+   defmodule Billing do
+  +  def create(a), do: {:ok, a}
+  +  def update(a), do: {:ok, a}
+  +  def cancel(a), do: {:ok, a}
+  +  def refund(a), do: {:ok, a}
+  +  def capture(a), do: {:ok, a}
+  +  def sync(a), do: {:ok, a}
+   end
+  """
+
+  @broad_diff """
+  diff --git a/lib/billing.ex b/lib/billing.ex
+  --- a/lib/billing.ex
+  +++ b/lib/billing.ex
+  @@ -1,2 +1,4 @@
+   defmodule Billing do
+  +  def create(a), do: {:ok, a}
+  +  def refund(a), do: {:ok, a}
+   end
+  diff --git a/config/runtime.exs b/config/runtime.exs
+  --- a/config/runtime.exs
+  +++ b/config/runtime.exs
+  @@ -1,2 +1,4 @@
+   import Config
+  +config :billing, retries: 3
+  +config :billing, timeout_ms: 5000
+  diff --git a/test/billing_test.exs b/test/billing_test.exs
+  --- a/test/billing_test.exs
+  +++ b/test/billing_test.exs
+  @@ -1,2 +1,4 @@
+   defmodule BillingTest do
+  +  test "creates a charge", do: assert(true)
+  +  test "refunds a charge", do: assert(true)
+   end
+  """
+
+  defp unique_name(prefix), do: :"#{prefix}_#{System.unique_integer([:positive])}"
+
+  defp start_config!(overrides \\ %{}) do
+    config_name = unique_name("config_router")
+
+    {:ok, _config_pid} =
+      Cerberus.Config.start_link(
+        repo_root: @repo_root,
+        name: config_name,
+        config_overrides: overrides
+      )
+
+    config_name
+  end
+
+  defp start_router!(config_name, call_llm) do
+    router_name = unique_name("router")
+
+    {:ok, _router_pid} =
+      Router.start_link(
+        name: router_name,
+        config_server: config_name,
+        call_llm: call_llm
+      )
+
+    router_name
+  end
+
+  defp create_repo_fixture!(files) do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus_router_repo_#{System.unique_integer([:positive])}"
+      )
+
+    Enum.each(files, fn {relative_path, content} ->
+      path = Path.join(root, relative_path)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, content)
+    end)
+
+    root
+  end
+
   # --- parse_diff/1 ---
 
   describe "parse_diff/1" do
@@ -269,8 +377,7 @@ defmodule Cerberus.RouterTest do
 
   describe "route/3" do
     setup do
-      config_name = :"config_router_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       # Deterministic mock that always returns required reviewer ids first
       preferred = ["trace", "guard", "atlas", "proof"]
@@ -279,21 +386,14 @@ defmodule Cerberus.RouterTest do
         {:ok, Enum.take(preferred, params.panel_size)}
       end
 
-      router_name = :"router_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: mock_llm
-        )
+      router_name = start_router!(config_name, mock_llm)
 
       %{router: router_name, config: config_name, mock_llm: mock_llm}
     end
 
     test "returns panel with correct size", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
-      assert length(result.panel) == 4
+      assert length(result.panel) == 3
     end
 
     test "panel contains only valid reviewer ids", %{router: router, config: config} do
@@ -338,24 +438,31 @@ defmodule Cerberus.RouterTest do
       {:ok, result} = Router.route(@simple_diff, [], router)
       assert result.routing_used == true
     end
+
+    test "includes planner_trace with selected team and eligible bench", %{
+      router: router,
+      config: config
+    } do
+      {:ok, result} = Router.route(@simple_diff, [], router)
+      active_bench = Cerberus.Config.personas(config) |> Enum.map(& &1.id)
+
+      assert result.planner_trace.selected_team == result.panel
+      assert result.planner_trace.eligible_bench == ["trace", "atlas", "guard", "craft"]
+      assert Enum.all?(result.planner_trace.eligible_bench, &(&1 in active_bench))
+      assert result.planner_trace.fallback.used == false
+      assert result.planner_trace.diff_classification.doc_only == false
+      assert result.planner_trace.diff_classification.broad_change == false
+    end
   end
 
   describe "route/3 fallback" do
     setup do
-      config_name = :"config_fallback_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       # Mock LLM that always fails
       failing_llm = fn _params -> {:error, :api_unavailable} end
 
-      router_name = :"router_fallback_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: failing_llm
-        )
+      router_name = start_router!(config_name, failing_llm)
 
       %{router: router_name, config: config_name}
     end
@@ -363,7 +470,9 @@ defmodule Cerberus.RouterTest do
     test "falls back to deterministic panel on LLM failure", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
       assert result.routing_used == false
-      assert length(result.panel) == 4
+      assert length(result.panel) == 3
+      assert result.planner_trace.fallback.used == true
+      assert result.planner_trace.fallback.reason == "llm_error"
     end
 
     test "fallback panel still includes required reviewers", %{router: router} do
@@ -381,20 +490,12 @@ defmodule Cerberus.RouterTest do
 
   describe "route/3 with invalid LLM response" do
     setup do
-      config_name = :"config_invalid_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       # Mock LLM that returns wrong-sized panel
       bad_llm = fn _params -> {:ok, ["trace", "guard"]} end
 
-      router_name = :"router_invalid_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: bad_llm
-        )
+      router_name = start_router!(config_name, bad_llm)
 
       %{router: router_name}
     end
@@ -402,27 +503,20 @@ defmodule Cerberus.RouterTest do
     test "falls back when LLM returns wrong panel size", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
       assert result.routing_used == false
-      assert length(result.panel) == 4
+      assert length(result.panel) == 3
+      assert result.planner_trace.fallback.reason == "invalid_panel"
     end
   end
 
   describe "route/3 doc-only PR" do
     setup do
-      config_name = :"config_doc_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       mock_llm = fn params ->
         {:ok, Enum.take(params.all_reviewers, params.panel_size)}
       end
 
-      router_name = :"router_doc_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: mock_llm
-        )
+      router_name = start_router!(config_name, mock_llm)
 
       %{router: router_name}
     end
@@ -431,13 +525,24 @@ defmodule Cerberus.RouterTest do
       {:ok, result} = Router.route(@doc_only_diff, [], router)
       assert result.model_tier == :flash
       assert result.size_bucket == :small
+      assert length(result.panel) == 1
+      assert result.planner_trace.diff_classification.doc_only == true
+    end
+
+    test "routes test-only changes to a smaller team than ordinary code", %{router: router} do
+      {:ok, test_only} = Router.route(@test_only_diff, [], router)
+      {:ok, code_change} = Router.route(@simple_diff, [], router)
+
+      assert test_only.model_tier == :flash
+      assert length(test_only.panel) < length(code_change.panel)
+      assert test_only.planner_trace.diff_classification.test_only == true
+      assert "proof" in test_only.planner_trace.eligible_bench
     end
   end
 
   describe "route/3 with nil routing model" do
     setup do
-      config_name = :"config_nilmodel_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       # Patch config to have nil model
       :sys.replace_state(config_name, fn state ->
@@ -453,14 +558,7 @@ defmodule Cerberus.RouterTest do
         {:ok, Enum.take(["trace", "guard", "atlas", "proof"], params.panel_size)}
       end
 
-      router_name = :"router_nilmodel_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: mock_llm
-        )
+      router_name = start_router!(config_name, mock_llm)
 
       %{router: router_name}
     end
@@ -474,20 +572,12 @@ defmodule Cerberus.RouterTest do
 
   describe "route/3 with routing disabled" do
     setup do
-      config_name = :"config_disabled_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       # LLM that should never be called
       spy_llm = fn _params -> raise "LLM should not be called when routing disabled" end
 
-      router_name = :"router_disabled_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: spy_llm
-        )
+      router_name = start_router!(config_name, spy_llm)
 
       # Patch config to disable routing
       :sys.replace_state(config_name, fn state ->
@@ -500,27 +590,20 @@ defmodule Cerberus.RouterTest do
     test "skips LLM and uses fallback when routing disabled", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
       assert result.routing_used == false
-      assert length(result.panel) == 4
+      assert length(result.panel) == 3
       assert "trace" in result.panel
+      assert result.planner_trace.fallback.reason == "routing_disabled"
     end
   end
 
   describe "route/3 when LLM raises" do
     setup do
-      config_name = :"config_raise_#{System.unique_integer([:positive])}"
-      {:ok, _config_pid} = Cerberus.Config.start_link(repo_root: @repo_root, name: config_name)
+      config_name = start_config!()
 
       # LLM that raises an exception
       raising_llm = fn _params -> raise RuntimeError, "connection timeout" end
 
-      router_name = :"router_raise_#{System.unique_integer([:positive])}"
-
-      {:ok, _router_pid} =
-        Router.start_link(
-          name: router_name,
-          config_server: config_name,
-          call_llm: raising_llm
-        )
+      router_name = start_router!(config_name, raising_llm)
 
       %{router: router_name}
     end
@@ -528,7 +611,105 @@ defmodule Cerberus.RouterTest do
     test "catches exception and falls back gracefully", %{router: router} do
       {:ok, result} = Router.route(@simple_diff, [], router)
       assert result.routing_used == false
-      assert length(result.panel) == 4
+      assert length(result.panel) == 3
+      assert result.planner_trace.fallback.reason == "llm_exception"
+    end
+  end
+
+  describe "bench-aware planning" do
+    test "active bench overrides constrain eligibility and selection" do
+      config_name =
+        start_config!(%{
+          reviewers: %{
+            atlas: %{enabled: false},
+            craft: %{enabled: false},
+            fuse: %{enabled: false}
+          },
+          routing: %{
+            fallback_panel: ["trace", "guard", "proof"],
+            always_include: ["trace"],
+            include_if_code_changed: ["guard"]
+          }
+        })
+
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      {:ok, result} = Router.route(@simple_diff, [], router)
+
+      assert result.planner_trace.eligible_bench == ["trace", "guard", "proof"]
+      assert result.panel == ["trace", "guard", "proof"]
+      refute Enum.any?(["atlas", "craft", "fuse"], &(&1 in result.panel))
+    end
+
+    test "repository context changes routing for the same patch shape" do
+      plain_repo =
+        create_repo_fixture!(%{
+          "lib/service.ex" => "defmodule Service do\nend\n"
+        })
+
+      public_repo =
+        create_repo_fixture!(%{
+          "lib/service.ex" => "defmodule Service do\nend\n",
+          "priv/openapi/openapi.yaml" => "openapi: 3.0.0\ninfo:\n  title: Billing\n"
+        })
+
+      config_name = start_config!()
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      on_exit(fn ->
+        File.rm_rf(plain_repo)
+        File.rm_rf(public_repo)
+      end)
+
+      {:ok, plain_result} =
+        Router.route(@repo_aware_diff, [metadata: %{repo: plain_repo}], router)
+
+      {:ok, public_result} =
+        Router.route(@repo_aware_diff, [metadata: %{repo: public_repo}], router)
+
+      assert plain_result.panel != public_result.panel or
+               plain_result.model_tier != public_result.model_tier
+
+      assert plain_result.planner_trace.repo_context.signals.public_contract_surface == false
+      assert public_result.planner_trace.repo_context.signals.public_contract_surface == true
+    end
+
+    test "risky changes escalate to higher-risk coverage" do
+      config_name = start_config!()
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      {:ok, ordinary} = Router.route(@simple_diff, [], router)
+      {:ok, risky} = Router.route(@security_diff, [], router)
+
+      assert risky.model_tier == :pro
+      assert length(risky.panel) >= length(ordinary.panel)
+      assert risky.planner_trace.diff_classification.risky_change == true
+      assert "guard" in risky.panel
+      assert risky.panel != ordinary.panel
+    end
+
+    test "broad multi-surface changes widen the selected panel" do
+      config_name = start_config!()
+      router = start_router!(config_name, fn _params -> {:error, :api_unavailable} end)
+
+      {:ok, narrow} = Router.route(@narrow_diff, [], router)
+      {:ok, broad} = Router.route(@broad_diff, [], router)
+
+      assert narrow.planner_trace.diff_classification.broad_change == false
+      assert broad.planner_trace.diff_classification.broad_change == true
+      assert length(broad.panel) > length(narrow.panel)
+    end
+
+    test "deterministic fallback is replayable under the same doubles" do
+      config_name = start_config!()
+      router = start_router!(config_name, fn _params -> {:ok, ["trace"]} end)
+
+      {:ok, first} = Router.route(@simple_diff, [], router)
+      {:ok, second} = Router.route(@simple_diff, [], router)
+
+      assert first.panel == second.panel
+      assert first.model_tier == second.model_tier
+      assert first.planner_trace == second.planner_trace
     end
   end
 end

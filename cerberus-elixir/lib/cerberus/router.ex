@@ -1,15 +1,11 @@
 defmodule Cerberus.Router do
   @moduledoc """
-  PR router: classifies PRs and selects the minimum effective reviewer panel.
+  Review planner/router: classifies a change range and selects the smallest
+  useful reviewer team from the active bench.
 
-  Reads personas and routing rules from `Cerberus.Config`. Uses an LLM
-  (OpenRouter) for intelligent panel selection with deterministic fallback
-  on any failure.
-
-  ## Public API
-
-      Cerberus.Router.route(diff_text)
-      # => {:ok, %{panel: [...], reserves: [...], model_tier: :standard, ...}}
+  The planner inspects diff shape plus repository-local context, asks the
+  configured planner model to choose within the eligible bench, and falls back
+  deterministically whenever inference fails or returns invalid output.
   """
 
   use GenServer
@@ -17,9 +13,64 @@ defmodule Cerberus.Router do
 
   @openrouter_url "https://openrouter.ai/api/v1/chat/completions"
   @default_router_model "openrouter/google/gemini-3-flash-preview"
+  @fallback_policy "bench_priority_v1"
 
   @doc_extensions MapSet.new(~w(.md .mdx .rst .txt .adoc .asciidoc .org))
   @security_hints MapSet.new(~w(auth security permission permissions oauth jwt api route router))
+  @contract_hints MapSet.new(
+                    ~w(openapi graphql proto schema contract contracts cli command public interface)
+                  )
+  @config_extensions MapSet.new(~w(.yml .yaml .json .toml .ini .cfg .conf .env))
+  @config_names MapSet.new(~w(
+                    mix.exs
+                    mix.lock
+                    package.json
+                    package-lock.json
+                    yarn.lock
+                    pnpm-lock.yaml
+                    Cargo.toml
+                    Cargo.lock
+                    go.mod
+                    go.sum
+                    pyproject.toml
+                    Pipfile
+                    Pipfile.lock
+                    Gemfile
+                    Gemfile.lock
+                    Dockerfile
+                    docker-compose.yml
+                    docker-compose.yaml
+                  ))
+  @public_contract_globs [
+    "priv/openapi/**/*",
+    "openapi/**/*",
+    "api/**/*",
+    "graphql/**/*",
+    "proto/**/*",
+    "schema/**/*",
+    "contracts/**/*",
+    "lib/**/*_web/router.ex"
+  ]
+  @security_repo_globs [
+    "lib/**/auth/**/*",
+    "lib/**/security/**/*",
+    "lib/**/permissions/**/*",
+    "lib/**/policy/**/*",
+    "lib/**/oauth/**/*",
+    "lib/**/jwt/**/*",
+    "src/**/auth/**/*",
+    "src/**/security/**/*",
+    "app/**/auth/**/*"
+  ]
+  @config_repo_globs [
+    "config/**/*",
+    ".github/workflows/**/*",
+    "mix.exs",
+    "package.json",
+    "Cargo.toml",
+    "pyproject.toml"
+  ]
+  @default_crash_panel ~w(trace guard atlas proof)
 
   # --- Client API ---
 
@@ -32,11 +83,12 @@ defmodule Cerberus.Router do
   Route a PR diff to the minimum effective reviewer panel.
 
   Returns `{:ok, result}` where result contains:
-  - `:panel` — perspective strings for the primary panel
-  - `:reserves` — perspective strings available for escalation
+  - `:panel` — reviewer ids for the selected team
+  - `:reserves` — active-bench reviewer ids not selected for the run
   - `:model_tier` — `:flash | :standard | :pro`
   - `:size_bucket` — `:small | :medium | :large | :xlarge`
   - `:routing_used` — whether LLM routing succeeded
+  - `:planner_trace` — deterministic planner evidence for validation and replay
   """
   def route(diff_text, opts \\ [], server \\ __MODULE__) do
     GenServer.call(server, {:route, diff_text, opts}, 60_000)
@@ -58,11 +110,12 @@ defmodule Cerberus.Router do
   rescue
     e ->
       Logger.warning("Router crashed: #{Exception.message(e)}")
-      {:reply, {:ok, crash_fallback(safe_parse_diff(diff_text))}, state}
+      {:reply, {:ok, crash_fallback(diff_text, opts, state, "router_exception")}, state}
   catch
     kind, reason ->
       Logger.warning("Router #{kind}: #{inspect(reason)}")
-      {:reply, {:ok, crash_fallback(safe_parse_diff(diff_text))}, state}
+      fallback_reason = "router_#{kind}:#{inspect(reason)}"
+      {:reply, {:ok, crash_fallback(diff_text, opts, state, fallback_reason)}, state}
   end
 
   # --- Routing Core ---
@@ -70,43 +123,66 @@ defmodule Cerberus.Router do
   defp do_route(diff_text, opts, state) do
     personas = Cerberus.Config.personas(state.config_server)
     routing = Cerberus.Config.routing(state.config_server)
-
-    summary = parse_diff(diff_text)
-    size_bucket = classify_size(summary)
-    model_tier = classify_model_tier(summary)
-
-    all_reviewers = Enum.map(personas, & &1.id)
-    required = required_reviewers(routing, summary.code_changed)
-    panel_size = max(min(routing.panel_size, length(personas)), length(required))
     metadata = opts |> Keyword.get(:metadata, %{}) |> normalize_metadata()
+    summary = parse_diff(diff_text)
+
+    required = required_reviewers(routing, summary.code_changed)
+    repo_context = inspect_repo_context(metadata)
+    diff_classification = classify_diff(summary, repo_context)
+    size_bucket = classify_size(summary)
+    model_tier = determine_model_tier(summary, diff_classification, repo_context)
+    all_reviewers = Enum.map(personas, & &1.id)
+
+    panel_size =
+      determine_panel_size(routing, personas, required, diff_classification, repo_context)
+
+    eligible_bench =
+      eligible_bench(personas, routing, required, panel_size, diff_classification, repo_context)
+
+    fallback_panel =
+      build_ranked_fallback_panel(
+        personas,
+        routing,
+        required,
+        eligible_bench,
+        panel_size,
+        diff_classification,
+        repo_context
+      )
+
     router_model = non_empty_string(routing[:model], @default_router_model)
 
-    {panel, routing_used} =
-      if Map.get(routing, :enabled, true) do
-        try_llm_routing(
-          state.call_llm,
-          personas,
-          summary,
-          panel_size,
-          required,
-          all_reviewers,
-          metadata,
-          router_model
-        )
-      else
-        {[], false}
-      end
+    {panel, routing_used, fallback_reason} =
+      cond do
+        panel_size == 0 ->
+          {[], false, "empty_bench"}
 
-    {panel, routing_used} =
-      if panel == [] do
-        {build_fallback_panel(
-           routing,
-           all_reviewers,
-           panel_size,
-           summary.code_changed
-         ), false}
-      else
-        {panel, routing_used}
+        not Map.get(routing, :enabled, true) ->
+          {fallback_panel, false, "routing_disabled"}
+
+        true ->
+          case try_llm_routing(
+                 state.call_llm,
+                 personas,
+                 summary,
+                 panel_size,
+                 required,
+                 all_reviewers,
+                 eligible_bench,
+                 metadata,
+                 repo_context,
+                 diff_classification,
+                 router_model,
+                 fallback_panel,
+                 model_tier,
+                 size_bucket
+               ) do
+            {:ok, llm_panel} ->
+              {llm_panel, true, nil}
+
+            {:error, reason} ->
+              {fallback_panel, false, reason}
+          end
       end
 
     reserves = Enum.reject(all_reviewers, &(&1 in panel))
@@ -116,7 +192,21 @@ defmodule Cerberus.Router do
       reserves: reserves,
       model_tier: model_tier,
       size_bucket: size_bucket,
-      routing_used: routing_used
+      routing_used: routing_used,
+      planner_trace:
+        planner_trace(
+          summary,
+          diff_classification,
+          repo_context,
+          eligible_bench,
+          panel,
+          model_tier,
+          size_bucket,
+          router_model,
+          required,
+          routing_used,
+          fallback_reason
+        )
     }
   end
 
@@ -181,10 +271,12 @@ defmodule Cerberus.Router do
             {files, current}
         end
 
-      String.starts_with?(line, "+") and not String.starts_with?(line, "+++ ") and current != nil ->
+      String.starts_with?(line, "+") and not String.starts_with?(line, "+++ ") and
+          current != nil ->
         {Map.update!(files, current, &%{&1 | additions: &1.additions + 1}), current}
 
-      String.starts_with?(line, "-") and not String.starts_with?(line, "--- ") and current != nil ->
+      String.starts_with?(line, "-") and not String.starts_with?(line, "--- ") and
+          current != nil ->
         {Map.update!(files, current, &%{&1 | deletions: &1.deletions + 1}), current}
 
       true ->
@@ -236,24 +328,12 @@ defmodule Cerberus.Router do
   end
 
   @doc "Classify model tier from diff summary."
-  def classify_model_tier(%{
-        total_changed_lines: lines,
-        code_files: code_files,
-        test_files: test_files,
-        doc_files: doc_files,
-        files: files
-      }) do
-    has_security_hint =
-      Enum.any?(files, fn f ->
-        path = String.downcase(f.path)
-        Enum.any?(@security_hints, &String.contains?(path, &1))
-      end)
-
-    cond do
-      lines <= 50 and code_files == 0 and test_files + doc_files > 0 -> :flash
-      lines >= 300 or has_security_hint -> :pro
-      true -> :standard
-    end
+  def classify_model_tier(summary) do
+    determine_model_tier(
+      summary,
+      classify_diff(summary, default_repo_context()),
+      default_repo_context()
+    )
   end
 
   # --- Panel Building ---
@@ -284,23 +364,55 @@ defmodule Cerberus.Router do
         |> MapSet.new()
       end
 
-    # Start with required, extend from fallback order, then remaining reviewers.
     pool = fallback_order ++ all_reviewers
     seen = MapSet.new(required)
 
     extras =
-      Enum.reduce(pool, {[], seen}, fn p, {acc, seen_set} ->
-        if MapSet.member?(seen_set, p) or
-             (MapSet.member?(skip_when_no_code, p) and not MapSet.member?(required_set, p)) do
+      Enum.reduce(pool, {[], seen}, fn reviewer_id, {acc, seen_set} ->
+        if MapSet.member?(seen_set, reviewer_id) or
+             (MapSet.member?(skip_when_no_code, reviewer_id) and
+                not MapSet.member?(required_set, reviewer_id)) do
           {acc, seen_set}
         else
-          {[p | acc], MapSet.put(seen_set, p)}
+          {[reviewer_id | acc], MapSet.put(seen_set, reviewer_id)}
         end
       end)
       |> elem(0)
       |> Enum.reverse()
 
     (required ++ extras) |> Enum.take(panel_size)
+  end
+
+  defp build_ranked_fallback_panel(
+         personas,
+         routing,
+         required,
+         eligible_reviewers,
+         panel_size,
+         diff_classification,
+         repo_context
+       ) do
+    persona_by_id = Map.new(personas, &{&1.id, &1})
+    active_order = personas |> Enum.map(& &1.id) |> Enum.with_index() |> Map.new()
+    fallback_order = routing.fallback_panel |> Enum.with_index() |> Map.new()
+    eligible_set = MapSet.new(eligible_reviewers)
+    required_panel = Enum.filter(required, &MapSet.member?(eligible_set, &1))
+
+    extras =
+      eligible_reviewers
+      |> Enum.reject(&(&1 in required_panel))
+      |> Enum.sort_by(fn reviewer_id ->
+        persona = Map.fetch!(persona_by_id, reviewer_id)
+
+        {
+          -reviewer_score(persona, diff_classification, repo_context),
+          Map.get(fallback_order, reviewer_id, 999),
+          Map.get(active_order, reviewer_id, 999),
+          reviewer_id
+        }
+      end)
+
+    (required_panel ++ extras) |> Enum.take(panel_size)
   end
 
   # --- LLM Routing ---
@@ -312,87 +424,139 @@ defmodule Cerberus.Router do
          panel_size,
          required,
          all_reviewers,
+         eligible_reviewers,
          metadata,
-         router_model
+         repo_context,
+         diff_classification,
+         router_model,
+         suggested_panel,
+         model_tier,
+         size_bucket
        ) do
-    prompt = build_prompt(personas, summary, panel_size, required, metadata)
+    prompt =
+      build_prompt(
+        personas,
+        summary,
+        panel_size,
+        required,
+        eligible_reviewers,
+        metadata,
+        repo_context,
+        diff_classification
+      )
 
     params = %{
       model: router_model,
       provider: "openrouter",
       prompt: prompt,
       panel_size: panel_size,
-      all_reviewers: all_reviewers
+      all_reviewers: all_reviewers,
+      eligible_reviewers: eligible_reviewers,
+      required_reviewers: required,
+      suggested_panel: suggested_panel,
+      diff_classification: diff_classification,
+      repo_context: repo_context,
+      model_tier: model_tier,
+      size_bucket: size_bucket
     }
 
     try do
       case call_llm.(params) do
         {:ok, panel} when is_list(panel) ->
-          validated = validate_panel(panel, required, all_reviewers, panel_size)
-          if validated != [], do: {validated, true}, else: {[], false}
+          case validate_panel(panel, required, eligible_reviewers, panel_size) do
+            [] -> {:error, "invalid_panel"}
+            validated -> {:ok, validated}
+          end
 
         {:error, reason} ->
           Logger.warning("Router LLM call failed: #{inspect(reason)}")
-          {[], false}
+          {:error, "llm_error"}
 
         other ->
           Logger.warning("Router LLM returned unexpected payload: #{inspect(other)}")
-          {[], false}
+          {:error, "invalid_response"}
       end
     rescue
       e ->
         Logger.warning("Router LLM call raised: #{Exception.message(e)}")
-        {[], false}
+        {:error, "llm_exception"}
     catch
       kind, reason ->
         Logger.warning("Router LLM call #{kind}: #{inspect(reason)}")
-        {[], false}
+        {:error, "llm_exception"}
     end
   end
 
-  defp build_prompt(personas, summary, panel_size, required, metadata) do
+  defp build_prompt(
+         personas,
+         summary,
+         panel_size,
+         required,
+         eligible_reviewers,
+         metadata,
+         repo_context,
+         diff_classification
+       ) do
     required_text = if required == [], do: "(none)", else: Enum.join(required, ", ")
+
+    eligible_text =
+      if eligible_reviewers == [], do: "(none)", else: Enum.join(eligible_reviewers, ", ")
 
     ext_text =
       summary.extensions
-      |> Enum.map(fn {k, v} -> "#{k}:#{v}" end)
+      |> Enum.map(fn {key, value} -> "#{key}:#{value}" end)
       |> Enum.join(", ")
-
-    ext_text = if ext_text == "", do: "(none)", else: ext_text
+      |> then(fn
+        "" -> "(none)"
+        value -> value
+      end)
 
     repo = metadata |> Map.get(:repo, "unknown") |> sanitize_prompt_value()
     ref = metadata |> Map.get(:ref, "unknown") |> sanitize_prompt_value()
     event = metadata |> Map.get(:event, "unknown") |> sanitize_prompt_value()
 
     bench_rows =
-      Enum.map(personas, fn p ->
-        focus = p.description || Atom.to_string(p.perspective)
-        "| #{p.id} | #{p.perspective} | #{focus} |"
+      personas
+      |> Enum.filter(&(&1.id in eligible_reviewers))
+      |> Enum.map(fn persona ->
+        focus = persona.description || Atom.to_string(persona.perspective)
+        "| #{persona.id} | #{persona.perspective} | #{focus} |"
+      end)
+      |> then(fn
+        [] -> ["| (none) | n/a | n/a |"]
+        rows -> rows
       end)
 
     file_rows =
       summary.files
       |> Enum.take(250)
-      |> Enum.map(fn f ->
+      |> Enum.map(fn file ->
         tags =
-          [if(f.is_code, do: "code"), if(f.is_test, do: "test"), if(f.is_doc, do: "doc")]
+          [if(file.is_code, do: "code"), if(file.is_test, do: "test"), if(file.is_doc, do: "doc")]
           |> Enum.reject(&is_nil/1)
+          |> Enum.join(",")
+          |> then(fn
+            "" -> "unknown"
+            value -> value
+          end)
 
-        tag_text = if tags == [], do: "unknown", else: Enum.join(tags, ",")
-        safe_path = sanitize_prompt_value(f.path)
-        "- #{safe_path} (+#{f.additions}, -#{f.deletions}) [ext=#{f.extension} type=#{tag_text}]"
+        safe_path = sanitize_prompt_value(file.path)
+
+        "- #{safe_path} (+#{file.additions}, -#{file.deletions}) [ext=#{file.extension} type=#{tags}]"
       end)
-
-    file_rows = if file_rows == [], do: ["- (no changed files parsed)"], else: file_rows
+      |> then(fn
+        [] -> ["- (no changed files parsed)"]
+        rows -> rows
+      end)
 
     """
     ## Role
-    You are Cerberus's reviewer router.
+    You are Cerberus's review planner.
 
     ## Objective
     Choose the smallest useful reviewer subset for this change range, capped at exactly #{panel_size} reviewers.
 
-    ## Bench
+    ## Eligible Bench
     | Reviewer ID | Perspective | Focus |
     |-------------|-------------|-------|
     #{Enum.join(bench_rows, "\n")}
@@ -400,13 +564,14 @@ defmodule Cerberus.Router do
     ## MUST
     - Select EXACTLY #{panel_size} reviewer ids
     - Include these required reviewer ids when applicable: #{required_text}
+    - Select ONLY from this eligible bench: #{eligible_text}
     - Use the remaining slots on the reviewers most likely to change the verdict
 
     ## MUST NOT
     - Do not explain your choice
-    - Do not invent reviewer ids that are not in the bench
+    - Do not invent reviewer ids that are not in the eligible bench
 
-    ## PR Metadata
+    ## Change Metadata
     - Repository: #{repo}
     - Ref: #{ref}
     - Event: #{event}
@@ -416,6 +581,8 @@ defmodule Cerberus.Router do
     - Total changed lines: #{summary.total_changed_lines}
     - Code files: #{summary.code_files} | Test files: #{summary.test_files} | Doc files: #{summary.doc_files}
     - Extension histogram: #{ext_text}
+    - Repo context signals: #{repo_signal_text(repo_context)}
+    - Deterministic diff classification: #{classification_text(diff_classification)}
 
     ## Changed Files
     #{Enum.join(file_rows, "\n")}
@@ -426,13 +593,13 @@ defmodule Cerberus.Router do
     """
   end
 
-  defp validate_panel(panel, required, all_reviewers, panel_size) do
+  defp validate_panel(panel, required, eligible_reviewers, panel_size) do
     normalized =
       panel
       |> Enum.map(&String.downcase(to_string(&1)))
       |> Enum.uniq()
 
-    valid_set = MapSet.new(all_reviewers)
+    valid_set = MapSet.new(eligible_reviewers)
     required_set = MapSet.new(required)
     panel_set = MapSet.new(normalized)
 
@@ -534,6 +701,439 @@ defmodule Cerberus.Router do
   defp extract_panel(list) when is_list(list), do: list
   defp extract_panel(_), do: nil
 
+  # --- Deterministic Planning ---
+
+  defp determine_model_tier(summary, diff_classification, repo_context) do
+    repo_sensitive =
+      repo_context.signals.public_contract_surface or repo_context.signals.security_sensitive_repo
+
+    cond do
+      diff_classification.doc_only ->
+        :flash
+
+      diff_classification.test_only and not diff_classification.config_change ->
+        :flash
+
+      diff_classification.non_code_only and not diff_classification.config_change and
+          summary.total_changed_lines <= 50 ->
+        :flash
+
+      summary.total_changed_lines >= 300 ->
+        :pro
+
+      diff_classification.risky_change or diff_classification.contract_surface_change ->
+        :pro
+
+      repo_sensitive and summary.code_changed ->
+        :pro
+
+      diff_classification.broad_change and summary.total_changed_lines >= 40 ->
+        :pro
+
+      true ->
+        :standard
+    end
+  end
+
+  defp determine_panel_size(routing, personas, required, diff_classification, repo_context) do
+    max_size = min(routing.panel_size, length(personas))
+
+    if max_size == 0 do
+      0
+    else
+      repo_sensitive =
+        repo_context.signals.public_contract_surface or
+          repo_context.signals.security_sensitive_repo
+
+      desired =
+        cond do
+          diff_classification.doc_only -> 1
+          diff_classification.test_only -> 2
+          diff_classification.non_code_only and diff_classification.config_change -> 3
+          diff_classification.non_code_only -> 2
+          true -> 3
+        end
+
+      desired =
+        if diff_classification.risky_change or diff_classification.contract_surface_change or
+             repo_sensitive do
+          max(desired, 4)
+        else
+          desired
+        end
+
+      desired =
+        if diff_classification.broad_change do
+          max(desired, 4)
+        else
+          desired
+        end
+
+      min(max(desired, length(required)), max_size)
+    end
+  end
+
+  defp classify_diff(summary, repo_context) do
+    tags = Enum.map(summary.files, &file_tags(&1.path))
+    surface_buckets = tags |> Enum.map(& &1.surface_bucket) |> Enum.uniq() |> Enum.sort()
+    config_change = Enum.any?(tags, & &1.config)
+    ci_change = Enum.any?(tags, & &1.ci)
+    cli_change = Enum.any?(tags, & &1.cli)
+    security_paths = Enum.any?(tags, & &1.security)
+    contract_paths = Enum.any?(tags, & &1.contract)
+
+    doc_only =
+      summary.doc_files > 0 and summary.code_files == 0 and summary.test_files == 0 and
+        not config_change
+
+    test_only =
+      summary.test_files > 0 and summary.code_files == 0 and summary.doc_files == 0 and
+        not config_change
+
+    non_code_only = summary.code_files == 0
+
+    broad_change =
+      length(surface_buckets) >= 3 or
+        (length(surface_buckets) >= 2 and summary.total_files >= 4) or
+        (config_change and summary.code_changed and length(surface_buckets) >= 2)
+
+    contract_surface_change =
+      contract_paths or (repo_context.signals.public_contract_surface and summary.code_changed)
+
+    risky_change =
+      security_paths or cli_change or contract_surface_change or
+        (config_change and summary.code_changed) or
+        (repo_context.signals.security_sensitive_repo and summary.code_changed)
+
+    %{
+      doc_only: doc_only,
+      test_only: test_only,
+      non_code_only: non_code_only,
+      config_change: config_change,
+      ci_change: ci_change,
+      cli_change: cli_change,
+      contract_surface_change: contract_surface_change,
+      risky_change: risky_change,
+      broad_change: broad_change,
+      surface_buckets: surface_buckets
+    }
+  end
+
+  defp eligible_bench(personas, routing, required, panel_size, diff_classification, repo_context) do
+    perspective_allowlist = eligible_perspectives(diff_classification, repo_context)
+    all_reviewers = Enum.map(personas, & &1.id)
+
+    base =
+      personas
+      |> Enum.filter(fn persona ->
+        persona.id in required or
+          is_nil(perspective_allowlist) or
+          MapSet.member?(perspective_allowlist, persona.perspective)
+      end)
+      |> Enum.map(& &1.id)
+
+    expanded =
+      if length(base) >= panel_size do
+        base
+      else
+        expand_eligible_bench(
+          personas,
+          routing,
+          base,
+          panel_size,
+          diff_classification,
+          repo_context
+        )
+      end
+
+    expanded
+    |> Enum.uniq()
+    |> Enum.filter(&(&1 in all_reviewers))
+  end
+
+  defp eligible_perspectives(diff_classification, repo_context) do
+    repo_sensitive =
+      repo_context.signals.public_contract_surface or repo_context.signals.security_sensitive_repo
+
+    cond do
+      diff_classification.doc_only ->
+        MapSet.new([:correctness, :maintainability])
+
+      diff_classification.test_only ->
+        MapSet.new([:correctness, :testing, :maintainability])
+
+      diff_classification.non_code_only and diff_classification.config_change ->
+        MapSet.new([:correctness, :architecture, :resilience])
+
+      diff_classification.risky_change or diff_classification.contract_surface_change or
+          diff_classification.broad_change ->
+        nil
+
+      repo_sensitive ->
+        MapSet.new([:correctness, :security, :architecture, :testing])
+
+      true ->
+        MapSet.new([:correctness, :security, :architecture, :maintainability])
+    end
+  end
+
+  defp expand_eligible_bench(
+         personas,
+         routing,
+         current,
+         panel_size,
+         diff_classification,
+         repo_context
+       ) do
+    current_set = MapSet.new(current)
+    active_order = personas |> Enum.map(& &1.id) |> Enum.with_index() |> Map.new()
+    fallback_order = routing.fallback_panel |> Enum.with_index() |> Map.new()
+
+    extras =
+      personas
+      |> Enum.reject(&MapSet.member?(current_set, &1.id))
+      |> Enum.sort_by(fn persona ->
+        {
+          -reviewer_score(persona, diff_classification, repo_context),
+          Map.get(fallback_order, persona.id, 999),
+          Map.get(active_order, persona.id, 999),
+          persona.id
+        }
+      end)
+      |> Enum.take(max(panel_size - length(current), 0))
+      |> Enum.map(& &1.id)
+
+    current ++ extras
+  end
+
+  defp reviewer_score(persona, diff_classification, repo_context) do
+    repo_sensitive =
+      repo_context.signals.public_contract_surface or repo_context.signals.security_sensitive_repo
+
+    case persona.perspective do
+      :correctness ->
+        100
+
+      :security ->
+        cond do
+          diff_classification.risky_change -> 95
+          repo_context.signals.security_sensitive_repo -> 75
+          diff_classification.contract_surface_change -> 70
+          true -> 30
+        end
+
+      :architecture ->
+        cond do
+          diff_classification.broad_change -> 95
+          diff_classification.contract_surface_change -> 85
+          repo_context.signals.public_contract_surface -> 80
+          diff_classification.config_change -> 60
+          true -> 35
+        end
+
+      :testing ->
+        cond do
+          diff_classification.test_only -> 95
+          diff_classification.risky_change -> 75
+          diff_classification.contract_surface_change -> 70
+          true -> 40
+        end
+
+      :maintainability ->
+        cond do
+          diff_classification.doc_only -> 95
+          diff_classification.non_code_only -> 70
+          diff_classification.broad_change -> 55
+          true -> 45
+        end
+
+      :resilience ->
+        cond do
+          diff_classification.broad_change -> 80
+          diff_classification.risky_change -> 75
+          diff_classification.config_change -> 70
+          repo_sensitive -> 65
+          true -> 25
+        end
+
+      _ ->
+        0
+    end
+  end
+
+  defp inspect_repo_context(metadata) do
+    case normalize_repo_root(Map.get(metadata, :repo)) do
+      {:ok, repo_root} ->
+        public_markers = repo_markers(repo_root, @public_contract_globs)
+        security_markers = repo_markers(repo_root, @security_repo_globs)
+        config_markers = repo_markers(repo_root, @config_repo_globs)
+
+        %{
+          available: true,
+          repo_root: repo_root,
+          signals: %{
+            public_contract_surface: public_markers != [],
+            security_sensitive_repo: security_markers != [],
+            config_surface: config_markers != []
+          },
+          markers: %{
+            public_contract_surface: public_markers,
+            security_sensitive_repo: security_markers,
+            config_surface: config_markers
+          }
+        }
+
+      :error ->
+        default_repo_context()
+    end
+  end
+
+  defp normalize_repo_root(repo_root) when is_binary(repo_root) do
+    expanded = Path.expand(repo_root)
+    if File.dir?(expanded), do: {:ok, expanded}, else: :error
+  end
+
+  defp normalize_repo_root(_), do: :error
+
+  defp default_repo_context do
+    %{
+      available: false,
+      repo_root: nil,
+      signals: %{
+        public_contract_surface: false,
+        security_sensitive_repo: false,
+        config_surface: false
+      },
+      markers: %{
+        public_contract_surface: [],
+        security_sensitive_repo: [],
+        config_surface: []
+      }
+    }
+  end
+
+  defp repo_markers(repo_root, patterns) do
+    patterns
+    |> Enum.flat_map(fn pattern ->
+      Path.wildcard(Path.join(repo_root, pattern), match_dot: true)
+    end)
+    |> Enum.map(&Path.relative_to(&1, repo_root))
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.take(5)
+  end
+
+  defp planner_trace(
+         summary,
+         diff_classification,
+         repo_context,
+         eligible_bench,
+         selected_team,
+         model_tier,
+         size_bucket,
+         router_model,
+         required_reviewers,
+         routing_used,
+         fallback_reason
+       ) do
+    %{
+      diff_summary: %{
+        total_files: summary.total_files,
+        total_changed_lines: summary.total_changed_lines,
+        total_additions: summary.total_additions,
+        total_deletions: summary.total_deletions,
+        code_files: summary.code_files,
+        test_files: summary.test_files,
+        doc_files: summary.doc_files,
+        surface_count: length(diff_classification.surface_buckets),
+        surface_buckets: diff_classification.surface_buckets
+      },
+      diff_classification: diff_classification,
+      repo_context: repo_context,
+      eligible_bench: eligible_bench,
+      selected_team: selected_team,
+      required_reviewers: required_reviewers,
+      model_tier: Atom.to_string(model_tier),
+      size_bucket: Atom.to_string(size_bucket),
+      routing_used: routing_used,
+      planner_model: router_model,
+      fallback: %{
+        used: not routing_used,
+        reason: fallback_reason,
+        policy: @fallback_policy
+      }
+    }
+  end
+
+  defp file_tags(path) do
+    normalized = String.downcase(path) |> String.trim_leading("/")
+    ext = Path.extname(normalized)
+    name = Path.basename(normalized)
+    segments = String.split(normalized, "/", trim: true)
+    top_level = List.first(segments) || name
+    {is_doc, is_test, is_code} = classify_file(path)
+
+    config =
+      top_level in ["config", ".github", ".circleci", ".buildkite"] or
+        MapSet.member?(@config_extensions, ext) or
+        MapSet.member?(@config_names, name)
+
+    ci =
+      top_level in [".github", ".circleci", ".buildkite"] or
+        String.contains?(normalized, "/workflows/")
+
+    cli =
+      top_level in ["bin", "cmd"] or
+        Enum.any?(segments, &(&1 in ["cli", "commands"]))
+
+    security = Enum.any?(@security_hints, &String.contains?(normalized, &1))
+
+    contract =
+      Enum.any?(@contract_hints, &String.contains?(normalized, &1)) or
+        String.starts_with?(normalized, "priv/openapi/")
+
+    surface_bucket =
+      cond do
+        is_doc -> "docs"
+        is_test -> "tests"
+        ci -> "ci"
+        config -> "config"
+        contract -> "public_surface"
+        true -> top_level
+      end
+
+    %{
+      doc: is_doc,
+      test: is_test,
+      code: is_code,
+      config: config,
+      ci: ci,
+      cli: cli,
+      security: security,
+      contract: contract,
+      surface_bucket: surface_bucket
+    }
+  end
+
+  defp repo_signal_text(repo_context) do
+    repo_context.signals
+    |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
+    |> Enum.sort()
+    |> Enum.join(", ")
+    |> then(fn
+      "" -> "none"
+      value -> value
+    end)
+  end
+
+  defp classification_text(diff_classification) do
+    diff_classification
+    |> Map.drop([:surface_buckets])
+    |> Enum.map(fn {key, value} -> "#{key}=#{inspect(value)}" end)
+    |> Enum.sort()
+    |> Enum.join(", ")
+  end
+
   # --- Helpers ---
 
   defp parse_diff_header(line) do
@@ -584,14 +1184,97 @@ defmodule Cerberus.Router do
     }
   end
 
-  @default_crash_panel ~w(trace guard atlas proof)
-  defp crash_fallback(summary) do
+  defp crash_fallback(diff_text, opts, state, reason) do
+    summary = safe_parse_diff(diff_text)
+    metadata = opts |> Keyword.get(:metadata, %{}) |> normalize_metadata()
+    repo_context = inspect_repo_context(metadata)
+
+    case safe_planner_inputs(state) do
+      {:ok, personas, routing} ->
+        required = required_reviewers(routing, summary.code_changed)
+        diff_classification = classify_diff(summary, repo_context)
+        size_bucket = classify_size(summary)
+        model_tier = determine_model_tier(summary, diff_classification, repo_context)
+
+        panel_size =
+          determine_panel_size(routing, personas, required, diff_classification, repo_context)
+
+        eligible =
+          eligible_bench(
+            personas,
+            routing,
+            required,
+            panel_size,
+            diff_classification,
+            repo_context
+          )
+
+        panel =
+          build_ranked_fallback_panel(
+            personas,
+            routing,
+            required,
+            eligible,
+            panel_size,
+            diff_classification,
+            repo_context
+          )
+
+        all_reviewers = Enum.map(personas, & &1.id)
+
+        %{
+          panel: panel,
+          reserves: Enum.reject(all_reviewers, &(&1 in panel)),
+          model_tier: model_tier,
+          size_bucket: size_bucket,
+          routing_used: false,
+          planner_trace:
+            planner_trace(
+              summary,
+              diff_classification,
+              repo_context,
+              eligible,
+              panel,
+              model_tier,
+              size_bucket,
+              @default_router_model,
+              required,
+              false,
+              reason
+            )
+        }
+
+      :error ->
+        static_crash_fallback(summary, repo_context, reason)
+    end
+  end
+
+  defp static_crash_fallback(summary, repo_context, reason) do
+    size_bucket = classify_size(summary)
+    model_tier = classify_model_tier_safe(summary)
+    panel = @default_crash_panel
+    diff_classification = classify_diff(summary, repo_context)
+
     %{
-      panel: @default_crash_panel,
-      reserves: ~w(maintainability resilience),
-      model_tier: classify_model_tier_safe(summary),
-      size_bucket: classify_size(summary),
-      routing_used: false
+      panel: panel,
+      reserves: [],
+      model_tier: model_tier,
+      size_bucket: size_bucket,
+      routing_used: false,
+      planner_trace:
+        planner_trace(
+          summary,
+          diff_classification,
+          repo_context,
+          panel,
+          panel,
+          model_tier,
+          size_bucket,
+          @default_router_model,
+          ["trace"],
+          false,
+          reason
+        )
     }
   end
 
@@ -599,6 +1282,16 @@ defmodule Cerberus.Router do
     classify_model_tier(summary)
   rescue
     _ -> :standard
+  end
+
+  defp safe_planner_inputs(%{config_server: config_server}) do
+    try do
+      {:ok, Cerberus.Config.personas(config_server), Cerberus.Config.routing(config_server)}
+    rescue
+      _ -> :error
+    catch
+      _, _ -> :error
+    end
   end
 
   defp safe_parse_diff(text) when is_binary(text) do
@@ -612,8 +1305,8 @@ defmodule Cerberus.Router do
   defp non_empty_string(val, _default) when is_binary(val) and val != "", do: val
   defp non_empty_string(_, default), do: default
 
-  defp normalize_metadata(m) when is_map(m), do: m
-  defp normalize_metadata(m) when is_list(m), do: Map.new(m)
+  defp normalize_metadata(metadata) when is_map(metadata), do: metadata
+  defp normalize_metadata(metadata) when is_list(metadata), do: Map.new(metadata)
   defp normalize_metadata(_), do: %{}
 
   defp sanitize_prompt_value(val) when is_binary(val) do

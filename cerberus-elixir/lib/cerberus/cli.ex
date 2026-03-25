@@ -248,7 +248,8 @@ defmodule Cerberus.CLI do
       verdict: result.verdict,
       summary: result.summary,
       findings: Enum.map(result.findings, &finding_to_json/1),
-      stats: result.stats
+      stats: result.stats,
+      planner_trace: result.planner_trace
     })
   end
 

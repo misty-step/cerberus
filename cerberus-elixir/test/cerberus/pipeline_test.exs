@@ -70,7 +70,8 @@ defmodule Cerberus.PipelineTest do
          stats: %{total: 0, fail: 0, warn: 0, pass: 0, skip: 0},
          cost: %{total_usd: 0.0, per_reviewer: %{}},
          reviewer_results: [],
-         resolved_config: %{}
+         resolved_config: %{},
+         planner_trace: nil
        }}
     end
   end
@@ -120,8 +121,8 @@ defmodule Cerberus.PipelineTest do
     {:ok, _config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
 
     # Router (mock LLM, unique name)
-    router_llm = fn _params ->
-      {:ok, ["trace", "guard", "atlas", "proof"]}
+    router_llm = fn params ->
+      {:ok, Enum.take(["trace", "guard", "atlas", "proof"], params.panel_size)}
     end
 
     router_name = :"pipeline_test_router_#{uid}"
@@ -670,7 +671,7 @@ defmodule Cerberus.PipelineTest do
 
       {:ok, costs} = Cerberus.Store.review_run_costs(ctx.store, review_id)
       assert length(costs) == result.stats.total
-      assert Enum.sort(Enum.map(costs, & &1.reviewer)) == ["atlas", "guard", "proof", "trace"]
+      assert Enum.sort(Enum.map(costs, & &1.reviewer)) == ["atlas", "guard", "trace"]
 
       Enum.each(costs, fn c ->
         assert is_binary(c.reviewer)
@@ -679,7 +680,7 @@ defmodule Cerberus.PipelineTest do
         assert c.completion_tokens >= 0
       end)
 
-      assert Enum.sort(Map.keys(result.cost.per_reviewer)) == ["atlas", "guard", "proof", "trace"]
+      assert Enum.sort(Map.keys(result.cost.per_reviewer)) == ["atlas", "guard", "trace"]
     end
 
     test "persists per-reviewer verdicts", ctx do
@@ -690,13 +691,12 @@ defmodule Cerberus.PipelineTest do
 
       assert {:ok, verdicts} = Cerberus.Store.review_run_verdicts(ctx.store, review_id)
       assert length(verdicts) == result.stats.total
-      assert Enum.sort(Enum.map(verdicts, & &1.reviewer)) == ["atlas", "guard", "proof", "trace"]
+      assert Enum.sort(Enum.map(verdicts, & &1.reviewer)) == ["atlas", "guard", "trace"]
 
       assert Enum.sort(Enum.map(verdicts, & &1.perspective)) == [
                "architecture",
                "correctness",
-               "security",
-               "testing"
+               "security"
              ]
 
       Enum.each(verdicts, fn verdict ->

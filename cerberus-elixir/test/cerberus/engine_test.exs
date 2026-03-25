@@ -86,8 +86,8 @@ defmodule Cerberus.EngineTest do
     config_name = :"engine_test_config_#{uid}"
     {:ok, _config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
 
-    router_llm = fn _params ->
-      {:ok, ["trace", "guard", "atlas", "proof"]}
+    router_llm = fn params ->
+      {:ok, Enum.take(["trace", "guard", "atlas", "proof"], params.panel_size)}
     end
 
     router_name = :"engine_test_router_#{uid}"
@@ -153,7 +153,15 @@ defmodule Cerberus.EngineTest do
       reserves: [],
       model_tier: :flash,
       size_bucket: :small,
-      routing_used: false
+      routing_used: false,
+      planner_trace: %{
+        selected_team: panel,
+        eligible_bench: panel,
+        model_tier: :flash,
+        diff_classification: %{},
+        repo_context: %{available: false, signals: %{}},
+        fallback: %{used: false, reason: nil, policy: "injected"}
+      }
     }
   end
 
@@ -171,10 +179,15 @@ defmodule Cerberus.EngineTest do
       assert is_binary(result.summary)
       assert is_map(result.stats)
       assert is_map(result.cost)
-      assert result.stats.total == 4
-      assert length(result.reviewers) == 4
-      assert length(result.reviewer_results) == 4
-      assert Enum.sort(Map.keys(result.cost.per_reviewer)) == ["atlas", "guard", "proof", "trace"]
+      assert result.stats.total == 3
+      assert length(result.reviewers) == 3
+      assert length(result.reviewer_results) == 3
+      assert Enum.sort(Map.keys(result.cost.per_reviewer)) == ["atlas", "guard", "trace"]
+
+      assert result.planner_trace.selected_team ==
+               Enum.map(result.reviewer_results, & &1.reviewer)
+
+      assert result.planner_trace.fallback.used == false
     end
 
     test "does not call Store even if a store-like dependency is passed", ctx do
@@ -314,6 +327,28 @@ defmodule Cerberus.EngineTest do
 
       assert result.stats.total == 1
       assert Enum.map(result.reviewer_results, & &1.perspective) == ["correctness"]
+      assert result.planner_trace.selected_team == ["trace"]
+    end
+
+    test "preserves fallback planner_trace metadata from the router", ctx do
+      routing =
+        routing_result(["trace", "guard"])
+        |> put_in([:planner_trace, :fallback], %{
+          used: true,
+          reason: "invalid_panel",
+          policy: "bench_priority_v1"
+        })
+
+      assert {:ok, result} =
+               Engine.review(
+                 @diff,
+                 context(),
+                 engine_opts(ctx, routing_result: routing)
+               )
+
+      assert result.planner_trace.fallback.used == true
+      assert result.planner_trace.fallback.reason == "invalid_panel"
+      assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace", "guard"]
     end
 
     test "cleans up the temp diff file when config lookup crashes", ctx do

@@ -68,7 +68,8 @@ defmodule Cerberus.Engine do
       :stats,
       :cost,
       :reviewer_results,
-      :resolved_config
+      :resolved_config,
+      :planner_trace
     ]
     defstruct [
       :verdict,
@@ -80,7 +81,8 @@ defmodule Cerberus.Engine do
       :stats,
       :cost,
       :reviewer_results,
-      :resolved_config
+      :resolved_config,
+      :planner_trace
     ]
 
     @type t :: %__MODULE__{
@@ -93,7 +95,8 @@ defmodule Cerberus.Engine do
             stats: map(),
             cost: %{total_usd: float(), per_reviewer: %{String.t() => float()}},
             reviewer_results: [ReviewerExecution.t()],
-            resolved_config: map()
+            resolved_config: map(),
+            planner_trace: map() | nil
           }
   end
 

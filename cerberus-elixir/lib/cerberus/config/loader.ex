@@ -27,7 +27,7 @@ defmodule Cerberus.Config.Loader do
   @allowed_model_keys MapSet.new(~w(provider name))
   @allowed_asset_keys MapSet.new(~w(path content))
   @allowed_reviewer_keys MapSet.new(
-                           ~w(id name perspective prompt template model description override tools)
+                           ~w(id name perspective prompt template model description override enabled tools)
                          )
   @allowed_routing_keys MapSet.new(
                           ~w(enabled model panel_size always_include fallback_panel include_if_code_changed)
@@ -45,6 +45,7 @@ defmodule Cerberus.Config.Loader do
     "model" => :model,
     "description" => :description,
     "override" => :override,
+    "enabled" => :enabled,
     "tools" => :tools
   }
   @routing_source_keys %{
@@ -608,6 +609,7 @@ defmodule Cerberus.Config.Loader do
     |> maybe_put_attr(:model_policy, attrs, "model")
     |> maybe_put_attr(:description, attrs, "description")
     |> maybe_put_attr(:override, attrs, "override")
+    |> maybe_put_attr(:enabled, attrs, "enabled")
     |> maybe_put_attr(:tools, attrs, "tools")
     |> Map.put(:sources, attr_sources(attrs, source, @reviewer_source_keys))
   end
@@ -917,6 +919,7 @@ defmodule Cerberus.Config.Loader do
         |> require_string(source, "reviewers.#{id}.template", reviewer.template_id)
         |> require_string(source, "reviewers.#{id}.model", reviewer.model_policy)
         |> validate_reviewer_override(source, id, reviewer.override)
+        |> maybe_boolean(source, "reviewers.#{id}.enabled", Map.get(reviewer, :enabled))
         |> maybe_require_known(source, "reviewers.#{id}.prompt", reviewer.prompt_id, prompts)
         |> maybe_require_known(
           source,
@@ -931,7 +934,12 @@ defmodule Cerberus.Config.Loader do
   end
 
   defp validate_routing(routing, sources, reviewers, models) do
-    reviewer_ids = Map.keys(reviewers) |> MapSet.new()
+    reviewer_ids =
+      reviewers
+      |> Enum.reject(fn {_id, reviewer} -> Map.get(reviewer, :enabled) == false end)
+      |> Enum.map(&elem(&1, 0))
+      |> MapSet.new()
+
     source = Map.get(sources, :panel_size, "default")
 
     []
@@ -978,8 +986,15 @@ defmodule Cerberus.Config.Loader do
     prompts = merged.prompts
     templates = merged.templates
 
+    active_reviewer_order =
+      Enum.reject(merged.reviewers.order, fn id ->
+        merged.reviewers.entries
+        |> Map.fetch!(id)
+        |> Map.get(:enabled) == false
+      end)
+
     personas =
-      Enum.map(merged.reviewers.order, fn id ->
+      Enum.map(active_reviewer_order, fn id ->
         reviewer = Map.fetch!(merged.reviewers.entries, id)
         prompt = Map.fetch!(prompts, reviewer.prompt_id)
         template = Map.fetch!(templates, reviewer.template_id)
@@ -1015,7 +1030,7 @@ defmodule Cerberus.Config.Loader do
       overrides: overrides,
       personas: personas,
       persona_by_id: persona_by_id,
-      reviewer_order: merged.reviewers.order,
+      reviewer_order: active_reviewer_order,
       prompts: prompts,
       templates: templates,
       providers: merged.providers,
@@ -1193,6 +1208,13 @@ defmodule Cerberus.Config.Loader do
 
   defp maybe_tools_map(diagnostics, source, path, value) do
     diagnostics ++ [diagnostic(source, path, "expected map", value)]
+  end
+
+  defp maybe_boolean(diagnostics, _source, _path, nil), do: diagnostics
+  defp maybe_boolean(diagnostics, _source, _path, value) when is_boolean(value), do: diagnostics
+
+  defp maybe_boolean(diagnostics, source, path, value) do
+    diagnostics ++ [diagnostic(source, path, "expected boolean", value)]
   end
 
   defp validate_reviewer_refs(diagnostics, _source, _path, [], _reviewer_ids), do: diagnostics

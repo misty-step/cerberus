@@ -15,10 +15,10 @@ defmodule Cerberus.Review do
   @spec review(String.t(), map(), keyword()) :: {:ok, Result.t()}
   def review(diff, context, opts \\ []) when is_binary(diff) and is_map(context) do
     override = Keyword.get(opts, :override)
+    routing = resolve_routing!(diff, context, opts)
 
     {reviewer_results, resolved_config} =
       Telemetry.with_review_run(Map.get(context, :pr_number, 0), fn otel_ctx ->
-        routing = resolve_routing!(diff, context, opts)
         run_panel(routing, context, diff, otel_ctx, opts)
       end)
 
@@ -33,6 +33,7 @@ defmodule Cerberus.Review do
      aggregated
      |> Map.put(:reviewer_results, reviewer_results)
      |> Map.put(:resolved_config, resolved_config)
+     |> Map.put(:planner_trace, Map.get(routing, :planner_trace))
      |> then(&struct(Result, &1))}
   end
 
