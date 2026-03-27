@@ -10,6 +10,32 @@ mix escript.build
 
 [ -x "${PROJECT_ROOT}/cerberus" ]
 
+python3 - "${PROJECT_ROOT}/cerberus" <<'PY'
+import sys
+import zipfile
+
+artifact = sys.argv[1]
+
+with zipfile.ZipFile(artifact) as zf:
+    names = set(zf.namelist())
+
+required = "Elixir.Cerberus.BundledAssets.beam"
+banned = {
+    "Elixir.Cerberus.CLITestSupport.beam",
+    "Elixir.Cerberus.TestSupport.LocalReviewRepo.beam",
+}
+
+if not any(name.endswith(required) for name in names):
+    raise SystemExit(f"missing bundled asset module: {required}")
+
+unexpected = sorted(
+    candidate for candidate in banned if any(name.endswith(candidate) for name in names)
+)
+
+if unexpected:
+    raise SystemExit(f"test-only helpers leaked into escript: {', '.join(unexpected)}")
+PY
+
 HELP_OUTPUT=$("${PROJECT_ROOT}/cerberus" --help 2>&1)
 printf '%s\n' "${HELP_OUTPUT}" | grep -F "Usage:" >/dev/null
 printf '%s\n' "${HELP_OUTPUT}" | grep -F "cerberus review --repo <path> --base <ref> --head <ref>" >/dev/null
