@@ -15,7 +15,7 @@ tmp/
 erl_crash.dump
 *.ez
 cerberus_elixir-*.tar
-cerberus
+/cerberus
 
 # Pi runtime local state
 .pi/state/

@@ -1,0 +1,449 @@
+defmodule Cerberus.EngineTest do
+  use ExUnit.Case, async: false
+
+  alias Cerberus.Engine
+  import ExUnit.CaptureLog
+
+  @valid_verdict_json """
+  ```json
+  {
+    "reviewer": "trace",
+    "perspective": "correctness",
+    "verdict": "PASS",
+    "confidence": 0.85,
+    "summary": "No issues found",
+    "findings": [],
+    "stats": {
+      "files_reviewed": 1,
+      "files_with_issues": 0,
+      "critical": 0,
+      "major": 0,
+      "minor": 0,
+      "info": 0
+    }
+  }
+  ```
+  """
+
+  @diff """
+  diff --git a/lib/foo.ex b/lib/foo.ex
+  --- a/lib/foo.ex
+  +++ b/lib/foo.ex
+  @@ -1,3 +1,4 @@
+   defmodule Foo do
+  +  def bar, do: :ok
+   end
+  """
+
+  @doc_only_diff """
+  diff --git a/README.md b/README.md
+  --- a/README.md
+  +++ b/README.md
+  @@ -1,2 +1,4 @@
+   # Project
+  +
+  +Added docs.
+  """
+
+  @test_only_diff """
+  diff --git a/test/sample_test.exs b/test/sample_test.exs
+  --- a/test/sample_test.exs
+  +++ b/test/sample_test.exs
+  @@ -1,3 +1,5 @@
+   defmodule SampleTest do
+  +  test "returns ok" do
+  +    assert :ok == :ok
+  +  end
+   end
+  """
+
+  defmodule StoreSpy do
+    use GenServer
+
+    def start_link(test_pid) do
+      GenServer.start_link(__MODULE__, test_pid)
+    end
+
+    @impl true
+    def init(test_pid), do: {:ok, test_pid}
+
+    @impl true
+    def handle_call(message, _from, test_pid) do
+      send(test_pid, {:unexpected_store_call, message})
+      {:reply, :ok, test_pid}
+    end
+  end
+
+  defmodule CrashConfig do
+    use GenServer
+
+    def start_link(opts \\ []) do
+      GenServer.start_link(__MODULE__, opts)
+    end
+
+    @impl true
+    def init(opts), do: {:ok, opts}
+
+    @impl true
+    def handle_call({:resolve_panel, _panel, _tier}, _from, state) do
+      case Keyword.get(state, :resolve_panel) do
+        {:raise, message} -> raise message
+        reply -> {:reply, reply, state}
+      end
+    end
+
+    def handle_call({:resolved_snapshot, _opts}, _from, state) do
+      case Keyword.get(state, :resolved_snapshot, %{}) do
+        {:raise, message} -> raise message
+        reply -> {:reply, reply, state}
+      end
+    end
+  end
+
+  setup do
+    Process.flag(:trap_exit, true)
+    uid = System.unique_integer([:positive])
+
+    repo_root = Application.fetch_env!(:cerberus_elixir, :repo_root)
+    config_name = :"engine_test_config_#{uid}"
+    {:ok, _config} = Cerberus.Config.start_link(name: config_name, repo_root: repo_root)
+
+    router_llm = fn params ->
+      {:ok, Enum.take(["trace", "guard", "atlas", "proof"], params.panel_size)}
+    end
+
+    router_name = :"engine_test_router_#{uid}"
+
+    {:ok, router} =
+      Cerberus.Router.start_link(
+        name: router_name,
+        config_server: config_name,
+        call_llm: router_llm
+      )
+
+    {:ok, supervisor} = DynamicSupervisor.start_link(strategy: :one_for_one)
+    {:ok, task_sup} = Task.Supervisor.start_link()
+
+    %{
+      config: config_name,
+      router: router,
+      supervisor: supervisor,
+      task_sup: task_sup,
+      repo_root: repo_root
+    }
+  end
+
+  defp mock_llm_pass(_params) do
+    {:ok,
+     %{
+       content: @valid_verdict_json,
+       tool_calls: nil,
+       usage: %{prompt_tokens: 100, completion_tokens: 50}
+     }}
+  end
+
+  defp context(overrides \\ %{}) do
+    Map.merge(
+      %{
+        title: "Test PR",
+        author: "testuser",
+        head_ref: "feat/test",
+        base_ref: "main",
+        body: "Test PR body"
+      },
+      overrides
+    )
+  end
+
+  defp engine_opts(ctx, overrides \\ []) do
+    base = [
+      config_server: ctx.config,
+      router_server: ctx.router,
+      supervisor: ctx.supervisor,
+      task_supervisor: ctx.task_sup,
+      call_llm: Keyword.get(overrides, :call_llm, &mock_llm_pass/1),
+      repo_root: ctx.repo_root,
+      reviewer_timeout: Keyword.get(overrides, :reviewer_timeout, 30_000)
+    ]
+
+    Keyword.merge(base, Keyword.drop(overrides, [:call_llm, :reviewer_timeout]))
+  end
+
+  defp routing_result(panel \\ ["trace"]) do
+    %{
+      panel: panel,
+      reserves: [],
+      model_tier: :flash,
+      size_bucket: :small,
+      routing_used: false,
+      planner_trace: %{
+        selected_team: panel,
+        eligible_bench: panel,
+        model_tier: :flash,
+        diff_classification: %{},
+        repo_context: %{available: false, signals: %{}},
+        fallback: %{used: false, reason: nil, policy: "injected"}
+      }
+    }
+  end
+
+  defp temp_diff_paths do
+    Path.join(System.tmp_dir!(), "cerberus-diff-*")
+    |> Path.wildcard()
+    |> Enum.sort()
+  end
+
+  defp create_repo_fixture!(files) do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "cerberus_engine_repo_#{System.unique_integer([:positive])}"
+      )
+
+    Enum.each(files, fn {relative_path, content} ->
+      path = Path.join(root, relative_path)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, content)
+    end)
+
+    root
+  end
+
+  describe "review/3" do
+    test "returns aggregated review data for diff and context", ctx do
+      assert {:ok, result} = Engine.review(@diff, context(), engine_opts(ctx))
+
+      assert result.verdict in ["PASS", "WARN", "SKIP"]
+      assert is_binary(result.summary)
+      assert is_map(result.stats)
+      assert is_map(result.cost)
+      assert result.stats.total == 3
+      assert length(result.reviewers) == 3
+      assert length(result.reviewer_results) == 3
+      assert Enum.sort(Map.keys(result.cost.per_reviewer)) == ["atlas", "guard", "trace"]
+
+      assert result.planner_trace.selected_team ==
+               Enum.map(result.reviewer_results, & &1.reviewer)
+
+      assert result.planner_trace.fallback.used == false
+    end
+
+    test "does not call Store even if a store-like dependency is passed", ctx do
+      {:ok, store_spy} = StoreSpy.start_link(self())
+
+      assert {:ok, _result} =
+               Engine.review(@diff, context(), engine_opts(ctx, store: store_spy))
+
+      refute_receive {:unexpected_store_call, _}
+    end
+
+    test "does not use github_opts when no GitHub-backed tool handler is injected", ctx do
+      test_pid = self()
+
+      github_req =
+        Req.new(
+          adapter: fn request ->
+            send(test_pid, {:unexpected_github_request, request.method, request.url})
+            {request, %Req.Response{status: 200, body: %{}}}
+          end
+        )
+
+      assert {:ok, _result} =
+               Engine.review(
+                 @diff,
+                 context(),
+                 engine_opts(ctx, github_opts: [req: github_req, max_retries: 0])
+               )
+
+      refute_receive {:unexpected_github_request, _, _}
+    end
+
+    test "logs reviewer failures before degrading them to skip", ctx do
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   Engine.review(
+                     @diff,
+                     context(),
+                     engine_opts(ctx, call_llm: fn _params -> {:error, :boom} end)
+                   )
+
+          assert result.verdict == "SKIP"
+          assert Enum.all?(result.reviewer_results, &(&1.status == :error))
+        end)
+
+      assert log =~ "Reviewer trace failed: {:permanent, :boom}"
+    end
+
+    test "degrades reviewer crashes to skip results", ctx do
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   Engine.review(
+                     @diff,
+                     context(),
+                     engine_opts(ctx, call_llm: fn _params -> Process.exit(self(), :kill) end)
+                   )
+
+          assert result.verdict == "SKIP"
+          assert Enum.all?(result.reviewer_results, &(&1.status == :error))
+        end)
+
+      assert log =~ "Reviewer trace crashed"
+    end
+
+    test "degrades reviewer timeouts to skip results", ctx do
+      call_count = :atomics.new(1, [])
+      reviewer_timeout = 50
+      sleep_ms = reviewer_timeout + 5_000 + 1_000
+
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   Engine.review(
+                     @diff,
+                     context(),
+                     engine_opts(ctx,
+                       call_llm: fn _params ->
+                         count = :atomics.add_get(call_count, 1, 1)
+
+                         if count == 1 do
+                           # Exceed the engine's timeout + shutdown grace window.
+                           Process.sleep(sleep_ms)
+                         end
+
+                         {:ok,
+                          %{
+                            content: @valid_verdict_json,
+                            tool_calls: nil,
+                            usage: %{prompt_tokens: 100, completion_tokens: 50}
+                          }}
+                       end,
+                       reviewer_timeout: reviewer_timeout
+                     )
+                   )
+
+          assert Enum.count(result.reviewer_results, &(&1.status == :timeout)) == 1
+          assert Enum.any?(result.reviewers, &(&1.verdict == "SKIP"))
+        end)
+
+      assert log =~ "Reviewer "
+      assert log =~ " timed out"
+    end
+
+    test "raises when routing returns an unknown reviewer id", ctx do
+      assert_raise ArgumentError,
+                   ~r/failed to resolve reviewer panel: \{:unknown_reviewer, "missing"\}/,
+                   fn ->
+                     Engine.review(
+                       @diff,
+                       context(),
+                       engine_opts(ctx, routing_result: routing_result(["missing"]))
+                     )
+                   end
+    end
+
+    test "raises when the selected model pool is empty", ctx do
+      :sys.replace_state(ctx.config, fn state ->
+        Map.put(state, :model_pools, %{wave1: [], wave2: [], wave3: []})
+      end)
+
+      assert_raise ArgumentError,
+                   ~r/failed to resolve reviewer panel: \{:empty_model_pool, "wave2"\}/,
+                   fn ->
+                     Engine.review(@diff, context(), engine_opts(ctx))
+                   end
+    end
+
+    test "accepts an injected routing_result for the shared review core", ctx do
+      assert {:ok, result} =
+               Engine.review(
+                 @diff,
+                 context(),
+                 engine_opts(ctx, routing_result: routing_result())
+               )
+
+      assert result.stats.total == 1
+      assert Enum.map(result.reviewer_results, & &1.perspective) == ["correctness"]
+      assert result.planner_trace.selected_team == ["trace"]
+    end
+
+    test "preserves fallback planner_trace metadata from the router", ctx do
+      routing =
+        routing_result(["trace", "guard"])
+        |> put_in([:planner_trace, :fallback], %{
+          used: true,
+          reason: "invalid_panel",
+          policy: "bench_priority_v1"
+        })
+
+      assert {:ok, result} =
+               Engine.review(
+                 @diff,
+                 context(),
+                 engine_opts(ctx, routing_result: routing)
+               )
+
+      assert result.planner_trace.fallback.used == true
+      assert result.planner_trace.fallback.reason == "invalid_panel"
+      assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace", "guard"]
+    end
+
+    test "keeps docs-only reviews minimal in public-contract repositories", ctx do
+      public_repo =
+        create_repo_fixture!(%{
+          "priv/openapi/openapi.yaml" => "openapi: 3.0.0\ninfo:\n  title: Billing\n"
+        })
+
+      on_exit(fn ->
+        File.rm_rf(public_repo)
+      end)
+
+      assert {:ok, result} =
+               Engine.review(
+                 @doc_only_diff,
+                 context(),
+                 engine_opts(ctx, routing_metadata: %{repo: public_repo})
+               )
+
+      assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace"]
+      assert result.planner_trace.repo_context.signals.public_contract_surface == true
+      assert result.planner_trace.diff_classification.doc_only == true
+      assert result.planner_trace.model_tier == "flash"
+    end
+
+    test "keeps test-only reviews minimal in security-sensitive repositories", ctx do
+      security_repo =
+        create_repo_fixture!(%{
+          "lib/app/auth/policy.ex" => "defmodule App.Auth.Policy do\nend\n"
+        })
+
+      on_exit(fn ->
+        File.rm_rf(security_repo)
+      end)
+
+      assert {:ok, result} =
+               Engine.review(
+                 @test_only_diff,
+                 context(),
+                 engine_opts(ctx, routing_metadata: %{repo: security_repo})
+               )
+
+      assert Enum.map(result.reviewer_results, & &1.reviewer) == ["trace", "proof"]
+      assert result.planner_trace.repo_context.signals.security_sensitive_repo == true
+      assert result.planner_trace.diff_classification.test_only == true
+      assert result.planner_trace.model_tier == "flash"
+    end
+
+    test "cleans up the temp diff file when config lookup crashes", ctx do
+      before_paths = temp_diff_paths()
+      {:ok, crash_config} = CrashConfig.start_link(resolve_panel: {:raise, "boom"})
+
+      assert catch_exit(
+               Engine.review(@diff, context(), engine_opts(ctx, config_server: crash_config))
+             )
+
+      assert temp_diff_paths() == before_paths
+    end
+  end
+end
