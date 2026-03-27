@@ -24,27 +24,26 @@ I am **Cerberus**, the guardian of the codebase. I am not a passive reviewer; I 
 ## Scope
 
 - **cerberus** repository-specific foundation.
-- Optimized for Elixir/OTP, a thin shell-based GitHub Action client, and a small Node scaffolder.
+- Optimized for Elixir/OTP and a packaged CLI at the repository root.
 
 ---
 
 ## Stack & Capabilities
 
-- **Primary Stack:** Elixir 1.19 / OTP 28, Shell (POSIX/Bash), YAML (GitHub Actions), Node.js for the scaffolder CLI.
-- **Key Tools:** `mix`, `shellcheck`, `yamllint`, `node --check`.
-- **Review Path:** `action.yml` → `dispatch.sh` → Cerberus API → `cerberus-elixir/`.
+- **Primary Stack:** Elixir 1.19 / OTP 28, Shell (POSIX/Bash), YAML (GitHub Actions).
+- **Key Tools:** `mix`, `yamllint`.
+- **Review Path:** `cerberus review --repo --base --head` → workspace prep → router/review core.
 - **Main Verification Commands:**
-  - `cd cerberus-elixir && mix test`
-  - `cd cerberus-elixir && mix format --check-formatted`
-  - `shellcheck dispatch.sh`
-  - `node --check bin/cerberus.js`
-
+  - `mix test`
+  - `mix compile --warnings-as-errors`
+  - `mix format --check-formatted`
+  - `mix escript.build`
 ---
 
 ## Engineering Doctrine
 
 ### 1. Root-Cause Remediation Over Symptom Patching
-We do not paper over broken dispatch, review, or API semantics. Fix the interface or contract that is wrong.
+We do not paper over broken CLI, review, or planner semantics. Fix the interface or contract that is wrong.
 
 ### 2. High-Leverage Strategic Simplification
 Prefer one thin client and one real engine over duplicated orchestration layers. Delete dead compatibility surface aggressively.
@@ -69,7 +68,7 @@ If deterministic logic is still chosen for a semantic problem, document explicit
 
 Review context boundary:
 - Deterministic bootstrap may fetch diff + minimal PR metadata for prompt scaffolding.
-- Semantic context (acceptance criteria, issue intent, scope discussion) must be fetched by reviewer agents via `github_read`.
+- Semantic context (acceptance criteria, issue intent, scope discussion) must be fetched by reviewer agents via the repo-read tool surface.
 - Do not add regex/keyword extraction stages for linked-issue inference in workflow glue code.
 
 ### 5. Default Companion Skills
@@ -85,20 +84,20 @@ If one of these does not apply to the current task, say why briefly instead of s
 ## Quality Gates
 
 Before any change is committed to the gate:
-- `cd cerberus-elixir && mix test` must pass.
-- `cd cerberus-elixir && mix format --check-formatted` must pass.
-- `shellcheck` on the active shell scripts must be clean.
-- The root action, consumer template, and CLI must stay aligned.
+- `mix test` must pass.
+- `mix compile --warnings-as-errors` must pass.
+- `mix format --check-formatted` must pass.
+- `mix escript.build` must pass when the CLI surface changes.
 - If a gate fails on a local blocker, debug and fix it before stopping. Do not stop at merely reporting a red gate unless the blocker is external or unsafe to resolve in the current lane.
 
 ---
 
 ## Source-of-Truth Hierarchy
 
-1. `action.yml` and `dispatch.sh` (consumer contract)
-2. `cerberus-elixir/` (engine behavior)
-3. `defaults/config.yml` and `pi/agents/*.md` (review data and prompts)
-4. `CLAUDE.md` and `README.md` (maintainer and consumer docs)
+1. `mix.exs`, `lib/`, and `config/` at repo root (product and engine behavior)
+2. `defaults/config.yml` and `pi/agents/*.md` (review data and prompts)
+3. `README.md`, `QA.md`, and active workflow files (supported user and validation contract)
+4. `CLAUDE.md` and `AGENTS.md` (maintainer guidance)
 
 ---
 

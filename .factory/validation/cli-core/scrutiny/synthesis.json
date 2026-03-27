@@ -1,0 +1,87 @@
+{
+  "milestone": "cli-core",
+  "round": 2,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix test --max-cases 4",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix compile --warnings-as-errors",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix format --check-formatted",
+      "exitCode": 0
+    },
+    "legacySurfaceSanity": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; if [ -f \"$REPO/dispatch.sh\" ]; then shellcheck \"$REPO/dispatch.sh\"; else echo \"dispatch.sh retired\"; fi && if [ -f \"$REPO/bin/cerberus.js\" ]; then node --check \"$REPO/bin/cerberus.js\"; else echo \"node scaffolder retired\"; fi",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "rerunDetails": {
+    "reviewedFixFeatures": [
+      {
+        "featureId": "config-override-atom-safety",
+        "status": "pass",
+        "addressesFailureFrom": "reviewer-config-foundation"
+      }
+    ],
+    "resolvedFailures": [
+      "reviewer-config-foundation"
+    ]
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "cli-ref-range-workspace",
+      "severity": "non_blocking",
+      "description": "The feature still ships `Cerberus.TestSupport.LocalReviewRepo` from `cerberus-elixir/lib/cerberus/cli_test_support.ex`, so production builds package a git-mutating test helper that is only used by tests."
+    },
+    {
+      "featureId": "config-override-atom-safety",
+      "severity": "non_blocking",
+      "description": "`resolved_snapshot/2` can still over-report `model.source` as `override` for fixed-model reviewers when only an unrelated pool tier override changed, so the redacted config evidence may overstate what was actually overridden."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated `.factory/library/review-config.md` to document that `defaults/config.yml` still ships inert legacy top-level keys and to enumerate the loader's active merged config sections.",
+      "sourceFeature": "reviewer-config-foundation"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add explicit guidance for Elixir test-support modules: keep git-mutating fixtures and helpers in a test-only compile path instead of `lib/`, or document the rare exception when runtime packaging must include them.",
+      "evidence": "The `cli-ref-range-workspace` review found `cerberus-elixir/lib/cerberus/cli_test_support.ex` shipping a test-only fixture because no canonical test-support placement was documented or enforced.",
+      "isSystemic": true
+    },
+    {
+      "target": "skill:cerberus-cli-worker",
+      "suggestion": "Narrow the `cerberus-terminology` prerequisite so it applies to substantive terminology, prompt, or reviewer-vocabulary changes, not routine flag/help-text adjustments needed to satisfy the CLI contract.",
+      "evidence": "The `cli-ref-range-workspace` worker successfully completed a flag/help-text contract change without invoking `cerberus-terminology`, and the review concluded the current skill requirement is broader than necessary.",
+      "isSystemic": true
+    },
+    {
+      "target": "skill:cerberus-cli-worker",
+      "suggestion": "Remove or replace the required `refactoring-playbook` dependency because the skill is not available in this repository, forcing workers to deviate from procedure during structural refactors.",
+      "evidence": "The `review-core-cli-exit-contract` worker handoff reported `followedProcedure: false` because `.factory/skills/cerberus-cli-worker/SKILL.md` requires `refactoring-playbook`, but that skill is absent from the available repository skills.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/cli-core/scrutiny/synthesis.round-1.json"
+}

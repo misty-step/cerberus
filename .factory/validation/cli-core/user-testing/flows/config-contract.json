@@ -1,0 +1,162 @@
+{
+  "groupId": "config-contract",
+  "testedAt": "2026-03-25T18:39:02.638191+00:00",
+  "isolation": {
+    "tool": "Execute",
+    "appRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus/cerberus-elixir",
+    "repoRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus",
+    "fixtureRepo": "/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/utv_config_contract_71457f7b_repo_u5_kjusz",
+    "fixturePrefix": "utv_config_contract_71457f7b_repo_",
+    "validationConcurrency": 1,
+    "overrideSurface": "Application.put_env(:cerberus_elixir, :cli_overrides, ...) before CLI execution"
+  },
+  "toolsUsed": [
+    "Execute"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-CONFIG-001",
+      "title": "Shipped defaults are runnable",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run a default-config CLI review with deterministic reviewer doubles.",
+          "expected": "CLI exits 0 and the shipped bench executes with concrete prompt/template/provider/model values.",
+          "observed": "CLI exited 0 with PASS; provider-double preflight launched 6 reviewers and captured 6 reviewer LLM calls."
+        },
+        {
+          "action": "Materialize the default resolved snapshot and planner reference checks.",
+          "expected": "Bench is non-empty with unique ids and all planner-referenced reviewers resolve.",
+          "observed": "Resolved snapshot contained 6 unique reviewers; always_include, include_if_code_changed, and fallback_panel all resolved cleanly."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "cli-core/config-contract/VAL-CONFIG-001-terminal.stdout.txt",
+          "cli-core/config-contract/VAL-CONFIG-001-terminal.stderr.txt",
+          "cli-core/config-contract/VAL-CONFIG-001-terminal.exit.txt"
+        ],
+        "artifacts": [
+          "cli-core/config-contract/VAL-CONFIG-001-resolved-config-snapshot.json",
+          "cli-core/config-contract/VAL-CONFIG-001-planner-trace.json",
+          "cli-core/config-contract/VAL-CONFIG-001-reviewer-execution-ledger.json",
+          "cli-core/config-contract/VAL-CONFIG-001-captured-llm-params.json",
+          "cli-core/config-contract/VAL-CONFIG-001-provider-double-preflight.json",
+          "cli-core/config-contract/VAL-CONFIG-001-summary.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CONFIG-002",
+      "title": "Partial overrides merge predictably",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Capture the default redacted snapshot.",
+          "expected": "A baseline snapshot is available for diffing.",
+          "observed": "Baseline snapshot was written successfully."
+        },
+        {
+          "action": "Apply a partial override that changes only trace fields and adds sentinel, then diff the snapshots.",
+          "expected": "Only targeted reviewer/provider/model/prompt/template fields change while inherited defaults remain stable.",
+          "observed": "Diff showed trace provider/model/prompt/template changes plus sentinel addition; atlas inherited prompt/template/provider/model remained unchanged."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "cli-core/config-contract/VAL-CONFIG-002-terminal.stdout.txt",
+          "cli-core/config-contract/VAL-CONFIG-002-terminal.stderr.txt",
+          "cli-core/config-contract/VAL-CONFIG-002-terminal.exit.txt"
+        ],
+        "artifacts": [
+          "cli-core/config-contract/VAL-CONFIG-002-resolved-config-snapshot-before.json",
+          "cli-core/config-contract/VAL-CONFIG-002-resolved-config-snapshot-after.json",
+          "cli-core/config-contract/VAL-CONFIG-002-resolved-config-diff.json",
+          "cli-core/config-contract/VAL-CONFIG-002-summary.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CONFIG-003",
+      "title": "Execution uses the resolved configuration",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run a CLI review with override-driven bench/provider/model/prompt/template changes.",
+          "expected": "CLI exits 0 and the run uses the overridden bench and reviewer settings.",
+          "observed": "CLI exited 0 with PASS on a 4-reviewer panel."
+        },
+        {
+          "action": "Capture planner and reviewer execution evidence for the overridden run.",
+          "expected": "Planner sees the updated bench and reviewer execution uses overridden provider/model/prompt/template values.",
+          "observed": "Planner capture included sentinel in all_reviewers and selected [trace, sentinel, guard, atlas]; reviewer ledger showed trace using deterministic_review + alt_correctness/alt_review and sentinel using deterministic_review."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "cli-core/config-contract/VAL-CONFIG-003-terminal.stdout.txt",
+          "cli-core/config-contract/VAL-CONFIG-003-terminal.stderr.txt",
+          "cli-core/config-contract/VAL-CONFIG-003-terminal.exit.txt"
+        ],
+        "artifacts": [
+          "cli-core/config-contract/VAL-CONFIG-003-resolved-config-snapshot.json",
+          "cli-core/config-contract/VAL-CONFIG-003-planner-trace.json",
+          "cli-core/config-contract/VAL-CONFIG-003-reviewer-execution-ledger.json",
+          "cli-core/config-contract/VAL-CONFIG-003-captured-llm-params.json",
+          "cli-core/config-contract/VAL-CONFIG-003-summary.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CONFIG-004",
+      "title": "Invalid config fails with field-level diagnostics",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Execute invalid override cases covering duplicate ids, dangling refs, invalid provider/model combo, missing asset, unsupported key, wrong type, and unsupported enum strings.",
+          "expected": "Each invalid case fails during config load/preflight with field-level diagnostics.",
+          "observed": "All four invalid-case groups reported invalid-config diagnostics with the expected field paths and reasons."
+        },
+        {
+          "action": "Check that planner and reviewer work never starts for invalid configs.",
+          "expected": "Router and reviewer call counts stay at zero.",
+          "observed": "All invalid cases recorded router_calls=0 and reviewer_calls=0."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "cli-core/config-contract/VAL-CONFIG-004-terminal.stdout.txt",
+          "cli-core/config-contract/VAL-CONFIG-004-terminal.stderr.txt",
+          "cli-core/config-contract/VAL-CONFIG-004-terminal.exit.txt"
+        ],
+        "artifacts": [
+          "cli-core/config-contract/VAL-CONFIG-004-summary.json",
+          "cli-core/config-contract/VAL-CONFIG-004-planner-trace-none.json",
+          "cli-core/config-contract/VAL-CONFIG-004-reviewer-execution-ledger-none.json",
+          "cli-core/config-contract/VAL-CONFIG-004-diagnostics-duplicate-reviewer-id.json",
+          "cli-core/config-contract/VAL-CONFIG-004-diagnostics-dangling-reference.json",
+          "cli-core/config-contract/VAL-CONFIG-004-diagnostics-invalid-combo-missing-asset-unsupported-key-wrong-type.json",
+          "cli-core/config-contract/VAL-CONFIG-004-diagnostics-unsupported-enum-strings.json"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The current override validation surface is runtime-env driven (`Application.put_env(:cerberus_elixir, :cli_overrides, ...)`) instead of a cleaner first-class CLI flag/file surface.",
+      "resolved": true,
+      "resolution": "Used deterministic `mix run --no-start --no-compile` wrappers that set `:cli_overrides` before invoking the CLI and direct `Cerberus.Config.start_link/1` snapshot/preflight helpers for evidence generation.",
+      "affectedAssertions": [
+        "VAL-CONFIG-002",
+        "VAL-CONFIG-003",
+        "VAL-CONFIG-004"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 4 assertions: 4 passed, 0 failed, 0 blocked."
+}

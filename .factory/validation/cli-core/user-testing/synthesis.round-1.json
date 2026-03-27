@@ -1,0 +1,65 @@
+{
+  "milestone": "cli-core",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CLI-001",
+    "VAL-CLI-002",
+    "VAL-CLI-003",
+    "VAL-CLI-004",
+    "VAL-CLI-005",
+    "VAL-CLI-006",
+    "VAL-CLI-007",
+    "VAL-CLI-008",
+    "VAL-CONFIG-001",
+    "VAL-CONFIG-002",
+    "VAL-CONFIG-003",
+    "VAL-CONFIG-004"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "flowReports": [
+    ".factory/validation/cli-core/user-testing/flows/cli-contract.json",
+    ".factory/validation/cli-core/user-testing/flows/config-contract.json"
+  ],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Added terminal CLI flow-validator guidance for cli-core, including deterministic mix-run wrapper usage and unique process-name isolation for repeated CLI runs.",
+      "source": "setup"
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Deterministic CLI validation required a temporary `mix run` wrapper script so the supported `:cli_overrides` runtime surface could inject anonymous-function doubles and unique supervisor names per run.",
+      "resolved": true,
+      "resolution": "Executed every assertion through `mix run --no-start --no-compile <temp-runner>.exs -- review ...` with isolated temp repos and per-run names, without modifying repository source files.",
+      "affectedAssertions": [
+        "VAL-CLI-002",
+        "VAL-CLI-003",
+        "VAL-CLI-004",
+        "VAL-CLI-005",
+        "VAL-CLI-006",
+        "VAL-CLI-007",
+        "VAL-CLI-008"
+      ]
+    },
+    {
+      "description": "The current override validation surface is runtime-env driven (`Application.put_env(:cerberus_elixir, :cli_overrides, ...)`) instead of a cleaner first-class CLI flag/file surface.",
+      "resolved": true,
+      "resolution": "Used deterministic `mix run --no-start --no-compile` wrappers that set `:cli_overrides` before invoking the CLI and direct `Cerberus.Config.start_link/1` snapshot/preflight helpers for evidence generation.",
+      "affectedAssertions": [
+        "VAL-CONFIG-002",
+        "VAL-CONFIG-003",
+        "VAL-CONFIG-004"
+      ]
+    }
+  ],
+  "previousRound": null
+}

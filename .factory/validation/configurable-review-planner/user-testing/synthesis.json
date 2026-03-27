@@ -1,0 +1,31 @@
+{
+  "milestone": "configurable-review-planner",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CONFIG-005",
+    "VAL-PLAN-001",
+    "VAL-PLAN-002",
+    "VAL-PLAN-003",
+    "VAL-PLAN-004",
+    "VAL-PLAN-005",
+    "VAL-PLAN-006",
+    "VAL-CROSS-002",
+    "VAL-CROSS-003"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "flowReports": [
+    ".factory/validation/configurable-review-planner/user-testing/flows/planner-routing.json",
+    ".factory/validation/configurable-review-planner/user-testing/flows/override-reruns.json"
+  ],
+  "appliedUpdates": [],
+  "frictions": [],
+  "previousRound": null
+}

@@ -1,0 +1,51 @@
+{
+  "milestone": "configurable-review-planner",
+  "round": 2,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix test --max-cases 4",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix compile --warnings-as-errors",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; APP=\"$REPO/cerberus-elixir\"; [ -f \"$REPO/mix.exs\" ] && APP=\"$REPO\"; cd \"$APP\" && mix format --check-formatted",
+      "exitCode": 0
+    },
+    "legacySurfaceSanity": {
+      "passed": true,
+      "command": "REPO=\"/Users/phaedrus/Development/cerberus-mono/cerberus\"; if [ -f \"$REPO/dispatch.sh\" ]; then shellcheck \"$REPO/dispatch.sh\"; else echo \"dispatch.sh retired\"; fi && if [ -f \"$REPO/bin/cerberus.js\" ]; then node --check \"$REPO/bin/cerberus.js\"; else echo \"node scaffolder retired\"; fi",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "rerunDetails": {
+    "reviewedFixFeatures": [
+      {
+        "featureId": "planner-doc-test-minimization",
+        "status": "pass",
+        "addressesFailureFrom": "planner-bench-aware-routing"
+      }
+    ],
+    "resolvedFailures": [
+      "planner-bench-aware-routing"
+    ]
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/configurable-review-planner/scrutiny/synthesis.round-1.json"
+}

@@ -1,0 +1,101 @@
+{
+  "groupId": "override-reruns",
+  "testedAt": "2026-03-25T20:12:18.048999+00:00",
+  "isolation": {
+    "tool": "tuistory + Execute",
+    "repoRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus",
+    "appRoot": "/Users/phaedrus/Development/cerberus-mono/cerberus/cerberus-elixir",
+    "missionDir": "/Users/phaedrus/.factory/missions/9ba62a98-6bca-42e0-b0e5-54452c2cc9a2",
+    "validationConcurrency": 1,
+    "overrideSurface": "Application.put_env(:cerberus_elixir, :cli_overrides, ...) before CLI execution",
+    "wrapperPattern": "MIX_ENV=test mix run --no-start --no-compile /tmp/val_cross_00N.exs",
+    "runtimeNames": "Each CLI rerun used unique config_name, router_name, review_supervisor_name, and task_supervisor_name values."
+  },
+  "toolsUsed": [
+    "tuistory",
+    "Execute"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-CROSS-002",
+      "title": "Bench override changes the end-to-end review plan",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run the same fixture ref range with default bench settings through a deterministic CLI wrapper.",
+          "expected": "CLI review completes and records the baseline selected team for the resolved refs.",
+          "observed": "CLI completed with baseline selected team ['trace', 'guard', 'craft'] for resolved refs shared by both reruns."
+        },
+        {
+          "action": "Re-run the identical ref range with a reviewer-bench override disabling atlas/craft/fuse and changing routing bench composition.",
+          "expected": "Resolved refs stay the same while planner selection and reviewer execution change to the override bench.",
+          "observed": "Override rerun preserved resolved refs=True and changed selected team from ['trace', 'guard', 'craft'] to ['trace', 'guard', 'proof']."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-baseline-terminal.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-override-terminal.json"
+        ],
+        "terminalSnapshots": [
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-terminal-snapshot.txt",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-terminal-screenshot.png"
+        ],
+        "artifacts": [
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-refs.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-resolved-config-before.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-resolved-config-after.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-resolved-config-diff.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-planner-trace-before.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-planner-trace-after.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-reviewer-execution-ledger-before.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-reviewer-execution-ledger-after.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-002-summary.json"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-003",
+      "title": "Provider/model/prompt override changes end-to-end execution settings",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run the same fixture ref range with default execution settings through a deterministic CLI wrapper.",
+          "expected": "CLI review completes and records the baseline selected team and reviewer execution settings.",
+          "observed": "CLI completed with selected team ['trace', 'guard', 'craft'] and baseline trace execution openrouter/kimi_k2_5."
+        },
+        {
+          "action": "Re-run the identical ref range with deterministic provider/model/prompt/template overrides applied only to reviewer trace.",
+          "expected": "Resolved refs and selected team stay the same while the trace execution settings change and unrelated reviewer settings remain stable.",
+          "observed": "Override rerun preserved resolved refs=True and selected team=True; trace changed from openrouter/kimi_k2_5 to deterministic/deterministic_review while guard remained stable=True."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-baseline-terminal.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-override-terminal.json"
+        ],
+        "terminalSnapshots": [
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-terminal-snapshot.txt",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-terminal-screenshot.png"
+        ],
+        "artifacts": [
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-refs.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-resolved-config-before.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-resolved-config-after.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-resolved-config-diff.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-planner-trace-before.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-planner-trace-after.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-reviewer-execution-ledger-before.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-reviewer-execution-ledger-after.json",
+          "configurable-review-planner/override-reruns/VAL-CROSS-003-summary.json"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed, 0 failed, 0 blocked."
+}

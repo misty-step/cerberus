@@ -1,0 +1,33 @@
+{
+  "featureId": "cli-ref-range-workspace",
+  "reviewedAt": "2026-03-25T17:41:20Z",
+  "commitId": "98de1c157c40a1802e8208e2105a034ac0cc8165",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature delivers the requested `cerberus review --repo <path> --base <ref> --head <ref>` contract: refs are resolved inside the target repo, empty ranges short-circuit cleanly, legacy `--diff` is rejected with actionable messaging, and the new isolated workspace flow keeps the caller checkout and worktree list untouched.",
+    "issues": [
+      {
+        "file": "cerberus-elixir/lib/cerberus/cli_test_support.ex",
+        "line": 32,
+        "severity": "non_blocking",
+        "description": "The feature ships the `Cerberus.TestSupport.LocalReviewRepo` fixture from `lib/`, so production builds now compile and package a git-mutating test helper that is only referenced by tests. Moving this helper to a test-only compile path would keep the runtime surface smaller and avoid coupling the shipped CLI artifact to review-fixture code."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The repo does not document or configure a canonical home for Elixir test-support modules, which likely contributed to this feature landing a test-only fixture under `lib/` instead of a test-only path.",
+      "evidence": "`cerberus-elixir/mix.exs:4-12` defines the project without an `elixirc_paths/1` test path override, `cerberus-elixir/lib/cerberus/cli_test_support.ex:32` now contains `Cerberus.TestSupport.LocalReviewRepo`, and the worker transcript skeleton shows a temporary `cerberus-elixir/test/support/local_review_repo.exs` being created, renamed, and then removed before handoff."
+    },
+    {
+      "area": "skills",
+      "observation": "The `cerberus-cli-worker` procedure appears broader than the mission actually needs for CLI flag-contract work: it requires `cerberus-terminology` before changing any help-text vocabulary, but this worker only changed flag/help text for the canonical `--repo/--base/--head` contract and completed successfully without that extra skill.",
+      "evidence": "`.factory/skills/cerberus-cli-worker/SKILL.md:21-24` requires `cerberus-terminology` before changing help-text vocabulary, while the transcript skeleton for worker session `854d5741-e337-4064-a45c-d1074036340a` shows only `mission-worker-base` and `cerberus-cli-worker` being invoked."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed commit `98de1c157c40a1802e8208e2105a034ac0cc8165`, the worker handoff, and the transcript skeleton. I found no blocking correctness, security, or maintainability issues in the isolated-workspace ref-range review flow; the only code-level follow-up is a non-blocking packaging/maintainability concern about shipping a test fixture from `lib/`, plus two shared-state gaps around test-support conventions and the scope of the CLI worker skill."
+}

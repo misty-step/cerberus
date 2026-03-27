@@ -4,73 +4,79 @@ version: 1
 
 name: "Cerberus"
 required_check: "Cerberus / Verdict"
-mode: parallel                      # parallel | sequential
-cancel_in_progress: true            # Cancel stale runs on new push
+mode: parallel
+cancel_in_progress: true
 
-model:
-  default: "openrouter/moonshotai/kimi-k2.5"
-  wave_pools:
-    wave1:
-      - "openrouter/x-ai/grok-4.1-fast"
-      - "openrouter/inception/mercury-2"
-      - "openrouter/minimax/minimax-m2.5"
-    wave2:
-      - "openrouter/moonshotai/kimi-k2.5"
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/z-ai/glm-5"
-    wave3:
-      - "openrouter/x-ai/grok-4.20-beta"
-      - "openrouter/x-ai/grok-4.20-multi-agent-beta"
-      - "openrouter/moonshotai/kimi-k2.5"
-  cli: pi
-  thinking: true
-  max_steps: 25                       # Max agentic steps per reviewer
-  timeout: 600                        # Seconds per reviewer
+providers:
+  openrouter:
+    adapter: openrouter
 
-# Waves are disabled — all routed reviewers run in a single parallel dispatch.
-# Wave definitions are retained for backward compatibility with custom consumer
-# workflows that still pass wave= to the matrix action. New workflows should
-# omit the wave parameter entirely; model selection maps MODEL_TIER to model.wave_pools.
-waves:
-  enabled: false
-  order:
-    - wave1
-    - wave2
-    - wave3
-  max_for_tier:
-    flash: 2
-    standard: 3
-    pro: 3
-  gate:
-    block_on_critical: true
-    block_on_major: true
-    block_on_skip: true
-    skip_tolerance: 1
-  definitions:
-    wave1:
-      reviewers:
-        - trace
-        - guard
-        - proof
-    wave2:
-      reviewers:
-        - atlas
-        - fuse
-        - craft
-    wave3:
-      reviewers:
-        - trace
-        - guard
-        - atlas
+models:
+  kimi_k2_5:
+    provider: openrouter
+    name: "openrouter/moonshotai/kimi-k2.5"
+  gemini_3_flash_preview:
+    provider: openrouter
+    name: "openrouter/google/gemini-3-flash-preview"
+  grok_4_1_fast:
+    provider: openrouter
+    name: "openrouter/x-ai/grok-4.1-fast"
+  mercury_2:
+    provider: openrouter
+    name: "openrouter/inception/mercury-2"
+  minimax_m2_5:
+    provider: openrouter
+    name: "openrouter/minimax/minimax-m2.5"
+  glm_5:
+    provider: openrouter
+    name: "openrouter/z-ai/glm-5"
+  grok_4_20_beta:
+    provider: openrouter
+    name: "openrouter/x-ai/grok-4.20-beta"
+  grok_4_20_multi_agent_beta:
+    provider: openrouter
+    name: "openrouter/x-ai/grok-4.20-multi-agent-beta"
+
+model_pools:
+  wave1:
+    - grok_4_1_fast
+    - mercury_2
+    - minimax_m2_5
+  wave2:
+    - kimi_k2_5
+    - gemini_3_flash_preview
+    - glm_5
+  wave3:
+    - grok_4_20_beta
+    - grok_4_20_multi_agent_beta
+    - kimi_k2_5
+
+prompts:
+  correctness:
+    path: pi/agents/correctness.md
+  architecture:
+    path: pi/agents/architecture.md
+  security:
+    path: pi/agents/security.md
+  maintainability:
+    path: pi/agents/maintainability.md
+  testing:
+    path: pi/agents/testing.md
+  resilience:
+    path: pi/agents/resilience.md
+
+templates:
+  review:
+    path: templates/review-prompt.md
 
 routing:
-  enabled: true   # default cost control: route to the smallest useful reviewer subset
-  model: "openrouter/google/gemini-3-flash-preview"
+  enabled: true
+  model: gemini_3_flash_preview
   panel_size: 4
   always_include:
-    - trace      # correctness always runs
+    - trace
   include_if_code_changed:
-    - guard      # security runs if non-test/non-doc code changed
+    - guard
   fallback_panel:
     - trace
     - guard
@@ -82,73 +88,79 @@ routing:
 override:
   enabled: true
   command: "/cerberus override"
-  actor: pr_author                    # pr_author | write_access | maintainers_only
+  actor: pr_author
   require_reason: true
   pin_to_sha: true
 
-# Verdict rules
 verdict:
-  fail_on: "any_critical_or_2_major"  # any_critical | any_critical_or_2_major | any_major
-  warn_on: "any_major_or_5_minor_or_3_minor_same_category"  # any_major | any_major_or_5_minor_or_3_minor_same_category
+  fail_on: "any_critical_or_2_major"
+  warn_on: "any_major_or_5_minor_or_3_minor_same_category"
   confidence_min: 0.7
 
 cerberus_verdict:
-  fail_on: "any_critical_fail_or_2_fails"  # single non-critical FAIL is downgraded to WARN
+  fail_on: "any_critical_fail_or_2_fails"
 
-# The eight reviewers of Cerberus.
-# Names are codenames — perspective determines behavior.
 reviewers:
-  - name: trace
+  - id: trace
     perspective: correctness
+    prompt: correctness
+    template: review
     model: pool
     description: "Correctness — Find the bug"
     override: pr_author
     tools:
       shell: false
 
-  - name: atlas
+  - id: atlas
     perspective: architecture
+    prompt: architecture
+    template: review
     model: pool
     description: "Architecture — Zoom out"
     override: pr_author
     tools:
       shell: false
 
-  - name: guard
+  - id: guard
     perspective: security
+    prompt: security
+    template: review
     model: pool
     description: "Security — Think like an attacker"
     override: maintainers_only
     tools:
       shell: false
 
-  - name: craft
+  - id: craft
     perspective: maintainability
+    prompt: maintainability
+    template: review
     model: pool
     description: "Maintainability — Think like the next dev"
     override: pr_author
     tools:
       shell: false
 
-  - name: proof
+  - id: proof
     perspective: testing
+    prompt: testing
+    template: review
     model: pool
     description: "Testing — See what will break"
     override: pr_author
     tools:
       shell: false
 
-  - name: fuse
+  - id: fuse
     perspective: resilience
+    prompt: resilience
+    template: review
     model: pool
     description: "Resilience — What happens when the happy path fails"
     override: pr_author
     tools:
       shell: false
 
-# Canary observability integration
-# Reports health-check transitions and error-tracking alerts to a Canary instance.
-# Env vars: CANARY_ENDPOINT (base URL), CANARY_API_KEY (Bearer token).
 canary:
   enabled: false
   service: "cerberus"

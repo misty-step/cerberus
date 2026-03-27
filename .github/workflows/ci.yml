@@ -6,33 +6,8 @@ on:
   pull_request:
 
 jobs:
-  lint:
+  validate:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Shellcheck
-        run: |
-          find . -type f -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          package-manager-cache: false
-
-      - name: Check CLI syntax
-        run: npm test
-
-      - name: Yamllint
-        run: |
-          pip install yamllint -q
-          yamllint action.yml .github/workflows/*.yml templates/*.yml
-
-  elixir:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cerberus-elixir
     steps:
       - uses: actions/checkout@v4
 
@@ -45,63 +20,42 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            cerberus-elixir/deps
-            cerberus-elixir/_build
-          key: ${{ runner.os }}-elixir-${{ hashFiles('cerberus-elixir/mix.lock') }}
+            deps
+            _build
+          key: ${{ runner.os }}-elixir-${{ hashFiles('mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-elixir-
 
       - name: Fetch Elixir deps
         run: mix deps.get
 
-      - name: Compile scaffold
-        run: mix compile
+      - name: Compile
+        run: mix compile --warnings-as-errors
 
-      - name: Run Elixir tests
-        run: mix test
+      - name: Test
+        run: mix test --max-cases 4
 
-      - name: Verify release contract
-        run: ./test/release_contract.sh
+      - name: Check formatting
+        run: mix format --check-formatted
 
-      - name: Build Docker image
-        run: docker build -f Dockerfile -t cerberus ..
+      - name: Build packaged CLI
+        run: mix escript.build
 
-      - name: Enforce Docker image size
-        run: |
-          size=$(docker image inspect cerberus --format '{{.Size}}')
-          test "$size" -lt 100000000
-
-      - name: Smoke test Docker release
-        run: |
-          docker run --rm -e CERBERUS_API_KEY=test cerberus eval 'Application.ensure_all_started(:cerberus_elixir); IO.puts(length(Cerberus.Config.personas()))' | tee /tmp/cerberus-eval.log
-          grep -Fx '6' /tmp/cerberus-eval.log
-
-          docker rm -f cerberus-smoke >/dev/null 2>&1 || true
-          docker run --rm -d --name cerberus-smoke -p 8080:8080 -e CERBERUS_API_KEY=test cerberus start
-
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/health > /tmp/cerberus-health.json; then
-              break
-            fi
-            sleep 1
-          done
-
-          grep -F '{"status":"ok"}' /tmp/cerberus-health.json
-          docker rm -f cerberus-smoke
+      - name: Verify escript contract
+        run: ./test/escript_contract.sh
 
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   merge-gate:
     name: merge-gate
-    needs: [lint, elixir]
+    needs: [validate]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: All checks passed
         run: |
-          if [[ "${{ needs.lint.result }}" == "success" && \
-                "${{ needs.elixir.result }}" == "success" ]]; then
+          if [[ "${{ needs.validate.result }}" == "success" ]]; then
             echo "merge-gate green"
           else
-            echo "merge-gate red (lint=${{ needs.lint.result }}, elixir=${{ needs.elixir.result }})"
+            echo "merge-gate red (validate=${{ needs.validate.result }})"
             exit 1
           fi
