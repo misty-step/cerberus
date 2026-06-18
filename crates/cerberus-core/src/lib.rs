@@ -8,6 +8,9 @@ use cerberus_schema::{
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod harness_eval;
+pub use harness_eval::*;
+
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
     #[error(transparent)]

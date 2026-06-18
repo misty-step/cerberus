@@ -1,6 +1,6 @@
 # 006 - Harness and Model Evaluation Matrix
 
-Status: shaped
+Status: implemented-local-smoke
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -55,6 +55,11 @@ The first implementation may run a tiny smoke matrix locally and mark larger
 external-model runs as manual or nightly. Do not make CI depend on paid model
 availability until a budget and retry policy exists.
 
+Local smoke cells run in `offline_contract` mode. They must not report a
+production-ready `pass`; completed offline artifacts validate as `warn`, while
+expected degraded or unavailable cells stay structured separately. Live
+harness/model adapters are required before any default promotion.
+
 ## Scope
 
 In scope:
@@ -90,14 +95,14 @@ Local harnesses available:
 - `pi` 0.78.1 at `/Users/phaedrus/.npm-global/bin/pi`
 - `goose` 1.12.1 at `/Users/phaedrus/.local/bin/goose`
 - `opencode` 1.2.6 at `/Users/phaedrus/.opencode/bin/opencode`
-- `omp` 16.0.5 at `/Users/phaedrus/.bun/bin/omp`
+- `omp` 16.0.7 at `/Users/phaedrus/.bun/bin/omp`
 
 Current model facts from `https://openrouter.ai/api/v1/models` on
 2026-06-18:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Notes |
 |---|---:|---:|---:|---:|---:|---|
-| `z-ai/glm-5.2` | 1,048,576 | 524,288 | 1.40 | 4.40 | 0.70 | Z.ai docs describe GLM-5.2 as a 1M-context long-horizon model with 128K maximum output, so OpenRouter and first-party output limits must be reconciled by a live probe. |
+| `z-ai/glm-5.2` | 1,048,576 | 16,384 | 1.20 | 4.20 | 0.20 | Z.ai docs describe GLM-5.2 as a 1M-context long-horizon model with 128K maximum output, so OpenRouter and first-party output limits must be reconciled by a live probe. |
 | `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | Kimi docs say K2.7 Code improves long-horizon coding over K2.6 and keeps a 256K context window. |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | DeepSeek's 2026-04-24 V4 preview states V4-Pro and V4-Flash are API-available and support 1M context. |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | Candidate for cheap smoke and simple reviewer lanes; must be graded separately from Pro. |
@@ -148,18 +153,41 @@ Relevant Cerberus drift:
 
 ## Child Work
 
-1. Add current-model catalog ingestion with cached raw evidence and drift
-   reporting.
-2. Define the harness/model eval schemas and fixture matrix.
-3. Build a tiny local smoke runner for `pi`, `goose`, `opencode`, and `omp`
-   using one deterministic reviewer task.
-4. Add real reviewer eval fixtures with golden findings and prompt-injection
-   cases.
-5. Run the first dated matrix for GLM 5.2, Kimi K2.7 Code, DeepSeek V4 Pro,
-   and DeepSeek V4 Flash.
-6. Convert report winners into a candidate `ReviewConfig.v1`; keep production
-   defaults unchanged until the report and cost envelope are reviewed.
-7. Feed accepted configs into backlog 004's Daedalus promotion packet flow.
+1. Done: define the harness/model eval schemas and fixture matrix.
+2. Done: build a tiny local smoke runner for `pi`, `goose`, `opencode`, and
+   `omp` using deterministic offline reviewer tasks.
+3. Done: add reviewer eval fixtures with clean, golden-finding,
+   prompt-injection, and degraded-output cases.
+4. Done: add stale-model drift reporting over Cerberus-owned config/source
+   paths.
+5. Remaining: add current-model catalog ingestion with cached raw evidence.
+6. Remaining: run paid/live harness adapters rather than the offline fixture
+   reviewer.
+7. Remaining: convert report winners into a candidate `ReviewConfig.v1`; keep
+   production defaults unchanged until the report and cost envelope are
+   reviewed.
+8. Remaining: feed accepted configs into backlog 004's Daedalus promotion
+   packet flow.
+
+## Implementation Receipt
+
+First local smoke delivery, 2026-06-18:
+
+- Schemas: `EvalTaskSuite.v1`, `HarnessProfile.v1`, `ModelCandidate.v1`,
+  `HarnessModelMatrix.v1`, and `HarnessModelEvaluationReport.v1`.
+- Runner: `cerberus-cli eval-harness` validates fixtures, probes local harness
+  commands with `--version`, scans stale model IDs, writes transcripts, and
+  emits a schema-valid report.
+- Fixture matrix:
+  `fixtures/evals/reviewer-harness-smoke.json` and
+  `fixtures/evals/harness-model-matrix.json`.
+- Smoke result: `tmp/evals/harness-model/report.json` contained 64 cells in
+  `offline_contract` mode, 64 valid artifacts, 48 warning cells, 16 expected
+  degraded cells, 0 failed cells, 27 stale-model findings, and 4 GLM 5.2
+  catalog deltas.
+
+This receipt proves the local evaluation contract and report mechanics. It does
+not prove that any paid model/harness pair is production-ready.
 
 ## Notes
 

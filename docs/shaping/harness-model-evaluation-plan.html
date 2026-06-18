@@ -122,14 +122,14 @@
         </div>
         <aside class="ae-panel">
           <h2 class="ae-h">CHOSEN DESIGN</h2>
-          <p>Shape a Rust-side eval bridge: fixtures plus harness probes plus model catalog snapshot plus <code>HarnessModelEvaluationReport.v1</code>.</p>
+          <p>Use a Rust-side eval bridge: fixtures plus harness probes plus model catalog snapshot plus <code>HarnessModelEvaluationReport.v1</code>.</p>
           <div class="rule"></div>
           <h2 class="ae-h">QUALITY SYSTEM</h2>
           <p>Standards: artifact validity, evidence discipline, reviewer quality, fair harness comparison, dated model facts.</p>
           <p>Proof: eval runner output, schema validation, transcripts, cost and latency records, model drift report.</p>
           <div class="rule"></div>
           <p class="ae-dim">Premise source: explicit user request in this thread plus live repo and provider evidence. No preexisting standalone artifact.</p>
-          <p class="ae-dim">Plan status: local HTML artifact authored for review.</p>
+          <p class="ae-dim">Plan status: local smoke runner implemented; live paid model adapters remain future work.</p>
         </aside>
       </section>
 
@@ -155,15 +155,15 @@
       <section class="grid-3" aria-label="Current state" style="margin-top: 1px">
         <article class="cell">
           <h2 class="ae-h">CURRENT STATE</h2>
-          <p>Backlog 001 defines the Rust artifact spine. Legacy configs still reference <code>kimi-k2.5</code> and older cost assumptions.</p>
+          <p>Backlog 001 defines the Rust artifact spine. Backlog 006 now adds local eval schemas, fixtures, a CLI runner, transcripts, and stale-model reporting. Legacy configs still reference <code>kimi-k2.5</code> and older cost assumptions.</p>
         </article>
         <article class="cell">
           <h2 class="ae-h">CHANGE SHAPE</h2>
-          <p>Add backlog 006 and a shaping note. Implementation later adds schemas, fixtures, harness adapters, catalog ingestion, and reports.</p>
+          <p>Add schemas, a smoke suite, a dated harness/model matrix, local harness probes, report validation, and stale-model scan output. Live harness adapters and catalog ingestion remain separate work.</p>
         </article>
         <article class="cell wash">
           <h2 class="ae-h">PROOF SURFACE</h2>
-          <p>Every candidate model promotion carries a dated report, raw catalog snapshot, transcripts, and reviewer-artifact validation.</p>
+            <p>The local smoke run now emits <code>tmp/evals/harness-model/report.json</code> and transcripts with <code>offline_contract</code> warning cells. Every future model promotion must add live harness/model evidence before defaults change.</p>
         </article>
       </section>
 
@@ -185,12 +185,34 @@
       </section>
 
       <section style="margin-top: 2em">
+        <h2 class="ae-h">LOCAL SMOKE RESULT</h2>
+        <div class="grid-4">
+          <article class="cell">
+            <h3>64 cells</h3>
+            <p>4 harness profiles x 4 model candidates x 4 smoke tasks.</p>
+          </article>
+          <article class="cell">
+            <h3>48 warnings</h3>
+            <p>The offline reviewer path emitted schema-valid contract artifacts, but they intentionally do not count as live harness/model passes.</p>
+          </article>
+          <article class="cell">
+            <h3>16 degraded</h3>
+            <p>The timeout fixture records expected degraded outcomes with zero quality score instead of perfect-score success.</p>
+          </article>
+          <article class="cell wash">
+            <h3>Scope guard</h3>
+            <p>This proves the evaluation contract, stale-model scan, and report validation, not paid model quality or production readiness.</p>
+          </article>
+        </div>
+      </section>
+
+      <section style="margin-top: 2em">
         <h2 class="ae-h">EVALUATION FLOW</h2>
         <div class="phase">
           <p class="ae-chrome">01</p>
           <div>
             <h3>Freeze tasks</h3>
-            <p>Check in clean, seeded-bug, prompt-injection, long-context, degraded, and schema-hostile reviewer tasks.</p>
+            <p>The local smoke suite checks in clean, seeded-bug, prompt-injection, and degraded tasks. The full live suite still needs long-context and schema-hostile cases.</p>
           </div>
           <p class="ae-dim">Prevents benchmark drift and prompt cherry-picking.</p>
         </div>

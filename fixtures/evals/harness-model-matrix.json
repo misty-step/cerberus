@@ -1,0 +1,135 @@
+{
+  "schema_version": "harness-model-matrix.v1",
+  "matrix_id": "2026-06-18-openrouter-smoke",
+  "observed_at": "2026-06-18",
+  "harnesses": [
+    {
+      "schema_version": "harness-profile.v1",
+      "harness_id": "pi",
+      "command": "pi",
+      "version": "0.78.1",
+      "path": "/Users/phaedrus/.npm-global/bin/pi",
+      "notes": "Local Pi CLI probed with --version on 2026-06-18."
+    },
+    {
+      "schema_version": "harness-profile.v1",
+      "harness_id": "goose",
+      "command": "goose",
+      "version": "1.12.1",
+      "path": "/Users/phaedrus/.local/bin/goose",
+      "notes": "Local Goose CLI probed with --version on 2026-06-18."
+    },
+    {
+      "schema_version": "harness-profile.v1",
+      "harness_id": "opencode",
+      "command": "opencode",
+      "version": "1.2.6",
+      "path": "/Users/phaedrus/.opencode/bin/opencode",
+      "notes": "Local OpenCode CLI probed with --version on 2026-06-18."
+    },
+    {
+      "schema_version": "harness-profile.v1",
+      "harness_id": "omp",
+      "command": "omp",
+      "version": "16.0.7",
+      "path": "/Users/phaedrus/.bun/bin/omp",
+      "notes": "Local OMP CLI probed with --version on 2026-06-18."
+    }
+  ],
+  "models": [
+    {
+      "schema_version": "model-candidate.v1",
+      "model_id": "z-ai/glm-5.2",
+      "provider": "OpenRouter",
+      "context_length": 1048576,
+      "max_completion_tokens": 16384,
+      "input_usd_per_m": 1.2,
+      "output_usd_per_m": 4.2,
+      "cache_read_usd_per_m": 0.2,
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "reasoning",
+        "response_format"
+      ],
+      "catalog_source": "https://openrouter.ai/api/v1/models",
+      "catalog_observed_at": "2026-06-18",
+      "previous": {
+        "observed_at": "2026-06-18-backlog-snapshot",
+        "context_length": 1048576,
+        "max_completion_tokens": 524288,
+        "input_usd_per_m": 1.4,
+        "output_usd_per_m": 4.4,
+        "cache_read_usd_per_m": 0.7
+      }
+    },
+    {
+      "schema_version": "model-candidate.v1",
+      "model_id": "moonshotai/kimi-k2.7-code",
+      "provider": "OpenRouter",
+      "context_length": 262144,
+      "max_completion_tokens": 16384,
+      "input_usd_per_m": 0.74,
+      "output_usd_per_m": 3.5,
+      "cache_read_usd_per_m": 0.15,
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "reasoning",
+        "response_format"
+      ],
+      "catalog_source": "https://openrouter.ai/api/v1/models",
+      "catalog_observed_at": "2026-06-18"
+    },
+    {
+      "schema_version": "model-candidate.v1",
+      "model_id": "deepseek/deepseek-v4-pro",
+      "provider": "OpenRouter",
+      "context_length": 1048576,
+      "max_completion_tokens": 384000,
+      "input_usd_per_m": 0.435,
+      "output_usd_per_m": 0.87,
+      "cache_read_usd_per_m": 0.003625,
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "reasoning",
+        "response_format"
+      ],
+      "catalog_source": "https://openrouter.ai/api/v1/models",
+      "catalog_observed_at": "2026-06-18"
+    },
+    {
+      "schema_version": "model-candidate.v1",
+      "model_id": "deepseek/deepseek-v4-flash",
+      "provider": "OpenRouter",
+      "context_length": 1048576,
+      "max_completion_tokens": 65536,
+      "input_usd_per_m": 0.09,
+      "output_usd_per_m": 0.18,
+      "cache_read_usd_per_m": 0.02,
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "reasoning",
+        "response_format"
+      ],
+      "catalog_source": "https://openrouter.ai/api/v1/models",
+      "catalog_observed_at": "2026-06-18"
+    }
+  ],
+  "stale_model_patterns": [
+    "moonshotai/kimi-k2.5",
+    "google/gemini-3-flash-preview"
+  ],
+  "drift_scan_paths": [
+    "defaults",
+    "pi",
+    "cerberus-elixir",
+    "opencode.json"
+  ]
+}

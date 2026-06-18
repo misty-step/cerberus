@@ -1,7 +1,7 @@
 # Harness and Model Evaluation Shape
 
 Date: 2026-06-18
-Status: shaped
+Status: local smoke implemented
 
 ## Goal
 
@@ -55,7 +55,7 @@ Local harnesses:
 | Pi | 0.78.1 | `/Users/phaedrus/.npm-global/bin/pi` | Minimal, extensible baseline; likely the cleanest way to test Cerberus-owned prompt/context discipline. |
 | Goose | 1.12.1 | `/Users/phaedrus/.local/bin/goose` | Rich local agent with MCP/subagent surface; must be tested for prompt isolation and artifact discipline. |
 | OpenCode | 1.2.6 | `/Users/phaedrus/.opencode/bin/opencode` | Strong provider/config support; repo already has `opencode.json`, so it is a practical candidate for local review runs. |
-| OMP | 16.0.5 | `/Users/phaedrus/.bun/bin/omp` | Heavier Pi-derived harness with LSP/DAP/subagents; promising but needs strict control so harness power does not mask model weakness. |
+| OMP | 16.0.7 | `/Users/phaedrus/.bun/bin/omp` | Heavier Pi-derived harness with LSP/DAP/subagents; promising but needs strict control so harness power does not mask model weakness. |
 
 Local model drift:
 
@@ -97,7 +97,7 @@ OpenRouter API snapshot, 2026-06-18:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Supported params of interest |
 |---|---:|---:|---:|---:|---:|---|
-| `z-ai/glm-5.2` | 1,048,576 | 524,288 | 1.40 | 4.40 | 0.70 | tools, tool_choice, structured_outputs, reasoning, response_format |
+| `z-ai/glm-5.2` | 1,048,576 | 16,384 | 1.20 | 4.20 | 0.20 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | tools, tool_choice, structured_outputs, reasoning, response_format |
@@ -134,6 +134,31 @@ Each cell runs the same task contract and emits:
 - latency and token/cost metrics
 - context-size and truncation notes
 - degraded/crash reason
+
+## Implemented Smoke Surface
+
+Backlog 006 now has a Rust-side offline smoke runner:
+
+- `cerberus-schema` defines `EvalTaskSuite.v1`, `HarnessProfile.v1`,
+  `ModelCandidate.v1`, `HarnessModelMatrix.v1`, and
+  `HarnessModelEvaluationReport.v1`.
+- `cerberus-core` grades checked-in eval tasks against exact fixture findings,
+  records schema validity, structured unavailable/degraded states, estimated
+  cost, catalog deltas, and report summaries.
+- `cerberus-cli eval-harness` probes local harness commands with `--version`,
+  scans configured source paths for stale model IDs, writes transcripts, and
+  emits `tmp/evals/harness-model/report.json`.
+- `fixtures/evals/reviewer-harness-smoke.json` covers clean/no-finding,
+  seeded finding, prompt-injection text, and degraded timeout cases.
+- `fixtures/evals/harness-model-matrix.json` captures the 2026-06-18 local
+  harness versions and OpenRouter model facts used by this run.
+
+The current smoke result is intentionally not a live model bake-off. Cells run
+in `offline_contract` mode and must validate as `warn` or structured
+degraded/unavailable outcomes, not as production-ready `pass` outcomes. This
+proves the evaluation contract, report validation, stale-model drift reporting,
+and degraded/unavailable cell handling. Paid harness/model execution remains a
+later adapter step before any production defaults change.
 
 ## Alternatives Considered
 
@@ -178,10 +203,12 @@ cargo run --locked -p cerberus-cli -- validate \
 cargo test --workspace harness_model_eval
 ```
 
-Acceptance requires at least one task to run through each locally installed
-harness with either a valid `ReviewerArtifact.v1` or a structured failure
-record. Paid external model cells may be marked manual/nightly until budget and
-retry policy exist.
+Local smoke acceptance requires each locally installed harness profile to be
+probed and each matrix cell to emit either a schema-valid offline
+`ReviewerArtifact.v1` in `warn` status or a structured degraded/unavailable
+record. Live adapter acceptance later requires at least one task to run through
+each harness with a real harness/model transcript. Paid external model cells
+may be marked manual/nightly until budget and retry policy exist.
 
 ## Verification System
 

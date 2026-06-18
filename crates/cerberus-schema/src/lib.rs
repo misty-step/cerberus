@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod eval;
+pub use eval::*;
+
 pub const REVIEW_REQUEST_VERSION: &str = "review-request.v1";
 pub const REVIEW_CONFIG_VERSION: &str = "review-config.v1";
 pub const REVIEWER_ARTIFACT_VERSION: &str = "reviewer-artifact.v1";
