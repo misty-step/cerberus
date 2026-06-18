@@ -1,0 +1,50 @@
+{
+  "schema_version": "review-request.v1",
+  "request_id": "caller-bitterblossom-review-factory-smoke",
+  "source": {
+    "kind": "external",
+    "system": "event-plane-task",
+    "id": "review-factory-smoke"
+  },
+  "change": {
+    "title": "Review factory smoke task",
+    "description": "A caller-owned task submits source-agnostic review input and stores the returned artifact in its run ledger.",
+    "head_sha": "bbheadsha001",
+    "diff": "diff --git a/src/review_factory.rs b/src/review_factory.rs\n--- a/src/review_factory.rs\n+++ b/src/review_factory.rs\n@@ -1,3 +1,4 @@\n pub fn build() {\n+    // CERBERUS_FAKE_FINDING\n }\n",
+    "files": [
+      {
+        "path": "src/review_factory.rs",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0
+      }
+    ]
+  },
+  "context": {
+    "summary": "Event-plane task fixture for a code review workload.",
+    "acceptance": [
+      "Caller owns trigger, run ledger, retries, and budget envelope.",
+      "Cerberus owns only review request validation and review artifact production."
+    ],
+    "linked_artifacts": [
+      "task://review-factory-smoke"
+    ],
+    "metadata": {
+      "task_id": "review-factory-smoke",
+      "trigger_id": "manual-contract-fixture",
+      "run_ledger_root": "ledger/reviews"
+    }
+  },
+  "caller": {
+    "name": "bitterblossom",
+    "run_id": "bb-run-20260618-001"
+  },
+  "policy": {
+    "render_targets": [
+      "json",
+      "markdown"
+    ],
+    "allow_degraded": true,
+    "max_cost_usd": 2.0
+  }
+}

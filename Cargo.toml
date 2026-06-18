@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/cerberus-adapter",
   "crates/cerberus-cli",
   "crates/cerberus-core",
   "crates/cerberus-schema",
@@ -13,6 +14,7 @@ repository = "https://github.com/misty-step/cerberus"
 
 [workspace.dependencies]
 anyhow = "1"
+cerberus-adapter = { path = "crates/cerberus-adapter" }
 cerberus-core = { path = "crates/cerberus-core" }
 cerberus-schema = { path = "crates/cerberus-schema" }
 serde = { version = "1", features = ["derive"] }

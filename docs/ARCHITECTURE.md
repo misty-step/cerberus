@@ -21,6 +21,11 @@ adapters, but they do not define the core boundary. Bitterblossom and Olympus
 remain independent callers through the same contract; neither caller should know
 about the other.
 
+`crates/cerberus-adapter` is the consumer-side SDK and fixture home for that
+contract. It may provide request builders, caller receipt examples, and artifact
+projections, but it must not move caller-owned runtime concerns into
+`cerberus-core`.
+
 ## Request Flow
 
 ```text
@@ -65,6 +70,25 @@ Responsibilities:
 - dispatch to the API
 - poll until completion
 - expose workflow outputs
+
+### Rust Adapter SDK
+
+Lives in `crates/cerberus-adapter/`.
+
+Responsibilities:
+
+- build and validate caller-shaped `ReviewRequest.v1` values
+- prove the local fixture contract shape for Bitterblossom and Olympus without
+  cross-caller references
+- project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
+- guard fixture text against cross-caller references
+
+Non-responsibilities:
+
+- Bitterblossom task queues, retries, budgets, or run ledgers
+- Olympus Argus activation gates, stale-head suppression, marker dedupe, caps,
+  or GitHub posting
+- live acquisition from either caller repository
 
 ### Elixir Engine
 

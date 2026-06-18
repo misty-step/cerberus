@@ -1,6 +1,6 @@
 # 002 - Independent Caller Adapters
 
-Status: shaped
+Status: implemented-local-fixtures
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -29,6 +29,7 @@ or type names.
 ## Verification System
 
 - `cargo test --workspace caller_contracts`
+- `cargo run --locked -p cerberus-cli -- validate fixtures/callers/bitterblossom-task.json fixtures/callers/olympus-argus.json`
 - A repo-local contract lint that scans adapter fixtures for forbidden
   cross-caller imports/references.
 - Consumer-side integration tests in Bitterblossom and Olympus once the core
@@ -52,6 +53,8 @@ Out of scope:
 
 ## Evidence
 
+- Rendered implementation plan:
+  `docs/shaping/002-independent-caller-adapters-plan.html`
 - Bitterblossom defines itself as the event plane with task/agent/trigger/run
   primitives and a Rust spine.
 - Olympus Argus already owns strict artifact validation, stale-head suppression,
@@ -61,11 +64,32 @@ Out of scope:
 
 ## Child Work
 
-1. Define `cerberus-adapter` request builder APIs.
-2. Add Bitterblossom fixture and storage receipt example.
-3. Add Olympus Argus fixture and artifact projection example.
-4. Add no-cross-caller-reference guard.
-5. Document ownership boundaries in `docs/ARCHITECTURE.md` after fixtures pass.
+1. Done: define `cerberus-adapter` request builder APIs.
+2. Done: add Bitterblossom fixture and storage receipt example.
+3. Done: add Olympus Argus fixture and artifact projection example.
+4. Done: add no-cross-caller-reference guard.
+5. Done: document ownership boundaries in `docs/ARCHITECTURE.md` after
+   fixtures pass.
+6. Remaining: add consumer-side integration tests in Bitterblossom and Olympus.
+
+## Implementation Receipt
+
+First local adapter delivery, 2026-06-18:
+
+- Added `crates/cerberus-adapter` as a consumer-side SDK over
+  `ReviewRequest.v1` and `ReviewRunArtifact.v1`.
+- Added a generic `CallerReviewRequestBuilder`, a
+  `BitterblossomRunReceipt` ledger projection, and an
+  `OlympusArgusProjection` inline-comment projection.
+- Added checked-in caller fixtures:
+  `fixtures/callers/bitterblossom-task.json` and
+  `fixtures/callers/olympus-argus.json`.
+- Added a static guard that rejects sibling caller references in fixture text.
+- Local proof: `cargo test --workspace caller_contracts` passed with both
+  caller fixtures invoking the fake core and validating the returned artifact.
+
+This receipt proves the local contract shape. It does not yet prove that the
+real Bitterblossom and Olympus repositories have switched to these fixtures.
 
 ## Notes
 

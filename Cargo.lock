@@ -18,6 +18,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cerberus-adapter"
+version = "0.1.0"
+dependencies = [
+ "cerberus-core",
+ "cerberus-schema",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "cerberus-cli"
 version = "0.1.0"
 dependencies = [
