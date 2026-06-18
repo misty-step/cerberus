@@ -1,6 +1,6 @@
 # 004 - Daedalus Reviewer Config Promotion
 
-Status: shaped
+Status: implemented-local-fixture
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -65,3 +65,15 @@ Out of scope:
 ## Notes
 
 This depends on backlog 001's core config schema.
+
+## Implementation Receipt
+
+First local promotion delivery, 2026-06-18:
+
+- Added `ReviewerConfigPacket.v1` and `ReviewerConfigImportReport.v1` schemas.
+- Added `cerberus-cli validate-reviewer-config <packet>` and
+  `cerberus-cli import-reviewer-config <packet> --dry-run`.
+- Added a sandbox-only Daedalus packet fixture and checked dry-run report
+  fixture for baseline comparison.
+- Documented promotion, rollback, and rejection rules in
+  `docs/shaping/daedalus-reviewer-config-promotion.md`.

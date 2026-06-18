@@ -1,15 +1,18 @@
 use anyhow::{bail, Context, Result};
 use cerberus_core::{
     default_config, evaluate_harness_model_matrix, render_inline_comment_candidates,
-    render_markdown, review, HarnessProbe,
+    render_markdown, review, reviewer_config_import_dry_run,
+    reviewer_config_promotion_fixture_request, validate_reviewer_config_packet, HarnessProbe,
 };
 use cerberus_schema::{
     EvalTaskSuite, HarnessModelEvaluationReport, HarnessModelMatrix, HarnessProfile,
     InlineCommentCandidate, ModelCandidate, ReviewConfig, ReviewRequest, ReviewRunArtifact,
-    ReviewerArtifact, StaleModelFinding, EVAL_TASK_SUITE_VERSION,
-    HARNESS_MODEL_EVALUATION_REPORT_VERSION, HARNESS_MODEL_MATRIX_VERSION, HARNESS_PROFILE_VERSION,
-    INLINE_COMMENT_CANDIDATE_VERSION, MODEL_CANDIDATE_VERSION, REVIEWER_ARTIFACT_VERSION,
-    REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION, REVIEW_RUN_ARTIFACT_VERSION,
+    ReviewerArtifact, ReviewerConfigImportReport, ReviewerConfigPacket, StaleModelFinding,
+    EVAL_TASK_SUITE_VERSION, HARNESS_MODEL_EVALUATION_REPORT_VERSION, HARNESS_MODEL_MATRIX_VERSION,
+    HARNESS_PROFILE_VERSION, INLINE_COMMENT_CANDIDATE_VERSION, MODEL_CANDIDATE_VERSION,
+    REVIEWER_ARTIFACT_VERSION, REVIEWER_CONFIG_IMPORT_REPORT_VERSION,
+    REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION,
+    REVIEW_RUN_ARTIFACT_VERSION,
 };
 use std::{
     collections::BTreeSet,
@@ -27,8 +30,10 @@ fn main() -> Result<()> {
 
     match command.as_str() {
         "validate" => validate(args.collect()),
+        "validate-reviewer-config" => validate_reviewer_config(args.collect()),
         "review" => review_command(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
+        "import-reviewer-config" => import_reviewer_config(args.collect()),
         "render" => render(args.collect()),
         "render-comments" => render_comments(args.collect()),
         "--help" | "-h" | "help" => {
@@ -40,6 +45,20 @@ fn main() -> Result<()> {
             bail!("unknown command {command:?}");
         }
     }
+}
+
+fn validate_reviewer_config(paths: Vec<String>) -> Result<()> {
+    if paths.is_empty() {
+        bail!("validate-reviewer-config requires at least one packet path");
+    }
+
+    for path in paths {
+        let packet = read_reviewer_config_packet(&PathBuf::from(&path))?;
+        validate_reviewer_config_packet(&packet)?;
+        println!("{path}: ok");
+    }
+
+    Ok(())
 }
 
 fn validate(paths: Vec<String>) -> Result<()> {
@@ -161,6 +180,77 @@ fn eval_harness(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn import_reviewer_config(args: Vec<String>) -> Result<()> {
+    let mut packet_path = None;
+    let mut baseline_path = None;
+    let mut fixture_path = None;
+    let mut out_path = None;
+    let mut dry_run = false;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--dry-run" => {
+                dry_run = true;
+                index += 1;
+            }
+            "--baseline" => {
+                baseline_path = Some(required_arg(&args, index, "--baseline")?);
+                index += 2;
+            }
+            "--fixture" => {
+                fixture_path = Some(required_arg(&args, index, "--fixture")?);
+                index += 2;
+            }
+            "--out" => {
+                out_path = Some(required_arg(&args, index, "--out")?);
+                index += 2;
+            }
+            value if packet_path.is_none() => {
+                packet_path = Some(value.to_string());
+                index += 1;
+            }
+            other => bail!("unknown import-reviewer-config argument {other:?}"),
+        }
+    }
+
+    if !dry_run {
+        bail!("import-reviewer-config currently requires --dry-run");
+    }
+    let packet_path = packet_path.context("import-reviewer-config requires <packet>")?;
+    let packet = read_reviewer_config_packet(&PathBuf::from(&packet_path))?;
+    let baseline = match baseline_path {
+        Some(path) => read_config(&PathBuf::from(path))?,
+        None => default_config(),
+    };
+    let fixture = match fixture_path {
+        Some(path) => read_request(&PathBuf::from(path))?,
+        None => reviewer_config_promotion_fixture_request(),
+    };
+    let report = reviewer_config_import_dry_run(&packet, &baseline, &fixture)?;
+
+    if let Some(out_path) = out_path {
+        let path = PathBuf::from(out_path);
+        write_json(&path, &report)?;
+        println!("{}", path.display());
+    } else {
+        let json = serde_json::to_string_pretty(&report)?;
+        println!("{json}");
+    }
+
+    Ok(())
+}
+
+fn required_arg(args: &[String], index: usize, flag: &str) -> Result<String> {
+    let Some(value) = args.get(index + 1) else {
+        bail!("{flag} requires a value");
+    };
+    if value.starts_with("--") {
+        bail!("{flag} requires a value");
+    }
+    Ok(value.clone())
+}
+
 fn render(args: Vec<String>) -> Result<()> {
     if args.len() != 1 {
         bail!("render requires exactly one review-run artifact path");
@@ -237,6 +327,14 @@ fn validate_document(path: &PathBuf) -> Result<()> {
             let report: HarnessModelEvaluationReport = serde_json::from_value(value)?;
             report.validate()?;
         }
+        REVIEWER_CONFIG_PACKET_VERSION => {
+            let packet: ReviewerConfigPacket = serde_json::from_value(value)?;
+            validate_reviewer_config_packet(&packet)?;
+        }
+        REVIEWER_CONFIG_IMPORT_REPORT_VERSION => {
+            let report: ReviewerConfigImportReport = serde_json::from_value(value)?;
+            report.validate()?;
+        }
         other => bail!("unsupported schema_version {other:?} in {}", path.display()),
     }
 
@@ -285,6 +383,15 @@ fn read_config(path: &PathBuf) -> Result<ReviewConfig> {
         .with_context(|| format!("failed to parse review config {}", path.display()))?;
     config.validate()?;
     Ok(config)
+}
+
+fn read_reviewer_config_packet(path: &PathBuf) -> Result<ReviewerConfigPacket> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read reviewer config packet {}", path.display()))?;
+    let packet: ReviewerConfigPacket = serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse reviewer config packet {}", path.display()))?;
+    validate_reviewer_config_packet(&packet)?;
+    Ok(packet)
 }
 
 fn probe_harness(profile: &HarnessProfile) -> HarnessProbe {
@@ -416,12 +523,19 @@ fn scan_path_for_patterns(
 
 fn write_json<T: serde::Serialize>(path: &PathBuf, value: &T) -> Result<()> {
     let json = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create output dir {}", parent.display()))?;
+    }
     fs::write(path, format!("{json}\n"))
         .with_context(|| format!("failed to write {}", path.display()))
 }
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

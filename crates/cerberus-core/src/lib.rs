@@ -1,8 +1,11 @@
 use cerberus_schema::{
-    ChangedFile, CostSummary, Coverage, FakeReviewerBehavior, Finding, InlineCommentCandidate,
-    ReserveSignal, ReviewConfig, ReviewRequest, ReviewRunArtifact, ReviewerArtifact,
-    ReviewerConfig, ReviewerStatus, Severity, TokenUsage, Verdict, VerdictStats,
-    INLINE_COMMENT_CANDIDATE_VERSION, REVIEWER_ARTIFACT_VERSION, REVIEW_CONFIG_VERSION,
+    Caller, Change, ChangedFile, CostSummary, Coverage, FakeReviewerBehavior, FileStatus, Finding,
+    InlineCommentCandidate, PromotionStatus, RenderTarget, ReserveSignal, ReviewConfig,
+    ReviewContext, ReviewPolicy, ReviewRequest, ReviewRunArtifact, ReviewSource, ReviewerArtifact,
+    ReviewerConfig, ReviewerConfigComparison, ReviewerConfigImportReport, ReviewerConfigPacket,
+    ReviewerDelta, ReviewerStatus, Severity, TokenUsage, Verdict, VerdictStats,
+    INLINE_COMMENT_CANDIDATE_VERSION, REVIEWER_ARTIFACT_VERSION,
+    REVIEWER_CONFIG_IMPORT_REPORT_VERSION, REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION,
     REVIEW_RUN_ARTIFACT_VERSION,
 };
 use sha2::{Digest, Sha256};
@@ -17,6 +20,10 @@ pub enum CoreError {
     Schema(#[from] cerberus_schema::SchemaError),
     #[error("serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("reviewer config packet hash mismatch: expected {expected}, got {actual}")]
+    ReviewerConfigPacketHashMismatch { expected: String, actual: String },
+    #[error("non-sandbox reviewer config packets require signature verification, which is not configured")]
+    UntrustedNonSandboxReviewerConfigPacket,
 }
 
 pub fn default_config() -> ReviewConfig {
@@ -98,6 +105,107 @@ pub fn review(
 
     artifact.validate()?;
     Ok(artifact)
+}
+
+pub fn validate_reviewer_config_packet(packet: &ReviewerConfigPacket) -> Result<String, CoreError> {
+    packet.validate()?;
+    if !packet.producer.sandbox_only {
+        return Err(CoreError::UntrustedNonSandboxReviewerConfigPacket);
+    }
+    let actual = digest_json(&packet.config)?;
+    if actual != packet.config_hash {
+        return Err(CoreError::ReviewerConfigPacketHashMismatch {
+            expected: packet.config_hash.clone(),
+            actual,
+        });
+    }
+    Ok(actual)
+}
+
+pub fn reviewer_config_import_dry_run(
+    packet: &ReviewerConfigPacket,
+    baseline: &ReviewConfig,
+    fixture: &ReviewRequest,
+) -> Result<ReviewerConfigImportReport, CoreError> {
+    let config_digest = validate_reviewer_config_packet(packet)?;
+    baseline.validate()?;
+    fixture.validate()?;
+
+    let baseline_artifact = review(fixture, baseline)?;
+    let candidate_artifact = review(fixture, &packet.config)?;
+    let rejection_reasons = reviewer_config_rejection_reasons(packet);
+    let report = ReviewerConfigImportReport {
+        schema_version: REVIEWER_CONFIG_IMPORT_REPORT_VERSION.to_string(),
+        packet_id: packet.packet_id.clone(),
+        generated_at: packet.producer.generated_at.clone(),
+        dry_run: true,
+        baseline_config_id: baseline.config_id.clone(),
+        candidate_config_id: packet.config.config_id.clone(),
+        config_digest,
+        promotion_status: packet.promotion.status,
+        accepted_for_dry_run: true,
+        accepted_for_import: false,
+        rejection_reasons,
+        comparison: ReviewerConfigComparison {
+            fixture_request_id: fixture.request_id.clone(),
+            baseline_verdict: baseline_artifact.verdict,
+            candidate_verdict: candidate_artifact.verdict,
+            baseline_findings: baseline_artifact.findings.len() as u64,
+            candidate_findings: candidate_artifact.findings.len() as u64,
+            baseline_degraded: baseline_artifact.degraded,
+            candidate_degraded: candidate_artifact.degraded,
+            reviewer_count_delta: packet.config.reviewers.len() as i64
+                - baseline.reviewers.len() as i64,
+            reviewer_deltas: reviewer_deltas(baseline, &packet.config),
+            artifact_delta_summary: artifact_delta_summary(&baseline_artifact, &candidate_artifact),
+        },
+        rollback: packet.rollback.clone(),
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+pub fn reviewer_config_promotion_fixture_request() -> ReviewRequest {
+    ReviewRequest {
+        schema_version: REVIEW_REQUEST_VERSION.to_string(),
+        request_id: "reviewer-config-promotion-clean-fixture".to_string(),
+        source: ReviewSource::Fixture {
+            name: "reviewer-config-promotion-clean".to_string(),
+        },
+        change: Change {
+            title: "Reviewer config promotion clean fixture".to_string(),
+            description: Some("A clean fixture used to compare candidate reviewer configs against the current baseline without changing defaults.".to_string()),
+            base_ref: Some("base".to_string()),
+            head_ref: Some("candidate".to_string()),
+            head_sha: Some("promotionfixturesha".to_string()),
+            diff: "diff --git a/docs/review.md b/docs/review.md\n--- a/docs/review.md\n+++ b/docs/review.md\n@@ -1,2 +1,3 @@\n # Review\n+Document the reviewer configuration handoff.\n".to_string(),
+            files: vec![ChangedFile {
+                path: "docs/review.md".to_string(),
+                status: FileStatus::Modified,
+                additions: 1,
+                deletions: 0,
+            }],
+        },
+        context: ReviewContext {
+            summary: Some("Clean promotion fixture for baseline comparison.".to_string()),
+            acceptance: vec![
+                "Candidate reviewer config must produce a schema-valid ReviewRunArtifact.".to_string(),
+                "Dry-run import must not mutate defaults or grant posting authority.".to_string(),
+            ],
+            linked_artifacts: vec![],
+            metadata: BTreeMap::new(),
+        },
+        caller: Caller {
+            name: "reviewer-config-import".to_string(),
+            run_id: "dry-run".to_string(),
+        },
+        policy: ReviewPolicy {
+            render_targets: vec![RenderTarget::Json],
+            allow_degraded: true,
+            max_cost_usd: Some(1.0),
+            override_approval: None,
+        },
+    }
 }
 
 pub fn render_markdown(artifact: &ReviewRunArtifact) -> String {
@@ -449,6 +557,102 @@ fn summarize(
     }
 }
 
+fn reviewer_config_rejection_reasons(packet: &ReviewerConfigPacket) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if packet.producer.sandbox_only {
+        reasons.push("packet is sandbox-only; dry-run comparison only".to_string());
+    }
+    if packet.promotion.status != PromotionStatus::Approved {
+        reasons.push(format!(
+            "promotion gate status is {}, not approved",
+            promotion_status_label(packet.promotion.status)
+        ));
+    }
+    if packet.promotion.status == PromotionStatus::Rejected {
+        reasons.push("promotion gate status is rejected".to_string());
+    }
+    if !packet.producer.sandbox_only && packet.promotion.status != PromotionStatus::Approved {
+        reasons.push("non-sandbox packet is not approved".to_string());
+    }
+    reasons
+}
+
+fn promotion_status_label(status: PromotionStatus) -> &'static str {
+    match status {
+        PromotionStatus::SandboxOnly => "sandbox_only",
+        PromotionStatus::Candidate => "candidate",
+        PromotionStatus::Approved => "approved",
+        PromotionStatus::Rejected => "rejected",
+    }
+}
+
+fn reviewer_deltas(baseline: &ReviewConfig, candidate: &ReviewConfig) -> Vec<ReviewerDelta> {
+    let baseline_by_id = baseline
+        .reviewers
+        .iter()
+        .map(|reviewer| (reviewer.id.as_str(), reviewer))
+        .collect::<BTreeMap<_, _>>();
+    let candidate_by_id = candidate
+        .reviewers
+        .iter()
+        .map(|reviewer| (reviewer.id.as_str(), reviewer))
+        .collect::<BTreeMap<_, _>>();
+    let reviewer_ids = baseline_by_id
+        .keys()
+        .chain(candidate_by_id.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let mut deltas = Vec::new();
+
+    for reviewer_id in reviewer_ids {
+        let baseline_reviewer = baseline_by_id.get(reviewer_id).copied();
+        let candidate_reviewer = candidate_by_id.get(reviewer_id).copied();
+        let mut changed_fields = Vec::new();
+        match (baseline_reviewer, candidate_reviewer) {
+            (Some(baseline_reviewer), Some(candidate_reviewer)) => {
+                if baseline_reviewer.model != candidate_reviewer.model {
+                    changed_fields.push("model".to_string());
+                }
+                if baseline_reviewer.perspective != candidate_reviewer.perspective {
+                    changed_fields.push("perspective".to_string());
+                }
+                if baseline_reviewer.fake_behavior != candidate_reviewer.fake_behavior {
+                    changed_fields.push("fake_behavior".to_string());
+                }
+            }
+            (Some(_), None) => changed_fields.push("removed".to_string()),
+            (None, Some(_)) => changed_fields.push("added".to_string()),
+            (None, None) => {}
+        }
+
+        if !changed_fields.is_empty() {
+            deltas.push(ReviewerDelta {
+                reviewer_id: reviewer_id.to_string(),
+                baseline_model: baseline_reviewer.map(|reviewer| reviewer.model.clone()),
+                candidate_model: candidate_reviewer.map(|reviewer| reviewer.model.clone()),
+                changed_fields,
+            });
+        }
+    }
+
+    deltas
+}
+
+fn artifact_delta_summary(
+    baseline_artifact: &ReviewRunArtifact,
+    candidate_artifact: &ReviewRunArtifact,
+) -> String {
+    format!(
+        "baseline={} findings={} degraded={}; candidate={} findings={} degraded={}",
+        baseline_artifact.verdict.as_str(),
+        baseline_artifact.findings.len(),
+        baseline_artifact.degraded,
+        candidate_artifact.verdict.as_str(),
+        candidate_artifact.findings.len(),
+        candidate_artifact.degraded
+    )
+}
+
 fn digest_json<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {
     let bytes = serde_json::to_vec(value)?;
     let digest = Sha256::digest(bytes);
@@ -458,7 +662,14 @@ fn digest_json<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Err
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cerberus_schema::{OverrideApproval, ReviewRequest, SchemaError};
+    use cerberus_schema::{OverrideApproval, PacketSignature, ReviewRequest, SchemaError};
+
+    const REVIEWER_CONFIG_PACKET: &str = include_str!(
+        "../../../fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json"
+    );
+    const REVIEWER_CONFIG_REPORT: &str = include_str!(
+        "../../../fixtures/reviewer-config-packets/daedalus-sandbox-import-report.json"
+    );
 
     fn fixture(name: &str) -> ReviewRequest {
         let path = format!("../../fixtures/review-request/{name}.json");
@@ -567,5 +778,50 @@ mod tests {
         assert_eq!(comments[0].path, "src/lib.rs");
         assert!(comments[0].body.contains("CERBERUS_FAKE_FINDING"));
         comments[0].validate().expect("comment candidate validates");
+    }
+
+    #[test]
+    fn reviewer_config_packet_dry_run_matches_checked_report() {
+        let packet: ReviewerConfigPacket =
+            serde_json::from_str(REVIEWER_CONFIG_PACKET).expect("packet parses");
+        let expected: ReviewerConfigImportReport =
+            serde_json::from_str(REVIEWER_CONFIG_REPORT).expect("report parses");
+        let report = reviewer_config_import_dry_run(
+            &packet,
+            &default_config(),
+            &reviewer_config_promotion_fixture_request(),
+        )
+        .expect("dry run succeeds");
+
+        expected.validate().expect("checked report validates");
+        assert_eq!(report, expected);
+    }
+
+    #[test]
+    fn reviewer_config_packet_hash_mismatch_is_rejected() {
+        let mut packet: ReviewerConfigPacket =
+            serde_json::from_str(REVIEWER_CONFIG_PACKET).expect("packet parses");
+        packet.config_hash = "wrong".to_string();
+
+        assert!(matches!(
+            validate_reviewer_config_packet(&packet),
+            Err(CoreError::ReviewerConfigPacketHashMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn non_sandbox_reviewer_config_packet_requires_trusted_verifier() {
+        let mut packet: ReviewerConfigPacket =
+            serde_json::from_str(REVIEWER_CONFIG_PACKET).expect("packet parses");
+        packet.producer.sandbox_only = false;
+        packet.producer.signature = Some(PacketSignature {
+            key_id: "daedalus-test-key".to_string(),
+            signature: "signed-packet-placeholder".to_string(),
+        });
+
+        assert!(matches!(
+            validate_reviewer_config_packet(&packet),
+            Err(CoreError::UntrustedNonSandboxReviewerConfigPacket)
+        ));
     }
 }

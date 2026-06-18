@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod eval;
+mod promotion;
 pub use eval::*;
+pub use promotion::*;
 
 pub const REVIEW_REQUEST_VERSION: &str = "review-request.v1";
 pub const REVIEW_CONFIG_VERSION: &str = "review-config.v1";
@@ -375,8 +377,14 @@ impl ReviewConfig {
             return Err(SchemaError::NoReviewers);
         }
         expect_range("confidence_min", self.confidence_min, 0.0, 1.0)?;
+        let mut reviewer_ids = BTreeSet::new();
         for reviewer in &self.reviewers {
             reviewer.validate()?;
+            if !reviewer_ids.insert(reviewer.id.as_str()) {
+                return Err(SchemaError::Inconsistent {
+                    field: "reviewers.id",
+                });
+            }
         }
         Ok(())
     }
@@ -1010,6 +1018,36 @@ mod tests {
             Err(SchemaError::Mismatch {
                 field: "policy.override_approval.sha",
                 ..
+            })
+        ));
+    }
+
+    #[test]
+    fn review_config_rejects_duplicate_reviewer_ids() {
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "config".to_string(),
+            reviewers: vec![
+                ReviewerConfig {
+                    id: "correctness".to_string(),
+                    perspective: "correctness".to_string(),
+                    model: "fake/offline-reviewer".to_string(),
+                    fake_behavior: FakeReviewerBehavior::Pass,
+                },
+                ReviewerConfig {
+                    id: "correctness".to_string(),
+                    perspective: "security".to_string(),
+                    model: "fake/offline-reviewer".to_string(),
+                    fake_behavior: FakeReviewerBehavior::Pass,
+                },
+            ],
+            confidence_min: 0.7,
+        };
+
+        assert!(matches!(
+            config.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "reviewers.id"
             })
         ));
     }
