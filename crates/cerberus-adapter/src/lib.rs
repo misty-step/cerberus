@@ -6,7 +6,9 @@ use cerberus_schema::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod command_harness;
 mod thinktank_migration;
+pub use command_harness::{CommandHarness, CommandHarnessInput};
 pub use thinktank_migration::{
     import_thinktank_historical_run, ThinkTankHistoricalRun, ThinkTankMigrationOutput,
 };

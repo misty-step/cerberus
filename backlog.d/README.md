@@ -14,6 +14,7 @@ Current sequence:
 6. `005-legacy-surface-retirement.md`
 7. `007-rust-harness-runtime-boundary.md`
 8. `008-current-model-catalog-ingestion.md`
+9. `009-rust-command-harness-adapter.md`
 
 Planning rules:
 
@@ -29,3 +30,5 @@ Planning rules:
   provider or peer-harness commands.
 - Refresh model catalog facts from cached raw evidence before promoting or
   comparing harness/model candidates.
+- Keep subprocess harness launchers in adapter crates; `cerberus-core` owns
+  artifact acceptance and aggregation, not shell execution.

@@ -23,6 +23,7 @@ version = "0.1.0"
 dependencies = [
  "cerberus-core",
  "cerberus-schema",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

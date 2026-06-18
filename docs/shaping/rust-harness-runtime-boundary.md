@@ -2,8 +2,9 @@
 
 Snapshot date: 2026-06-18.
 
-Backlog 007 moves `cerberus-core` review execution behind a Rust harness
-boundary without adding live provider or shell execution yet.
+Backlog 007 moved `cerberus-core` review execution behind a Rust harness
+boundary. Backlog 009 adds shell command execution in `cerberus-adapter`, while
+core remains free of subprocess and provider concerns.
 
 ## Contract
 
@@ -26,14 +27,18 @@ The harness owns only how an individual reviewer artifact is produced.
 ## Current Implementations
 
 - `DeterministicHarness`: preserves the existing fixture/offline behavior.
+- `CommandHarness`: lives in `cerberus-adapter` and launches an external command
+  with `--input` and `--output` paths.
 - Test harnesses: prove that arbitrary reviewer artifacts can feed aggregation
   and that bad runner output becomes degraded review evidence.
 
 ## Not Yet Implemented
 
-- live Pi, Goose, OpenCode, OMP, or Sprites execution
+- live Pi, Goose, OpenCode, OMP, or Sprites command profiles and prompts
 - provider/network clients
-- shell command sandboxing
+- command containment beyond timeout process-group cleanup and explicit temp
+  file IO
+- IO size caps for noisy or adversarial reviewer commands
 - hosted API replacement
 
 Those belong behind this boundary, not inside the aggregation path.

@@ -102,6 +102,8 @@ Responsibilities:
 - project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
 - guard fixture text against cross-caller references
 - import frozen historical donor artifacts into public Cerberus schemas
+- provide command harness adapters that launch external reviewer processes
+  behind `ReviewHarness`
 
 Non-responsibilities:
 
@@ -110,6 +112,7 @@ Non-responsibilities:
   or GitHub posting
 - live acquisition from either caller repository
 - production review execution through the ThinkTank CLI
+- reviewer artifact acceptance, aggregation, or degradation semantics
 
 ### Rust Harness Boundary
 
@@ -130,6 +133,24 @@ Non-responsibilities:
 - provider authentication
 - hosted API dispatch
 - caller-owned retry, queue, budget, or posting policy
+
+### Rust Command Harness Adapter
+
+Lives in `crates/cerberus-adapter/`.
+
+Responsibilities:
+
+- serialize a reviewer/request input envelope
+- launch a configured command with explicit `--input` and `--output` paths
+- map non-zero exits and timeouts into `HarnessRuntimeError`
+- return command-emitted `ReviewerArtifact.v1` values to core validation
+
+Non-responsibilities:
+
+- Pi, Goose, OpenCode, or OMP prompt construction
+- provider credentials or paid model calls
+- artifact aggregation or acceptance policy
+- hosted API dispatch
 
 ### Legacy Elixir Engine
 
