@@ -21,6 +21,9 @@ use std::{
     process::Command,
 };
 
+mod model_catalog;
+use model_catalog::refresh_openrouter_matrix;
+
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
@@ -34,6 +37,7 @@ fn main() -> Result<()> {
         "validate-reviewer-config" => validate_reviewer_config(args.collect()),
         "review" => review_command(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
+        "refresh-model-catalog" => refresh_model_catalog(args.collect()),
         "import-reviewer-config" => import_reviewer_config(args.collect()),
         "render" => render(args.collect()),
         "render-comments" => render_comments(args.collect()),
@@ -60,6 +64,60 @@ fn validate_retirement(paths: Vec<String>) -> Result<()> {
         println!("{path}: ok");
     }
 
+    Ok(())
+}
+
+fn refresh_model_catalog(args: Vec<String>) -> Result<()> {
+    let mut matrix = None;
+    let mut catalog_source = None;
+    let mut out = None;
+    let mut raw_out = None;
+    let mut observed_at = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--matrix" => {
+                matrix = Some(required_arg(&args, index, "--matrix")?);
+                index += 2;
+            }
+            "--catalog-source" => {
+                catalog_source = Some(required_arg(&args, index, "--catalog-source")?);
+                index += 2;
+            }
+            "--out" => {
+                out = Some(required_arg(&args, index, "--out")?);
+                index += 2;
+            }
+            "--raw-out" => {
+                raw_out = Some(required_arg(&args, index, "--raw-out")?);
+                index += 2;
+            }
+            "--observed-at" => {
+                observed_at = Some(required_arg(&args, index, "--observed-at")?);
+                index += 2;
+            }
+            other => bail!("unknown refresh-model-catalog argument {other:?}"),
+        }
+    }
+
+    let matrix_path =
+        PathBuf::from(matrix.context("refresh-model-catalog requires --matrix <path>")?);
+    let catalog_source =
+        catalog_source.context("refresh-model-catalog requires --catalog-source <path-or-url>")?;
+    let out_path = PathBuf::from(out.context("refresh-model-catalog requires --out <path>")?);
+    let raw_out_path =
+        PathBuf::from(raw_out.context("refresh-model-catalog requires --raw-out <path>")?);
+
+    let matrix = read_eval_matrix(&matrix_path)?;
+    let observed_at = observed_at.unwrap_or_else(|| matrix.observed_at.clone());
+    let raw_catalog = read_catalog_source(&catalog_source)?;
+    let refreshed =
+        refresh_openrouter_matrix(&matrix, &raw_catalog, &catalog_source, &observed_at)?;
+
+    write_raw(&raw_out_path, &raw_catalog)?;
+    write_json(&out_path, &refreshed)?;
+    println!("{}", out_path.display());
     Ok(())
 }
 
@@ -422,6 +480,26 @@ fn read_retirement_inventory(path: &PathBuf) -> Result<LegacySurfaceInventory> {
     Ok(inventory)
 }
 
+fn read_catalog_source(source: &str) -> Result<String> {
+    if source.starts_with("https://") || source.starts_with("http://") {
+        return fetch_catalog_url(source);
+    }
+    fs::read_to_string(source).with_context(|| format!("failed to read catalog source {source}"))
+}
+
+fn fetch_catalog_url(url: &str) -> Result<String> {
+    let output = Command::new("curl")
+        .args(["-fsSL", "--max-time", "30", url])
+        .output()
+        .with_context(|| format!("failed to launch curl for {url}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("curl failed for {url}: {}", stderr.trim());
+    }
+    String::from_utf8(output.stdout)
+        .with_context(|| format!("catalog response was not UTF-8: {url}"))
+}
+
 fn read_reviewer_config_packet(path: &PathBuf) -> Result<ReviewerConfigPacket> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read reviewer config packet {}", path.display()))?;
@@ -587,8 +665,19 @@ fn write_json<T: serde::Serialize>(path: &PathBuf, value: &T) -> Result<()> {
         .with_context(|| format!("failed to write {}", path.display()))
 }
 
+fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create output dir {}", parent.display()))?;
+    }
+    fs::write(path, raw).with_context(|| format!("failed to write {}", path.display()))
+}
+
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

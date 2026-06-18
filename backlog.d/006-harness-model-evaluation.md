@@ -160,7 +160,7 @@ Relevant Cerberus drift:
    prompt-injection, and degraded-output cases.
 4. Done: add stale-model drift reporting over Cerberus-owned config/source
    paths.
-5. Remaining: add current-model catalog ingestion with cached raw evidence.
+5. Done: add current-model catalog ingestion with cached raw evidence.
 6. Remaining: run paid/live harness adapters rather than the offline fixture
    reviewer.
 7. Remaining: convert report winners into a candidate `ReviewConfig.v1`; keep

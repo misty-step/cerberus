@@ -13,6 +13,7 @@ Current sequence:
 5. `004-daedalus-reviewer-config-promotion.md`
 6. `005-legacy-surface-retirement.md`
 7. `007-rust-harness-runtime-boundary.md`
+8. `008-current-model-catalog-ingestion.md`
 
 Planning rules:
 
@@ -26,3 +27,5 @@ Planning rules:
 - Require fixture-backed or caller-backed proof before deleting legacy behavior.
 - Route reviewer execution through the Rust harness boundary before wiring live
   provider or peer-harness commands.
+- Refresh model catalog facts from cached raw evidence before promoting or
+  comparing harness/model candidates.

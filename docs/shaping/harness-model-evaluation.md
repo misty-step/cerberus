@@ -148,6 +148,9 @@ Backlog 006 now has a Rust-side offline smoke runner:
 - `cerberus-cli eval-harness` probes local harness commands with `--version`,
   scans configured source paths for stale model IDs, writes transcripts, and
   emits `tmp/evals/harness-model/report.json`.
+- `cerberus-cli refresh-model-catalog` ingests an OpenRouter-compatible raw
+  catalog from a file or URL, caches the exact raw JSON, and emits a refreshed
+  schema-valid matrix before the eval run.
 - `fixtures/evals/reviewer-harness-smoke.json` covers clean/no-finding,
   seeded finding, prompt-injection text, and degraded timeout cases.
 - `fixtures/evals/harness-model-matrix.json` captures the 2026-06-18 local

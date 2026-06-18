@@ -13,6 +13,7 @@ Current docs:
 - Harness/model evaluation shaping: `docs/shaping/harness-model-evaluation.md`
 - Legacy surface retirement: `docs/shaping/legacy-surface-retirement.md`
 - Rust harness runtime boundary: `docs/shaping/rust-harness-runtime-boundary.md`
+- Current model catalog ingestion: `docs/shaping/current-model-catalog-ingestion.md`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 
