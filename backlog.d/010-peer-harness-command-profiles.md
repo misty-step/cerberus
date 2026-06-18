@@ -1,0 +1,86 @@
+# 010 - Peer Harness Command Profiles
+
+Status: done
+Priority: P0
+Type: epic
+Created: 2026-06-18
+
+## Goal
+
+Attach Pi, Goose, OpenCode, and OMP to the Rust command-adapter path as
+validated profile data before running paid or live model cells.
+
+Backlog 009 proved the `CommandHarness` subprocess protocol. This slice records
+the peer harness launch shapes and converts a validated profile into a
+`CommandHarness` without putting shell or provider semantics in
+`cerberus-core`.
+
+## Oracle
+
+Cerberus accepts a `PeerHarnessCommandProfiles.v1` packet that:
+
+- validates one profile per harness id
+- records the CommandHarness protocol runner command and static args
+- records the underlying peer CLI command and argument template separately
+- declares env requirements, timeout, output contract, and unsupported
+  containment boundaries
+- can be converted by `cerberus-adapter` into a `CommandHarness`
+
+## Verification System
+
+- `cargo test --workspace peer_harness_command_profiles`
+- `cargo test --workspace peer_harness_profile_builds_command_harness`
+- `cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json`
+- full repo gates continue to pass
+
+## Scope
+
+In scope:
+
+- Rust schema for peer command profile packets.
+- Adapter conversion from one validated profile to `CommandHarness`.
+- Checked-in Pi, Goose, OpenCode, and OMP profile fixture grounded in local
+  `--help` output.
+- Docs that make the wrapper/protocol boundary explicit.
+
+Out of scope:
+
+- Implementing `cerberus-peer-harness`.
+- Calling paid providers or live OpenRouter models.
+- Ranking harness/model quality.
+- Promoting reviewer defaults.
+- Claiming sandbox containment beyond the existing process-group cleanup.
+
+## Evidence
+
+- Backlog 009 provides `CommandHarness` and private temp/process-group cleanup.
+- `docs/shaping/harness-model-evaluation.md` records the harness/model matrix
+  and current model candidates.
+- `docs/shaping/legacy-surface-retirement.json` marks Elixir review execution
+  pending until Pi, Goose, OpenCode, and OMP command profiles exist behind the
+  Rust harness boundary.
+
+## Implementation Receipt
+
+First local delivery, 2026-06-18:
+
+- Added `PeerHarnessCommandProfiles.v1` schema and validation.
+- Added a checked-in Pi, Goose, OpenCode, and OMP profile fixture.
+- Enforced the wrapper/peer boundary: v1 profiles must use
+  `cerberus-peer-harness --harness <harness_id>` as the protocol runner and
+  must not execute the raw peer CLI directly.
+- Enforced argv prompt handoff: argv/template peer profiles must contain
+  exactly one standalone `{prompt}` argument.
+- Added adapter conversion from validated profile data to `CommandHarness`.
+- Added CLI validation support and docs for the profile boundary.
+- Verified with:
+  - `cargo test --workspace peer_harness_command_profiles`
+  - `cargo test --workspace peer_harness_profile_builds_command_harness`
+  - `cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json`
+  - `cargo test --workspace`
+  - `cargo fmt --all -- --check`
+  - `git diff --check`
+  - `shellcheck dispatch.sh fixtures/harnesses/command-reviewer.sh`
+  - `node --check bin/cerberus.js`
+  - `cd cerberus-elixir && mix format --check-formatted`
+  - `cd cerberus-elixir && mix test`

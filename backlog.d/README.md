@@ -15,6 +15,7 @@ Current sequence:
 7. `007-rust-harness-runtime-boundary.md`
 8. `008-current-model-catalog-ingestion.md`
 9. `009-rust-command-harness-adapter.md`
+10. `010-peer-harness-command-profiles.md`
 
 Planning rules:
 
@@ -32,3 +33,5 @@ Planning rules:
   comparing harness/model candidates.
 - Keep subprocess harness launchers in adapter crates; `cerberus-core` owns
   artifact acceptance and aggregation, not shell execution.
+- Record peer harness command profiles as validated data before implementing
+  live protocol runners or spending model budget.

@@ -45,6 +45,11 @@ verdict consistency before aggregating. The default `DeterministicHarness` keeps
 local fixture behavior stable; live Pi, Goose, OpenCode, OMP, Sprites, or
 provider adapters attach behind this boundary.
 
+Peer harness command profiles are validated data before they are live execution.
+`PeerHarnessCommandProfiles.v1` records the future protocol runner command and
+the underlying peer CLI template; raw peer CLIs do not define the Cerberus
+input/output contract.
+
 ## Request Flow
 
 ```text
@@ -104,6 +109,7 @@ Responsibilities:
 - import frozen historical donor artifacts into public Cerberus schemas
 - provide command harness adapters that launch external reviewer processes
   behind `ReviewHarness`
+- validate peer harness command profiles for Pi, Goose, OpenCode, and OMP
 
 Non-responsibilities:
 
@@ -151,6 +157,25 @@ Non-responsibilities:
 - provider credentials or paid model calls
 - artifact aggregation or acceptance policy
 - hosted API dispatch
+
+### Peer Harness Profiles
+
+Live as schema and fixtures in `cerberus-schema` and `fixtures/harnesses/`.
+
+Responsibilities:
+
+- describe CommandHarness protocol runner commands as data
+- record the underlying peer CLI invocation templates for Pi, Goose, OpenCode,
+  and OMP
+- declare required environment variables, timeouts, output contract, and
+  unsupported containment boundaries
+
+Non-responsibilities:
+
+- implementing the protocol runner
+- executing paid provider calls
+- ranking model or harness quality
+- replacing the eval matrix
 
 ### Legacy Elixir Engine
 

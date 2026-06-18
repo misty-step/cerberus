@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod eval;
+mod peer_harness;
 mod promotion;
 mod retirement;
 pub use eval::*;
+pub use peer_harness::*;
 pub use promotion::*;
 pub use retirement::*;
 

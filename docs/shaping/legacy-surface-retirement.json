@@ -84,12 +84,14 @@
       "rust_replacement": "cerberus-core reviewer execution and harness runtime backed by ReviewConfig.v1 and harness/model evaluation fixtures.",
       "parity_evidence": [
         "cargo test --workspace command_harness",
+        "cargo test --workspace peer_harness_command_profiles",
+        "cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json",
         "cargo test --workspace harness_runtime",
         "cargo test --workspace",
         "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
       ],
       "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
-      "next_action": "Attach Pi, Goose, OpenCode, and OMP command profiles behind CommandHarness, then port routing and local-review fixtures into Rust."
+      "next_action": "Implement the peer harness protocol runner, then port routing and local-review fixtures into Rust."
     },
     {
       "surface_id": "elixir-verdict-store",

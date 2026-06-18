@@ -1,0 +1,142 @@
+{
+  "schema_version": "peer-harness-command-profiles.v1",
+  "observed_at": "2026-06-18",
+  "profiles": [
+    {
+      "harness_id": "pi",
+      "command": "cerberus-peer-harness",
+      "args": [
+        "--harness",
+        "pi"
+      ],
+      "timeout_ms": 300000,
+      "env_required": [
+        "OPENROUTER_API_KEY"
+      ],
+      "output_contract": "reviewer_artifact_file",
+      "peer": {
+        "command": "pi",
+        "args_template": [
+          "--print",
+          "--no-session",
+          "--mode",
+          "json",
+          "--model",
+          "openrouter/{model}",
+          "{prompt}"
+        ],
+        "prompt_mode": "argv_message",
+        "notes": "Grounded in `pi --help` on 2026-06-18. The protocol runner must render CommandHarnessInput into {prompt} and parse peer output into ReviewerArtifact.v1."
+      },
+      "unsupported": [
+        "daemonized children outside the process group",
+        "unbounded live output files",
+        "paid provider calls without an explicit eval budget"
+      ],
+      "notes": "Pi is the minimal prompt-discipline baseline."
+    },
+    {
+      "harness_id": "goose",
+      "command": "cerberus-peer-harness",
+      "args": [
+        "--harness",
+        "goose"
+      ],
+      "timeout_ms": 300000,
+      "env_required": [
+        "OPENROUTER_API_KEY"
+      ],
+      "output_contract": "reviewer_artifact_file",
+      "peer": {
+        "command": "goose",
+        "args_template": [
+          "run",
+          "--no-session",
+          "--quiet",
+          "--provider",
+          "openrouter",
+          "--model",
+          "{model}",
+          "--text",
+          "{prompt}"
+        ],
+        "prompt_mode": "argv_message",
+        "notes": "Grounded in `goose run --help` on 2026-06-18. Goose can run from text or instruction files; this profile chooses text for deterministic runner control."
+      },
+      "unsupported": [
+        "daemonized children outside the process group",
+        "unbounded live output files",
+        "paid provider calls without an explicit eval budget"
+      ],
+      "notes": "Goose exercises a richer local-agent surface with MCP and extension behavior."
+    },
+    {
+      "harness_id": "opencode",
+      "command": "cerberus-peer-harness",
+      "args": [
+        "--harness",
+        "opencode"
+      ],
+      "timeout_ms": 300000,
+      "env_required": [
+        "OPENROUTER_API_KEY"
+      ],
+      "output_contract": "reviewer_artifact_file",
+      "peer": {
+        "command": "opencode",
+        "args_template": [
+          "run",
+          "--format",
+          "json",
+          "--model",
+          "openrouter/{model}",
+          "--agent",
+          "reviewer",
+          "{prompt}"
+        ],
+        "prompt_mode": "argv_message",
+        "notes": "Grounded in `opencode run --help` on 2026-06-18. OpenCode has the clearest provider/model switch for OpenRouter-style model IDs."
+      },
+      "unsupported": [
+        "daemonized children outside the process group",
+        "unbounded live output files",
+        "paid provider calls without an explicit eval budget"
+      ],
+      "notes": "OpenCode is the provider-configuration candidate."
+    },
+    {
+      "harness_id": "omp",
+      "command": "cerberus-peer-harness",
+      "args": [
+        "--harness",
+        "omp"
+      ],
+      "timeout_ms": 300000,
+      "env_required": [
+        "OPENROUTER_API_KEY"
+      ],
+      "output_contract": "reviewer_artifact_file",
+      "peer": {
+        "command": "omp",
+        "args_template": [
+          "--print",
+          "--no-session",
+          "--mode",
+          "json",
+          "--model",
+          "openrouter/{model}",
+          "--no-pty",
+          "{prompt}"
+        ],
+        "prompt_mode": "argv_message",
+        "notes": "Grounded in `omp --help` on 2026-06-18. OMP's richer tool surface is useful only when the runner constrains sessions, PTY behavior, and model budget."
+      },
+      "unsupported": [
+        "daemonized children outside the process group",
+        "unbounded live output files",
+        "paid provider calls without an explicit eval budget"
+      ],
+      "notes": "OMP is the heavy Pi-derived harness candidate."
+    }
+  ]
+}

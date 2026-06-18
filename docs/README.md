@@ -15,6 +15,7 @@ Current docs:
 - Rust harness runtime boundary: `docs/shaping/rust-harness-runtime-boundary.md`
 - Current model catalog ingestion: `docs/shaping/current-model-catalog-ingestion.md`
 - Rust command harness adapter: `docs/shaping/rust-command-harness-adapter.md`
+- Peer harness command profiles: `docs/shaping/peer-harness-command-profiles.md`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 

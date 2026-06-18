@@ -6,11 +6,12 @@ use cerberus_core::{
 };
 use cerberus_schema::{
     EvalTaskSuite, HarnessModelEvaluationReport, HarnessModelMatrix, HarnessProfile,
-    InlineCommentCandidate, LegacySurfaceInventory, ModelCandidate, ReviewConfig, ReviewRequest,
-    ReviewRunArtifact, ReviewerArtifact, ReviewerConfigImportReport, ReviewerConfigPacket,
-    StaleModelFinding, EVAL_TASK_SUITE_VERSION, HARNESS_MODEL_EVALUATION_REPORT_VERSION,
-    HARNESS_MODEL_MATRIX_VERSION, HARNESS_PROFILE_VERSION, INLINE_COMMENT_CANDIDATE_VERSION,
-    LEGACY_SURFACE_INVENTORY_VERSION, MODEL_CANDIDATE_VERSION, REVIEWER_ARTIFACT_VERSION,
+    InlineCommentCandidate, LegacySurfaceInventory, ModelCandidate, PeerHarnessCommandProfiles,
+    ReviewConfig, ReviewRequest, ReviewRunArtifact, ReviewerArtifact, ReviewerConfigImportReport,
+    ReviewerConfigPacket, StaleModelFinding, EVAL_TASK_SUITE_VERSION,
+    HARNESS_MODEL_EVALUATION_REPORT_VERSION, HARNESS_MODEL_MATRIX_VERSION, HARNESS_PROFILE_VERSION,
+    INLINE_COMMENT_CANDIDATE_VERSION, LEGACY_SURFACE_INVENTORY_VERSION, MODEL_CANDIDATE_VERSION,
+    PEER_HARNESS_COMMAND_PROFILES_VERSION, REVIEWER_ARTIFACT_VERSION,
     REVIEWER_CONFIG_IMPORT_REPORT_VERSION, REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
     REVIEW_REQUEST_VERSION, REVIEW_RUN_ARTIFACT_VERSION,
 };
@@ -400,6 +401,10 @@ fn validate_document(path: &PathBuf) -> Result<()> {
         HARNESS_MODEL_EVALUATION_REPORT_VERSION => {
             let report: HarnessModelEvaluationReport = serde_json::from_value(value)?;
             report.validate()?;
+        }
+        PEER_HARNESS_COMMAND_PROFILES_VERSION => {
+            let profiles: PeerHarnessCommandProfiles = serde_json::from_value(value)?;
+            profiles.validate()?;
         }
         REVIEWER_CONFIG_PACKET_VERSION => {
             let packet: ReviewerConfigPacket = serde_json::from_value(value)?;

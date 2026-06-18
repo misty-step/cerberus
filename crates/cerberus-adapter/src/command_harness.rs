@@ -1,5 +1,5 @@
 use cerberus_core::{HarnessRuntimeError, ReviewHarness};
-use cerberus_schema::{ReviewRequest, ReviewerArtifact, ReviewerConfig};
+use cerberus_schema::{PeerHarnessCommandProfile, ReviewRequest, ReviewerArtifact, ReviewerConfig};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -52,6 +52,29 @@ impl CommandHarness {
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    pub fn command(&self) -> &str {
+        &self.command
+    }
+
+    pub fn configured_args(&self) -> &[String] {
+        &self.args
+    }
+
+    pub fn configured_timeout(&self) -> Duration {
+        self.timeout
+    }
+}
+
+impl TryFrom<&PeerHarnessCommandProfile> for CommandHarness {
+    type Error = cerberus_schema::SchemaError;
+
+    fn try_from(profile: &PeerHarnessCommandProfile) -> Result<Self, Self::Error> {
+        profile.validate()?;
+        Ok(CommandHarness::new(profile.command.clone())
+            .args(profile.args.clone())
+            .timeout(Duration::from_millis(profile.timeout_ms)))
     }
 }
 
@@ -332,6 +355,16 @@ mod tests {
     }
 
     #[test]
+    fn peer_harness_profile_builds_command_harness() {
+        let profile = fixture_peer_profile();
+        let harness = CommandHarness::try_from(&profile).expect("profile converts");
+
+        assert_eq!(harness.command(), "cerberus-peer-harness");
+        assert_eq!(harness.configured_args(), ["--harness", "fixture-peer"]);
+        assert_eq!(harness.configured_timeout(), Duration::from_secs(2));
+    }
+
+    #[test]
     fn command_harness_nonzero_exit_degrades_reviewer() {
         let request = request();
         let config = config();
@@ -480,6 +513,25 @@ mod tests {
     fn fixture_path() -> PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/harnesses/command-reviewer.sh")
+    }
+
+    fn fixture_peer_profile() -> PeerHarnessCommandProfile {
+        cerberus_schema::PeerHarnessCommandProfile {
+            harness_id: "fixture-peer".to_string(),
+            command: "cerberus-peer-harness".to_string(),
+            args: vec!["--harness".to_string(), "fixture-peer".to_string()],
+            timeout_ms: 2_000,
+            env_required: vec![],
+            output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
+            peer: cerberus_schema::PeerHarnessInvocation {
+                command: "fixture-peer".to_string(),
+                args_template: vec!["{prompt}".to_string()],
+                prompt_mode: cerberus_schema::PeerHarnessPromptMode::WrapperRenderedPrompt,
+                notes: None,
+            },
+            unsupported: vec!["daemonized children".to_string()],
+            notes: None,
+        }
     }
 
     fn config() -> ReviewConfig {
