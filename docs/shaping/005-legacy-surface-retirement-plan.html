@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-ae-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Legacy Surface Retirement Plan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Geist+Mono:wght@100..900&amp;display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/misty-step/aesthetic@v2.5.1/aesthetic.css">
+  <style>
+    :root { --ae-accent: #4c6655; --ae-accent-dark: #b7dcc4; }
+    .wide .ae-bar, .wide .ae-stage { width: min(94rem, 100% - 4rem); }
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(24em, 0.75fr); gap: 3em; align-items: end; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--ae-line); }
+    .cell { min-width: 0; background: var(--ae-surface); padding: 1.2em 1.35em; }
+    .phase { display: grid; grid-template-columns: 8em minmax(0, 1fr) minmax(15em, 0.6fr); gap: 1.3em; border-top: 1px solid var(--ae-line); padding-top: 1em; margin-top: 1em; }
+    .phase:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+    .small { font-size: 0.9em; }
+    @media (max-width: 980px) {
+      .wide .ae-bar, .wide .ae-stage { width: min(100% - 2rem, 94rem); }
+      .hero, .grid-3, .phase { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="ae-screen wide">
+  <header class="ae-bar">
+    <a class="ae-name" href="../../backlog.d/005-legacy-surface-retirement.md">BACKLOG 005</a>
+    <p class="ae-chrome">legacy surface retirement</p>
+  </header>
+  <main class="ae-stage ae-stage-scroll">
+    <article class="ae-view">
+      <section class="hero">
+        <div>
+          <p class="ae-chrome">RETIREMENT CONTROL PLANE</p>
+          <h1 class="ae-strong">Make legacy deletion prove itself before any useful donor behavior is removed.</h1>
+          <p class="ae-lede">Add a machine-checked inventory for Elixir, action, CLI, defaults, prompts, and historical artifacts so future Rust parity work can retire surfaces in small, reversible commits.</p>
+        </div>
+        <aside class="ae-panel">
+          <h2 class="ae-h">CHOSEN DESIGN</h2>
+          <p>Add `LegacySurfaceInventory.v1`, a checked JSON inventory, a CLI validator, and active-doc links to the inventory. Do not delete Elixir yet.</p>
+          <h2 class="ae-h">PROOF</h2>
+          <p>Schema unit tests, `cerberus-cli validate-retirement`, generic schema validation, full Rust tests, and legacy gates.</p>
+          <h2 class="ae-h">STOP IF</h2>
+          <p>A surface is marked retired without a commit, a delete/archive decision lacks parity evidence or rollback, or docs imply Elixir is the long-term engine.</p>
+        </aside>
+      </section>
+      <section class="grid-3" style="margin-top: 2em">
+        <article class="cell">
+          <h2 class="ae-h">KEEP NOW</h2>
+          <p>GitHub Action dispatch, hosted API compatibility, Node scaffolder, defaults, and persona files stay while callers still depend on them.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">PORT NEXT</h2>
+          <p>Review orchestration, aggregation, dedupe, cost, stores, prompt rendering, tools, and local CLI behavior move behind Rust fixtures before deletion.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">ARCHIVE LATER</h2>
+          <p>Historical walkthroughs and legacy evidence remain reference material until the inventory records an archive commit and rollback path.</p>
+        </article>
+      </section>
+      <section style="margin-top: 2em">
+        <h2 class="ae-h">IMPLEMENTATION FLOW</h2>
+        <div class="phase">
+          <p class="ae-chrome">01</p>
+          <div><h3>Inventory schema</h3><p>Add a Rust schema for retirement entries: current responsibility, decision, parity status, evidence, commit, rollback, and next action.</p></div>
+          <p class="ae-dim">Prevents vague retirement prose.</p>
+        </div>
+        <div class="phase">
+          <p class="ae-chrome">02</p>
+          <div><h3>Checked table</h3><p>Check in a dated inventory covering Elixir modules, root action, dispatch, scaffolder, defaults, prompts, templates, and historical docs.</p></div>
+          <p class="ae-dim">No deletion in this slice.</p>
+        </div>
+        <div class="phase">
+          <p class="ae-chrome">03</p>
+          <div><h3>CLI validation</h3><p>Add `validate-retirement` and generic `validate` support so the table is part of normal Rust gates.</p></div>
+          <p class="ae-dim">Turns backlog doctrine into a command.</p>
+        </div>
+        <div class="phase">
+          <p class="ae-chrome">04</p>
+          <div><h3>Active docs</h3><p>Update README, architecture, docs index, and backlog receipt to name Elixir as compatibility, not the target engine.</p></div>
+          <p class="ae-dim">Reduces source-of-truth drift.</p>
+        </div>
+      </section>
+      <section style="margin-top: 2em">
+        <h2 class="ae-h">ORACLE</h2>
+        <pre class="ae-code small"><code>cargo test --workspace legacy_surface
+cargo run --locked -p cerberus-cli -- validate-retirement docs/shaping/legacy-surface-retirement.json
+cargo run --locked -p cerberus-cli -- validate docs/shaping/legacy-surface-retirement.json
+cargo test --workspace
+cargo fmt --all -- --check
+git diff --check
+cd cerberus-elixir && mix test
+cd cerberus-elixir && mix format --check-formatted
+shellcheck dispatch.sh
+node --check bin/cerberus.js</code></pre>
+      </section>
+    </article>
+  </main>
+</div>
+</body>
+</html>

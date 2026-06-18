@@ -9,7 +9,7 @@ Cerberus now uses one supported GitHub Action path: the root action dispatches t
 | Action entrypoint | reusable workflow or decomposed matrix jobs | root `misty-step/cerberus@master` action |
 | Secret | `CERBERUS_OPENROUTER_API_KEY` | `CERBERUS_API_KEY` |
 | URL config | implicit local review pipeline | hosted URL default, optional `cerberus-url` override |
-| Review execution | GitHub Actions matrix in this repo | hosted Cerberus API + Elixir engine |
+| Review execution | GitHub Actions matrix in this repo | hosted Cerberus API + legacy Elixir compatibility engine |
 
 ## New Workflow
 

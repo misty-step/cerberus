@@ -3,8 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod eval;
 mod promotion;
+mod retirement;
 pub use eval::*;
 pub use promotion::*;
+pub use retirement::*;
 
 pub const REVIEW_REQUEST_VERSION: &str = "review-request.v1";
 pub const REVIEW_CONFIG_VERSION: &str = "review-config.v1";

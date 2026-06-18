@@ -1,6 +1,6 @@
 # 005 - Legacy Surface Retirement
 
-Status: shaped
+Status: implemented-control-plane
 Priority: P2
 Type: epic
 Created: 2026-06-18
@@ -70,3 +70,15 @@ Out of scope:
 
 This is intentionally sequenced after backlog 001 and 002. Premature deletion
 would erase useful donor behavior before the Rust engine can prove it.
+
+## Implementation Receipt
+
+First local retirement delivery, 2026-06-18:
+
+- Added `LegacySurfaceInventory.v1` and `LegacySurface` validation.
+- Added `cerberus-cli validate-retirement <inventory.json>`.
+- Added a checked JSON inventory plus readable table in `docs/shaping/`.
+- Updated active docs to name Elixir as compatibility and point deletion work
+  at the retirement inventory.
+- Did not delete legacy code; all runtime surfaces remain until parity evidence
+  and rollback metadata are recorded.

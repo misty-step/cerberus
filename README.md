@@ -11,6 +11,7 @@ request/artifact contracts. The current Elixir API path remains the legacy
 compatibility surface until the Rust backlog proves parity.
 
 - [Rust resurrection shaping](docs/shaping/rust-review-engine-resurrection.md)
+- [Legacy surface retirement inventory](docs/shaping/legacy-surface-retirement.md)
 - [Backlog priorities](docs/BACKLOG-PRIORITIES.md)
 - [Backlog tickets](backlog.d/)
 
@@ -80,12 +81,15 @@ Outputs:
 3. The action polls `GET /api/reviews/:id` until the review completes or times out.
 4. The aggregated verdict becomes the GitHub Action result.
 
-The review engine itself lives in [`cerberus-elixir/`](cerberus-elixir/README.md).
+The legacy compatibility engine lives in
+[`cerberus-elixir/`](cerberus-elixir/README.md). The Rust engine target lives in
+the workspace crates and is tracked by the backlog.
 
 ## Repository Layout
 
 - `action.yml` / `dispatch.sh`: thin GitHub Action client
-- `cerberus-elixir/`: Elixir API server and review engine
+- `crates/`: Rust schemas, core review artifact engine, adapters, and CLI
+- `cerberus-elixir/`: legacy Elixir API server and compatibility review engine
 - `defaults/`: model and product data consumed by the engine
 - `pi/agents/`: reviewer personas
 - `templates/`: consumer workflow templates
@@ -110,4 +114,8 @@ cd cerberus-elixir && mix format --check-formatted
 
 ## Legacy Note
 
-Historical docs, walkthroughs, and ADRs may still mention the retired matrix pipeline. The supported product surface in this repository is now the API-dispatch action plus the Elixir engine.
+Historical docs, walkthroughs, and ADRs may still mention the retired matrix
+pipeline. The supported compatibility surface in this repository is now the
+API-dispatch action plus the legacy Elixir engine; the Rust-only target and
+deletion sequence are tracked in
+[`docs/shaping/legacy-surface-retirement.md`](docs/shaping/legacy-surface-retirement.md).

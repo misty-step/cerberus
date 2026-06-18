@@ -4,7 +4,7 @@ This repository now has one supported delivery path:
 
 - root `action.yml` is the Cerberus GitHub Action
 - root `dispatch.sh` is its polling client
-- `cerberus-elixir/` contains the review engine and HTTP API
+- `cerberus-elixir/` contains the legacy compatibility review engine and HTTP API
 
 The retired Python/Shell matrix pipeline has been removed from the active repo surface.
 

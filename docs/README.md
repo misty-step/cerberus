@@ -11,8 +11,9 @@ Current docs:
 - Rust resurrection shaping: `docs/shaping/rust-review-engine-resurrection.md`
 - Backlog 001 legacy API mapping: `docs/shaping/001-legacy-api-review-request-mapping.md`
 - Harness/model evaluation shaping: `docs/shaping/harness-model-evaluation.md`
+- Legacy surface retirement: `docs/shaping/legacy-surface-retirement.md`
 - ADRs: `docs/adr/`
-- Engine details: `cerberus-elixir/README.md`
+- Legacy compatibility engine details: `cerberus-elixir/README.md`
 
 Historical walkthroughs and ADRs remain in-repo for reference. Some older
 documents describe the retired matrix pipeline or the legacy Elixir API mode and

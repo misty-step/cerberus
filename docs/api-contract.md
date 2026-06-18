@@ -1,6 +1,7 @@
 # Cerberus API Contract
 
-HTTP API for dispatching review runs to the Cerberus Elixir engine.
+HTTP API for dispatching review runs to the legacy Cerberus Elixir
+compatibility engine.
 
 The primary client in this repository is the root GitHub Action:
 

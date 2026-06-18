@@ -3,7 +3,7 @@
 Cerberus now has one public review path:
 
 1. a thin GitHub Action client at repo root
-2. the Elixir review engine in `cerberus-elixir/`
+2. the legacy Elixir compatibility engine in `cerberus-elixir/`
 
 ## Resurrection Target
 
@@ -20,6 +20,11 @@ The GitHub Action, hosted API, and dispatch/poll flow may wrap that core as
 adapters, but they do not define the core boundary. Bitterblossom and Olympus
 remain independent callers through the same contract; neither caller should know
 about the other.
+
+Backlog 005 tracks every legacy surface in
+`docs/shaping/legacy-surface-retirement.md` and its machine-checked JSON
+inventory. That inventory is the source of truth for whether a surface is kept,
+ported, deleted, or archived.
 
 ThinkTank is historical donor material for review execution, not a production
 runtime dependency. Frozen ThinkTank review runs may be imported by
@@ -58,9 +63,9 @@ cerberus-elixir/
 ## Design Rules
 
 - Keep the GitHub Action client thin.
-- Keep review orchestration in Elixir, not in workflow glue.
+- Keep legacy review orchestration in Elixir until Rust parity is fixture-backed.
 - Keep product data in `defaults/` and `pi/agents/`.
-- Delete compatibility layers once the engine owns the behavior.
+- Delete or archive compatibility layers only through the retirement inventory.
 
 ## Active Modules
 
@@ -99,7 +104,7 @@ Non-responsibilities:
 - live acquisition from either caller repository
 - production review execution through the ThinkTank CLI
 
-### Elixir Engine
+### Legacy Elixir Engine
 
 Lives in `cerberus-elixir/`.
 
@@ -110,6 +115,12 @@ Responsibilities:
 - aggregate verdicts
 - expose HTTP endpoints
 - persist run state
+
+Retirement rule:
+
+- none of these modules are deleted until
+  `docs/shaping/legacy-surface-retirement.json` records parity evidence,
+  deletion/archive commit, and rollback path.
 
 ## Historical Note
 

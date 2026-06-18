@@ -18,7 +18,8 @@ source-agnostic code review.
   coding models with Cerberus-owned reviewer fixtures before changing defaults.
 - Daedalus promotion loop: import only measured reviewer configurations.
 - Legacy retirement: keep the current GitHub action/API as compatibility until
-  Rust proves parity, then delete or archive stale Elixir surfaces.
+  Rust proves parity, then delete or archive stale Elixir surfaces through the
+  checked retirement inventory.
 
 ## Active Migration Spine
 

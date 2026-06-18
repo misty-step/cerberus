@@ -6,13 +6,13 @@ use cerberus_core::{
 };
 use cerberus_schema::{
     EvalTaskSuite, HarnessModelEvaluationReport, HarnessModelMatrix, HarnessProfile,
-    InlineCommentCandidate, ModelCandidate, ReviewConfig, ReviewRequest, ReviewRunArtifact,
-    ReviewerArtifact, ReviewerConfigImportReport, ReviewerConfigPacket, StaleModelFinding,
-    EVAL_TASK_SUITE_VERSION, HARNESS_MODEL_EVALUATION_REPORT_VERSION, HARNESS_MODEL_MATRIX_VERSION,
-    HARNESS_PROFILE_VERSION, INLINE_COMMENT_CANDIDATE_VERSION, MODEL_CANDIDATE_VERSION,
-    REVIEWER_ARTIFACT_VERSION, REVIEWER_CONFIG_IMPORT_REPORT_VERSION,
-    REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION,
-    REVIEW_RUN_ARTIFACT_VERSION,
+    InlineCommentCandidate, LegacySurfaceInventory, ModelCandidate, ReviewConfig, ReviewRequest,
+    ReviewRunArtifact, ReviewerArtifact, ReviewerConfigImportReport, ReviewerConfigPacket,
+    StaleModelFinding, EVAL_TASK_SUITE_VERSION, HARNESS_MODEL_EVALUATION_REPORT_VERSION,
+    HARNESS_MODEL_MATRIX_VERSION, HARNESS_PROFILE_VERSION, INLINE_COMMENT_CANDIDATE_VERSION,
+    LEGACY_SURFACE_INVENTORY_VERSION, MODEL_CANDIDATE_VERSION, REVIEWER_ARTIFACT_VERSION,
+    REVIEWER_CONFIG_IMPORT_REPORT_VERSION, REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
+    REVIEW_REQUEST_VERSION, REVIEW_RUN_ARTIFACT_VERSION,
 };
 use std::{
     collections::BTreeSet,
@@ -30,6 +30,7 @@ fn main() -> Result<()> {
 
     match command.as_str() {
         "validate" => validate(args.collect()),
+        "validate-retirement" => validate_retirement(args.collect()),
         "validate-reviewer-config" => validate_reviewer_config(args.collect()),
         "review" => review_command(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
@@ -45,6 +46,21 @@ fn main() -> Result<()> {
             bail!("unknown command {command:?}");
         }
     }
+}
+
+fn validate_retirement(paths: Vec<String>) -> Result<()> {
+    if paths.is_empty() {
+        bail!("validate-retirement requires at least one inventory path");
+    }
+
+    for path in paths {
+        let inventory_path = PathBuf::from(&path);
+        let inventory = read_retirement_inventory(&inventory_path)?;
+        validate_retirement_paths(&inventory, Path::new("."))?;
+        println!("{path}: ok");
+    }
+
+    Ok(())
 }
 
 fn validate_reviewer_config(paths: Vec<String>) -> Result<()> {
@@ -335,6 +351,10 @@ fn validate_document(path: &PathBuf) -> Result<()> {
             let report: ReviewerConfigImportReport = serde_json::from_value(value)?;
             report.validate()?;
         }
+        LEGACY_SURFACE_INVENTORY_VERSION => {
+            let inventory: LegacySurfaceInventory = serde_json::from_value(value)?;
+            inventory.validate()?;
+        }
         other => bail!("unsupported schema_version {other:?} in {}", path.display()),
     }
 
@@ -385,6 +405,23 @@ fn read_config(path: &PathBuf) -> Result<ReviewConfig> {
     Ok(config)
 }
 
+fn read_retirement_inventory(path: &PathBuf) -> Result<LegacySurfaceInventory> {
+    let raw = fs::read_to_string(path).with_context(|| {
+        format!(
+            "failed to read legacy retirement inventory {}",
+            path.display()
+        )
+    })?;
+    let inventory: LegacySurfaceInventory = serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "failed to parse legacy retirement inventory {}",
+            path.display()
+        )
+    })?;
+    inventory.validate()?;
+    Ok(inventory)
+}
+
 fn read_reviewer_config_packet(path: &PathBuf) -> Result<ReviewerConfigPacket> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read reviewer config packet {}", path.display()))?;
@@ -392,6 +429,22 @@ fn read_reviewer_config_packet(path: &PathBuf) -> Result<ReviewerConfigPacket> {
         .with_context(|| format!("failed to parse reviewer config packet {}", path.display()))?;
     validate_reviewer_config_packet(&packet)?;
     Ok(packet)
+}
+
+fn validate_retirement_paths(inventory: &LegacySurfaceInventory, root: &Path) -> Result<()> {
+    for surface in &inventory.surfaces {
+        for path in &surface.paths {
+            let path = root.join(path);
+            if !path.exists() {
+                bail!(
+                    "legacy surface {} references missing path {}",
+                    surface.surface_id,
+                    path.display()
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn probe_harness(profile: &HarnessProfile) -> HarnessProbe {
@@ -536,6 +589,6 @@ fn write_json<T: serde::Serialize>(path: &PathBuf, value: &T) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

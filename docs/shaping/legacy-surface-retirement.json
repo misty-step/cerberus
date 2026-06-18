@@ -1,0 +1,182 @@
+{
+  "schema_version": "legacy-surface-inventory.v1",
+  "snapshot_date": "2026-06-18",
+  "purpose": "Authoritative retirement inventory for legacy Cerberus surfaces. A surface may not be deleted or archived until this file records replacement, parity evidence or intentional rejection, the deletion/archive commit, and rollback path.",
+  "surfaces": [
+    {
+      "surface_id": "root-github-action",
+      "paths": [
+        "action.yml"
+      ],
+      "current_responsibility": "Public composite GitHub Action entrypoint and input/output contract for current consumers.",
+      "retirement_decision": "keep_compatibility",
+      "parity_status": "compatibility_only",
+      "keep_reason": "Existing consumers call misty-step/cerberus through the root action; changing this requires a public migration plan.",
+      "rollback_path": "Restore action.yml from the last compatible release tag.",
+      "next_action": "Keep aligned with dispatch.sh until a Rust action adapter proves the same pull_request behavior."
+    },
+    {
+      "surface_id": "dispatch-shell-client",
+      "paths": [
+        "dispatch.sh"
+      ],
+      "current_responsibility": "GitHub Actions preflight, hosted API dispatch, polling, verdict output, fork/draft skip handling, and fail-on-verdict behavior.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "A Rust GitHub Action adapter backed by cerberus-cli and the ReviewRequest.v1 contract.",
+      "parity_evidence": [
+        "shellcheck dispatch.sh",
+        "future Rust fixture: fork PR skip, draft skip, timeout, poll failure, fail-on-verdict"
+      ],
+      "rollback_path": "Keep dispatch.sh as the fallback action client until the Rust adapter is released.",
+      "next_action": "Add a Rust dispatch fixture suite before replacing shell polling."
+    },
+    {
+      "surface_id": "node-scaffolder",
+      "paths": [
+        "bin/cerberus.js",
+        "templates"
+      ],
+      "current_responsibility": "Writes the consumer workflow template for the current API-dispatch action.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "cerberus-cli init or equivalent Rust scaffolder command.",
+      "parity_evidence": [
+        "node --check bin/cerberus.js",
+        "future Rust fixture: generated workflow matches templates/consumer-workflow-reusable.yml"
+      ],
+      "rollback_path": "Retain bin/cerberus.js and templates until generated workflow parity is fixture-backed.",
+      "next_action": "Move scaffolding behavior behind a Rust CLI fixture, then deprecate the Node entrypoint."
+    },
+    {
+      "surface_id": "elixir-http-api",
+      "paths": [
+        "cerberus-elixir/lib/cerberus/api.ex",
+        "cerberus-elixir/lib/cerberus/application.ex",
+        "cerberus-elixir/config",
+        "docs/api-contract.md",
+        "docs/MIGRATION.md"
+      ],
+      "current_responsibility": "Hosted review API, runtime supervision, API-mode contract docs, and migration instructions.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "Rust API adapter that accepts source-agnostic ReviewRequest.v1 payloads and preserves current public API compatibility where still needed.",
+      "parity_evidence": [
+        "cd cerberus-elixir && mix test test/cerberus/api_test.exs",
+        "future Rust fixture: POST /api/reviews and GET /api/reviews/:id compatibility"
+      ],
+      "rollback_path": "Keep cerberus-elixir API serving compatibility traffic until Rust API adapter is deployed and verified.",
+      "next_action": "Capture hosted API request/response fixtures and map them to ReviewRequest.v1."
+    },
+    {
+      "surface_id": "elixir-review-execution",
+      "paths": [
+        "cerberus-elixir/lib/cerberus/engine.ex",
+        "cerberus-elixir/lib/cerberus/pipeline.ex",
+        "cerberus-elixir/lib/cerberus/reviewer.ex",
+        "cerberus-elixir/lib/cerberus/router.ex",
+        "cerberus-elixir/lib/cerberus/review_prompt.ex",
+        "cerberus-elixir/lib/mix/tasks/cerberus.review.ex"
+      ],
+      "current_responsibility": "Legacy reviewer routing, panel execution, prompt rendering, local review command, and pipeline aggregation entrypoint.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "cerberus-core reviewer execution and harness runtime backed by ReviewConfig.v1 and harness/model evaluation fixtures.",
+      "parity_evidence": [
+        "cargo test --workspace",
+        "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
+      ],
+      "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
+      "next_action": "Port routing, timeout, degraded-reviewer, and local-review fixtures into Rust."
+    },
+    {
+      "surface_id": "elixir-verdict-store",
+      "paths": [
+        "cerberus-elixir/lib/cerberus/verdict.ex",
+        "cerberus-elixir/lib/cerberus/verdict",
+        "cerberus-elixir/lib/cerberus/store.ex"
+      ],
+      "current_responsibility": "Legacy verdict aggregation, finding normalization, dedupe, cost accounting, override handling, and persisted review state.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "cerberus-core ReviewRunArtifact.v1 generation plus a Rust storage adapter when persistence is needed.",
+      "parity_evidence": [
+        "cargo test --workspace",
+        "cd cerberus-elixir && mix test test/cerberus/verdict_test.exs test/cerberus/verdict test/store_test.exs test/cerberus/store_review_run_test.exs"
+      ],
+      "rollback_path": "Keep Elixir store and verdict modules until Rust artifacts cover legacy aggregate and persistence cases.",
+      "next_action": "Add Rust fixtures for confidence aggregation, dedupe, override, cost, malformed finding rows, and persisted run replay."
+    },
+    {
+      "surface_id": "elixir-review-tools",
+      "paths": [
+        "cerberus-elixir/lib/cerberus/github.ex",
+        "cerberus-elixir/lib/cerberus/tools",
+        "cerberus-elixir/lib/cerberus/llm"
+      ],
+      "current_responsibility": "Legacy GitHub read tools, local repository read tools, and OpenRouter client surface.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "Rust harness/provider adapters with explicit external boundaries.",
+      "parity_evidence": [
+        "cd cerberus-elixir && mix test test/cerberus/github_test.exs test/cerberus/tools test/cerberus/local_repo_read_handler_test.exs",
+        "future Rust fixture: provider tool sandbox and repository read boundaries"
+      ],
+      "rollback_path": "Keep Elixir tool modules until Rust adapters prove local and GitHub read safety.",
+      "next_action": "Model GitHub/local read tools as harness adapter capabilities instead of core semantics."
+    },
+    {
+      "surface_id": "legacy-defaults-and-personas",
+      "paths": [
+        "defaults",
+        "pi/agents",
+        "pi/skills"
+      ],
+      "current_responsibility": "Legacy model defaults, product configuration, reviewer personas, and Pi skill prompts.",
+      "retirement_decision": "port_to_rust",
+      "parity_status": "pending",
+      "rust_replacement": "ReviewerConfigPacket.v1 imports promoted from measured Daedalus or harness/model evaluation evidence.",
+      "parity_evidence": [
+        "cargo run --locked -p cerberus-cli -- validate-reviewer-config fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json",
+        "cargo run --locked -p cerberus-cli -- validate fixtures/evals/harness-model/report.json"
+      ],
+      "rollback_path": "Keep defaults and Pi prompts for the legacy Elixir path until Rust reviewer configs are promoted.",
+      "next_action": "Replace static defaults with measured reviewer config packets after live eval evidence exists."
+    },
+    {
+      "surface_id": "elixir-release-and-deploy",
+      "paths": [
+        "cerberus-elixir/deploy-sprite.sh",
+        "cerberus-elixir/test/release_contract.sh"
+      ],
+      "current_responsibility": "Legacy hosted Elixir deployment and release smoke checks.",
+      "retirement_decision": "archive_after_parity",
+      "parity_status": "pending",
+      "keep_reason": "Needed only while the hosted API compatibility surface remains Elixir-backed.",
+      "parity_evidence": [
+        "shellcheck cerberus-elixir/deploy-sprite.sh cerberus-elixir/test/release_contract.sh",
+        "future Rust deployment smoke for the replacement API adapter"
+      ],
+      "rollback_path": "Restore deployment scripts if Rust API deployment fails after cutover.",
+      "next_action": "Define Rust API deployment smoke before archiving Elixir deployment scripts."
+    },
+    {
+      "surface_id": "historical-walkthroughs-and-artifacts",
+      "paths": [
+        "artifacts",
+        "docs/walkthroughs",
+        "walkthrough"
+      ],
+      "current_responsibility": "Historical review evidence, issue walkthroughs, and prior migration receipts.",
+      "retirement_decision": "archive_after_parity",
+      "parity_status": "intentionally_rejected",
+      "keep_reason": "These are evidence artifacts, not active runtime surfaces; they should be archived only after current docs link the replacement receipts.",
+      "parity_evidence": [
+        "docs/README.md labels historical walkthroughs as reference material",
+        "docs/shaping/thinktank-migration-inventory.md records historical donor material"
+      ],
+      "rollback_path": "Restore archived walkthroughs from the archive commit or release tag if a migration audit needs them.",
+      "next_action": "Create an archive index before moving or deleting historical walkthrough material."
+    }
+  ]
+}
