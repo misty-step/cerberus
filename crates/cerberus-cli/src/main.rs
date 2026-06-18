@@ -22,7 +22,9 @@ use std::{
     process::Command,
 };
 
+mod local_review;
 mod model_catalog;
+use local_review::{local_review_request_from_diff, LocalReviewArgs};
 use model_catalog::refresh_openrouter_matrix;
 
 fn main() -> Result<()> {
@@ -37,6 +39,7 @@ fn main() -> Result<()> {
         "validate-retirement" => validate_retirement(args.collect()),
         "validate-reviewer-config" => validate_reviewer_config(args.collect()),
         "review" => review_command(args.collect()),
+        "review-local" => review_local(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
         "refresh-model-catalog" => refresh_model_catalog(args.collect()),
         "import-reviewer-config" => import_reviewer_config(args.collect()),
@@ -188,6 +191,30 @@ fn review_command(args: Vec<String>) -> Result<()> {
 
     let artifact_path = out_dir.join("review-run-artifact.json");
     let markdown_path = out_dir.join("review-run.md");
+    write_json(&artifact_path, &artifact)?;
+    fs::write(&markdown_path, render_markdown(&artifact))
+        .with_context(|| format!("failed to write {}", markdown_path.display()))?;
+
+    println!("{}", artifact_path.display());
+    Ok(())
+}
+
+fn review_local(args: Vec<String>) -> Result<()> {
+    let args = LocalReviewArgs::parse(&args)?;
+    let request = local_review_request_from_diff(&args)?;
+    let config = match args.config.as_ref() {
+        Some(path) => read_config(path)?,
+        None => default_config(),
+    };
+    let artifact = review(&request, &config)?;
+
+    fs::create_dir_all(&args.out)
+        .with_context(|| format!("failed to create output dir {}", args.out.display()))?;
+
+    let request_path = args.out.join("review-request.json");
+    let artifact_path = args.out.join("review-run-artifact.json");
+    let markdown_path = args.out.join("review-run.md");
+    write_json(&request_path, &request)?;
     write_json(&artifact_path, &artifact)?;
     fs::write(&markdown_path, render_markdown(&artifact))
         .with_context(|| format!("failed to write {}", markdown_path.display()))?;
@@ -683,6 +710,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

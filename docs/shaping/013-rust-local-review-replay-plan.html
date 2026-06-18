@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>013 Rust Local Review Replay</title>
+  <style>
+    :root { color-scheme: light; --ink:#17211b; --muted:#5f6a63; --line:#cfd8d1; --paper:#f7f4ec; --panel:#ffffff; --accent:#2f6f5e; --warn:#8a5b13; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:var(--paper); }
+    .wrap { max-width:1180px; margin:0 auto; padding:32px; }
+    header { display:grid; grid-template-columns:1.25fr .75fr; gap:24px; align-items:end; border-bottom:2px solid var(--ink); padding-bottom:18px; }
+    h1 { margin:0; font-size:40px; line-height:1.03; letter-spacing:0; }
+    h2 { margin:0 0 10px; font-size:18px; }
+    p { margin:0 0 10px; }
+    .lede { font-size:18px; color:var(--muted); }
+    .meta { border-left:4px solid var(--accent); padding-left:14px; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:24px; }
+    .wide { grid-column:span 2; }
+    .full { grid-column:1 / -1; }
+    section { background:var(--panel); border:1px solid var(--line); padding:18px; min-height:150px; }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:4px 0; }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    pre { background:#18231f; color:#f3f0e8; padding:14px; overflow:auto; font-size:13px; }
+    .callout { border-color:#d7b36b; background:#fff8e8; }
+    .stamp { display:inline-block; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); font-weight:700; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <span class="stamp">Backlog 013</span>
+      <h1>Rust Local Review Replay</h1>
+      <p class="lede">Port the local diff review entrypoint into Rust as a fixture-backed CLI path that constructs `ReviewRequest.v1` and runs the existing review core.</p>
+    </div>
+    <div class="meta">
+      <p><strong>Date:</strong> 2026-06-18</p>
+      <p><strong>Branch:</strong> shape/rust-review-engine-backlog</p>
+      <p><strong>Stop:</strong> if local review requires semantic routing or live reviewer providers.</p>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section>
+      <h2>Target Outcome</h2>
+      <p>`cerberus-cli review-local --diff-file ... --out ...` emits the same review artifact surfaces as `review --fixture`, using a `ReviewRequest.v1` built from a local git-style diff.</p>
+    </section>
+    <section>
+      <h2>Design</h2>
+      <p>Add a CLI-local parser for exact git diff syntax: `diff --git`, file status markers, and hunk +/- line counts. Then call the existing Rust `review` core and render JSON plus Markdown.</p>
+    </section>
+    <section class="callout">
+      <h2>Acceptance Oracle</h2>
+      <ul>
+        <li>`cargo test --workspace local_review`</li>
+        <li>`cargo run --locked -p cerberus-cli -- review-local --diff-file fixtures/local-review/local.diff --out tmp/local-review`</li>
+        <li>`cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-run-artifact.json`</li>
+        <li>Full Rust, shell, Node, and legacy Elixir gates remain green.</li>
+      </ul>
+    </section>
+    <section class="wide">
+      <h2>Request Shape</h2>
+      <pre><code>ReviewSource::LocalDiff { repo_path }
+Change {
+  title: "Local diff review",
+  diff: raw_diff,
+  files: parsed git diff files
+}
+ReviewContext {
+  summary: "Rust local diff review."
+}</code></pre>
+    </section>
+    <section>
+      <h2>Boundaries</h2>
+      <ul>
+        <li>No LLM router or semantic reviewer selection.</li>
+        <li>No live peer/provider calls.</li>
+        <li>No shelling out to `git` in this slice.</li>
+        <li>No replacement of the public action path.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Files</h2>
+      <ul>
+        <li>`crates/cerberus-cli/src/local_review.rs` for local diff parsing.</li>
+        <li>`crates/cerberus-cli/src/main.rs` for CLI command wiring.</li>
+        <li>`fixtures/local-review/local.diff` for replay proof.</li>
+        <li>Backlog and shaping docs for receipt.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Critic Focus</h2>
+      <ul>
+        <li>Parser fails closed on non-git diffs or empty file lists.</li>
+        <li>Added/copied/renamed/deleted statuses do not corrupt coverage.</li>
+        <li>The local path does not weaken core artifact validation.</li>
+      </ul>
+    </section>
+    <section class="full">
+      <h2>Next Slice Boundary</h2>
+      <p>After 013, route policy can be modeled as explicit config data or the hosted API request/response fixtures can be captured. This slice only proves local diff replay.</p>
+    </section>
+  </main>
+</div>
+</body>
+</html>

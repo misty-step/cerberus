@@ -18,6 +18,7 @@ Current sequence:
 10. `010-peer-harness-command-profiles.md`
 11. `011-peer-harness-protocol-runner.md`
 12. `012-peer-harness-prompt-transcript.md`
+13. `013-rust-local-review-replay.md`
 
 Planning rules:
 
@@ -41,3 +42,5 @@ Planning rules:
   parsing transcripts, or invoking paid providers.
 - Parse only exact marked transcript artifacts; do not infer review findings
   from free-form harness prose.
+- Prove local diff review through Rust fixtures before retiring the legacy
+  Elixir local review command.

@@ -57,6 +57,12 @@ deterministic prompt and parse exact marked local transcript fixtures into
 reviewer artifacts. It does not call Pi/Goose/OpenCode/OMP or spend provider
 budget.
 
+`cerberus-cli review-local` is the Rust local diff replay path. It reads a
+git-style diff file, builds a `ReviewRequest.v1` with `LocalDiff` source, runs
+the Rust review core, and writes the same request, artifact, and Markdown
+surfaces as fixture review. It does not shell out to Git, infer semantic
+reviewer routing from the diff, or replace hosted API compatibility.
+
 ## Request Flow
 
 ```text
@@ -205,6 +211,24 @@ Non-responsibilities:
 - peer CLI invocation
 - free-form transcript interpretation
 - model budget or quality evaluation
+
+### Rust Local Review Replay
+
+Lives as `cerberus-cli review-local` in `crates/cerberus-cli/`.
+
+Responsibilities:
+
+- parse local git-style diff files into `ReviewRequest.v1`
+- preserve local diff source metadata and changed-file counts
+- run the Rust review core through the same artifact surfaces as fixture review
+- write `review-request.json`, `review-run-artifact.json`, and `review-run.md`
+
+Non-responsibilities:
+
+- invoking Git or discovering repository state
+- semantic routing, prioritization, or reviewer selection from diff contents
+- live peer harness or provider execution
+- hosted API compatibility
 
 ### Legacy Elixir Engine
 

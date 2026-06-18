@@ -19,6 +19,7 @@ Current docs:
 - Peer harness protocol runner: `docs/shaping/peer-harness-protocol-runner.md`
 - Peer harness prompt and transcript fixtures:
   `docs/shaping/peer-harness-prompt-transcript.md`
+- Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 
