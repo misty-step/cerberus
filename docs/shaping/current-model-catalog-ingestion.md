@@ -37,6 +37,11 @@ The command:
 It fails if a requested model is absent or required fields such as prompt price,
 completion price, context length, or max completion tokens are unavailable.
 
+Backlog 014 refreshed the tiny catalog against the live OpenRouter API later on
+2026-06-18. The current checked fixture records GLM 5.2 output price `$3.20/M`
+and max completion `65,536`, with the prior `$4.20/M` / `16,384` values kept in
+the matrix's previous snapshot.
+
 ## Follow-On Proof
 
 The refreshed matrix is not itself a model-quality verdict. It is input evidence

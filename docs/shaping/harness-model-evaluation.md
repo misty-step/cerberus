@@ -55,7 +55,7 @@ Local harnesses:
 | Pi | 0.78.1 | `/Users/phaedrus/.npm-global/bin/pi` | Minimal, extensible baseline; likely the cleanest way to test Cerberus-owned prompt/context discipline. |
 | Goose | 1.12.1 | `/Users/phaedrus/.local/bin/goose` | Rich local agent with MCP/subagent surface; must be tested for prompt isolation and artifact discipline. |
 | OpenCode | 1.2.6 | `/Users/phaedrus/.opencode/bin/opencode` | Strong provider/config support; repo already has `opencode.json`, so it is a practical candidate for local review runs. |
-| OMP | 16.0.7 | `/Users/phaedrus/.bun/bin/omp` | Heavier Pi-derived harness with LSP/DAP/subagents; promising but needs strict control so harness power does not mask model weakness. |
+| OMP | 16.0.9 | `/Users/phaedrus/.bun/bin/omp` | Heavier Pi-derived harness with LSP/DAP/subagents; promising but needs strict control so harness power does not mask model weakness. |
 
 Local model drift:
 
@@ -71,9 +71,9 @@ Local model drift:
 
 ## Current External Evidence
 
-Firecrawl search was requested by the environment policy but only monitor tools
-were exposed in this session, so web retrieval fell back to built-in search and
-direct provider/API requests.
+Firecrawl search was attempted in this session, but the account returned HTTP
+402. Web retrieval therefore fell back to built-in search and direct
+provider/API requests.
 
 Primary-source harness facts:
 
@@ -97,7 +97,7 @@ OpenRouter API snapshot, 2026-06-18:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Supported params of interest |
 |---|---:|---:|---:|---:|---:|---|
-| `z-ai/glm-5.2` | 1,048,576 | 16,384 | 1.20 | 4.20 | 0.20 | tools, tool_choice, structured_outputs, reasoning, response_format |
+| `z-ai/glm-5.2` | 1,048,576 | 65,536 | 1.20 | 3.20 | 0.20 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | tools, tool_choice, structured_outputs, reasoning, response_format |
@@ -155,6 +155,12 @@ Backlog 006 now has a Rust-side offline smoke runner:
   seeded finding, prompt-injection text, and degraded timeout cases.
 - `fixtures/evals/harness-model-matrix.json` captures the 2026-06-18 local
   harness versions and OpenRouter model facts used by this run.
+
+Backlog 014 refreshed this checked matrix later on 2026-06-18 after live
+OpenRouter API and local harness probes showed drift: OMP moved to `16.0.9`, and
+GLM 5.2's current OpenRouter row reports max completion `65,536` and output
+price `$3.20/M` while preserving the earlier `16,384` / `$4.20/M` matrix values
+as the previous snapshot.
 
 The current smoke result is intentionally not a live model bake-off. Cells run
 in `offline_contract` mode and must validate as `warn` or structured

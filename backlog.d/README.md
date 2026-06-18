@@ -19,6 +19,7 @@ Current sequence:
 11. `011-peer-harness-protocol-runner.md`
 12. `012-peer-harness-prompt-transcript.md`
 13. `013-rust-local-review-replay.md`
+14. `014-current-harness-model-catalog-refresh.md`
 
 Planning rules:
 
@@ -44,3 +45,5 @@ Planning rules:
   from free-form harness prose.
 - Prove local diff review through Rust fixtures before retiring the legacy
   Elixir local review command.
+- Refresh current harness/model catalog facts as dated evidence before spending
+  live eval budget or promoting reviewer defaults.

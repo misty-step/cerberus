@@ -169,6 +169,30 @@ mod tests {
     #[test]
     fn model_catalog_refreshes_matrix_and_preserves_previous_snapshot() {
         let matrix: HarnessModelMatrix = serde_json::from_str(MATRIX).expect("matrix parses");
+        let checked_glm = matrix
+            .models
+            .iter()
+            .find(|model| model.model_id == "z-ai/glm-5.2")
+            .expect("glm model exists");
+        assert_eq!(checked_glm.max_completion_tokens, 65_536);
+        assert_eq!(checked_glm.output_usd_per_m, 3.2);
+        assert_eq!(
+            checked_glm
+                .previous
+                .as_ref()
+                .expect("previous snapshot")
+                .max_completion_tokens,
+            16_384
+        );
+        assert_eq!(
+            checked_glm
+                .previous
+                .as_ref()
+                .expect("previous snapshot")
+                .output_usd_per_m,
+            4.2
+        );
+
         let refreshed = refresh_openrouter_matrix(
             &matrix,
             CATALOG,
@@ -199,7 +223,22 @@ mod tests {
                 .as_ref()
                 .expect("previous snapshot")
                 .observed_at,
-            "2026-06-18"
+            "2026-06-18T18:20:00Z"
+        );
+
+        let glm = refreshed
+            .models
+            .iter()
+            .find(|model| model.model_id == "z-ai/glm-5.2")
+            .expect("glm model exists");
+        assert_eq!(glm.max_completion_tokens, 65_536);
+        assert!((glm.output_usd_per_m - 3.2).abs() < 0.000_001);
+        assert_eq!(
+            glm.previous
+                .as_ref()
+                .expect("previous snapshot")
+                .max_completion_tokens,
+            65_536
         );
     }
 
@@ -217,7 +256,7 @@ mod tests {
     #[test]
     fn model_catalog_errors_when_required_pricing_is_missing() {
         let matrix: HarnessModelMatrix = serde_json::from_str(MATRIX).expect("matrix parses");
-        let broken = CATALOG.replace("\"completion\": \"0.0000042\",", "");
+        let broken = CATALOG.replace("\"completion\": \"0.0000032\",", "");
 
         let error = refresh_openrouter_matrix(&matrix, &broken, "fixture", "2026-06-18")
             .expect_err("missing pricing is rejected");

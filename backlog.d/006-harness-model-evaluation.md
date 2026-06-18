@@ -95,14 +95,14 @@ Local harnesses available:
 - `pi` 0.78.1 at `/Users/phaedrus/.npm-global/bin/pi`
 - `goose` 1.12.1 at `/Users/phaedrus/.local/bin/goose`
 - `opencode` 1.2.6 at `/Users/phaedrus/.opencode/bin/opencode`
-- `omp` 16.0.7 at `/Users/phaedrus/.bun/bin/omp`
+- `omp` 16.0.9 at `/Users/phaedrus/.bun/bin/omp` after backlog 014 refresh
 
 Current model facts from `https://openrouter.ai/api/v1/models` on
 2026-06-18:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Notes |
 |---|---:|---:|---:|---:|---:|---|
-| `z-ai/glm-5.2` | 1,048,576 | 16,384 | 1.20 | 4.20 | 0.20 | Z.ai docs describe GLM-5.2 as a 1M-context long-horizon model with 128K maximum output, so OpenRouter and first-party output limits must be reconciled by a live probe. |
+| `z-ai/glm-5.2` | 1,048,576 | 65,536 | 1.20 | 3.20 | 0.20 | Backlog 014 refreshed OpenRouter API facts after the initial snapshot; OpenRouter's public model page still presents coarse pricing/context, so live probes must record the exact serving ceiling. |
 | `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | Kimi docs say K2.7 Code improves long-horizon coding over K2.6 and keeps a 256K context window. |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | DeepSeek's 2026-04-24 V4 preview states V4-Pro and V4-Flash are API-available and support 1M context. |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | Candidate for cheap smoke and simple reviewer lanes; must be graded separately from Pro. |
@@ -183,8 +183,8 @@ First local smoke delivery, 2026-06-18:
   `fixtures/evals/harness-model-matrix.json`.
 - Smoke result: `tmp/evals/harness-model/report.json` contained 64 cells in
   `offline_contract` mode, 64 valid artifacts, 48 warning cells, 16 expected
-  degraded cells, 0 failed cells, 27 stale-model findings, and 4 GLM 5.2
-  catalog deltas.
+  degraded cells, 0 failed cells, 27 stale-model findings, and 2 GLM 5.2
+  catalog deltas: max completion and output price.
 
 This receipt proves the local evaluation contract and report mechanics. It does
 not prove that any paid model/harness pair is production-ready.

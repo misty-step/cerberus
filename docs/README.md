@@ -20,6 +20,8 @@ Current docs:
 - Peer harness prompt and transcript fixtures:
   `docs/shaping/peer-harness-prompt-transcript.md`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
+- Current harness/model catalog refresh:
+  `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 

@@ -31,7 +31,7 @@
       "schema_version": "harness-profile.v1",
       "harness_id": "omp",
       "command": "omp",
-      "version": "16.0.7",
+      "version": "16.0.9",
       "path": "/Users/phaedrus/.bun/bin/omp",
       "notes": "Local OMP CLI probed with --version on 2026-06-18."
     }
@@ -42,26 +42,40 @@
       "model_id": "z-ai/glm-5.2",
       "provider": "OpenRouter",
       "context_length": 1048576,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 65536,
       "input_usd_per_m": 1.2,
-      "output_usd_per_m": 4.2,
+      "output_usd_per_m": 3.2,
       "cache_read_usd_per_m": 0.2,
       "supported_parameters": [
-        "tools",
-        "tool_choice",
-        "structured_outputs",
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
         "reasoning",
-        "response_format"
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18",
+      "catalog_observed_at": "2026-06-18T18:20:00Z",
       "previous": {
-        "observed_at": "2026-06-18-backlog-snapshot",
+        "observed_at": "2026-06-18",
         "context_length": 1048576,
-        "max_completion_tokens": 524288,
-        "input_usd_per_m": 1.4,
-        "output_usd_per_m": 4.4,
-        "cache_read_usd_per_m": 0.7
+        "max_completion_tokens": 16384,
+        "input_usd_per_m": 1.2,
+        "output_usd_per_m": 4.2,
+        "cache_read_usd_per_m": 0.2
       }
     },
     {
@@ -74,14 +88,36 @@
       "output_usd_per_m": 3.5,
       "cache_read_usd_per_m": 0.15,
       "supported_parameters": [
-        "tools",
-        "tool_choice",
-        "structured_outputs",
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
         "reasoning",
-        "response_format"
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18"
+      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "previous": {
+        "observed_at": "2026-06-18",
+        "context_length": 262144,
+        "max_completion_tokens": 16384,
+        "input_usd_per_m": 0.74,
+        "output_usd_per_m": 3.5,
+        "cache_read_usd_per_m": 0.15
+      }
     },
     {
       "schema_version": "model-candidate.v1",
@@ -93,14 +129,36 @@
       "output_usd_per_m": 0.87,
       "cache_read_usd_per_m": 0.003625,
       "supported_parameters": [
-        "tools",
-        "tool_choice",
-        "structured_outputs",
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
         "reasoning",
-        "response_format"
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18"
+      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "previous": {
+        "observed_at": "2026-06-18",
+        "context_length": 1048576,
+        "max_completion_tokens": 384000,
+        "input_usd_per_m": 0.435,
+        "output_usd_per_m": 0.87,
+        "cache_read_usd_per_m": 0.003625
+      }
     },
     {
       "schema_version": "model-candidate.v1",
@@ -112,14 +170,36 @@
       "output_usd_per_m": 0.18,
       "cache_read_usd_per_m": 0.02,
       "supported_parameters": [
-        "tools",
-        "tool_choice",
-        "structured_outputs",
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
         "reasoning",
-        "response_format"
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18"
+      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "previous": {
+        "observed_at": "2026-06-18",
+        "context_length": 1048576,
+        "max_completion_tokens": 65536,
+        "input_usd_per_m": 0.09,
+        "output_usd_per_m": 0.18,
+        "cache_read_usd_per_m": 0.02
+      }
     }
   ],
   "stale_model_patterns": [
