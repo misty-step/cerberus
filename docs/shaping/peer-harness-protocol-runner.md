@@ -24,10 +24,13 @@ The binary accepts:
 - `--profiles <PeerHarnessCommandProfiles.v1.json>`: optional profile packet;
   by default the runner uses `CERBERUS_PEER_HARNESS_PROFILES` or
   `fixtures/harnesses/peer-command-profiles.json`
+- `--prompt-output <path>`: optional deterministic prompt output file
+- `--transcript <path>`: optional local fixture transcript to parse instead of
+  emitting the default degraded artifact
 
 ## Offline Artifact
 
-In this slice the runner writes a degraded artifact:
+Without `--transcript`, the runner writes a degraded artifact:
 
 - reviewer id, perspective, and model come from the input reviewer
 - `coverage.files_reviewed` exactly matches the request files
@@ -38,6 +41,10 @@ In this slice the runner writes a degraded artifact:
 - `degraded_reason` states that live peer execution is disabled
 
 This is a protocol proof, not a review-quality proof.
+
+With `--transcript`, the runner parses exactly one marked
+`ReviewerArtifact.v1` JSON block from the local transcript fixture and validates
+it against the input reviewer and request through `cerberus-core`.
 
 ## Live Execution Guard
 
@@ -54,4 +61,6 @@ cargo test -p cerberus-cli --test peer_harness_command
 mkdir -p tmp
 cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-artifact.json
 cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-artifact.json
+cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-transcript-artifact.json --prompt-output tmp/peer-runner-prompt.txt --transcript fixtures/harnesses/peer-transcript-with-finding.txt
+cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-transcript-artifact.json
 ```

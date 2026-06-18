@@ -86,15 +86,18 @@
         "cargo test --workspace command_harness",
         "cargo test --workspace peer_harness_command_profiles",
         "cargo test --workspace peer_harness_runner",
+        "cargo test -p cerberus-cli --test peer_harness_command",
         "cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json",
         "cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-artifact.json",
         "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-artifact.json",
+        "cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-transcript-artifact.json --prompt-output tmp/peer-runner-prompt.txt --transcript fixtures/harnesses/peer-transcript-with-finding.txt",
+        "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-transcript-artifact.json",
         "cargo test --workspace harness_runtime",
         "cargo test --workspace",
         "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
       ],
       "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
-      "next_action": "Add prompt rendering and transcript parser fixtures, then port routing and local-review fixtures into Rust."
+      "next_action": "Add live transcript capture or port routing and local-review fixtures into Rust."
     },
     {
       "surface_id": "elixir-verdict-store",

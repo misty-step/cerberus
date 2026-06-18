@@ -151,14 +151,14 @@ fn reviewer_artifact_from_harness<H: ReviewHarness + ?Sized>(
 ) -> ReviewerArtifact {
     match harness
         .review(reviewer, request)
-        .and_then(|artifact| validate_harness_artifact(reviewer, request, artifact))
+        .and_then(|artifact| validate_reviewer_artifact_for_request(reviewer, request, artifact))
     {
         Ok(artifact) => artifact,
         Err(error) => degraded_artifact(reviewer, request, error),
     }
 }
 
-fn validate_harness_artifact(
+pub fn validate_reviewer_artifact_for_request(
     reviewer: &ReviewerConfig,
     request: &ReviewRequest,
     artifact: ReviewerArtifact,
@@ -257,6 +257,11 @@ fn validate_completed_harness_verdict(
 ) -> Result<(), HarnessRuntimeError> {
     if artifact.status != ReviewerStatus::Completed {
         return Ok(());
+    }
+    if artifact.verdict == Verdict::Skip {
+        return Err(HarnessRuntimeError::Failed(
+            "completed artifact cannot have SKIP verdict".to_string(),
+        ));
     }
     if artifact.verdict == Verdict::Pass && !artifact.findings.is_empty() {
         return Err(HarnessRuntimeError::Failed(
@@ -1214,6 +1219,34 @@ mod tests {
     }
 
     #[test]
+    fn harness_runtime_degrades_completed_skip_verdict() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "completed-skip-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "security".to_string(),
+                perspective: "security".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &CompletedSkipHarness)
+            .expect("completed skip is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.findings.len(), 0);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("cannot have SKIP verdict")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
     fn harness_runtime_degrades_understated_major_finding_verdict() {
         let request = fixture("clean");
         let config = ReviewConfig {
@@ -1450,6 +1483,34 @@ mod tests {
                     files_reviewed: vec![],
                     files_with_findings: vec![request.change.files[0].path.clone()],
                 },
+                usage: TokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                },
+                cost_usd: 0.01,
+                degraded_reason: None,
+            })
+        }
+    }
+
+    struct CompletedSkipHarness;
+
+    impl ReviewHarness for CompletedSkipHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(ReviewerArtifact {
+                schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+                reviewer_id: reviewer.id.clone(),
+                perspective: reviewer.perspective.clone(),
+                model: reviewer.model.clone(),
+                status: ReviewerStatus::Completed,
+                verdict: Verdict::Skip,
+                summary: "Completed skip harness should be rejected.".to_string(),
+                findings: vec![],
+                coverage: coverage_for_request(&request.change.files, vec![]),
                 usage: TokenUsage {
                     prompt_tokens: 10,
                     completion_tokens: 5,

@@ -52,8 +52,10 @@ input/output contract.
 
 `cerberus-peer-harness` is the Rust protocol command named by those profiles.
 It currently proves file handoff and artifact validation offline by emitting a
-degraded `SKIP` artifact with exact request coverage. It does not render final
-review prompts, call Pi/Goose/OpenCode/OMP, or spend provider budget.
+degraded `SKIP` artifact with exact request coverage. It can also render a
+deterministic prompt and parse exact marked local transcript fixtures into
+reviewer artifacts. It does not call Pi/Goose/OpenCode/OMP or spend provider
+budget.
 
 ## Request Flow
 
@@ -192,13 +194,16 @@ Responsibilities:
 - read `CommandHarnessInput`
 - write offline degraded `ReviewerArtifact.v1` files with exact request
   coverage
+- write deterministic peer review prompts to local files
+- parse local transcripts that contain exactly one marked reviewer artifact JSON
+  block
+- validate parsed artifacts against the core reviewer/request acceptance rule
 - fail closed if live peer execution is requested
 
 Non-responsibilities:
 
-- prompt rendering for live reviews
 - peer CLI invocation
-- transcript parsing
+- free-form transcript interpretation
 - model budget or quality evaluation
 
 ### Legacy Elixir Engine

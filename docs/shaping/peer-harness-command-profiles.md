@@ -34,9 +34,9 @@ adapter land.
 - OMP: `omp --print --no-session --mode json --model openrouter/{model} --no-pty {prompt}`
 
 The profile fixture is validation data, not a live model run. Backlog 011 adds
-the protocol runner named in the fixture, but that runner is offline-only and
-emits degraded `SKIP` artifacts until live prompt and transcript parser oracles
-exist.
+the protocol runner named in the fixture, and Backlog 012 adds deterministic
+prompt rendering plus exact local transcript fixture parsing. Live peer
+execution and provider calls remain out of scope.
 
 ## Verification
 
@@ -47,6 +47,7 @@ cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/peer-command-p
 ```
 
 Offline runner verification lives in
-`docs/shaping/peer-harness-protocol-runner.md`. Live acceptance later requires
-prompt rendering, peer CLI invocation, transcript capture, and parser fixtures
-before the runner writes completed review artifacts.
+`docs/shaping/peer-harness-protocol-runner.md`. Prompt/transcript fixture proof
+lives in `docs/shaping/peer-harness-prompt-transcript.md`. Live acceptance
+later requires peer CLI invocation, transcript capture, eval budget, and parser
+evidence from real harness/model runs.

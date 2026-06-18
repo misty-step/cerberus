@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>012 Peer Harness Prompt and Transcript Fixtures</title>
+  <style>
+    :root { color-scheme: light; --ink:#17211b; --muted:#5f6a63; --line:#cfd8d1; --paper:#f7f4ec; --panel:#ffffff; --accent:#2f6f5e; --warn:#8a5b13; --bad:#8a2f2f; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:var(--paper); }
+    .wrap { max-width:1180px; margin:0 auto; padding:32px; }
+    header { display:grid; grid-template-columns:1.25fr .75fr; gap:24px; align-items:end; border-bottom:2px solid var(--ink); padding-bottom:18px; }
+    h1 { margin:0; font-size:40px; line-height:1.03; letter-spacing:0; }
+    h2 { margin:0 0 10px; font-size:18px; }
+    p { margin:0 0 10px; }
+    .lede { font-size:18px; color:var(--muted); }
+    .meta { border-left:4px solid var(--accent); padding-left:14px; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:24px; }
+    .wide { grid-column:span 2; }
+    .full { grid-column:1 / -1; }
+    section { background:var(--panel); border:1px solid var(--line); padding:18px; min-height:150px; }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:4px 0; }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    pre { background:#18231f; color:#f3f0e8; padding:14px; overflow:auto; font-size:13px; }
+    .callout { border-color:#d7b36b; background:#fff8e8; }
+    .danger { border-color:#d99; background:#fff2f2; }
+    .stamp { display:inline-block; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); font-weight:700; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <span class="stamp">Backlog 012</span>
+      <h1>Peer Harness Prompt and Transcript Fixtures</h1>
+      <p class="lede">Render the deterministic review prompt and parse a local transcript fixture into a validated `ReviewerArtifact.v1`, without invoking peer CLIs or providers.</p>
+    </div>
+    <div class="meta">
+      <p><strong>Date:</strong> 2026-06-18</p>
+      <p><strong>Branch:</strong> shape/rust-review-engine-backlog</p>
+      <p><strong>Stop:</strong> if parsing requires semantic inference instead of exact artifact extraction.</p>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section>
+      <h2>Target Outcome</h2>
+      <p>`cerberus-peer-harness` can write the prompt it would send to Pi/Goose/OpenCode/OMP and can parse a fixture transcript containing exactly one marked reviewer artifact JSON block.</p>
+    </section>
+    <section>
+      <h2>Design</h2>
+      <p>Keep prompt rendering and transcript parsing in the runner. Reuse a core-owned public artifact acceptance function so parsed artifacts are checked against reviewer identity, model, findings, and exact request coverage.</p>
+    </section>
+    <section class="callout">
+      <h2>Acceptance Oracle</h2>
+      <ul>
+        <li>`cargo test --workspace peer_harness_runner`</li>
+        <li>`cargo test -p cerberus-cli --test peer_harness_command`</li>
+        <li>Manual runner proof with `--prompt-output` and `--transcript` validates the emitted artifact.</li>
+        <li>Full Rust, shell, Node, and legacy Elixir gates remain green.</li>
+      </ul>
+    </section>
+    <section class="wide">
+      <h2>Transcript Contract</h2>
+      <pre><code>CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN
+{
+  "schema_version": "reviewer-artifact.v1",
+  "reviewer_id": "...",
+  "status": "completed",
+  "verdict": "WARN"
+}
+CERBERUS_REVIEWER_ARTIFACT_JSON_END</code></pre>
+    </section>
+    <section class="danger">
+      <h2>Still Not Live</h2>
+      <p>No peer CLI invocation, model call, OpenRouter request, or transcript interpretation. This slice only renders deterministic input and parses exact marked JSON from a checked-in fixture.</p>
+    </section>
+    <section>
+      <h2>Files</h2>
+      <ul>
+        <li>`crates/cerberus-core/src/lib.rs` for shared artifact acceptance.</li>
+        <li>`crates/cerberus-cli/src/peer_harness.rs` for prompt and parser flags.</li>
+        <li>`fixtures/harnesses/peer-transcript-with-finding.txt` for parser proof.</li>
+        <li>`docs/shaping/peer-harness-protocol-runner.md` and backlog docs for receipt.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Critic Focus</h2>
+      <ul>
+        <li>Does transcript parsing avoid semantic heuristics?</li>
+        <li>Can a mismatched transcript artifact escape core acceptance?</li>
+        <li>Do docs make fixture parsing distinct from live review execution?</li>
+      </ul>
+    </section>
+    <section class="full">
+      <h2>Next Slice Boundary</h2>
+      <p>After 012, the next live-adjacent work is a no-provider-cost command transcript capture path or a fixture-backed router/local-review replay. Paid model calls remain gated by eval budget and live harness/model evidence.</p>
+    </section>
+  </main>
+</div>
+</body>
+</html>

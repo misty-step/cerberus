@@ -36,6 +36,39 @@ fn peer_harness_command_profile_runs_through_command_harness() {
     artifact.validate().expect("run artifact validates");
 }
 
+#[test]
+fn peer_harness_command_profile_parses_transcript_through_command_harness() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let profiles = root.join("fixtures/harnesses/peer-command-profiles.json");
+    let transcript = root.join("fixtures/harnesses/peer-transcript-with-finding.txt");
+    let harness = CommandHarness::new(env!("CARGO_BIN_EXE_cerberus-peer-harness"))
+        .args([
+            "--harness".to_string(),
+            "pi".to_string(),
+            "--profiles".to_string(),
+            profiles.display().to_string(),
+            "--transcript".to_string(),
+            transcript.display().to_string(),
+        ])
+        .timeout(Duration::from_secs(5));
+
+    let artifact =
+        review_with_harness(&request(), &config(), &harness).expect("transcript fixture parses");
+
+    assert_eq!(artifact.verdict, Verdict::Warn);
+    assert!(!artifact.degraded);
+    assert_eq!(
+        artifact.reviewer_artifacts[0].status,
+        ReviewerStatus::Completed
+    );
+    assert_eq!(artifact.findings.len(), 1);
+    assert_eq!(
+        artifact.findings[0].id,
+        "peer-runner-reviewer-src-lib-rs-missing-assertion"
+    );
+    artifact.validate().expect("run artifact validates");
+}
+
 fn config() -> ReviewConfig {
     ReviewConfig {
         schema_version: REVIEW_CONFIG_VERSION.to_string(),
