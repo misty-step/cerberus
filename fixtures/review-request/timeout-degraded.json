@@ -1,0 +1,40 @@
+{
+  "schema_version": "review-request.v1",
+  "request_id": "fixture-timeout-degraded",
+  "source": {
+    "kind": "fixture",
+    "name": "timeout-degraded"
+  },
+  "change": {
+    "title": "Timeout degraded fixture",
+    "description": "A fixture that forces fake reviewer timeout/degraded artifacts.",
+    "base_ref": "base",
+    "head_ref": "head",
+    "head_sha": "timeoutsha",
+    "diff": "diff --git a/src/slow.rs b/src/slow.rs\n--- a/src/slow.rs\n+++ b/src/slow.rs\n@@ -1,2 +1,3 @@\n fn slow() {}\n+fn still_slow() {}\n",
+    "files": [
+      {
+        "path": "src/slow.rs",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0
+      }
+    ]
+  },
+  "context": {
+    "summary": "Timeout/degraded fixture.",
+    "acceptance": [],
+    "linked_artifacts": [],
+    "metadata": {
+      "fake_degraded": "true"
+    }
+  },
+  "caller": {
+    "name": "fixture",
+    "run_id": "timeout-degraded"
+  },
+  "policy": {
+    "render_targets": ["markdown", "json"],
+    "allow_degraded": true
+  }
+}

@@ -1,6 +1,6 @@
 # 001 - Rust Review Engine Contract
 
-Status: ready
+Status: implemented
 Priority: P0
 Type: epic
 Created: 2026-06-18
@@ -38,8 +38,10 @@ from that artifact without requiring GitHub credentials or network access.
 
 - `cargo test --workspace`
 - `cargo run --locked -p cerberus-cli -- validate fixtures/review-request/*.json`
+- `cargo run --locked -p cerberus-cli -- validate fixtures/review-config/*.json`
 - `cargo run --locked -p cerberus-cli -- review --fixture fixtures/review-request/local-diff.json --out tmp/review-run`
 - `cargo run --locked -p cerberus-cli -- render tmp/review-run/review-run-artifact.json`
+- `cargo run --locked -p cerberus-cli -- render-comments tmp/review-run/review-run-artifact.json`
 
 The first implementation may use a deterministic fake reviewer harness; live LLM
 execution comes after the schema and artifact lifecycle are stable.
@@ -93,3 +95,32 @@ This is the first pickup. Do not start adapter work until the local fixture path
 can prove request -> artifact without GitHub. The acceptance bar is an
 artifact-only core; an HTTP service may wrap it later as a compatibility
 adapter.
+
+## Implementation Receipt
+
+Implemented on 2026-06-18 in the Rust workspace with `cerberus-schema`,
+`cerberus-core`, and `cerberus-cli`.
+
+Evidence:
+
+- `cargo fmt --all -- --check`
+- `cargo test --workspace`
+- `cargo run --locked -p cerberus-cli -- validate fixtures/review-request/*.json fixtures/review-config/*.json`
+- `cargo run --locked -p cerberus-cli -- review --fixture fixtures/review-request/local-diff.json --config fixtures/review-config/minimal-fake-panel.json --out tmp/review-run`
+- `cargo run --locked -p cerberus-cli -- validate tmp/review-run/review-run-artifact.json`
+- `cargo run --locked -p cerberus-cli -- render tmp/review-run/review-run-artifact.json`
+- `cargo run --locked -p cerberus-cli -- render-comments tmp/review-run/review-run-artifact.json`
+- `cd cerberus-elixir && mix test`
+- `cd cerberus-elixir && mix format --check-formatted`
+- `shellcheck dispatch.sh`
+- `node --check bin/cerberus.js`
+
+Fresh critic blockers addressed:
+
+- Override approvals are validated against the reviewed head SHA at request
+  validation and artifact replay.
+- `ReviewRunArtifact.v1` validation rejects mutated verdict, finding, stat,
+  coverage, degraded, reserve, cost, and override-provenance fields.
+- CLI schema validation dispatches by `schema_version` for requests, configs,
+  reviewer artifacts, run artifacts, and inline-comment candidates.
+- Source/change duplicate refs and SHAs are cross-checked.

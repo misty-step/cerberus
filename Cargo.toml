@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/cerberus-cli",
+  "crates/cerberus-core",
+  "crates/cerberus-schema",
+]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/misty-step/cerberus"
+
+[workspace.dependencies]
+anyhow = "1"
+cerberus-core = { path = "crates/cerberus-core" }
+cerberus-schema = { path = "crates/cerberus-schema" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "1"

@@ -1,0 +1,19 @@
+{
+  "schema_version": "review-config.v1",
+  "config_id": "minimal-fake-panel",
+  "confidence_min": 0.7,
+  "reviewers": [
+    {
+      "id": "correctness",
+      "perspective": "correctness",
+      "model": "fake/offline-reviewer",
+      "fake_behavior": "directive"
+    },
+    {
+      "id": "security",
+      "perspective": "security",
+      "model": "fake/offline-reviewer",
+      "fake_behavior": "directive"
+    }
+  ]
+}
