@@ -1,6 +1,6 @@
 # 003 - ThinkTank Decommission Migration
 
-Status: shaped
+Status: implemented-local-fixture
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -34,8 +34,9 @@ review execution.
   Cerberus schemas or explicit rejections.
 - Fixture replay: a frozen ThinkTank review run is converted to
   `ReviewRunArtifact.v1` and validates under `cerberus-cli validate`.
-- No runtime dependency: `rg "thinktank" crates/ src/` returns only migration
-  docs/tests unless a ticket explicitly permits a compatibility importer.
+- No runtime dependency: `rg -n "thinktank" crates/` returns only migration
+  importer/export references unless a ticket explicitly permits another
+  compatibility surface.
 
 ## Scope
 
@@ -74,3 +75,19 @@ Out of scope:
 
 This should run after backlog 001 establishes schemas and before production
 callers depend on the new engine.
+
+## Implementation Receipt
+
+First local migration delivery, 2026-06-18:
+
+- Added `docs/shaping/thinktank-migration-inventory.md`, mapping ThinkTank
+  review context, route plan, manifest, reviewer artifacts, coverage/degrade
+  policy, traces, prompts, auth homes, and CLI launch behavior to Cerberus
+  schema destinations or explicit rejections.
+- Added `fixtures/thinktank/review-pr-289/historical-run.json` as the compact
+  frozen input and `fixtures/thinktank/review-pr-289/review-run-artifact.json`
+  as the checked converted `ReviewRunArtifact.v1`.
+- Added a one-way `cerberus-adapter` compatibility importer that validates the
+  imported request, config, and artifact without invoking ThinkTank.
+- Added a Rust guard keeping ThinkTank runtime references scoped to the
+  compatibility importer.

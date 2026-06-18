@@ -6,6 +6,11 @@ use cerberus_schema::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod thinktank_migration;
+pub use thinktank_migration::{
+    import_thinktank_historical_run, ThinkTankHistoricalRun, ThinkTankMigrationOutput,
+};
+
 #[derive(Debug, thiserror::Error)]
 pub enum AdapterError {
     #[error(transparent)]
@@ -27,6 +32,12 @@ pub enum AdapterError {
     },
     #[error("serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("historical ThinkTank fixture has unsupported version {actual:?}")]
+    UnsupportedThinkTankFixtureVersion { actual: String },
+    #[error("historical ThinkTank fixture has no reviewer agents")]
+    MissingThinkTankAgents,
+    #[error("historical ThinkTank agent {agent:?} has unsupported status {status:?}")]
+    UnsupportedThinkTankAgentStatus { agent: String, status: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

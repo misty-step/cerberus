@@ -21,10 +21,17 @@ adapters, but they do not define the core boundary. Bitterblossom and Olympus
 remain independent callers through the same contract; neither caller should know
 about the other.
 
+ThinkTank is historical donor material for review execution, not a production
+runtime dependency. Frozen ThinkTank review runs may be imported by
+`crates/cerberus-adapter` for migration and eval replay, but `cerberus-core`
+owns the review request, configuration, and artifact semantics directly.
+
 `crates/cerberus-adapter` is the consumer-side SDK and fixture home for that
 contract. It may provide request builders, caller receipt examples, and artifact
 projections, but it must not move caller-owned runtime concerns into
-`cerberus-core`.
+`cerberus-core`. It also owns one-way historical importers for donor systems
+such as ThinkTank, so old review evidence can be replayed without changing the
+core engine boundary.
 
 ## Request Flow
 
@@ -82,6 +89,7 @@ Responsibilities:
   cross-caller references
 - project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
 - guard fixture text against cross-caller references
+- import frozen historical donor artifacts into public Cerberus schemas
 
 Non-responsibilities:
 
@@ -89,6 +97,7 @@ Non-responsibilities:
 - Olympus Argus activation gates, stale-head suppression, marker dedupe, caps,
   or GitHub posting
 - live acquisition from either caller repository
+- production review execution through the ThinkTank CLI
 
 ### Elixir Engine
 
@@ -105,3 +114,8 @@ Responsibilities:
 ## Historical Note
 
 Older documents and walkthroughs may still reference the retired Python/Shell matrix pipeline. Those are historical artifacts, not current architecture.
+
+ThinkTank review-bench artifacts are likewise historical donor material. The
+migration inventory in `docs/shaping/thinktank-migration-inventory.md` records
+which concepts were ported into Cerberus schemas and which runtime surfaces were
+rejected.

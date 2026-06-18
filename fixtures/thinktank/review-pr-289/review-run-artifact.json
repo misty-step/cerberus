@@ -1,0 +1,109 @@
+{
+  "schema_version": "review-run-artifact.v1",
+  "run_id": "thinktank-review-pr-289",
+  "request_id": "thinktank-review-pr-289",
+  "request_digest": "36bc2c5ab3bfd2bc96c536944309147975876b198a1c2e958e9d9b502fcd72b4",
+  "config_digest": "75494f88d8703c6fc1bbbb7420d2482b61f92f511967b3208bb18587072b39a0",
+  "reviewed_head_sha": "74664db3b10cdba7279272ca61a70c7ccc4f3a9d",
+  "pre_override_verdict": "PASS",
+  "verdict": "PASS",
+  "summary": "Migrated historical ThinkTank review/default run with 2 completed reviewer(s), 1 degraded reviewer(s), and no migrated findings.",
+  "findings": [],
+  "reviewer_artifacts": [
+    {
+      "schema_version": "reviewer-artifact.v1",
+      "reviewer_id": "trace",
+      "perspective": "production correctness",
+      "model": "openrouter:x-ai/grok-4.20",
+      "status": "completed",
+      "verdict": "PASS",
+      "summary": "No correctness issues found in the production behavior change.",
+      "findings": [],
+      "coverage": {
+        "files_reviewed": [
+          "lib/thinktank/cli.ex"
+        ],
+        "files_with_findings": []
+      },
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "cost_usd": 0.0,
+      "degraded_reason": null
+    },
+    {
+      "schema_version": "reviewer-artifact.v1",
+      "reviewer_id": "proof",
+      "perspective": "test proof",
+      "model": "openrouter:openai/gpt-5.4-mini",
+      "status": "timeout",
+      "verdict": "SKIP",
+      "summary": "ERROR: %{category: :timeout}",
+      "findings": [],
+      "coverage": {
+        "files_reviewed": [],
+        "files_with_findings": []
+      },
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "cost_usd": 0.0,
+      "degraded_reason": "timeout"
+    },
+    {
+      "schema_version": "reviewer-artifact.v1",
+      "reviewer_id": "scout",
+      "perspective": "ci integration",
+      "model": "openrouter:google/gemini-3-flash-preview",
+      "status": "completed",
+      "verdict": "PASS",
+      "summary": "The E2E smoke suite and CI wiring are robust, hermetic, and approved for this historical run.",
+      "findings": [],
+      "coverage": {
+        "files_reviewed": [
+          "ci/src/thinktank_ci/main.py",
+          "test/support/fake_pi.ex",
+          "test/thinktank/e2e/smoke_test.exs"
+        ],
+        "files_with_findings": []
+      },
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "cost_usd": 0.0,
+      "degraded_reason": null
+    }
+  ],
+  "stats": {
+    "total": 3,
+    "pass": 2,
+    "warn": 0,
+    "fail": 0,
+    "skip": 1
+  },
+  "coverage": {
+    "files_reviewed": [
+      "ci/src/thinktank_ci/main.py",
+      "lib/thinktank/cli.ex",
+      "test/support/fake_pi.ex",
+      "test/thinktank/e2e/smoke_test.exs"
+    ],
+    "files_with_findings": []
+  },
+  "degraded": true,
+  "reserves": [
+    "degraded_reviewer"
+  ],
+  "override_applied": null,
+  "cost": {
+    "total_usd": 0.0,
+    "per_reviewer": {
+      "proof": 0.0,
+      "scout": 0.0,
+      "trace": 0.0
+    }
+  }
+}

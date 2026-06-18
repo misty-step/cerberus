@@ -1,0 +1,157 @@
+{
+  "fixture_version": "thinktank-historical-run.v1",
+  "run_id": "thinktank-review-pr-289",
+  "bench": "review/default",
+  "version": "6.2.0",
+  "status": "degraded",
+  "started_at": "2026-04-14T21:26:37.669242Z",
+  "completed_at": "2026-04-14T21:38:38.881346Z",
+  "workspace_root": "/Users/phaedrus/Development/thinktank",
+  "task": "Review the current change and report only real issues with evidence.",
+  "git": {
+    "base": "master",
+    "branch": "feat/cli-e2e-smoke-suite",
+    "head": "HEAD",
+    "head_sha": "74664db3b10cdba7279272ca61a70c7ccc4f3a9d",
+    "merge_base": "3a52e20a28ed0e7684cb7438b0cbfa48c1e71158",
+    "range": "master...HEAD"
+  },
+  "change": {
+    "title": "ThinkTank review-pr-289 migration fixture",
+    "summary": "Historical ThinkTank review/default run migrated into Cerberus without invoking ThinkTank.",
+    "diff_summary": "diff --git a/lib/thinktank/cli.ex b/lib/thinktank/cli.ex\n@@\n-IO.read(:stdio, :all)\n+IO.read(:stdio, :eof)\n\ndiff --git a/test/thinktank/e2e/smoke_test.exs b/test/thinktank/e2e/smoke_test.exs\n@@\n+exercise the built escript with shell-level stdin redirection\n",
+    "added": 447,
+    "deleted": 126,
+    "directories": [
+      "backlog.d",
+      "ci",
+      "lib",
+      "mix.exs",
+      "test"
+    ],
+    "files": [
+      {
+        "path": "backlog.d/007-add-cli-e2e-smoke-suite.md",
+        "status": "added"
+      },
+      {
+        "path": "ci/src/thinktank_ci/main.py",
+        "status": "modified"
+      },
+      {
+        "path": "lib/thinktank/cli.ex",
+        "status": "modified"
+      },
+      {
+        "path": "mix.exs",
+        "status": "modified"
+      },
+      {
+        "path": "test/support/fake_pi.ex",
+        "status": "added"
+      },
+      {
+        "path": "test/support/workspace.ex",
+        "status": "added"
+      },
+      {
+        "path": "test/test_helper.exs",
+        "status": "modified"
+      },
+      {
+        "path": "test/thinktank/cli_test.exs",
+        "status": "modified"
+      },
+      {
+        "path": "test/thinktank/e2e/smoke_test.exs",
+        "status": "added"
+      },
+      {
+        "path": "test/thinktank/integration/agent_contract_test.exs",
+        "status": "modified"
+      }
+    ],
+    "signals": {
+      "touches_ci": true,
+      "touches_code": true,
+      "touches_dependencies": true,
+      "touches_docs": true,
+      "touches_security_surface": false,
+      "touches_tests": true
+    }
+  },
+  "plan": {
+    "source": "planner",
+    "summary": "The change is an escript smoke-test and CI-wiring addition, with one production fix changing stdin reads from :all to :eof.",
+    "synthesis_brief": "Weight reviewer evidence around stdin/JSON correctness, hermetic subprocess setup, and whether the smoke suite protects the user-facing contract.",
+    "selected_agents": [
+      {
+        "name": "trace",
+        "perspective": "production correctness",
+        "brief": "Focus on the production behavior change in lib/thinktank/cli.ex, stdin semantics, JSON stdout corruption, and exit-code behavior."
+      },
+      {
+        "name": "proof",
+        "perspective": "test proof",
+        "brief": "Audit the e2e smoke tests, fake pi harness, workspace helper, and default coverage guarantees."
+      },
+      {
+        "name": "scout",
+        "perspective": "ci integration",
+        "brief": "Review Dagger e2e-smoke wiring, subprocess hermeticity, fake pi setup, and CI-only flake risk."
+      }
+    ],
+    "warnings": [
+      "Most churn is in tests and CI; distinguish harness imperfections from true user-facing regressions."
+    ]
+  },
+  "agents": [
+    {
+      "name": "trace",
+      "instance_id": "trace-eafe895e-1",
+      "file": "agents/trace-eafe895e-1.md",
+      "provider": "openrouter",
+      "model": "x-ai/grok-4.20",
+      "status": "ok",
+      "duration_ms": 29950,
+      "verdict": "PASS",
+      "summary": "No correctness issues found in the production behavior change.",
+      "reviewed_files": [
+        "lib/thinktank/cli.ex"
+      ]
+    },
+    {
+      "name": "proof",
+      "instance_id": "proof-c1cda263-2",
+      "file": "agents/proof-c1cda263-2.md",
+      "provider": "openrouter",
+      "model": "openai/gpt-5.4-mini",
+      "status": "error",
+      "duration_ms": 600015,
+      "error_category": "timeout",
+      "verdict": "SKIP",
+      "summary": "ERROR: %{category: :timeout}",
+      "reviewed_files": []
+    },
+    {
+      "name": "scout",
+      "instance_id": "scout-3608e4bd-3",
+      "file": "agents/scout-3608e4bd-3.md",
+      "provider": "openrouter",
+      "model": "google/gemini-3-flash-preview",
+      "status": "ok",
+      "duration_ms": 56658,
+      "verdict": "PASS",
+      "summary": "The E2E smoke suite and CI wiring are robust, hermetic, and approved for this historical run.",
+      "reviewed_files": [
+        "ci/src/thinktank_ci/main.py",
+        "test/support/fake_pi.ex",
+        "test/thinktank/e2e/smoke_test.exs"
+      ]
+    }
+  ],
+  "missing_artifacts": [
+    "review/coverage.json",
+    "review/degrade_policy.json"
+  ]
+}
