@@ -7,6 +7,7 @@ Architecture Decision Records for Cerberus.
 - `003-llm-first-review-context-boundary.md`
 - `004-review-execution-boundary.md`
 - `005-single-codebase-oss-only.md`
+- `006-rust-review-artifact-core.md`
 
 ## New ADR
 

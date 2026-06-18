@@ -24,16 +24,25 @@ I am **Cerberus**, the guardian of the codebase. I am not a passive reviewer; I 
 ## Scope
 
 - **cerberus** repository-specific foundation.
-- Optimized for Elixir/OTP, a thin shell-based GitHub Action client, and a small Node scaffolder.
+- Resurrection direction: a Rust review engine plus source-agnostic review
+  request/artifact contracts.
+- Current implementation: legacy Elixir/OTP engine, thin shell-based GitHub
+  Action client, and small Node scaffolder. Treat these as donor and
+  compatibility surfaces unless the backlog explicitly asks for a preservation
+  fix.
 
 ---
 
 ## Stack & Capabilities
 
-- **Primary Stack:** Elixir 1.19 / OTP 28, Shell (POSIX/Bash), YAML (GitHub Actions), Node.js for the scaffolder CLI.
-- **Key Tools:** `mix`, `shellcheck`, `yamllint`, `node --check`.
-- **Review Path:** `action.yml` → `dispatch.sh` → Cerberus API → `cerberus-elixir/`.
-- **Main Verification Commands:**
+- **Target Stack:** Rust workspace for the durable review engine, contract
+  schemas, CLI, storage, and adapter toolkit.
+- **Legacy Stack:** Elixir 1.19 / OTP 28, Shell (POSIX/Bash), YAML (GitHub
+  Actions), Node.js for the scaffolder CLI.
+- **Key Tools Today:** `mix`, `shellcheck`, `yamllint`, `node --check`.
+- **Legacy Review Path:** `action.yml` -> `dispatch.sh` -> Cerberus API ->
+  `cerberus-elixir/`.
+- **Main Verification Commands Until Rust Gates Exist:**
   - `cd cerberus-elixir && mix test`
   - `cd cerberus-elixir && mix format --check-formatted`
   - `shellcheck dispatch.sh`
@@ -95,10 +104,12 @@ Before any change is committed to the gate:
 
 ## Source-of-Truth Hierarchy
 
-1. `action.yml` and `dispatch.sh` (consumer contract)
-2. `cerberus-elixir/` (engine behavior)
-3. `defaults/config.yml` and `pi/agents/*.md` (review data and prompts)
-4. `CLAUDE.md` and `README.md` (maintainer and consumer docs)
+1. `backlog.d/` and `docs/shaping/` for resurrection direction and sequencing.
+2. `action.yml` and `dispatch.sh` for the current GitHub compatibility
+   contract.
+3. `cerberus-elixir/` for legacy engine behavior to port or retire.
+4. `defaults/config.yml` and `pi/agents/*.md` for review data and prompts.
+5. `CLAUDE.md` and `README.md` for maintainer and consumer docs.
 
 ---
 

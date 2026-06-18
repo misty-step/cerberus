@@ -8,7 +8,11 @@ Current docs:
 - Current architecture: `docs/ARCHITECTURE.md`
 - Terminology: `docs/TERMINOLOGY.md`
 - Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
+- Rust resurrection shaping: `docs/shaping/rust-review-engine-resurrection.md`
 - ADRs: `docs/adr/`
 - Engine details: `cerberus-elixir/README.md`
 
-Historical walkthroughs and ADRs remain in-repo for reference. Some older documents describe the retired matrix pipeline and should be read as historical context, not current product contract.
+Historical walkthroughs and ADRs remain in-repo for reference. Some older
+documents describe the retired matrix pipeline or the legacy Elixir API mode and
+should be read as historical context unless the current backlog names them as
+compatibility surfaces.

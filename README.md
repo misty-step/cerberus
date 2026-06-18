@@ -4,6 +4,16 @@ Multi-agent AI code review for GitHub pull requests.
 
 Cerberus now ships as a thin GitHub Action client that dispatches review runs to the hosted Cerberus API. The heavy Python/Shell matrix pipeline has been retired from this repository.
 
+## Resurrection Planning
+
+The repo is being reshaped toward a Rust review engine with source-agnostic
+request/artifact contracts. The current Elixir API path remains the legacy
+compatibility surface until the Rust backlog proves parity.
+
+- [Rust resurrection shaping](docs/shaping/rust-review-engine-resurrection.md)
+- [Backlog priorities](docs/BACKLOG-PRIORITIES.md)
+- [Backlog tickets](backlog.d/)
+
 ## Quick Start
 
 Create `.github/workflows/cerberus.yml`:

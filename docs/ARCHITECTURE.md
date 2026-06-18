@@ -5,6 +5,22 @@ Cerberus now has one public review path:
 1. a thin GitHub Action client at repo root
 2. the Elixir review engine in `cerberus-elixir/`
 
+## Resurrection Target
+
+The current path above is the legacy compatibility surface. ADR 006 changes the
+long-term architecture target to a Rust review-artifact core:
+
+```text
+ReviewRequest.v1 + ReviewConfig.v1 + ReviewPolicy.v1
+    -> Cerberus Rust core
+    -> ReviewRunArtifact.v1
+```
+
+The GitHub Action, hosted API, and dispatch/poll flow may wrap that core as
+adapters, but they do not define the core boundary. Bitterblossom and Olympus
+remain independent callers through the same contract; neither caller should know
+about the other.
+
 ## Request Flow
 
 ```text

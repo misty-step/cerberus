@@ -2,26 +2,36 @@
 
 ## Primary Goal
 
-Make Cerberus trustworthy enough to act as a merge gate.
+Resurrect Cerberus as the Rust review engine and artifact contract for
+source-agnostic code review.
 
 ## Current Themes
 
-- Review quality and recall
-- API-dispatch reliability
-- Engine observability
-- Prompt and model hardening
-- Elixir-engine simplification
+- Rust contract spine: request/config/reviewer-artifact/run-artifact schemas.
+- Review execution parity: routing, reviewer orchestration, aggregation,
+  finding dedupe, cost, coverage, and degradation.
+- Independent caller adapters: Bitterblossom and Olympus call Cerberus through
+  the same contract, never through each other.
+- ThinkTank migration: absorb useful review-bench artifacts and retire the
+  separate review-engine role.
+- Daedalus promotion loop: import only measured reviewer configurations.
+- Legacy retirement: keep the current GitHub action/API as compatibility until
+  Rust proves parity, then delete or archive stale Elixir surfaces.
 
 ## Active Migration Spine
 
-- `#385` Elixir engine migration epic
-- `#446` decommission legacy Python/Shell review pipeline
-- `#447` elevate the Elixir project to repo root after cleanup
+- `backlog.d/001-rust-review-engine-contract.md`
+- `backlog.d/002-independent-caller-adapters.md`
+- `backlog.d/003-thinktank-decommission-migration.md`
+- `backlog.d/004-daedalus-reviewer-config-promotion.md`
+- `backlog.d/005-legacy-surface-retirement.md`
 
 ## Planning Rule
 
 Prefer work that:
 
-1. removes duplicate orchestration
-2. improves merge-gate trust
-3. simplifies the public action contract
+1. makes the contract smaller and more stable
+2. moves durable engine behavior into Rust
+3. proves review quality with artifact fixtures or caller integration tests
+4. preserves Bitterblossom/Olympus independence
+5. deletes duplicate orchestration after parity is proven
