@@ -12,6 +12,7 @@ Current sequence:
 4. `003-thinktank-decommission-migration.md`
 5. `004-daedalus-reviewer-config-promotion.md`
 6. `005-legacy-surface-retirement.md`
+7. `007-rust-harness-runtime-boundary.md`
 
 Planning rules:
 
@@ -23,3 +24,5 @@ Planning rules:
 - Evaluate harness/model pairs with Cerberus-owned fixtures before changing
   reviewer defaults.
 - Require fixture-backed or caller-backed proof before deleting legacy behavior.
+- Route reviewer execution through the Rust harness boundary before wiring live
+  provider or peer-harness commands.

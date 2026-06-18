@@ -38,6 +38,13 @@ projections, but it must not move caller-owned runtime concerns into
 such as ThinkTank, so old review evidence can be replayed without changing the
 core engine boundary.
 
+`cerberus-core` reviewer execution now crosses the `ReviewHarness` boundary:
+configured reviewers plus a `ReviewRequest.v1` produce `ReviewerArtifact.v1`
+values, then core validates reviewer identity, finding citation coverage, and
+verdict consistency before aggregating. The default `DeterministicHarness` keeps
+local fixture behavior stable; live Pi, Goose, OpenCode, OMP, Sprites, or
+provider adapters attach behind this boundary.
+
 ## Request Flow
 
 ```text
@@ -103,6 +110,26 @@ Non-responsibilities:
   or GitHub posting
 - live acquisition from either caller repository
 - production review execution through the ThinkTank CLI
+
+### Rust Harness Boundary
+
+Lives in `crates/cerberus-core/`.
+
+Responsibilities:
+
+- accept validated reviewer configs and review requests
+- run reviewer execution through `ReviewHarness`
+- convert harness failures or invalid artifacts into degraded reviewer
+  artifacts
+- keep aggregation independent from GitHub, shell commands, provider APIs, and
+  caller runtimes
+
+Non-responsibilities:
+
+- spawning live peer harness CLIs
+- provider authentication
+- hosted API dispatch
+- caller-owned retry, queue, budget, or posting policy
 
 ### Legacy Elixir Engine
 

@@ -26,6 +26,35 @@ pub enum CoreError {
     UntrustedNonSandboxReviewerConfigPacket,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum HarnessRuntimeError {
+    #[error("reviewer timed out: {0}")]
+    Timeout(String),
+    #[error("reviewer failed: {0}")]
+    Failed(String),
+}
+
+pub trait ReviewHarness {
+    fn review(
+        &self,
+        reviewer: &ReviewerConfig,
+        request: &ReviewRequest,
+    ) -> Result<ReviewerArtifact, HarnessRuntimeError>;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DeterministicHarness;
+
+impl ReviewHarness for DeterministicHarness {
+    fn review(
+        &self,
+        reviewer: &ReviewerConfig,
+        request: &ReviewRequest,
+    ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+        Ok(fake_review(reviewer, request))
+    }
+}
+
 pub fn default_config() -> ReviewConfig {
     ReviewConfig {
         schema_version: REVIEW_CONFIG_VERSION.to_string(),
@@ -43,6 +72,14 @@ pub fn review(
     request: &ReviewRequest,
     config: &ReviewConfig,
 ) -> Result<ReviewRunArtifact, CoreError> {
+    review_with_harness(request, config, &DeterministicHarness)
+}
+
+pub fn review_with_harness<H: ReviewHarness + ?Sized>(
+    request: &ReviewRequest,
+    config: &ReviewConfig,
+    harness: &H,
+) -> Result<ReviewRunArtifact, CoreError> {
     request.validate()?;
     config.validate()?;
 
@@ -51,7 +88,7 @@ pub fn review(
     let reviewer_artifacts = config
         .reviewers
         .iter()
-        .map(|reviewer| fake_review(reviewer, request))
+        .map(|reviewer| reviewer_artifact_from_harness(harness, reviewer, request))
         .collect::<Vec<_>>();
     let findings = dedupe_findings(
         reviewer_artifacts
@@ -105,6 +142,168 @@ pub fn review(
 
     artifact.validate()?;
     Ok(artifact)
+}
+
+fn reviewer_artifact_from_harness<H: ReviewHarness + ?Sized>(
+    harness: &H,
+    reviewer: &ReviewerConfig,
+    request: &ReviewRequest,
+) -> ReviewerArtifact {
+    match harness
+        .review(reviewer, request)
+        .and_then(|artifact| validate_harness_artifact(reviewer, request, artifact))
+    {
+        Ok(artifact) => artifact,
+        Err(error) => degraded_artifact(reviewer, request, error),
+    }
+}
+
+fn validate_harness_artifact(
+    reviewer: &ReviewerConfig,
+    request: &ReviewRequest,
+    artifact: ReviewerArtifact,
+) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+    artifact
+        .validate()
+        .map_err(|error| HarnessRuntimeError::Failed(format!("invalid artifact: {error}")))?;
+    if artifact.reviewer_id != reviewer.id {
+        return Err(HarnessRuntimeError::Failed(format!(
+            "artifact reviewer_id {:?} did not match configured reviewer {:?}",
+            artifact.reviewer_id, reviewer.id
+        )));
+    }
+    if artifact.perspective != reviewer.perspective {
+        return Err(HarnessRuntimeError::Failed(format!(
+            "artifact perspective {:?} did not match configured perspective {:?}",
+            artifact.perspective, reviewer.perspective
+        )));
+    }
+    if artifact.model != reviewer.model {
+        return Err(HarnessRuntimeError::Failed(format!(
+            "artifact model {:?} did not match configured model {:?}",
+            artifact.model, reviewer.model
+        )));
+    }
+    let expected_files = request
+        .change
+        .files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect::<BTreeSet<_>>();
+    let artifact_files = artifact
+        .coverage
+        .files_reviewed
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if artifact_files != expected_files {
+        return Err(HarnessRuntimeError::Failed(format!(
+            "artifact coverage files_reviewed {:?} did not match request files {:?}",
+            artifact.coverage.files_reviewed,
+            request
+                .change
+                .files
+                .iter()
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>()
+        )));
+    }
+    let artifact_finding_files = artifact
+        .coverage
+        .files_with_findings
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    for path in &artifact.coverage.files_with_findings {
+        if !artifact_files.contains(path.as_str()) {
+            return Err(HarnessRuntimeError::Failed(format!(
+                "artifact coverage files_with_findings path {:?} was not reviewed",
+                path
+            )));
+        }
+    }
+    for finding in &artifact.findings {
+        if finding.reviewer_id != artifact.reviewer_id {
+            return Err(HarnessRuntimeError::Failed(format!(
+                "finding reviewer_id {:?} did not match artifact reviewer_id {:?}",
+                finding.reviewer_id, artifact.reviewer_id
+            )));
+        }
+        if finding.perspective != artifact.perspective {
+            return Err(HarnessRuntimeError::Failed(format!(
+                "finding perspective {:?} did not match artifact perspective {:?}",
+                finding.perspective, artifact.perspective
+            )));
+        }
+        if !artifact_files.contains(finding.citation.path.as_str()) {
+            return Err(HarnessRuntimeError::Failed(format!(
+                "finding citation path {:?} was not part of the reviewed request",
+                finding.citation.path
+            )));
+        }
+        if !artifact_finding_files.contains(finding.citation.path.as_str()) {
+            return Err(HarnessRuntimeError::Failed(format!(
+                "finding citation path {:?} was not listed in coverage files_with_findings",
+                finding.citation.path
+            )));
+        }
+    }
+    validate_completed_harness_verdict(&artifact)?;
+    Ok(artifact)
+}
+
+fn validate_completed_harness_verdict(
+    artifact: &ReviewerArtifact,
+) -> Result<(), HarnessRuntimeError> {
+    if artifact.status != ReviewerStatus::Completed {
+        return Ok(());
+    }
+    if artifact.verdict == Verdict::Pass && !artifact.findings.is_empty() {
+        return Err(HarnessRuntimeError::Failed(
+            "completed artifact with findings cannot have PASS verdict".to_string(),
+        ));
+    }
+    if artifact
+        .findings
+        .iter()
+        .any(|finding| finding.severity >= Severity::Major)
+        && artifact.verdict != Verdict::Fail
+    {
+        return Err(HarnessRuntimeError::Failed(
+            "completed artifact with major or critical findings must have FAIL verdict".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn degraded_artifact(
+    reviewer: &ReviewerConfig,
+    request: &ReviewRequest,
+    error: HarnessRuntimeError,
+) -> ReviewerArtifact {
+    let status = match &error {
+        HarnessRuntimeError::Timeout(_) => ReviewerStatus::Timeout,
+        HarnessRuntimeError::Failed(_) => ReviewerStatus::Error,
+    };
+    let reason = error.to_string();
+
+    ReviewerArtifact {
+        schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+        reviewer_id: reviewer.id.clone(),
+        perspective: reviewer.perspective.clone(),
+        model: reviewer.model.clone(),
+        status,
+        verdict: Verdict::Skip,
+        summary: format!("Reviewer did not complete: {reason}."),
+        findings: vec![],
+        coverage: coverage_for_request(&request.change.files, vec![]),
+        usage: TokenUsage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+        },
+        cost_usd: 0.0,
+        degraded_reason: Some(reason),
+    }
 }
 
 pub fn validate_reviewer_config_packet(packet: &ReviewerConfigPacket) -> Result<String, CoreError> {
@@ -548,8 +747,8 @@ fn summarize(
         .count();
 
     match (verdict, finding_count, degraded) {
-        (Verdict::Pass, 0, 0) => "All fake reviewers passed.".to_string(),
-        (Verdict::Skip, _, _) => "All fake reviewers skipped or degraded.".to_string(),
+        (Verdict::Pass, 0, 0) => "All reviewers passed.".to_string(),
+        (Verdict::Skip, _, _) => "All reviewers skipped or degraded.".to_string(),
         (_, findings, degraded) if degraded > 0 => {
             format!("{findings} finding(s); {degraded} reviewer(s) degraded.")
         }
@@ -781,6 +980,268 @@ mod tests {
     }
 
     #[test]
+    fn harness_runtime_aggregates_custom_reviewer_artifacts() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "custom-harness".to_string(),
+            reviewers: vec![
+                ReviewerConfig {
+                    id: "correctness".to_string(),
+                    perspective: "correctness".to_string(),
+                    model: "custom:model".to_string(),
+                    fake_behavior: FakeReviewerBehavior::Pass,
+                },
+                ReviewerConfig {
+                    id: "security".to_string(),
+                    perspective: "security".to_string(),
+                    model: "custom:model".to_string(),
+                    fake_behavior: FakeReviewerBehavior::Pass,
+                },
+            ],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &StaticHarness)
+            .expect("custom harness review succeeds");
+
+        assert_eq!(artifact.verdict, Verdict::Fail);
+        assert_eq!(artifact.stats.pass, 1);
+        assert_eq!(artifact.stats.fail, 1);
+        assert_eq!(artifact.findings.len(), 1);
+        assert_eq!(artifact.findings[0].reviewer_id, "security");
+        assert_eq!(artifact.reserves, vec![ReserveSignal::Disagreement]);
+        assert!(!artifact.degraded);
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_records_runner_failure_as_degraded_artifact() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "failing-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "correctness".to_string(),
+                perspective: "correctness".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &FailingHarness)
+            .expect("runner failure is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert!(artifact.degraded);
+        assert_eq!(artifact.stats.skip, 1);
+        assert_eq!(artifact.reserves, vec![ReserveSignal::DegradedReviewer]);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("provider unavailable")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_mismatched_artifact_identity() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "mismatched-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "correctness".to_string(),
+                perspective: "correctness".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &MismatchedHarness)
+            .expect("mismatch is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.reviewer_artifacts[0].reviewer_id, "correctness");
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("did not match configured reviewer")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_mismatched_finding_identity() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "mismatched-finding-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "security".to_string(),
+                perspective: "security".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &MismatchedFindingHarness)
+            .expect("finding mismatch is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.findings.len(), 0);
+        assert_eq!(artifact.reviewer_artifacts[0].reviewer_id, "security");
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("finding reviewer_id")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_partial_coverage_artifact() {
+        let request = fixture("local-diff");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "partial-coverage-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "correctness".to_string(),
+                perspective: "correctness".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &PartialCoverageHarness)
+            .expect("partial coverage is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("files_reviewed")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_out_of_scope_finding_citation() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "out-of-scope-finding-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "security".to_string(),
+                perspective: "security".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &OutOfScopeFindingHarness)
+            .expect("out-of-scope finding is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.findings.len(), 0);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("not part of the reviewed request")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_uncovered_finding_citation() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "uncovered-finding-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "security".to_string(),
+                perspective: "security".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &UncoveredFindingHarness)
+            .expect("uncovered finding is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.findings.len(), 0);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("files_with_findings")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_pass_verdict_with_findings() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "pass-with-finding-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "security".to_string(),
+                perspective: "security".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &PassWithFindingHarness)
+            .expect("pass with findings is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.findings.len(), 0);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("cannot have PASS verdict")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
+    fn harness_runtime_degrades_understated_major_finding_verdict() {
+        let request = fixture("clean");
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "understated-major-finding-harness".to_string(),
+            reviewers: vec![ReviewerConfig {
+                id: "security".to_string(),
+                perspective: "security".to_string(),
+                model: "custom:model".to_string(),
+                fake_behavior: FakeReviewerBehavior::Pass,
+            }],
+            confidence_min: 0.7,
+        };
+
+        let artifact = review_with_harness(&request, &config, &UnderstatedMajorFindingHarness)
+            .expect("understated major finding is represented as artifact degradation");
+
+        assert_eq!(artifact.verdict, Verdict::Skip);
+        assert_eq!(artifact.findings.len(), 0);
+        assert_eq!(artifact.reviewer_artifacts[0].status, ReviewerStatus::Error);
+        assert!(artifact.reviewer_artifacts[0]
+            .degraded_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("must have FAIL verdict")));
+        artifact.validate().expect("artifact validates");
+    }
+
+    #[test]
     fn reviewer_config_packet_dry_run_matches_checked_report() {
         let packet: ReviewerConfigPacket =
             serde_json::from_str(REVIEWER_CONFIG_PACKET).expect("packet parses");
@@ -823,5 +1284,296 @@ mod tests {
             validate_reviewer_config_packet(&packet),
             Err(CoreError::UntrustedNonSandboxReviewerConfigPacket)
         ));
+    }
+
+    struct StaticHarness;
+
+    impl ReviewHarness for StaticHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            let findings = if reviewer.id == "security" {
+                vec![Finding {
+                    id: "security-custom-finding".to_string(),
+                    reviewer_id: reviewer.id.clone(),
+                    perspective: reviewer.perspective.clone(),
+                    severity: Severity::Major,
+                    category: "security".to_string(),
+                    title: "Custom harness finding".to_string(),
+                    description: "Custom harness emitted this finding.".to_string(),
+                    evidence: "custom evidence".to_string(),
+                    citation: cerberus_schema::Citation {
+                        path: request.change.files[0].path.clone(),
+                        line: Some(1),
+                    },
+                    confidence: 0.9,
+                }]
+            } else {
+                vec![]
+            };
+            let verdict = if findings.is_empty() {
+                Verdict::Pass
+            } else {
+                Verdict::Fail
+            };
+
+            Ok(ReviewerArtifact {
+                schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+                reviewer_id: reviewer.id.clone(),
+                perspective: reviewer.perspective.clone(),
+                model: reviewer.model.clone(),
+                status: ReviewerStatus::Completed,
+                verdict,
+                summary: "Custom harness completed.".to_string(),
+                coverage: coverage_for_request(
+                    &request.change.files,
+                    findings
+                        .iter()
+                        .map(|finding| finding.citation.path.clone())
+                        .collect(),
+                ),
+                findings,
+                usage: TokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                },
+                cost_usd: 0.01,
+                degraded_reason: None,
+            })
+        }
+    }
+
+    struct FailingHarness;
+
+    impl ReviewHarness for FailingHarness {
+        fn review(
+            &self,
+            _reviewer: &ReviewerConfig,
+            _request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Err(HarnessRuntimeError::Failed(
+                "provider unavailable".to_string(),
+            ))
+        }
+    }
+
+    struct MismatchedHarness;
+
+    impl ReviewHarness for MismatchedHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(ReviewerArtifact {
+                schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+                reviewer_id: "other-reviewer".to_string(),
+                perspective: reviewer.perspective.clone(),
+                model: reviewer.model.clone(),
+                status: ReviewerStatus::Completed,
+                verdict: Verdict::Pass,
+                summary: "Mismatched harness completed.".to_string(),
+                findings: vec![],
+                coverage: coverage_for_request(&request.change.files, vec![]),
+                usage: TokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                },
+                cost_usd: 0.01,
+                degraded_reason: None,
+            })
+        }
+    }
+
+    struct MismatchedFindingHarness;
+
+    impl ReviewHarness for MismatchedFindingHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(ReviewerArtifact {
+                schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+                reviewer_id: reviewer.id.clone(),
+                perspective: reviewer.perspective.clone(),
+                model: reviewer.model.clone(),
+                status: ReviewerStatus::Completed,
+                verdict: Verdict::Fail,
+                summary: "Mismatched finding harness completed.".to_string(),
+                findings: vec![Finding {
+                    id: "wrong-reviewer-finding".to_string(),
+                    reviewer_id: "correctness".to_string(),
+                    perspective: reviewer.perspective.clone(),
+                    severity: Severity::Major,
+                    category: "security".to_string(),
+                    title: "Wrong reviewer finding".to_string(),
+                    description: "Finding identity does not match artifact.".to_string(),
+                    evidence: "custom evidence".to_string(),
+                    citation: cerberus_schema::Citation {
+                        path: request.change.files[0].path.clone(),
+                        line: Some(1),
+                    },
+                    confidence: 0.9,
+                }],
+                coverage: coverage_for_request(&request.change.files, vec![]),
+                usage: TokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                },
+                cost_usd: 0.01,
+                degraded_reason: None,
+            })
+        }
+    }
+
+    struct PartialCoverageHarness;
+
+    impl ReviewHarness for PartialCoverageHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(ReviewerArtifact {
+                schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+                reviewer_id: reviewer.id.clone(),
+                perspective: reviewer.perspective.clone(),
+                model: reviewer.model.clone(),
+                status: ReviewerStatus::Completed,
+                verdict: Verdict::Pass,
+                summary: "Partial coverage harness completed.".to_string(),
+                findings: vec![],
+                coverage: Coverage {
+                    files_reviewed: vec![],
+                    files_with_findings: vec![request.change.files[0].path.clone()],
+                },
+                usage: TokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                },
+                cost_usd: 0.01,
+                degraded_reason: None,
+            })
+        }
+    }
+
+    struct OutOfScopeFindingHarness;
+
+    impl ReviewHarness for OutOfScopeFindingHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(harness_artifact_with_finding(
+                reviewer,
+                request,
+                Verdict::Fail,
+                "outside/request.rs".to_string(),
+                vec![request.change.files[0].path.clone()],
+                Severity::Major,
+            ))
+        }
+    }
+
+    struct UncoveredFindingHarness;
+
+    impl ReviewHarness for UncoveredFindingHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(harness_artifact_with_finding(
+                reviewer,
+                request,
+                Verdict::Fail,
+                request.change.files[0].path.clone(),
+                vec![],
+                Severity::Major,
+            ))
+        }
+    }
+
+    struct PassWithFindingHarness;
+
+    impl ReviewHarness for PassWithFindingHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(harness_artifact_with_finding(
+                reviewer,
+                request,
+                Verdict::Pass,
+                request.change.files[0].path.clone(),
+                vec![request.change.files[0].path.clone()],
+                Severity::Minor,
+            ))
+        }
+    }
+
+    struct UnderstatedMajorFindingHarness;
+
+    impl ReviewHarness for UnderstatedMajorFindingHarness {
+        fn review(
+            &self,
+            reviewer: &ReviewerConfig,
+            request: &ReviewRequest,
+        ) -> Result<ReviewerArtifact, HarnessRuntimeError> {
+            Ok(harness_artifact_with_finding(
+                reviewer,
+                request,
+                Verdict::Warn,
+                request.change.files[0].path.clone(),
+                vec![request.change.files[0].path.clone()],
+                Severity::Major,
+            ))
+        }
+    }
+
+    fn harness_artifact_with_finding(
+        reviewer: &ReviewerConfig,
+        request: &ReviewRequest,
+        verdict: Verdict,
+        citation_path: String,
+        files_with_findings: Vec<String>,
+        severity: Severity,
+    ) -> ReviewerArtifact {
+        ReviewerArtifact {
+            schema_version: REVIEWER_ARTIFACT_VERSION.to_string(),
+            reviewer_id: reviewer.id.clone(),
+            perspective: reviewer.perspective.clone(),
+            model: reviewer.model.clone(),
+            status: ReviewerStatus::Completed,
+            verdict,
+            summary: "Harness emitted a test finding.".to_string(),
+            findings: vec![Finding {
+                id: format!("{}-test-finding", reviewer.id),
+                reviewer_id: reviewer.id.clone(),
+                perspective: reviewer.perspective.clone(),
+                severity,
+                category: "security".to_string(),
+                title: "Harness test finding".to_string(),
+                description: "Harness emitted this test finding.".to_string(),
+                evidence: "custom evidence".to_string(),
+                citation: cerberus_schema::Citation {
+                    path: citation_path,
+                    line: Some(1),
+                },
+                confidence: 0.9,
+            }],
+            coverage: coverage_for_request(&request.change.files, files_with_findings),
+            usage: TokenUsage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+            },
+            cost_usd: 0.01,
+            degraded_reason: None,
+        }
     }
 }

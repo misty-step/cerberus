@@ -12,6 +12,7 @@ Current docs:
 - Backlog 001 legacy API mapping: `docs/shaping/001-legacy-api-review-request-mapping.md`
 - Harness/model evaluation shaping: `docs/shaping/harness-model-evaluation.md`
 - Legacy surface retirement: `docs/shaping/legacy-surface-retirement.md`
+- Rust harness runtime boundary: `docs/shaping/rust-harness-runtime-boundary.md`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 
