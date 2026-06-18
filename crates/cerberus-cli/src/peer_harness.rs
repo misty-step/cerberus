@@ -2,8 +2,9 @@ use anyhow::{bail, Context, Result};
 use cerberus_adapter::CommandHarnessInput;
 use cerberus_core::validate_reviewer_artifact_for_request;
 use cerberus_schema::{
-    Coverage, PeerHarnessCommandProfile, PeerHarnessCommandProfiles, ReviewerArtifact,
-    ReviewerStatus, TokenUsage, Verdict, REVIEWER_ARTIFACT_VERSION,
+    Coverage, PeerHarnessCommandProfile, PeerHarnessCommandProfiles, PeerHarnessExecutionPlan,
+    PeerHarnessTranscriptMarkers, ReviewerArtifact, ReviewerStatus, TokenUsage, Verdict,
+    PEER_HARNESS_EXECUTION_PLAN_VERSION, REVIEWER_ARTIFACT_VERSION,
 };
 use std::{
     env, fs,
@@ -28,16 +29,20 @@ fn run(args: impl IntoIterator<Item = String>, live_mode: bool) -> Result<()> {
     }
 
     let args = RunnerArgs::parse(&args)?;
-    if live_mode {
-        bail!(
-            "live peer harness execution is not implemented; unset {LIVE_ENV} and use the offline protocol runner"
-        );
-    }
-
     let profiles_path = profile_path(args.profiles_path);
     let profiles = read_profiles(&profiles_path)?;
     let profile = select_profile(&profiles, &args.harness_id)?;
     let input = read_input(&args.input_path)?;
+
+    if let Some(path) = args.execution_plan_output_path.as_ref() {
+        write_execution_plan(path, &execution_plan(profile, &input, live_mode))?;
+    }
+
+    if live_mode {
+        bail!(
+            "live peer harness execution is not implemented; inspect --execution-plan-output and unset {LIVE_ENV} to use the offline protocol runner"
+        );
+    }
 
     if let Some(path) = args.prompt_output_path.as_ref() {
         write_prompt(path, &render_prompt(profile, &input))?;
@@ -62,6 +67,7 @@ struct RunnerArgs {
     profiles_path: Option<PathBuf>,
     prompt_output_path: Option<PathBuf>,
     transcript_path: Option<PathBuf>,
+    execution_plan_output_path: Option<PathBuf>,
 }
 
 impl RunnerArgs {
@@ -72,6 +78,7 @@ impl RunnerArgs {
         let mut profiles_path = None;
         let mut prompt_output_path = None;
         let mut transcript_path = None;
+        let mut execution_plan_output_path = None;
         let mut index = 0;
 
         while index < args.len() {
@@ -105,6 +112,14 @@ impl RunnerArgs {
                         Some(PathBuf::from(required_value(args, index, "--transcript")?));
                     index += 2;
                 }
+                "--execution-plan-output" => {
+                    execution_plan_output_path = Some(PathBuf::from(required_value(
+                        args,
+                        index,
+                        "--execution-plan-output",
+                    )?));
+                    index += 2;
+                }
                 other => bail!("unknown peer harness argument {other:?}"),
             }
         }
@@ -116,12 +131,13 @@ impl RunnerArgs {
             profiles_path,
             prompt_output_path,
             transcript_path,
+            execution_plan_output_path,
         })
     }
 }
 
 fn usage() -> &'static str {
-    "usage: cerberus-peer-harness --harness <id> --input <CommandHarnessInput.json> --output <ReviewerArtifact.v1.json> [--profiles <PeerHarnessCommandProfiles.v1.json>] [--prompt-output <path>] [--transcript <path>]"
+    "usage: cerberus-peer-harness --harness <id> --input <CommandHarnessInput.json> --output <ReviewerArtifact.v1.json> [--profiles <PeerHarnessCommandProfiles.v1.json>] [--prompt-output <path>] [--transcript <path>] [--execution-plan-output <path>]"
 }
 
 fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<String> {
@@ -227,6 +243,61 @@ fn offline_artifact(
     }
 }
 
+fn execution_plan(
+    profile: &PeerHarnessCommandProfile,
+    input: &CommandHarnessInput,
+    live_mode: bool,
+) -> PeerHarnessExecutionPlan {
+    let model = model_for_template(&profile.peer.args_template, &input.reviewer.model);
+    let resolved_args = profile
+        .peer
+        .args_template
+        .iter()
+        .map(|arg| arg.replace("{model}", &model))
+        .collect();
+    let (env_available, env_missing) = profile
+        .env_required
+        .iter()
+        .cloned()
+        .partition(|name| env::var_os(name.as_str()).is_some());
+
+    PeerHarnessExecutionPlan {
+        schema_version: PEER_HARNESS_EXECUTION_PLAN_VERSION.to_string(),
+        harness_id: profile.harness_id.clone(),
+        peer_command: profile.peer.command.clone(),
+        resolved_args,
+        prompt_mode: profile.peer.prompt_mode,
+        output_contract: profile.output_contract,
+        timeout_ms: profile.timeout_ms,
+        env_required: profile.env_required.clone(),
+        env_available,
+        env_missing,
+        live_mode_requested: live_mode,
+        transcript_markers: PeerHarnessTranscriptMarkers {
+            begin: ARTIFACT_BEGIN_MARKER.to_string(),
+            end: ARTIFACT_END_MARKER.to_string(),
+        },
+        unsupported: profile.unsupported.clone(),
+        notes: Some(
+            "Exact peer command plan; rendered prompt text is intentionally represented by the {prompt} placeholder."
+                .to_string(),
+        ),
+    }
+}
+
+fn model_for_template(args_template: &[String], reviewer_model: &str) -> String {
+    if args_template
+        .iter()
+        .any(|arg| arg.contains("openrouter/{model}"))
+    {
+        return reviewer_model
+            .strip_prefix("openrouter/")
+            .unwrap_or(reviewer_model)
+            .to_string();
+    }
+    reviewer_model.to_string()
+}
+
 fn render_prompt(profile: &PeerHarnessCommandProfile, input: &CommandHarnessInput) -> String {
     let files = input
         .request
@@ -320,6 +391,19 @@ fn write_prompt(path: &Path, prompt: &str) -> Result<()> {
     fs::write(path, prompt).with_context(|| format!("failed to write prompt {}", path.display()))
 }
 
+fn write_execution_plan(path: &Path, plan: &PeerHarnessExecutionPlan) -> Result<()> {
+    plan.validate()
+        .context("peer harness execution plan failed schema validation")?;
+    let json = serde_json::to_string_pretty(plan)
+        .context("failed to serialize peer harness execution plan")?;
+    fs::write(path, format!("{json}\n")).with_context(|| {
+        format!(
+            "failed to write peer harness execution plan {}",
+            path.display()
+        )
+    })
+}
+
 fn read_transcript_artifact(path: &Path) -> Result<ReviewerArtifact> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read peer harness transcript {}", path.display()))?;
@@ -371,7 +455,7 @@ mod tests {
         ReviewerConfig, REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION,
     };
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         sync::atomic::{AtomicU64, Ordering},
     };
 
@@ -420,6 +504,86 @@ mod tests {
             .expect("core accepts offline runner artifact");
         assert!(run.degraded);
         assert_eq!(run.verdict, Verdict::Skip);
+    }
+
+    #[test]
+    fn peer_harness_runner_writes_execution_plan_without_live_provider_call() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+
+        run(
+            vec![
+                "--harness".to_string(),
+                "pi".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                profiles_path().display().to_string(),
+                "--execution-plan-output".to_string(),
+                paths.plan.display().to_string(),
+            ],
+            false,
+        )
+        .expect("offline runner writes artifact and execution plan");
+
+        let plan = read_execution_plan(&paths.plan);
+        assert_eq!(plan.schema_version, PEER_HARNESS_EXECUTION_PLAN_VERSION);
+        assert_eq!(plan.harness_id, "pi");
+        assert_eq!(plan.peer_command, "pi");
+        assert_eq!(plan.resolved_args[5], "openrouter/test-model");
+        assert!(!plan
+            .resolved_args
+            .iter()
+            .any(|arg| arg.contains("openrouter/openrouter")));
+        assert_eq!(
+            plan.resolved_args
+                .iter()
+                .filter(|arg| arg.contains("{prompt}"))
+                .count(),
+            1
+        );
+        assert!(!plan
+            .resolved_args
+            .iter()
+            .any(|arg| arg.contains("diff --git")));
+        assert_eq!(plan.env_required, vec!["OPENROUTER_API_KEY".to_string()]);
+        assert_eq!(resolved_env_names(&plan), required_env_names(&plan));
+        assert!(!plan.live_mode_requested);
+
+        let artifact = read_artifact(&paths.output);
+        assert_eq!(artifact.status, ReviewerStatus::Degraded);
+    }
+
+    #[test]
+    fn peer_harness_runner_writes_execution_plan_before_refusing_live_mode() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+
+        let error = run(
+            vec![
+                "--harness".to_string(),
+                "pi".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                profiles_path().display().to_string(),
+                "--execution-plan-output".to_string(),
+                paths.plan.display().to_string(),
+            ],
+            true,
+        )
+        .expect_err("live mode remains fail closed after plan emission");
+
+        assert!(error
+            .to_string()
+            .contains("live peer harness execution is not implemented"));
+        let plan = read_execution_plan(&paths.plan);
+        assert!(plan.live_mode_requested);
+        assert!(!paths.output.exists());
     }
 
     #[test]
@@ -668,6 +832,7 @@ mod tests {
         input: PathBuf,
         output: PathBuf,
         prompt: PathBuf,
+        plan: PathBuf,
     }
 
     impl TestPaths {
@@ -682,6 +847,7 @@ mod tests {
                 input: root.join("input.json"),
                 output: root.join("output.json"),
                 prompt: root.join("prompt.txt"),
+                plan: root.join("execution-plan.json"),
             }
         }
 
@@ -721,6 +887,26 @@ mod tests {
                 .expect("artifact parses");
         artifact.validate().expect("artifact validates");
         artifact
+    }
+
+    fn read_execution_plan(path: &Path) -> PeerHarnessExecutionPlan {
+        let plan: PeerHarnessExecutionPlan =
+            serde_json::from_str(&fs::read_to_string(path).expect("plan file is readable"))
+                .expect("plan parses");
+        plan.validate().expect("plan validates");
+        plan
+    }
+
+    fn required_env_names(plan: &PeerHarnessExecutionPlan) -> BTreeSet<String> {
+        plan.env_required.iter().cloned().collect()
+    }
+
+    fn resolved_env_names(plan: &PeerHarnessExecutionPlan) -> BTreeSet<String> {
+        plan.env_available
+            .iter()
+            .chain(plan.env_missing.iter())
+            .cloned()
+            .collect()
     }
 
     fn error_chain_contains(error: &anyhow::Error, needle: &str) -> bool {

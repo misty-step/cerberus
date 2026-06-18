@@ -4,19 +4,26 @@ use cerberus_schema::{
     Change, ChangedFile, FileStatus, ReviewConfig, ReviewContext, ReviewRequest, ReviewSource,
     ReviewerConfig, ReviewerStatus, Verdict, REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION,
 };
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 
 #[test]
 fn peer_harness_command_profile_runs_through_command_harness() {
     let profiles = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("fixtures/harnesses/peer-command-profiles.json");
+    let plan = std::env::temp_dir().join(format!(
+        "cerberus-peer-harness-command-plan-{}.json",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&plan);
     let harness = CommandHarness::new(env!("CARGO_BIN_EXE_cerberus-peer-harness"))
         .args([
             "--harness".to_string(),
             "pi".to_string(),
             "--profiles".to_string(),
             profiles.display().to_string(),
+            "--execution-plan-output".to_string(),
+            plan.display().to_string(),
         ])
         .timeout(Duration::from_secs(5));
 
@@ -34,6 +41,12 @@ fn peer_harness_command_profile_runs_through_command_harness() {
         .as_deref()
         .is_some_and(|reason| reason.contains("live \"pi\" execution is disabled")));
     artifact.validate().expect("run artifact validates");
+
+    let plan_json = fs::read_to_string(&plan).expect("execution plan is written");
+    assert!(plan_json.contains("\"schema_version\": \"peer-harness-execution-plan.v1\""));
+    assert!(plan_json.contains("\"peer_command\": \"pi\""));
+    assert!(plan_json.contains("\"openrouter/test-model\""));
+    let _ = fs::remove_file(&plan);
 }
 
 #[test]

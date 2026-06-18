@@ -27,6 +27,9 @@ The binary accepts:
 - `--prompt-output <path>`: optional deterministic prompt output file
 - `--transcript <path>`: optional local fixture transcript to parse instead of
   emitting the default degraded artifact
+- `--execution-plan-output <path>`: optional schema-valid
+  `PeerHarnessExecutionPlan.v1` file that records the peer command contract
+  without invoking the peer harness
 
 ## Offline Artifact
 
@@ -48,10 +51,16 @@ it against the input reviewer and request through `cerberus-core`.
 
 ## Live Execution Guard
 
-Setting `CERBERUS_PEER_HARNESS_LIVE=1` fails closed. The runner does not invoke
-Pi, Goose, OpenCode, OMP, OpenRouter, or any paid provider until a later slice
-adds prompt rendering, transcript capture, parser fixtures, and an explicit
-eval budget.
+Setting `CERBERUS_PEER_HARNESS_LIVE=1` fails closed. When
+`--execution-plan-output` is present, the runner writes the execution plan first
+with `live_mode_requested: true`, then exits before writing a reviewer artifact
+or invoking Pi, Goose, OpenCode, OMP, OpenRouter, or any paid provider.
+
+The plan includes command, resolved args, prompt mode, output contract, timeout,
+required environment variable names, which required variables are available or
+missing, transcript markers, and unsupported containment boundaries. It keeps
+secret values out of the artifact and leaves `{prompt}` as a placeholder instead
+of embedding the rendered review prompt in argv.
 
 ## Verification
 
@@ -63,4 +72,6 @@ cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi -
 cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-artifact.json
 cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-transcript-artifact.json --prompt-output tmp/peer-runner-prompt.txt --transcript fixtures/harnesses/peer-transcript-with-finding.txt
 cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-transcript-artifact.json
+cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-artifact.json --execution-plan-output tmp/peer-runner-execution-plan.json
+cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-execution-plan.json
 ```

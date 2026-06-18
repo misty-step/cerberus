@@ -92,6 +92,10 @@
         "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-artifact.json",
         "cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-transcript-artifact.json --prompt-output tmp/peer-runner-prompt.txt --transcript fixtures/harnesses/peer-transcript-with-finding.txt",
         "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-transcript-artifact.json",
+        "cargo test --workspace peer_harness_execution_plan",
+        "cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-artifact.json --execution-plan-output tmp/peer-runner-execution-plan.json",
+        "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-execution-plan.json",
+        "CERBERUS_PEER_HARNESS_LIVE=1 cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-live-artifact.json --execution-plan-output tmp/peer-runner-live-plan.json (expected non-zero, writes plan, no artifact)",
         "cargo test --workspace local_review",
         "cargo run --locked -p cerberus-cli -- review-local --diff-file fixtures/local-review/local.diff --out tmp/local-review",
         "cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-request.json",
@@ -101,7 +105,7 @@
         "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
       ],
       "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
-      "next_action": "Port routing, timeout, live transcript capture, and hosted/API review fixtures before retiring Elixir execution."
+      "next_action": "Port routing, live peer command invocation, live transcript capture, timeout enforcement, and hosted/API review fixtures before retiring Elixir execution."
     },
     {
       "surface_id": "elixir-verdict-store",

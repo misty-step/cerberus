@@ -7,13 +7,14 @@ use cerberus_core::{
 use cerberus_schema::{
     EvalTaskSuite, HarnessModelEvaluationReport, HarnessModelMatrix, HarnessProfile,
     InlineCommentCandidate, LegacySurfaceInventory, ModelCandidate, PeerHarnessCommandProfiles,
-    ReviewConfig, ReviewRequest, ReviewRunArtifact, ReviewerArtifact, ReviewerConfigImportReport,
-    ReviewerConfigPacket, StaleModelFinding, EVAL_TASK_SUITE_VERSION,
+    PeerHarnessExecutionPlan, ReviewConfig, ReviewRequest, ReviewRunArtifact, ReviewerArtifact,
+    ReviewerConfigImportReport, ReviewerConfigPacket, StaleModelFinding, EVAL_TASK_SUITE_VERSION,
     HARNESS_MODEL_EVALUATION_REPORT_VERSION, HARNESS_MODEL_MATRIX_VERSION, HARNESS_PROFILE_VERSION,
     INLINE_COMMENT_CANDIDATE_VERSION, LEGACY_SURFACE_INVENTORY_VERSION, MODEL_CANDIDATE_VERSION,
-    PEER_HARNESS_COMMAND_PROFILES_VERSION, REVIEWER_ARTIFACT_VERSION,
-    REVIEWER_CONFIG_IMPORT_REPORT_VERSION, REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
-    REVIEW_REQUEST_VERSION, REVIEW_RUN_ARTIFACT_VERSION,
+    PEER_HARNESS_COMMAND_PROFILES_VERSION, PEER_HARNESS_EXECUTION_PLAN_VERSION,
+    REVIEWER_ARTIFACT_VERSION, REVIEWER_CONFIG_IMPORT_REPORT_VERSION,
+    REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION, REVIEW_REQUEST_VERSION,
+    REVIEW_RUN_ARTIFACT_VERSION,
 };
 use std::{
     collections::BTreeSet,
@@ -432,6 +433,10 @@ fn validate_document(path: &PathBuf) -> Result<()> {
         PEER_HARNESS_COMMAND_PROFILES_VERSION => {
             let profiles: PeerHarnessCommandProfiles = serde_json::from_value(value)?;
             profiles.validate()?;
+        }
+        PEER_HARNESS_EXECUTION_PLAN_VERSION => {
+            let plan: PeerHarnessExecutionPlan = serde_json::from_value(value)?;
+            plan.validate()?;
         }
         REVIEWER_CONFIG_PACKET_VERSION => {
             let packet: ReviewerConfigPacket = serde_json::from_value(value)?;

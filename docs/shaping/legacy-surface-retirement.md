@@ -21,7 +21,7 @@ cargo run --locked -p cerberus-cli -- validate docs/shaping/legacy-surface-retir
 | `dispatch-shell-client` | port to Rust | pending | Rust GitHub Action adapter backed by `cerberus-cli` and `ReviewRequest.v1`. | Add Rust fixtures for fork skip, draft skip, timeout, poll failure, and fail-on-verdict. |
 | `node-scaffolder` | port to Rust | pending | `cerberus-cli init` or equivalent Rust scaffolder. | Fixture generated workflow parity before deprecating Node. |
 | `elixir-http-api` | port to Rust | pending | Rust API adapter accepting source-agnostic review requests while preserving public compatibility. | Capture API request/response fixtures and map them to `ReviewRequest.v1`. |
-| `elixir-review-execution` | port to Rust | pending | `cerberus-core` reviewer execution and harness runtime. | Port routing, timeout, live transcript capture, and hosted/API review fixtures. |
+| `elixir-review-execution` | port to Rust | pending | `cerberus-core` reviewer execution and harness runtime. | Port routing, live peer invocation, live transcript capture, timeout enforcement, and hosted/API review fixtures. |
 | `elixir-verdict-store` | port to Rust | pending | `ReviewRunArtifact.v1` generation plus a Rust storage adapter when persistence is needed. | Add Rust fixtures for aggregation, dedupe, override, cost, malformed rows, and persisted replay. |
 | `elixir-review-tools` | port to Rust | pending | Rust harness/provider adapters with explicit external boundaries. | Model GitHub/local read tools as adapter capabilities. |
 | `legacy-defaults-and-personas` | port to Rust | pending | Measured `ReviewerConfigPacket.v1` imports from Daedalus or harness/model eval evidence. | Replace static defaults only after live eval evidence. |

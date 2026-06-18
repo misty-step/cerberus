@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const PEER_HARNESS_COMMAND_PROFILES_VERSION: &str = "peer-harness-command-profiles.v1";
+pub const PEER_HARNESS_EXECUTION_PLAN_VERSION: &str = "peer-harness-execution-plan.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PeerHarnessCommandProfiles {
@@ -31,6 +32,101 @@ impl PeerHarnessCommandProfiles {
                     field: "profiles.harness_id",
                 });
             }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PeerHarnessExecutionPlan {
+    pub schema_version: String,
+    pub harness_id: String,
+    pub peer_command: String,
+    #[serde(default)]
+    pub resolved_args: Vec<String>,
+    pub prompt_mode: PeerHarnessPromptMode,
+    pub output_contract: PeerHarnessOutputContract,
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub env_required: Vec<String>,
+    #[serde(default)]
+    pub env_available: Vec<String>,
+    #[serde(default)]
+    pub env_missing: Vec<String>,
+    pub live_mode_requested: bool,
+    pub transcript_markers: PeerHarnessTranscriptMarkers,
+    #[serde(default)]
+    pub unsupported: Vec<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+impl PeerHarnessExecutionPlan {
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        expect_version(
+            "schema_version",
+            &self.schema_version,
+            PEER_HARNESS_EXECUTION_PLAN_VERSION,
+        )?;
+        non_empty("harness_id", &self.harness_id)?;
+        non_empty("peer_command", &self.peer_command)?;
+        expect_range("timeout_ms", self.timeout_ms as f64, 1.0, 3_600_000.0)?;
+        validate_non_empty_items("resolved_args", &self.resolved_args)?;
+        validate_env_name_list("env_required", &self.env_required)?;
+        validate_env_name_list("env_available", &self.env_available)?;
+        validate_env_name_list("env_missing", &self.env_missing)?;
+        validate_unique_items("env_required", &self.env_required)?;
+        validate_unique_items("env_available", &self.env_available)?;
+        validate_unique_items("env_missing", &self.env_missing)?;
+        validate_env_partition(self)?;
+        if placeholder_count(&self.resolved_args, "{model}") > 0 {
+            return Err(SchemaError::Inconsistent {
+                field: "resolved_args",
+            });
+        }
+        match self.prompt_mode {
+            PeerHarnessPromptMode::ArgvMessage | PeerHarnessPromptMode::WrapperRenderedPrompt => {
+                expect_exact_placeholder_count(
+                    "resolved_args",
+                    &self.resolved_args,
+                    "{prompt}",
+                    1,
+                )?;
+            }
+            PeerHarnessPromptMode::StdinText => {
+                if placeholder_count(&self.resolved_args, "{prompt}") > 0 {
+                    return Err(SchemaError::Inconsistent {
+                        field: "resolved_args",
+                    });
+                }
+            }
+        }
+        self.transcript_markers.validate()?;
+        if self.unsupported.is_empty() {
+            return Err(SchemaError::Missing {
+                field: "unsupported",
+            });
+        }
+        validate_non_empty_items("unsupported", &self.unsupported)?;
+        validate_unique_items("unsupported", &self.unsupported)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PeerHarnessTranscriptMarkers {
+    pub begin: String,
+    pub end: String,
+}
+
+impl PeerHarnessTranscriptMarkers {
+    fn validate(&self) -> Result<(), SchemaError> {
+        non_empty("transcript_markers.begin", &self.begin)?;
+        non_empty("transcript_markers.end", &self.end)?;
+        if self.begin == self.end {
+            return Err(SchemaError::Inconsistent {
+                field: "transcript_markers",
+            });
         }
         Ok(())
     }
@@ -138,20 +234,59 @@ pub enum PeerHarnessPromptMode {
 }
 
 fn validate_env_names(values: &[String]) -> Result<(), SchemaError> {
+    validate_env_name_list("env_required", values)
+}
+
+fn validate_env_name_list(field: &'static str, values: &[String]) -> Result<(), SchemaError> {
     let mut seen = BTreeSet::new();
     for value in values {
-        non_empty("env_required", value)?;
+        non_empty(field, value)?;
         if !seen.insert(value.as_str()) {
-            return Err(SchemaError::Inconsistent {
-                field: "env_required",
-            });
+            return Err(SchemaError::Inconsistent { field });
         }
         if !is_env_name(value) {
+            return Err(SchemaError::Inconsistent { field });
+        }
+    }
+    Ok(())
+}
+
+fn validate_env_partition(plan: &PeerHarnessExecutionPlan) -> Result<(), SchemaError> {
+    let required = plan.env_required.iter().collect::<BTreeSet<_>>();
+    let mut resolved = BTreeSet::new();
+
+    for value in &plan.env_available {
+        if !required.contains(value) {
             return Err(SchemaError::Inconsistent {
-                field: "env_required",
+                field: "env_available",
+            });
+        }
+        if !resolved.insert(value) {
+            return Err(SchemaError::Inconsistent {
+                field: "env_available",
             });
         }
     }
+
+    for value in &plan.env_missing {
+        if !required.contains(value) {
+            return Err(SchemaError::Inconsistent {
+                field: "env_missing",
+            });
+        }
+        if !resolved.insert(value) {
+            return Err(SchemaError::Inconsistent {
+                field: "env_missing",
+            });
+        }
+    }
+
+    if required != resolved {
+        return Err(SchemaError::Inconsistent {
+            field: "env_required",
+        });
+    }
+
     Ok(())
 }
 
@@ -403,5 +538,107 @@ mod tests {
                 field: "peer.args_template"
             })
         ));
+    }
+
+    #[test]
+    fn peer_harness_execution_plan_validates_exact_command_contract() {
+        let plan = valid_execution_plan();
+
+        plan.validate().expect("execution plan validates");
+    }
+
+    #[test]
+    fn peer_harness_execution_plan_rejects_unresolved_model_placeholder() {
+        let mut plan = valid_execution_plan();
+        plan.resolved_args[4] = "openrouter/{model}".to_string();
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "resolved_args"
+            })
+        ));
+    }
+
+    #[test]
+    fn peer_harness_execution_plan_requires_prompt_placeholder_for_argv_mode() {
+        let mut plan = valid_execution_plan();
+        plan.resolved_args.retain(|arg| arg != "{prompt}");
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "resolved_args"
+            })
+        ));
+
+        plan.resolved_args.push("{prompt}".to_string());
+        plan.resolved_args.push("{prompt}".to_string());
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "resolved_args"
+            })
+        ));
+    }
+
+    #[test]
+    fn peer_harness_execution_plan_rejects_env_partition_drift() {
+        let mut plan = valid_execution_plan();
+        plan.env_missing.clear();
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "env_required"
+            })
+        ));
+
+        let mut plan = valid_execution_plan();
+        plan.env_available.push("UNDECLARED_KEY".to_string());
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "env_available"
+            })
+        ));
+    }
+
+    fn valid_execution_plan() -> PeerHarnessExecutionPlan {
+        PeerHarnessExecutionPlan {
+            schema_version: PEER_HARNESS_EXECUTION_PLAN_VERSION.to_string(),
+            harness_id: "pi".to_string(),
+            peer_command: "pi".to_string(),
+            resolved_args: vec![
+                "--print".to_string(),
+                "--no-session".to_string(),
+                "--mode".to_string(),
+                "json".to_string(),
+                "--model".to_string(),
+                "openrouter/test-model".to_string(),
+                "{prompt}".to_string(),
+            ],
+            prompt_mode: PeerHarnessPromptMode::ArgvMessage,
+            output_contract: PeerHarnessOutputContract::ReviewerArtifactFile,
+            timeout_ms: 300_000,
+            env_required: vec!["OPENROUTER_API_KEY".to_string()],
+            env_available: vec![],
+            env_missing: vec!["OPENROUTER_API_KEY".to_string()],
+            live_mode_requested: false,
+            transcript_markers: PeerHarnessTranscriptMarkers {
+                begin: "CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN".to_string(),
+                end: "CERBERUS_REVIEWER_ARTIFACT_JSON_END".to_string(),
+            },
+            unsupported: vec![
+                "daemonized children outside the process group".to_string(),
+                "unbounded live output files".to_string(),
+                "paid provider calls without an explicit eval budget".to_string(),
+            ],
+            notes: Some(
+                "Plan is inspectable and does not include rendered prompt text.".to_string(),
+            ),
+        }
     }
 }

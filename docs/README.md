@@ -19,6 +19,8 @@ Current docs:
 - Peer harness protocol runner: `docs/shaping/peer-harness-protocol-runner.md`
 - Peer harness prompt and transcript fixtures:
   `docs/shaping/peer-harness-prompt-transcript.md`
+- Peer harness execution plan:
+  `docs/shaping/peer-harness-execution-plan.md`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

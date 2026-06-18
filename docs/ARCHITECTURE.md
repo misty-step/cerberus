@@ -201,6 +201,9 @@ Responsibilities:
 - write offline degraded `ReviewerArtifact.v1` files with exact request
   coverage
 - write deterministic peer review prompts to local files
+- write schema-valid execution plans that expose the exact peer command,
+  resolved args, environment status, timeout, output contract, and transcript
+  markers without embedding secret values or the rendered prompt
 - parse local transcripts that contain exactly one marked reviewer artifact JSON
   block
 - validate parsed artifacts against the core reviewer/request acceptance rule
@@ -209,6 +212,7 @@ Responsibilities:
 Non-responsibilities:
 
 - peer CLI invocation
+- execution-plan scheduling or retry policy
 - free-form transcript interpretation
 - model budget or quality evaluation
 
