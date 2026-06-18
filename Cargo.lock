@@ -35,6 +35,7 @@ name = "cerberus-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cerberus-adapter",
  "cerberus-core",
  "cerberus-schema",
  "serde",

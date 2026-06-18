@@ -4,7 +4,9 @@ Snapshot date: 2026-06-18.
 
 Backlog 007 moved `cerberus-core` review execution behind a Rust harness
 boundary. Backlog 009 adds shell command execution in `cerberus-adapter`, while
-core remains free of subprocess and provider concerns.
+core remains free of subprocess and provider concerns. Backlog 011 adds the
+offline `cerberus-peer-harness` protocol command that writes degraded reviewer
+artifacts for validated peer profiles without invoking live model providers.
 
 ## Contract
 
@@ -29,12 +31,14 @@ The harness owns only how an individual reviewer artifact is produced.
 - `DeterministicHarness`: preserves the existing fixture/offline behavior.
 - `CommandHarness`: lives in `cerberus-adapter` and launches an external command
   with `--input` and `--output` paths.
+- `cerberus-peer-harness`: lives in `cerberus-cli` and proves the peer harness
+  file protocol offline by emitting degraded `ReviewerArtifact.v1` values.
 - Test harnesses: prove that arbitrary reviewer artifacts can feed aggregation
   and that bad runner output becomes degraded review evidence.
 
 ## Not Yet Implemented
 
-- live Pi, Goose, OpenCode, OMP, or Sprites command profiles and prompts
+- live Pi, Goose, OpenCode, OMP, or Sprites prompt execution
 - provider/network clients
 - command containment beyond timeout process-group cleanup and explicit temp
   file IO

@@ -16,6 +16,7 @@ Current sequence:
 8. `008-current-model-catalog-ingestion.md`
 9. `009-rust-command-harness-adapter.md`
 10. `010-peer-harness-command-profiles.md`
+11. `011-peer-harness-protocol-runner.md`
 
 Planning rules:
 
@@ -35,3 +36,5 @@ Planning rules:
   artifact acceptance and aggregation, not shell execution.
 - Record peer harness command profiles as validated data before implementing
   live protocol runners or spending model budget.
+- Prove the peer harness file protocol offline before rendering prompts,
+  parsing transcripts, or invoking paid providers.

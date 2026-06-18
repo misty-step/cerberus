@@ -33,8 +33,10 @@ adapter land.
 - OpenCode: `opencode run --format json --model openrouter/{model} --agent reviewer {prompt}`
 - OMP: `omp --print --no-session --mode json --model openrouter/{model} --no-pty {prompt}`
 
-The profile fixture is validation data, not a live model run. The protocol
-runner named in the fixture is intentionally not implemented in this slice.
+The profile fixture is validation data, not a live model run. Backlog 011 adds
+the protocol runner named in the fixture, but that runner is offline-only and
+emits degraded `SKIP` artifacts until live prompt and transcript parser oracles
+exist.
 
 ## Verification
 
@@ -44,6 +46,7 @@ cargo test --workspace peer_harness_profile_builds_command_harness
 cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json
 ```
 
-Live acceptance later requires a runner that renders `CommandHarnessInput` into
-a harness prompt, invokes the peer CLI, captures transcripts, and writes a
-validated `ReviewerArtifact.v1` to the `--output` path.
+Offline runner verification lives in
+`docs/shaping/peer-harness-protocol-runner.md`. Live acceptance later requires
+prompt rendering, peer CLI invocation, transcript capture, and parser fixtures
+before the runner writes completed review artifacts.

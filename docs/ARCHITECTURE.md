@@ -50,6 +50,11 @@ Peer harness command profiles are validated data before they are live execution.
 the underlying peer CLI template; raw peer CLIs do not define the Cerberus
 input/output contract.
 
+`cerberus-peer-harness` is the Rust protocol command named by those profiles.
+It currently proves file handoff and artifact validation offline by emitting a
+degraded `SKIP` artifact with exact request coverage. It does not render final
+review prompts, call Pi/Goose/OpenCode/OMP, or spend provider budget.
+
 ## Request Flow
 
 ```text
@@ -172,10 +177,29 @@ Responsibilities:
 
 Non-responsibilities:
 
-- implementing the protocol runner
 - executing paid provider calls
 - ranking model or harness quality
 - replacing the eval matrix
+
+### Peer Harness Protocol Runner
+
+Lives as `cerberus-peer-harness` in `crates/cerberus-cli/`.
+
+Responsibilities:
+
+- validate peer command profile packets
+- select the requested harness profile
+- read `CommandHarnessInput`
+- write offline degraded `ReviewerArtifact.v1` files with exact request
+  coverage
+- fail closed if live peer execution is requested
+
+Non-responsibilities:
+
+- prompt rendering for live reviews
+- peer CLI invocation
+- transcript parsing
+- model budget or quality evaluation
 
 ### Legacy Elixir Engine
 

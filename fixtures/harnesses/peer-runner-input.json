@@ -1,0 +1,50 @@
+{
+  "reviewer": {
+    "id": "peer-runner-reviewer",
+    "perspective": "correctness",
+    "model": "openrouter/test-model",
+    "fake_behavior": "directive"
+  },
+  "request": {
+    "schema_version": "review-request.v1",
+    "request_id": "fixture-peer-runner",
+    "source": {
+      "kind": "fixture",
+      "name": "peer-runner"
+    },
+    "change": {
+      "title": "Peer harness protocol runner fixture",
+      "description": "A local fixture that proves the offline peer runner emits a valid reviewer artifact.",
+      "base_ref": null,
+      "head_ref": null,
+      "head_sha": "peer-runner-sha",
+      "diff": "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,4 @@\n pub fn review() {\n+    peer_harness_runner();\n }\n",
+      "files": [
+        {
+          "path": "src/lib.rs",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        }
+      ]
+    },
+    "context": {
+      "summary": "Peer harness protocol runner fixture.",
+      "acceptance": [
+        "The runner writes a schema-valid degraded ReviewerArtifact.v1 without live provider calls."
+      ],
+      "linked_artifacts": [],
+      "metadata": {}
+    },
+    "caller": {
+      "name": "fixture",
+      "run_id": "peer-runner"
+    },
+    "policy": {
+      "render_targets": [
+        "json"
+      ],
+      "allow_degraded": true
+    }
+  }
+}

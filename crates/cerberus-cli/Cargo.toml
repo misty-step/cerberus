@@ -4,13 +4,19 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+default-run = "cerberus-cli"
 
 [[bin]]
 name = "cerberus-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "cerberus-peer-harness"
+path = "src/peer_harness.rs"
+
 [dependencies]
 anyhow.workspace = true
+cerberus-adapter.workspace = true
 cerberus-core.workspace = true
 cerberus-schema.workspace = true
 serde.workspace = true

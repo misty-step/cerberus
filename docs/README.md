@@ -16,6 +16,7 @@ Current docs:
 - Current model catalog ingestion: `docs/shaping/current-model-catalog-ingestion.md`
 - Rust command harness adapter: `docs/shaping/rust-command-harness-adapter.md`
 - Peer harness command profiles: `docs/shaping/peer-harness-command-profiles.md`
+- Peer harness protocol runner: `docs/shaping/peer-harness-protocol-runner.md`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 
