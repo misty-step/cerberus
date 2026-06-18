@@ -9,6 +9,7 @@ Current docs:
 - Terminology: `docs/TERMINOLOGY.md`
 - Backlog priorities: `docs/BACKLOG-PRIORITIES.md`
 - Rust resurrection shaping: `docs/shaping/rust-review-engine-resurrection.md`
+- Harness/model evaluation shaping: `docs/shaping/harness-model-evaluation.md`
 - ADRs: `docs/adr/`
 - Engine details: `cerberus-elixir/README.md`
 

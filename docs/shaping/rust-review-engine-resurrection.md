@@ -103,6 +103,7 @@ Applied backlog tickets:
 - `backlog.d/003-thinktank-decommission-migration.md`
 - `backlog.d/004-daedalus-reviewer-config-promotion.md`
 - `backlog.d/005-legacy-surface-retirement.md`
+- `backlog.d/006-harness-model-evaluation.md`
 
 ## Sequence
 
@@ -110,16 +111,19 @@ Now:
 
 - Build Rust schemas, fixtures, validator, fake-runner, and renderer.
 - Freeze legacy donor behavior behind fixture expectations.
+- Shape the harness/model evaluation loop before changing reviewer defaults.
 
 Next:
 
+- Add harness/model eval fixtures for Pi, Goose, OpenCode, OMP, and current
+  candidate coding models.
 - Add caller fixtures for Bitterblossom and Olympus.
 - Add ThinkTank artifact migration inventory.
 
 Later:
 
 - Add live LLM reviewer execution.
-- Add Daedalus reviewer config import.
+- Add Daedalus reviewer config import from measured eval packets.
 - Retire Elixir after parity and caller migration.
 
 Blocked:
