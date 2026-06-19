@@ -23,9 +23,11 @@ See [spec.md](spec.md) for the locked MVP contract.
 ./scripts/verify.sh
 ```
 
-The verification script formats, lints, tests, and runs a deterministic CLI
-smoke review through the fixture harness. Evidence is written to
-`target/cerberus/`.
+The verification script formats, lints, tests, checks the default harness
+surface, runs a deterministic fixture review, and smokes both the OpenCode and
+OMP harness paths through local fake binaries. Evidence is written to
+`target/cerberus/`, including execution plans, transcripts, artifacts, and
+rendered Markdown.
 
 ## CLI
 
