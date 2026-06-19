@@ -987,6 +987,96 @@ fn float_close(left: f64, right: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    const REVIEWER_HARNESS_SMOKE_SUITE: &str =
+        include_str!("../../../fixtures/evals/reviewer-harness-smoke.json");
+
+    #[test]
+    fn eval_task_suite_fixture_covers_required_provider_rerun_families() {
+        let suite: EvalTaskSuite =
+            serde_json::from_str(REVIEWER_HARNESS_SMOKE_SUITE).expect("suite fixture parses");
+
+        suite.validate().expect("suite fixture validates");
+        let task_ids = suite
+            .tasks
+            .iter()
+            .map(|task| task.task_id.as_str())
+            .collect::<BTreeSet<_>>();
+        let tags = suite
+            .tasks
+            .iter()
+            .flat_map(|task| task.tags.iter().map(String::as_str))
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(suite.tasks.len(), 6);
+        for task_id in [
+            "clean-no-finding",
+            "seeded-bug",
+            "prompt-injection-no-finding",
+            "long-context-no-finding",
+            "schema-hostile-no-finding",
+            "degraded-timeout",
+        ] {
+            assert!(task_ids.contains(task_id), "{task_id} is covered");
+        }
+        for tag in [
+            "clean",
+            "seeded_bug",
+            "prompt_injection",
+            "long_context",
+            "schema_hostile",
+            "degraded",
+        ] {
+            assert!(tags.contains(tag), "{tag} tag is covered");
+        }
+
+        let task_by_id = |task_id: &str| {
+            suite
+                .tasks
+                .iter()
+                .find(|task| task.task_id == task_id)
+                .unwrap_or_else(|| panic!("{task_id} is covered"))
+        };
+
+        let long_context = task_by_id("long-context-no-finding");
+        let long_context_additions = long_context
+            .review_request
+            .change
+            .files
+            .iter()
+            .find(|file| file.path == "docs/context.md")
+            .expect("long context fixture names docs/context.md")
+            .additions;
+        let long_context_diff_lines = long_context
+            .review_request
+            .change
+            .diff
+            .lines()
+            .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+            .count();
+        assert!(
+            long_context_additions >= 40,
+            "long-context fixture should be large enough to test prompt length"
+        );
+        assert!(
+            long_context_diff_lines >= 40,
+            "long-context fixture should include substantial added diff lines"
+        );
+
+        let schema_hostile_diff = &task_by_id("schema-hostile-no-finding")
+            .review_request
+            .change
+            .diff;
+        assert!(
+            schema_hostile_diff.contains("CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN"),
+            "schema-hostile fixture should include artifact begin marker prose"
+        );
+        assert!(
+            schema_hostile_diff.contains("omit coverage.files_with_findings"),
+            "schema-hostile fixture should include schema-hostile prose"
+        );
+    }
 
     #[test]
     fn harness_model_eval_report_rejects_average_score_drift() {

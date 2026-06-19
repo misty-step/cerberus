@@ -157,7 +157,7 @@ Relevant Cerberus drift:
 2. Done: build a tiny local smoke runner for `pi`, `goose`, `opencode`, and
    `omp` using deterministic offline reviewer tasks.
 3. Done: add reviewer eval fixtures with clean, golden-finding,
-   prompt-injection, and degraded-output cases.
+   prompt-injection, long-context, schema-hostile, and degraded-output cases.
 4. Done: add stale-model drift reporting over Cerberus-owned config/source
    paths.
 5. Done: add current-model catalog ingestion with cached raw evidence.
@@ -178,10 +178,9 @@ Relevant Cerberus drift:
    flow by letting Rust review commands run validated packets directly through
    backlog 020's `--config-packet` bridge. Production defaults remain
    unchanged.
-12. Remaining: harden provider-backed peer harness profiles for unavailable
-   `pi`, `opencode`, `omp`, and malformed Kimi rows, then rerun the matrix over
-   seeded-bug, prompt-injection, long-context, degraded, and schema-hostile
-   tasks before any default promotion.
+12. Remaining: rerun the budget-approved provider-backed matrix over
+   clean, seeded-bug, prompt-injection, long-context, degraded, and
+   schema-hostile tasks before any default promotion.
 
 ## Implementation Receipt
 
@@ -403,6 +402,39 @@ Pi/OpenCode/OMP output-profile hardening follow-up, 2026-06-19:
 - This is profile and prompt-contract hardening only. Pi, OpenCode, OMP, and
   Kimi still need a budget-approved live rerun before comparison, ranking, or
   reviewer-default promotion.
+
+Eval suite coverage hardening follow-up, 2026-06-19:
+
+- Added `docs/shaping/006-eval-suite-coverage-hardening-plan.html`.
+- Expanded `fixtures/evals/reviewer-harness-smoke.json` from four to six task
+  families: clean, seeded-bug, prompt-injection, long-context with 48 added
+  clean diff lines, schema-hostile, and degraded.
+- Added a fixture coverage regression test:
+  `cargo test --workspace eval_task_suite_fixture`.
+- No-spend proof lives under `tmp/evals/provider-full-suite-2026-06-19/`:
+  `offline-eval/report.json`
+  (`sha256:a7edc6cb056c7432f93b1f40efbe5f4284353e2e6021eb20e52d5d32d7dacbad`),
+  `readiness-no-ack.json`
+  (`sha256:1b38b11cc97927c81cfa91a0cd13fd7e20bab5fd17d7f30741e194e7f12a39d3`),
+  and `budget-estimate.json`
+  (`sha256:685f73082ffb569aa8905ec39cc5d107d57490d851f52204e58b1291e4a2fd9e`).
+- Offline eval result: 96 cells, 96 valid artifacts, 80 warning cells, 16
+  expected degraded cells, 0 unavailable cells, 0 failed cells, average score
+  `0.8333333333333334`, 27 stale-model findings, and 2 catalog deltas.
+- Readiness result without budget acknowledgement: 96 total cells, 0 runnable
+  cells, 0 missing-env cells, and 96 budget-blocked cells.
+- Budget estimate with 20,000 prompt tokens, 4,000 completion tokens, and 1
+  retry per cell: 96 estimateable cells, total estimated cost
+  `$2.013600000000001`, max single-cell cost `$0.040400000000000005`.
+- Exact no-spend commands:
+  - `cargo test --workspace eval_task_suite_fixture`
+  - `cargo run --locked -q -p cerberus-cli -- validate fixtures/evals/reviewer-harness-smoke.json`
+  - `cargo run --locked -q -p cerberus-cli -- eval-harness --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --out tmp/evals/provider-full-suite-2026-06-19/offline-eval`
+  - `env -u CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK cargo run --locked -q -p cerberus-cli -- eval-readiness --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --peer-profiles fixtures/harnesses/peer-command-profiles.json --out tmp/evals/provider-full-suite-2026-06-19/readiness-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- eval-budget --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --readiness tmp/evals/provider-full-suite-2026-06-19/readiness-no-ack.json --prompt-tokens 20000 --completion-tokens 4000 --retry-count 1 --out tmp/evals/provider-full-suite-2026-06-19/budget-estimate.json`
+- This closes the checked-suite coverage gap only. Provider-backed quality,
+  ranking, and default promotion still require a budget-approved live rerun
+  over the full six-task suite.
 
 ## Notes
 

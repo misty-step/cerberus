@@ -188,11 +188,11 @@
         <h2 class="ae-h">LOCAL SMOKE RESULT</h2>
         <div class="grid-4">
           <article class="cell">
-            <h3>64 cells</h3>
-            <p>4 harness profiles x 4 model candidates x 4 smoke tasks.</p>
+            <h3>96 cells</h3>
+            <p>4 harness profiles x 4 model candidates x 6 smoke tasks.</p>
           </article>
           <article class="cell">
-            <h3>48 warnings</h3>
+            <h3>80 warnings</h3>
             <p>The offline reviewer path emitted schema-valid contract artifacts, but they intentionally do not count as live harness/model passes.</p>
           </article>
           <article class="cell">
@@ -212,7 +212,7 @@
           <p class="ae-chrome">01</p>
           <div>
             <h3>Freeze tasks</h3>
-            <p>The local smoke suite checks in clean, seeded-bug, prompt-injection, and degraded tasks. The full live suite still needs long-context and schema-hostile cases.</p>
+            <p>The local smoke suite checks in clean, seeded-bug, prompt-injection, long-context, schema-hostile, and degraded tasks before provider spend.</p>
           </div>
           <p class="ae-dim">Prevents benchmark drift and prompt cherry-picking.</p>
         </div>

@@ -152,7 +152,8 @@ Backlog 006 now has a Rust-side offline smoke runner:
   catalog from a file or URL, caches the exact raw JSON, and emits a refreshed
   schema-valid matrix before the eval run.
 - `fixtures/evals/reviewer-harness-smoke.json` covers clean/no-finding,
-  seeded finding, prompt-injection text, and degraded timeout cases.
+  seeded finding, prompt-injection text, long-context clean text,
+  schema-hostile artifact-format prose, and degraded timeout cases.
 - `fixtures/evals/harness-model-matrix.json` captures the 2026-06-19 local
   harness versions and OpenRouter model facts used by this run.
 
@@ -285,6 +286,24 @@ No-spend proof lives under
 (`sha256:26771a6dabea9161a9f925b880d43f12cadf217dba81620efc5c254a75bf7fef`).
 This still is not provider quality evidence; it only makes the next
 budget-approved live matrix run cleaner and easier to interpret.
+
+The checked eval suite was then expanded from four to six task families before
+another paid run. It now includes `long-context-no-finding` with 48 added clean
+diff lines and
+`schema-hostile-no-finding` false-positive guards alongside the clean,
+seeded-bug, prompt-injection, and degraded fixtures. No-spend proof lives under
+`tmp/evals/provider-full-suite-2026-06-19/`: the offline report validates with
+96 cells, 96 valid artifacts, 80 warning cells, 16 expected degraded cells, 0
+failed cells, 27 stale-model findings, and 2 catalog deltas
+(`sha256:a7edc6cb056c7432f93b1f40efbe5f4284353e2e6021eb20e52d5d32d7dacbad`).
+The matching readiness report validates with 96 budget-blocked cells and no
+missing-env cells
+(`sha256:1b38b11cc97927c81cfa91a0cd13fd7e20bab5fd17d7f30741e194e7f12a39d3`).
+The matching budget estimate validates at `$2.013600000000001` total using the
+documented 20,000 prompt / 4,000 completion token assumption and one retry
+(`sha256:685f73082ffb569aa8905ec39cc5d107d57490d851f52204e58b1291e4a2fd9e`).
+This still does not spend provider budget or prove live model quality; it makes
+the next budget-approved provider rerun cover the full task contract.
 
 ## Alternatives Considered
 
