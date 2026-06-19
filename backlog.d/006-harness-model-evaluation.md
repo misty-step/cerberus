@@ -371,6 +371,39 @@ OpenCode profile hardening follow-up, 2026-06-19:
   before it can be compared against Goose or used for any reviewer-default
   promotion.
 
+Pi/OpenCode/OMP output-profile hardening follow-up, 2026-06-19:
+
+- Added `docs/shaping/006-peer-live-profile-output-hardening-plan.html`.
+- Updated `fixtures/harnesses/peer-command-profiles.json` so Pi and OMP disable
+  discovered local adornments for provider evals and use raw text output:
+  - Pi now uses `--no-extensions --no-skills --no-context-files --mode text`.
+  - OMP now uses `--no-extensions --no-skills --no-rules --mode text`.
+  - OpenCode now uses `--format default` while retaining the `--file
+    {prompt_file} -- <message>` boundary.
+- Updated the rendered reviewer prompt with an explicit `ReviewerArtifact.v1`
+  JSON skeleton, including required `coverage.files_with_findings`, to reduce
+  schema omissions like the first Kimi smoke produced.
+- No-spend proof lives under
+  `tmp/peer-live-profile-output-hardening-2026-06-19/`:
+  `pi-plan.json`
+  (`sha256:7551ad66c6fffcf11403bf71fdc69919cdd3434c8b252f266004a2676ed62ba8`),
+  `opencode-plan.json`
+  (`sha256:f61023010153e2bc54c672e48e148da284b0aaa5cd641dd398d640022ae4fae6`),
+  `omp-plan.json`
+  (`sha256:5d93966a9963a76d92323336f4fe29bfa3fb83566822286797f96ac3ea9ada66`),
+  and `reviewer-prompt.txt`
+  (`sha256:26771a6dabea9161a9f925b880d43f12cadf217dba81620efc5c254a75bf7fef`).
+- Exact no-spend commands:
+  - `cargo test --workspace peer_harness_command_profiles`
+  - `cargo test --workspace peer_harness_runner_writes`
+  - `cargo run --locked -q -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json`
+  - `cargo run --locked -q -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-live-profile-output-hardening-2026-06-19/pi-offline-artifact.json --execution-plan-output tmp/peer-live-profile-output-hardening-2026-06-19/pi-plan.json --prompt-output tmp/peer-live-profile-output-hardening-2026-06-19/reviewer-prompt.txt`
+  - `cargo run --locked -q -p cerberus-cli --bin cerberus-peer-harness -- --harness opencode --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-live-profile-output-hardening-2026-06-19/opencode-offline-artifact.json --execution-plan-output tmp/peer-live-profile-output-hardening-2026-06-19/opencode-plan.json`
+  - `cargo run --locked -q -p cerberus-cli --bin cerberus-peer-harness -- --harness omp --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-live-profile-output-hardening-2026-06-19/omp-offline-artifact.json --execution-plan-output tmp/peer-live-profile-output-hardening-2026-06-19/omp-plan.json`
+- This is profile and prompt-contract hardening only. Pi, OpenCode, OMP, and
+  Kimi still need a budget-approved live rerun before comparison, ranking, or
+  reviewer-default promotion.
+
 ## Notes
 
 This should start after backlog 001 creates the Rust schema/fixture path. It can

@@ -571,6 +571,18 @@ fn unique_suffix() -> String {
 }
 
 fn render_prompt(profile: &PeerHarnessCommandProfile, input: &CommandHarnessInput) -> String {
+    let reviewed_files = input
+        .request
+        .change
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    let reviewed_files_json =
+        serde_json::to_string(&reviewed_files).unwrap_or_else(|_| "[]".to_string());
+    let reviewer_id_json = json_string(&input.reviewer.id);
+    let perspective_json = json_string(&input.reviewer.perspective);
+    let model_json = json_string(&input.reviewer.model);
     let files = input
         .request
         .change
@@ -630,14 +642,35 @@ Changed files:
 Rules:
 - reviewer_id, perspective, and model must match the reviewer above.
 - coverage.files_reviewed must list exactly the changed files above.
+- coverage.files_with_findings must always be present; use [] when there are no findings.
 - findings must cite only reviewed files.
 - PASS artifacts must not contain findings.
 - major or critical findings require FAIL.
 - completed artifacts must not use SKIP.
+- Do not omit required fields; use degraded_reason: null for completed artifacts.
 
 Output format:
 CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN
-{{ ... ReviewerArtifact.v1 JSON ... }}
+{{
+  "schema_version": "{artifact_version}",
+  "reviewer_id": {reviewer_id_json},
+  "perspective": {perspective_json},
+  "model": {model_json},
+  "status": "completed",
+  "verdict": "PASS",
+  "summary": "One concise review summary.",
+  "findings": [],
+  "coverage": {{
+    "files_reviewed": {reviewed_files_json},
+    "files_with_findings": []
+  }},
+  "usage": {{
+    "prompt_tokens": 0,
+    "completion_tokens": 0
+  }},
+  "cost_usd": 0.0,
+  "degraded_reason": null
+}}
 CERBERUS_REVIEWER_ARTIFACT_JSON_END
 
 Diff:
@@ -645,6 +678,7 @@ Diff:
 {diff}
 ```
 "#,
+        artifact_version = REVIEWER_ARTIFACT_VERSION,
         reviewer_id = input.reviewer.id,
         perspective = input.reviewer.perspective,
         model = input.reviewer.model,
@@ -655,8 +689,16 @@ Diff:
         description = description,
         acceptance = acceptance,
         files = files,
+        reviewed_files_json = reviewed_files_json,
+        reviewer_id_json = reviewer_id_json,
+        perspective_json = perspective_json,
+        model_json = model_json,
         diff = input.request.change.diff,
     )
+}
+
+fn json_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 fn write_prompt(path: &Path, prompt: &str) -> Result<()> {
@@ -804,7 +846,19 @@ mod tests {
         assert_eq!(plan.schema_version, PEER_HARNESS_EXECUTION_PLAN_VERSION);
         assert_eq!(plan.harness_id, "pi");
         assert_eq!(plan.peer_command, "pi");
-        assert_eq!(plan.resolved_args[5], "openrouter/test-model");
+        assert!(plan
+            .resolved_args
+            .iter()
+            .any(|arg| arg == "openrouter/test-model"));
+        assert!(plan
+            .resolved_args
+            .iter()
+            .any(|arg| arg == "--no-extensions"));
+        assert!(plan.resolved_args.iter().any(|arg| arg == "--no-skills"));
+        assert!(plan
+            .resolved_args
+            .windows(2)
+            .any(|args| args[0] == "--mode" && args[1] == "text"));
         assert!(!plan
             .resolved_args
             .iter()
@@ -1152,6 +1206,11 @@ mod tests {
         assert!(prompt.contains("ReviewerArtifact.v1"));
         assert!(prompt.contains("peer-runner-reviewer"));
         assert!(prompt.contains("diff --git a/src/lib.rs b/src/lib.rs"));
+        assert!(prompt.contains("\"schema_version\": \"reviewer-artifact.v1\""));
+        assert!(prompt.contains("\"coverage\": {"));
+        assert!(prompt.contains("\"files_reviewed\": [\"src/lib.rs\"]"));
+        assert!(prompt.contains("\"files_with_findings\": []"));
+        assert!(prompt.contains("\"degraded_reason\": null"));
 
         let artifact = read_artifact(&paths.output);
         assert_eq!(artifact.status, ReviewerStatus::Completed);
@@ -1172,6 +1231,25 @@ mod tests {
             .expect("core accepts parsed transcript artifact");
         assert!(!run.degraded);
         assert_eq!(run.verdict, Verdict::Warn);
+    }
+
+    #[test]
+    fn peer_harness_runner_writes_prompt_skeleton_json_escapes_reviewer_fields() {
+        let profiles = read_profiles(&profiles_path()).expect("profiles parse");
+        let profile = select_profile(&profiles, "pi").expect("pi profile exists");
+        let mut input = input();
+        input.reviewer.id = "reviewer \"quoted\"".to_string();
+        input.reviewer.perspective = "correctness\\security".to_string();
+        input.reviewer.model = "openrouter/test\"model".to_string();
+
+        let prompt = render_prompt(profile, &input);
+        let artifact = parse_transcript_artifact(&prompt).expect("prompt skeleton is valid JSON");
+
+        assert_eq!(artifact.reviewer_id, input.reviewer.id);
+        assert_eq!(artifact.perspective, input.reviewer.perspective);
+        assert_eq!(artifact.model, input.reviewer.model);
+        assert_eq!(artifact.coverage.files_reviewed, ["src/lib.rs"]);
+        assert!(artifact.coverage.files_with_findings.is_empty());
     }
 
     #[test]

@@ -20,14 +20,17 @@
         "args_template": [
           "--print",
           "--no-session",
+          "--no-extensions",
+          "--no-skills",
+          "--no-context-files",
           "--mode",
-          "json",
+          "text",
           "--model",
           "openrouter/{model}",
           "@{prompt_file}"
         ],
         "prompt_mode": "prompt_file",
-        "notes": "Grounded in `pi --help` on 2026-06-19. Pi accepts @files in message arguments; the runner renders the prompt to a private file and passes only @<path>."
+        "notes": "Grounded in `pi --help` on 2026-06-19. Pi accepts @files in message arguments; provider evals disable discovered extensions, skills, and context files, then use text output so the strict Cerberus marker parser sees raw assistant content."
       },
       "unsupported": [
         "daemonized children outside the process group",
@@ -90,7 +93,7 @@
         "args_template": [
           "run",
           "--format",
-          "json",
+          "default",
           "--model",
           "openrouter/{model}",
           "--agent",
@@ -101,7 +104,7 @@
           "Follow the attached Cerberus reviewer prompt exactly."
         ],
         "prompt_mode": "prompt_file",
-        "notes": "Grounded in `opencode run --help` on 2026-06-19. OpenCode supports --file attachments; `--` terminates the --file array before the static reviewer message."
+        "notes": "Grounded in `opencode run --help` on 2026-06-19. OpenCode supports --file attachments; `--` terminates the --file array before the static reviewer message, and default output keeps the assistant response inspectable as raw marked text instead of JSON events."
       },
       "unsupported": [
         "daemonized children outside the process group",
@@ -128,15 +131,18 @@
         "args_template": [
           "--print",
           "--no-session",
+          "--no-extensions",
+          "--no-skills",
+          "--no-rules",
           "--mode",
-          "json",
+          "text",
           "--model",
           "openrouter/{model}",
           "--no-pty",
           "@{prompt_file}"
         ],
         "prompt_mode": "prompt_file",
-        "notes": "Grounded in `omp --help` on 2026-06-19. OMP accepts @files in message arguments; the runner passes only @<path>."
+        "notes": "Grounded in `omp --help` on 2026-06-19. OMP accepts @files in message arguments; provider evals disable discovered extensions, skills, and rules, then use text output so JSON event streams cannot duplicate artifact markers."
       },
       "unsupported": [
         "daemonized children outside the process group",

@@ -265,6 +265,27 @@ and `opencode-separator-probe.txt`
 (`sha256:c5c2da713873520d3c9d3923f8e24a9590031d2de0d386b7f4eb9290ec0cea1b`).
 It does not replace a budget-approved rerun of the OpenCode provider cells.
 
+A second no-spend hardening pass changed the provider profiles and prompt
+contract before another paid run. Pi and OMP now disable local extension,
+skill, context-file, or rule surfaces that are not part of the prompt-contained
+eval task, and Pi/OpenCode/OMP use raw text output instead of CLI JSON event
+streams. The rendered peer prompt now shows the required
+`ReviewerArtifact.v1` skeleton, including `coverage.files_with_findings`, so
+models are not asked to infer nested required fields from prose alone.
+
+No-spend proof lives under
+`tmp/peer-live-profile-output-hardening-2026-06-19/`:
+`pi-plan.json`
+(`sha256:7551ad66c6fffcf11403bf71fdc69919cdd3434c8b252f266004a2676ed62ba8`),
+`opencode-plan.json`
+(`sha256:f61023010153e2bc54c672e48e148da284b0aaa5cd641dd398d640022ae4fae6`),
+`omp-plan.json`
+(`sha256:5d93966a9963a76d92323336f4fe29bfa3fb83566822286797f96ac3ea9ada66`), and
+`reviewer-prompt.txt`
+(`sha256:26771a6dabea9161a9f925b880d43f12cadf217dba81620efc5c254a75bf7fef`).
+This still is not provider quality evidence; it only makes the next
+budget-approved live matrix run cleaner and easier to interpret.
+
 ## Alternatives Considered
 
 ### Public Leaderboards Only

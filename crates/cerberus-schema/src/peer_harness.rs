@@ -484,6 +484,50 @@ mod tests {
     }
 
     #[test]
+    fn peer_harness_command_profiles_use_raw_text_and_isolate_local_adornments() {
+        let profiles: PeerHarnessCommandProfiles =
+            serde_json::from_str(PEER_PROFILES).expect("fixture parses");
+        let profile = |harness_id: &str| {
+            profiles
+                .profiles
+                .iter()
+                .find(|profile| profile.harness_id == harness_id)
+                .unwrap_or_else(|| panic!("{harness_id} profile exists"))
+        };
+
+        let pi = profile("pi");
+        assert_arg_value(&pi.peer.args_template, "--mode", "text");
+        assert!(pi
+            .peer
+            .args_template
+            .iter()
+            .any(|arg| arg == "--no-extensions"));
+        assert!(pi.peer.args_template.iter().any(|arg| arg == "--no-skills"));
+        assert!(pi
+            .peer
+            .args_template
+            .iter()
+            .any(|arg| arg == "--no-context-files"));
+
+        let opencode = profile("opencode");
+        assert_arg_value(&opencode.peer.args_template, "--format", "default");
+
+        let omp = profile("omp");
+        assert_arg_value(&omp.peer.args_template, "--mode", "text");
+        assert!(omp
+            .peer
+            .args_template
+            .iter()
+            .any(|arg| arg == "--no-extensions"));
+        assert!(omp
+            .peer
+            .args_template
+            .iter()
+            .any(|arg| arg == "--no-skills"));
+        assert!(omp.peer.args_template.iter().any(|arg| arg == "--no-rules"));
+    }
+
+    #[test]
     fn peer_harness_command_profiles_reject_duplicate_harness_ids() {
         let mut profiles: PeerHarnessCommandProfiles =
             serde_json::from_str(PEER_PROFILES).expect("fixture parses");
@@ -801,5 +845,16 @@ mod tests {
                 "Plan is inspectable and does not include rendered prompt text.".to_string(),
             ),
         }
+    }
+
+    fn assert_arg_value(args: &[String], flag: &str, expected_value: &str) {
+        let index = args
+            .iter()
+            .position(|arg| arg == flag)
+            .unwrap_or_else(|| panic!("{flag} is present"));
+        assert_eq!(
+            args.get(index + 1).map(String::as_str),
+            Some(expected_value)
+        );
     }
 }
