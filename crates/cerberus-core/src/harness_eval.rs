@@ -3,17 +3,22 @@ use crate::{
     validate_reviewer_config_packet, CoreError,
 };
 use cerberus_schema::{
-    CostEnvelope, EvalCellStatus, EvalExecutionMode, EvalReadinessCell, EvalReadinessReport,
+    CostEnvelope, EvalBudgetEstimateCell, EvalBudgetEstimateReport, EvalBudgetEstimateSummary,
+    EvalCellStatus, EvalExecutionMode, EvalReadinessCell, EvalReadinessReport,
     EvalReadinessSummary, EvalTask, EvalTaskSuite, ExpectedFinding, FakeReviewerBehavior,
     GateResult, GateStatus, HarnessModelEvaluationCell, HarnessModelEvaluationReport,
     HarnessModelEvaluationSummary, HarnessModelMatrix, HarnessProfile, ModelCandidate,
     ModelCatalogDelta, PeerHarnessCommandProfiles, PromotionGate, PromotionStatus, ReviewConfig,
     ReviewerArtifact, ReviewerConfig, ReviewerConfigBenchmark, ReviewerConfigPacket,
     ReviewerConfigProducer, ReviewerHarnessMetadata, ReviewerModelMetadata, ReviewerStatus,
-    RollbackMetadata, ScoreDistribution, StaleModelFinding, EVAL_READINESS_REPORT_VERSION,
-    HARNESS_MODEL_EVALUATION_REPORT_VERSION, REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
+    RollbackMetadata, ScoreDistribution, StaleModelFinding, EVAL_BUDGET_ESTIMATE_REPORT_VERSION,
+    EVAL_READINESS_REPORT_VERSION, HARNESS_MODEL_EVALUATION_REPORT_VERSION,
+    REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+const PROVIDER_BUDGET_ACK_BLOCKER: &str =
+    "provider budget acknowledgement missing: CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HarnessProbe {
@@ -206,10 +211,7 @@ pub fn harness_model_readiness_report(
                     ));
                 }
                 if requires_provider_budget_ack && !provider_budget_acknowledged {
-                    blockers.push(
-                        "provider budget acknowledgement missing: CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK"
-                            .to_string(),
-                    );
+                    blockers.push(PROVIDER_BUDGET_ACK_BLOCKER.to_string());
                 }
 
                 cells.push(EvalReadinessCell {
@@ -260,6 +262,178 @@ pub fn harness_model_readiness_report(
         suite_id: suite.suite_id.clone(),
         matrix_id: matrix.matrix_id.clone(),
         peer_profiles_observed_at: Some(peer_profiles.observed_at.clone()),
+        summary,
+        cells,
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+pub fn eval_budget_estimate_report(
+    suite: &EvalTaskSuite,
+    matrix: &HarnessModelMatrix,
+    readiness: &EvalReadinessReport,
+    prompt_tokens_per_cell: u64,
+    completion_tokens_per_cell: u64,
+    retry_count: u64,
+) -> Result<EvalBudgetEstimateReport, CoreError> {
+    suite.validate()?;
+    matrix.validate()?;
+    readiness.validate()?;
+    if readiness.suite_id != suite.suite_id {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "readiness suite_id {:?} does not match suite {:?}",
+            readiness.suite_id, suite.suite_id
+        )));
+    }
+    if readiness.matrix_id != matrix.matrix_id {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "readiness matrix_id {:?} does not match matrix {:?}",
+            readiness.matrix_id, matrix.matrix_id
+        )));
+    }
+    if prompt_tokens_per_cell == 0 {
+        return Err(CoreError::EvalReportCandidate(
+            "prompt token estimate must be greater than zero".to_string(),
+        ));
+    }
+    if completion_tokens_per_cell == 0 {
+        return Err(CoreError::EvalReportCandidate(
+            "completion token estimate must be greater than zero".to_string(),
+        ));
+    }
+    if retry_count == 0 {
+        return Err(CoreError::EvalReportCandidate(
+            "retry count must be greater than zero".to_string(),
+        ));
+    }
+
+    let model_by_id = matrix
+        .models
+        .iter()
+        .map(|model| (model.model_id.as_str(), model))
+        .collect::<BTreeMap<_, _>>();
+    let harness_ids = matrix
+        .harnesses
+        .iter()
+        .map(|harness| harness.harness_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let task_ids = suite
+        .tasks
+        .iter()
+        .map(|task| task.task_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let expected_cells = expected_readiness_cells(suite, matrix);
+    let mut observed_cells = BTreeSet::new();
+    let mut cells = Vec::new();
+
+    for readiness_cell in &readiness.cells {
+        if !harness_ids.contains(readiness_cell.harness_id.as_str()) {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "readiness harness_id {:?} is not in matrix",
+                readiness_cell.harness_id
+            )));
+        }
+        let Some(model) = model_by_id.get(readiness_cell.model_id.as_str()).copied() else {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "readiness model_id {:?} is not in matrix",
+                readiness_cell.model_id
+            )));
+        };
+        if !task_ids.contains(readiness_cell.task_id.as_str()) {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "readiness task_id {:?} is not in suite",
+                readiness_cell.task_id
+            )));
+        }
+        let expected_cell_id = cell_id(
+            &readiness_cell.harness_id,
+            &readiness_cell.model_id,
+            &readiness_cell.task_id,
+        );
+        if readiness_cell.cell_id != expected_cell_id {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "readiness cell_id {:?} does not match expected {:?}",
+                readiness_cell.cell_id, expected_cell_id
+            )));
+        }
+        let readiness_key = (
+            readiness_cell.harness_id.clone(),
+            readiness_cell.model_id.clone(),
+            readiness_cell.task_id.clone(),
+        );
+        if !observed_cells.insert(readiness_key) {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "duplicate readiness cell for harness {:?}, model {:?}, task {:?}",
+                readiness_cell.harness_id, readiness_cell.model_id, readiness_cell.task_id
+            )));
+        }
+
+        let estimateable = readiness_cell_estimateable(readiness_cell);
+        let estimated_cost_usd = if estimateable {
+            estimate_provider_cell_cost_usd(
+                model,
+                prompt_tokens_per_cell,
+                completion_tokens_per_cell,
+                retry_count,
+            )
+        } else {
+            0.0
+        };
+
+        cells.push(EvalBudgetEstimateCell {
+            cell_id: readiness_cell.cell_id.clone(),
+            harness_id: readiness_cell.harness_id.clone(),
+            model_id: readiness_cell.model_id.clone(),
+            task_id: readiness_cell.task_id.clone(),
+            readiness_runnable: readiness_cell.runnable,
+            readiness_harness_available: readiness_cell.harness_available,
+            readiness_peer_profile_found: readiness_cell.peer_profile_found,
+            readiness_peer_runner_available: readiness_cell.peer_runner_available,
+            readiness_env_missing: readiness_cell.env_missing.clone(),
+            budget_ack_required: readiness_cell.requires_provider_budget_ack,
+            budget_acknowledged: readiness_cell.provider_budget_acknowledged,
+            estimateable,
+            prompt_tokens: prompt_tokens_per_cell,
+            completion_tokens: completion_tokens_per_cell,
+            retry_count,
+            estimated_cost_usd,
+            blockers: readiness_cell.blockers.clone(),
+        });
+    }
+    if observed_cells != expected_cells {
+        let missing = expected_cells
+            .difference(&observed_cells)
+            .next()
+            .map(|(harness_id, model_id, task_id)| format!("{harness_id}/{model_id}/{task_id}"))
+            .unwrap_or_else(|| "unknown".to_string());
+        return Err(CoreError::EvalReportCandidate(format!(
+            "readiness report does not cover suite/matrix cell {missing:?}"
+        )));
+    }
+
+    let estimated_total_cost_usd = cells.iter().map(|cell| cell.estimated_cost_usd).sum();
+    let max_single_cell_cost_usd = cells
+        .iter()
+        .map(|cell| cell.estimated_cost_usd)
+        .fold(0.0, f64::max);
+    let summary = EvalBudgetEstimateSummary {
+        total_cells: cells.len() as u64,
+        estimateable_cells: cells.iter().filter(|cell| cell.estimateable).count() as u64,
+        blocked_cells: cells.iter().filter(|cell| !cell.estimateable).count() as u64,
+        estimated_total_cost_usd,
+        max_single_cell_cost_usd,
+    };
+    let report = EvalBudgetEstimateReport {
+        schema_version: EVAL_BUDGET_ESTIMATE_REPORT_VERSION.to_string(),
+        report_id: format!("{}-{}-budget", matrix.matrix_id, suite.suite_id),
+        generated_at: matrix.observed_at.clone(),
+        suite_id: suite.suite_id.clone(),
+        matrix_id: matrix.matrix_id.clone(),
+        readiness_report_id: readiness.report_id.clone(),
+        prompt_tokens_per_cell,
+        completion_tokens_per_cell,
+        retry_count,
         summary,
         cells,
     };
@@ -824,6 +998,52 @@ fn estimate_cost_usd(artifact: &ReviewerArtifact, model: &ModelCandidate) -> f64
     let input = artifact.usage.prompt_tokens as f64 * model.input_usd_per_m / 1_000_000.0;
     let output = artifact.usage.completion_tokens as f64 * model.output_usd_per_m / 1_000_000.0;
     input + output
+}
+
+fn estimate_provider_cell_cost_usd(
+    model: &ModelCandidate,
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    retry_count: u64,
+) -> f64 {
+    let input = prompt_tokens as f64 * model.input_usd_per_m / 1_000_000.0;
+    let output = completion_tokens as f64 * model.output_usd_per_m / 1_000_000.0;
+    (input + output) * retry_count as f64
+}
+
+fn readiness_cell_estimateable(cell: &EvalReadinessCell) -> bool {
+    let infrastructure_ready = readiness_cell_infrastructure_ready(cell);
+    let budget_ack_only_blocked = cell.requires_provider_budget_ack
+        && !cell.provider_budget_acknowledged
+        && cell.blockers.len() == 1;
+
+    cell.runnable || (infrastructure_ready && budget_ack_only_blocked)
+}
+
+fn readiness_cell_infrastructure_ready(cell: &EvalReadinessCell) -> bool {
+    cell.harness_available
+        && cell.peer_profile_found
+        && cell.peer_runner_available
+        && cell.env_missing.is_empty()
+}
+
+fn expected_readiness_cells(
+    suite: &EvalTaskSuite,
+    matrix: &HarnessModelMatrix,
+) -> BTreeSet<(String, String, String)> {
+    let mut expected = BTreeSet::new();
+    for harness in &matrix.harnesses {
+        for model in &matrix.models {
+            for task in &suite.tasks {
+                expected.insert((
+                    harness.harness_id.clone(),
+                    model.model_id.clone(),
+                    task.task_id.clone(),
+                ));
+            }
+        }
+    }
+    expected
 }
 
 fn catalog_deltas(matrix: &HarnessModelMatrix) -> Vec<ModelCatalogDelta> {
@@ -1415,6 +1635,80 @@ mod tests {
     }
 
     #[test]
+    fn eval_budget_estimate_counts_budget_blocked_ready_cells_as_estimateable() {
+        let suite = suite();
+        let matrix = matrix();
+        let readiness = readiness_report(false, vec![]);
+
+        let report = eval_budget_estimate_report(&suite, &matrix, &readiness, 10_000, 2_000, 2)
+            .expect("budget report builds");
+
+        report.validate().expect("budget report validates");
+        assert_eq!(report.summary.total_cells, 2);
+        assert_eq!(report.summary.estimateable_cells, 2);
+        assert_eq!(report.summary.blocked_cells, 0);
+        assert!(report
+            .cells
+            .iter()
+            .all(|cell| cell.estimateable && cell.budget_ack_required));
+        assert!(report.summary.estimated_total_cost_usd > 0.0);
+    }
+
+    #[test]
+    fn eval_budget_estimate_rejects_readiness_for_other_matrix() {
+        let suite = suite();
+        let matrix = matrix();
+        let mut readiness = readiness_report(false, vec![]);
+        readiness.matrix_id = "other-matrix".to_string();
+
+        let error = eval_budget_estimate_report(&suite, &matrix, &readiness, 10_000, 2_000, 1)
+            .expect_err("matrix mismatch is rejected");
+
+        assert!(error.to_string().contains("readiness matrix_id"));
+    }
+
+    #[test]
+    fn eval_budget_estimate_rejects_partial_readiness_coverage() {
+        let suite = suite();
+        let matrix = matrix();
+        let mut readiness = readiness_report(false, vec![]);
+        readiness.cells.pop();
+        readiness.summary = EvalReadinessSummary {
+            total_cells: readiness.cells.len() as u64,
+            runnable_cells: 0,
+            unavailable_harness_cells: 0,
+            unavailable_peer_runner_cells: 0,
+            missing_profile_cells: 0,
+            missing_env_cells: 0,
+            budget_blocked_cells: readiness.cells.len() as u64,
+        };
+
+        let error = eval_budget_estimate_report(&suite, &matrix, &readiness, 10_000, 2_000, 1)
+            .expect_err("partial readiness coverage is rejected");
+
+        assert!(error.to_string().contains("does not cover suite/matrix"));
+    }
+
+    #[test]
+    fn eval_budget_estimate_keeps_non_budget_blocked_cells_unestimateable() {
+        let suite = suite();
+        let matrix = matrix();
+        let readiness = readiness_report(false, vec!["manual infrastructure blocker".to_string()]);
+
+        let report = eval_budget_estimate_report(&suite, &matrix, &readiness, 10_000, 2_000, 2)
+            .expect("budget report builds");
+
+        report.validate().expect("budget report validates");
+        assert_eq!(report.summary.estimateable_cells, 0);
+        assert_eq!(report.summary.blocked_cells, 2);
+        assert_eq!(report.summary.estimated_total_cost_usd, 0.0);
+        assert!(report
+            .cells
+            .iter()
+            .all(|cell| !cell.estimateable && cell.estimated_cost_usd == 0.0));
+    }
+
+    #[test]
     fn reviewer_config_candidate_from_live_eval_report_builds_sandbox_packet() {
         let matrix = matrix();
         let harness = &matrix.harnesses[0];
@@ -1762,6 +2056,79 @@ mod tests {
                 notes: None,
             }],
         }
+    }
+
+    fn readiness_report(
+        provider_budget_acknowledged: bool,
+        extra_blockers: Vec<String>,
+    ) -> EvalReadinessReport {
+        let suite = suite();
+        let matrix = matrix();
+        let profiles = provider_profiles(true);
+        let probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: Some("0.78.1".to_string()),
+            path: Some("/bin/pi".to_string()),
+            failure_reason: None,
+        }];
+        let peer_runner_probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: None,
+            path: Some("/bin/cerberus-peer-harness".to_string()),
+            failure_reason: None,
+        }];
+        let available_env = BTreeSet::from(["OPENROUTER_API_KEY".to_string()]);
+        let mut report = harness_model_readiness_report(
+            &suite,
+            &matrix,
+            &probes,
+            &peer_runner_probes,
+            &profiles,
+            &available_env,
+            provider_budget_acknowledged,
+        )
+        .expect("readiness report builds");
+
+        if !extra_blockers.is_empty() {
+            for cell in &mut report.cells {
+                cell.runnable = false;
+                cell.blockers.extend(extra_blockers.clone());
+            }
+            report.summary = EvalReadinessSummary {
+                total_cells: report.cells.len() as u64,
+                runnable_cells: 0,
+                unavailable_harness_cells: report
+                    .cells
+                    .iter()
+                    .filter(|cell| !cell.harness_available)
+                    .count() as u64,
+                unavailable_peer_runner_cells: report
+                    .cells
+                    .iter()
+                    .filter(|cell| cell.peer_profile_found && !cell.peer_runner_available)
+                    .count() as u64,
+                missing_profile_cells: report
+                    .cells
+                    .iter()
+                    .filter(|cell| !cell.peer_profile_found)
+                    .count() as u64,
+                missing_env_cells: report
+                    .cells
+                    .iter()
+                    .filter(|cell| !cell.env_missing.is_empty())
+                    .count() as u64,
+                budget_blocked_cells: report
+                    .cells
+                    .iter()
+                    .filter(|cell| {
+                        cell.requires_provider_budget_ack && !cell.provider_budget_acknowledged
+                    })
+                    .count() as u64,
+            };
+        }
+        report
     }
 
     fn clean_task() -> EvalTask {

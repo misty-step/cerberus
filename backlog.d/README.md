@@ -33,6 +33,7 @@ Current sequence:
 25. `025-rust-action-entrypoint.md`
 26. `026-archive-shell-dispatcher.md`
 27. `027-eval-readiness-report.md`
+28. `028-eval-budget-estimate.md`
 
 Planning rules:
 
@@ -84,3 +85,5 @@ Planning rules:
 - Run a schema-valid eval readiness report before budget-approved provider
   evals so missing harnesses, profiles, env, and budget acknowledgement are
   visible before any provider spend.
+- Estimate the provider eval cost envelope from readiness, matrix pricing, and
+  explicit token assumptions before setting the provider budget acknowledgement.

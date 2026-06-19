@@ -1,7 +1,7 @@
 # Harness and Model Evaluation Shape
 
 Date: 2026-06-19
-Status: local live-peer fixture and provider readiness preflight implemented
+Status: local live-peer fixture plus provider readiness and budget preflights implemented
 
 ## Goal
 
@@ -187,6 +187,13 @@ environment variables, and records whether
 `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK` is present. It does not run provider
 harnesses, spend budget, rank models, or promote defaults.
 
+Backlog 028 adds `cerberus-cli eval-budget`. The command reads the checked eval
+suite, matrix, and readiness report plus explicit prompt-token,
+completion-token, and retry-count assumptions, then writes a schema-valid
+`EvalBudgetEstimateReport.v1`. The report exposes a cost envelope for cells
+that are ready except for provider budget acknowledgement. It does not estimate
+quality, infer real token usage, invoke providers, or change defaults.
+
 The current smoke result is intentionally not a live model bake-off. Cells run
 in `offline_contract` mode and must validate as `warn` or structured
 degraded/unavailable outcomes, not as production-ready `pass` outcomes. This
@@ -247,8 +254,11 @@ dry-run through the existing import path while still rejecting production import
 without approval. Provider readiness acceptance requires `cerberus-cli
 eval-readiness` to write a schema-valid report that names runnable cells and
 blockers for missing harnesses, live peer runners, profiles, required env, and
-provider-budget acknowledgement before any provider spend. Paid external model
-cells may be marked manual/nightly until budget and retry policy exist.
+provider-budget acknowledgement before any provider spend. Budget acceptance
+requires `cerberus-cli eval-budget` to write a schema-valid cost estimate from
+explicit token and retry assumptions before an operator acknowledges provider
+spend. Paid external model cells may be marked manual/nightly until budget and
+retry policy are approved.
 
 ## Verification System
 
@@ -256,12 +266,14 @@ cells may be marked manual/nightly until budget and retry policy exist.
   before changing defaults.
 - Falsifier: a model can be promoted without a schema-valid artifact, transcript,
   cost/latency record, and held-out finding-quality grade.
-- Driver: `cerberus-cli eval-readiness` before provider runs, then
-  `cerberus-cli eval-harness` over a checked-in suite and matrix.
+- Driver: `cerberus-cli eval-readiness`, then `cerberus-cli eval-budget`,
+  before provider runs; `cerberus-cli eval-harness` over a checked-in suite and
+  matrix after approval.
 - Grader: JSON schema validation, deterministic fixture assertions, rubric
   grades for seeded findings, false-positive thresholds, and budget limits.
-- Evidence packet: readiness report, `tmp/evals/harness-model/report.json`,
-  transcripts, raw model catalog snapshot, and rendered summary.
+- Evidence packet: readiness report, budget estimate report,
+  `tmp/evals/harness-model/report.json`, transcripts, raw model catalog
+  snapshot, and rendered summary.
 - Cadence: local smoke before config changes; full matrix before model
   promotion; periodic refresh when provider catalogs drift.
 - Gaps / waiver: no production model default changes in this shaping pass.

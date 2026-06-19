@@ -43,6 +43,8 @@ Current docs:
   `docs/shaping/026-archive-shell-dispatcher-plan.html`
 - Eval readiness report plan:
   `docs/shaping/027-eval-readiness-report-plan.html`
+- Eval budget estimate plan:
+  `docs/shaping/028-eval-budget-estimate-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

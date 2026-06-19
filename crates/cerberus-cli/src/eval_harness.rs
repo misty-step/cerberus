@@ -5,14 +5,14 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use cerberus_adapter::CommandHarnessInput;
 use cerberus_core::{
-    eval_reviewer_config, evaluate_harness_model_artifact, evaluate_harness_model_matrix,
-    harness_model_evaluation_output, harness_model_readiness_report,
+    eval_budget_estimate_report, eval_reviewer_config, evaluate_harness_model_artifact,
+    evaluate_harness_model_matrix, harness_model_evaluation_output, harness_model_readiness_report,
     unavailable_harness_model_cell, HarnessModelEvaluationOutput, HarnessProbe,
 };
 use cerberus_schema::{
-    EvalCellStatus, EvalExecutionMode, EvalTask, EvalTaskSuite, HarnessModelEvaluationCell,
-    HarnessModelMatrix, HarnessProfile, ModelCandidate, PeerHarnessCommandProfile,
-    PeerHarnessCommandProfiles, ReviewerArtifact, StaleModelFinding,
+    EvalCellStatus, EvalExecutionMode, EvalReadinessReport, EvalTask, EvalTaskSuite,
+    HarnessModelEvaluationCell, HarnessModelMatrix, HarnessProfile, ModelCandidate,
+    PeerHarnessCommandProfile, PeerHarnessCommandProfiles, ReviewerArtifact, StaleModelFinding,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -44,6 +44,87 @@ struct EvalReadinessArgs {
     matrix_path: PathBuf,
     peer_profiles_path: PathBuf,
     out_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EvalBudgetArgs {
+    suite_path: PathBuf,
+    matrix_path: PathBuf,
+    readiness_path: PathBuf,
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    retry_count: u64,
+    out_path: PathBuf,
+}
+
+impl EvalBudgetArgs {
+    fn parse(args: &[String]) -> Result<Self> {
+        let mut suite = None;
+        let mut matrix = None;
+        let mut readiness = None;
+        let mut prompt_tokens = None;
+        let mut completion_tokens = None;
+        let mut retry_count = 1;
+        let mut out = None;
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--suite" => {
+                    suite = Some(required_arg(args, index, "--suite")?);
+                    index += 2;
+                }
+                "--matrix" => {
+                    matrix = Some(required_arg(args, index, "--matrix")?);
+                    index += 2;
+                }
+                "--readiness" => {
+                    readiness = Some(required_arg(args, index, "--readiness")?);
+                    index += 2;
+                }
+                "--prompt-tokens" => {
+                    prompt_tokens = Some(parse_positive_u64(
+                        &required_arg(args, index, "--prompt-tokens")?,
+                        "--prompt-tokens",
+                    )?);
+                    index += 2;
+                }
+                "--completion-tokens" => {
+                    completion_tokens = Some(parse_positive_u64(
+                        &required_arg(args, index, "--completion-tokens")?,
+                        "--completion-tokens",
+                    )?);
+                    index += 2;
+                }
+                "--retry-count" => {
+                    retry_count = parse_positive_u64(
+                        &required_arg(args, index, "--retry-count")?,
+                        "--retry-count",
+                    )?;
+                    index += 2;
+                }
+                "--out" => {
+                    out = Some(required_arg(args, index, "--out")?);
+                    index += 2;
+                }
+                other => bail!("unknown eval-budget argument {other:?}"),
+            }
+        }
+
+        Ok(Self {
+            suite_path: PathBuf::from(suite.context("eval-budget requires --suite <path>")?),
+            matrix_path: PathBuf::from(matrix.context("eval-budget requires --matrix <path>")?),
+            readiness_path: PathBuf::from(
+                readiness.context("eval-budget requires --readiness <path>")?,
+            ),
+            prompt_tokens: prompt_tokens
+                .context("eval-budget requires --prompt-tokens <positive-int>")?,
+            completion_tokens: completion_tokens
+                .context("eval-budget requires --completion-tokens <positive-int>")?,
+            retry_count,
+            out_path: PathBuf::from(out.context("eval-budget requires --out <path>")?),
+        })
+    }
 }
 
 impl EvalReadinessArgs {
@@ -215,6 +296,25 @@ pub fn eval_readiness(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn eval_budget(args: Vec<String>) -> Result<()> {
+    let args = EvalBudgetArgs::parse(&args)?;
+    let suite = read_eval_suite(&args.suite_path)?;
+    let matrix = read_eval_matrix(&args.matrix_path)?;
+    let readiness = read_eval_readiness_report(&args.readiness_path)?;
+    let report = eval_budget_estimate_report(
+        &suite,
+        &matrix,
+        &readiness,
+        args.prompt_tokens,
+        args.completion_tokens,
+        args.retry_count,
+    )?;
+
+    write_json(&args.out_path, &report)?;
+    println!("{}", args.out_path.display());
+    Ok(())
+}
+
 fn visible_required_env(peer_profiles: &PeerHarnessCommandProfiles) -> BTreeSet<String> {
     peer_profiles
         .profiles
@@ -223,6 +323,16 @@ fn visible_required_env(peer_profiles: &PeerHarnessCommandProfiles) -> BTreeSet<
         .filter(|name| env::var_os(name.as_str()).is_some())
         .cloned()
         .collect()
+}
+
+fn parse_positive_u64(value: &str, flag: &'static str) -> Result<u64> {
+    let parsed = value
+        .parse::<u64>()
+        .with_context(|| format!("{flag} must be a positive integer"))?;
+    if parsed == 0 {
+        bail!("{flag} must be greater than zero");
+    }
+    Ok(parsed)
 }
 
 fn probe_peer_harness_runners(
@@ -566,6 +676,15 @@ fn read_peer_harness_profiles(path: &Path) -> Result<PeerHarnessCommandProfiles>
         .with_context(|| format!("failed to parse peer harness profiles {}", path.display()))?;
     profiles.validate()?;
     Ok(profiles)
+}
+
+fn read_eval_readiness_report(path: &Path) -> Result<EvalReadinessReport> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read eval readiness report {}", path.display()))?;
+    let report: EvalReadinessReport = serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse eval readiness report {}", path.display()))?;
+    report.validate()?;
+    Ok(report)
 }
 
 fn read_reviewer_artifact(path: &Path) -> Result<ReviewerArtifact> {

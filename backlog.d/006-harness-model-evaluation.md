@@ -165,13 +165,15 @@ Relevant Cerberus drift:
 7. Done: add a provider eval readiness report so missing harnesses, peer
    profiles, required env, and provider-budget acknowledgement are visible
    before a live provider run.
-8. Remaining: run budget-approved provider-backed peer evals rather than the
+8. Done: add a no-spend eval budget estimate so the provider-backed matrix has
+   an explicit cost envelope before budget acknowledgement.
+9. Remaining: run budget-approved provider-backed peer evals rather than the
    local fixture reviewer.
-9. Done: convert fully passing live report winners into a sandbox-only
+10. Done: convert fully passing live report winners into a sandbox-only
    `ReviewerConfigPacket.v1` candidate with embedded `ReviewConfig.v1`; keep
    production defaults unchanged until the report and cost envelope are
    reviewed.
-10. Done: feed accepted configs into backlog 004's Daedalus promotion packet
+11. Done: feed accepted configs into backlog 004's Daedalus promotion packet
    flow by letting Rust review commands run validated packets directly through
    backlog 020's `--config-packet` bridge. Production defaults remain
    unchanged.
@@ -211,6 +213,12 @@ can consume validated `ReviewerConfigPacket.v1` artifacts directly with
 `--config-packet`, which proves the sandbox execution bridge from eval packets
 to review artifacts. The remaining eval gap is budget-approved provider-backed
 quality evidence.
+
+Backlog 028 adds `cerberus-cli eval-budget`. It converts the current readiness
+report plus checked model pricing and explicit token/retry assumptions into a
+schema-valid `EvalBudgetEstimateReport.v1`. This proves the provider spend
+acknowledgement can be reviewed against a concrete envelope; it still does not
+run providers or prove model quality.
 
 ## Notes
 

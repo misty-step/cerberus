@@ -8,6 +8,7 @@ pub const MODEL_CANDIDATE_VERSION: &str = "model-candidate.v1";
 pub const HARNESS_MODEL_MATRIX_VERSION: &str = "harness-model-matrix.v1";
 pub const HARNESS_MODEL_EVALUATION_REPORT_VERSION: &str = "harness-model-evaluation-report.v1";
 pub const EVAL_READINESS_REPORT_VERSION: &str = "eval-readiness-report.v1";
+pub const EVAL_BUDGET_ESTIMATE_REPORT_VERSION: &str = "eval-budget-estimate-report.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvalTaskSuite {
@@ -491,6 +492,217 @@ impl EvalReadinessCell {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EvalBudgetEstimateReport {
+    pub schema_version: String,
+    pub report_id: String,
+    pub generated_at: String,
+    pub suite_id: String,
+    pub matrix_id: String,
+    pub readiness_report_id: String,
+    pub prompt_tokens_per_cell: u64,
+    pub completion_tokens_per_cell: u64,
+    pub retry_count: u64,
+    pub summary: EvalBudgetEstimateSummary,
+    pub cells: Vec<EvalBudgetEstimateCell>,
+}
+
+impl EvalBudgetEstimateReport {
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        expect_version(
+            "schema_version",
+            &self.schema_version,
+            EVAL_BUDGET_ESTIMATE_REPORT_VERSION,
+        )?;
+        non_empty("report_id", &self.report_id)?;
+        non_empty("generated_at", &self.generated_at)?;
+        non_empty("suite_id", &self.suite_id)?;
+        non_empty("matrix_id", &self.matrix_id)?;
+        non_empty("readiness_report_id", &self.readiness_report_id)?;
+        expect_positive_u64("prompt_tokens_per_cell", self.prompt_tokens_per_cell)?;
+        expect_positive_u64(
+            "completion_tokens_per_cell",
+            self.completion_tokens_per_cell,
+        )?;
+        expect_positive_u64("retry_count", self.retry_count)?;
+        if self.cells.is_empty() {
+            return Err(SchemaError::Missing { field: "cells" });
+        }
+
+        let mut cell_ids = BTreeSet::new();
+        for cell in &self.cells {
+            cell.validate()?;
+            if !cell_ids.insert(cell.cell_id.as_str()) {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cells.cell_id",
+                });
+            }
+            if cell.prompt_tokens != self.prompt_tokens_per_cell {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cell.prompt_tokens",
+                });
+            }
+            if cell.completion_tokens != self.completion_tokens_per_cell {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cell.completion_tokens",
+                });
+            }
+            if cell.retry_count != self.retry_count {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cell.retry_count",
+                });
+            }
+        }
+        self.summary.validate_for_cells(&self.cells)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EvalBudgetEstimateSummary {
+    pub total_cells: u64,
+    pub estimateable_cells: u64,
+    pub blocked_cells: u64,
+    pub estimated_total_cost_usd: f64,
+    pub max_single_cell_cost_usd: f64,
+}
+
+impl EvalBudgetEstimateSummary {
+    fn validate_for_cells(&self, cells: &[EvalBudgetEstimateCell]) -> Result<(), SchemaError> {
+        let total_cells = cells.len() as u64;
+        let estimateable_cells = cells.iter().filter(|cell| cell.estimateable).count() as u64;
+        let blocked_cells = cells.iter().filter(|cell| !cell.estimateable).count() as u64;
+        let estimated_total_cost_usd = cells.iter().map(|cell| cell.estimated_cost_usd).sum();
+        let max_single_cell_cost_usd = cells
+            .iter()
+            .map(|cell| cell.estimated_cost_usd)
+            .fold(0.0, f64::max);
+
+        if self.total_cells != total_cells {
+            return Err(SchemaError::Inconsistent {
+                field: "budget_summary.total_cells",
+            });
+        }
+        if self.estimateable_cells != estimateable_cells {
+            return Err(SchemaError::Inconsistent {
+                field: "budget_summary.estimateable_cells",
+            });
+        }
+        if self.blocked_cells != blocked_cells {
+            return Err(SchemaError::Inconsistent {
+                field: "budget_summary.blocked_cells",
+            });
+        }
+        if !float_close(self.estimated_total_cost_usd, estimated_total_cost_usd) {
+            return Err(SchemaError::Inconsistent {
+                field: "budget_summary.estimated_total_cost_usd",
+            });
+        }
+        if !float_close(self.max_single_cell_cost_usd, max_single_cell_cost_usd) {
+            return Err(SchemaError::Inconsistent {
+                field: "budget_summary.max_single_cell_cost_usd",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EvalBudgetEstimateCell {
+    pub cell_id: String,
+    pub harness_id: String,
+    pub model_id: String,
+    pub task_id: String,
+    pub readiness_runnable: bool,
+    pub readiness_harness_available: bool,
+    pub readiness_peer_profile_found: bool,
+    pub readiness_peer_runner_available: bool,
+    #[serde(default)]
+    pub readiness_env_missing: Vec<String>,
+    pub budget_ack_required: bool,
+    pub budget_acknowledged: bool,
+    pub estimateable: bool,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub retry_count: u64,
+    pub estimated_cost_usd: f64,
+    #[serde(default)]
+    pub blockers: Vec<String>,
+}
+
+impl EvalBudgetEstimateCell {
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        non_empty("budget_cell.cell_id", &self.cell_id)?;
+        non_empty("budget_cell.harness_id", &self.harness_id)?;
+        non_empty("budget_cell.model_id", &self.model_id)?;
+        non_empty("budget_cell.task_id", &self.task_id)?;
+        validate_unique_non_empty(
+            "budget_cell.readiness_env_missing",
+            &self.readiness_env_missing,
+        )?;
+        expect_positive_u64("budget_cell.prompt_tokens", self.prompt_tokens)?;
+        expect_positive_u64("budget_cell.completion_tokens", self.completion_tokens)?;
+        expect_positive_u64("budget_cell.retry_count", self.retry_count)?;
+        expect_range(
+            "budget_cell.estimated_cost_usd",
+            self.estimated_cost_usd,
+            0.0,
+            f64::MAX,
+        )?;
+        validate_unique_non_empty("budget_cell.blockers", &self.blockers)?;
+        let should_be_estimateable = self.should_be_estimateable()?;
+        if self.estimateable != should_be_estimateable {
+            return Err(SchemaError::Inconsistent {
+                field: "budget_cell.estimateable",
+            });
+        }
+        if self.estimateable {
+            if self.estimated_cost_usd <= 0.0 {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cell.estimated_cost_usd",
+                });
+            }
+        } else {
+            if self.blockers.is_empty() {
+                return Err(SchemaError::Missing {
+                    field: "budget_cell.blockers",
+                });
+            }
+            if self.estimated_cost_usd != 0.0 {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cell.estimated_cost_usd",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn should_be_estimateable(&self) -> Result<bool, SchemaError> {
+        if self.readiness_runnable {
+            if !self.readiness_harness_available
+                || !self.readiness_peer_profile_found
+                || !self.readiness_peer_runner_available
+                || !self.readiness_env_missing.is_empty()
+                || (self.budget_ack_required && !self.budget_acknowledged)
+                || !self.blockers.is_empty()
+            {
+                return Err(SchemaError::Inconsistent {
+                    field: "budget_cell.readiness_runnable",
+                });
+            }
+            return Ok(true);
+        }
+
+        let budget_only_blocked = self.budget_ack_required
+            && !self.budget_acknowledged
+            && self.readiness_harness_available
+            && self.readiness_peer_profile_found
+            && self.readiness_peer_runner_available
+            && self.readiness_env_missing.is_empty()
+            && self.blockers.len() == 1;
+        Ok(budget_only_blocked)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HarnessModelEvaluationSummary {
     pub total_cells: u64,
     pub valid_artifacts: u64,
@@ -727,6 +939,18 @@ fn validate_unique_non_empty(field: &'static str, values: &[String]) -> Result<(
     Ok(())
 }
 
+fn expect_positive_u64(field: &'static str, actual: u64) -> Result<(), SchemaError> {
+    if actual == 0 {
+        return Err(SchemaError::OutOfRange {
+            field,
+            min: 1.0,
+            max: f64::MAX,
+            actual: 0.0,
+        });
+    }
+    Ok(())
+}
+
 fn expect_version(
     field: &'static str,
     actual: &str,
@@ -754,6 +978,10 @@ fn expect_range(field: &'static str, actual: f64, min: f64, max: f64) -> Result<
             actual,
         })
     }
+}
+
+fn float_close(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 0.000_000_001
 }
 
 #[cfg(test)]
@@ -806,6 +1034,55 @@ mod tests {
             .expect("blocked readiness report validates");
     }
 
+    #[test]
+    fn eval_budget_estimate_report_rejects_total_cost_drift() {
+        let mut report = budget_estimate_report();
+        report.summary.estimated_total_cost_usd += 0.01;
+
+        assert!(matches!(
+            report.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "budget_summary.estimated_total_cost_usd"
+            })
+        ));
+    }
+
+    #[test]
+    fn eval_budget_estimate_report_rejects_estimateable_infra_blocker() {
+        let mut report = budget_estimate_report();
+        report.cells[0].readiness_peer_runner_available = false;
+        report.cells[0]
+            .blockers
+            .push("peer harness runner unavailable".to_string());
+
+        assert!(matches!(
+            report.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "budget_cell.estimateable"
+            })
+        ));
+    }
+
+    #[test]
+    fn eval_budget_estimate_report_rejects_unblocked_unrunnable_estimateable_cell() {
+        let mut report = budget_estimate_report();
+        report.cells[0].blockers.clear();
+
+        assert!(matches!(
+            report.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "budget_cell.estimateable"
+            })
+        ));
+    }
+
+    #[test]
+    fn eval_budget_estimate_report_validates_estimateable_cells() {
+        budget_estimate_report()
+            .validate()
+            .expect("budget estimate report validates");
+    }
+
     fn readiness_report() -> EvalReadinessReport {
         EvalReadinessReport {
             schema_version: EVAL_READINESS_REPORT_VERSION.to_string(),
@@ -843,6 +1120,46 @@ mod tests {
                     "missing environment variable(s): OPENROUTER_API_KEY".to_string(),
                     "provider budget acknowledgement missing".to_string(),
                 ],
+            }],
+        }
+    }
+
+    fn budget_estimate_report() -> EvalBudgetEstimateReport {
+        EvalBudgetEstimateReport {
+            schema_version: EVAL_BUDGET_ESTIMATE_REPORT_VERSION.to_string(),
+            report_id: "budget".to_string(),
+            generated_at: "2026-06-19".to_string(),
+            suite_id: "suite".to_string(),
+            matrix_id: "matrix".to_string(),
+            readiness_report_id: "readiness".to_string(),
+            prompt_tokens_per_cell: 10_000,
+            completion_tokens_per_cell: 2_000,
+            retry_count: 2,
+            summary: EvalBudgetEstimateSummary {
+                total_cells: 1,
+                estimateable_cells: 1,
+                blocked_cells: 0,
+                estimated_total_cost_usd: 0.048,
+                max_single_cell_cost_usd: 0.048,
+            },
+            cells: vec![EvalBudgetEstimateCell {
+                cell_id: "pi__fake_model__task".to_string(),
+                harness_id: "pi".to_string(),
+                model_id: "fake/model".to_string(),
+                task_id: "task".to_string(),
+                readiness_runnable: false,
+                readiness_harness_available: true,
+                readiness_peer_profile_found: true,
+                readiness_peer_runner_available: true,
+                readiness_env_missing: Vec::new(),
+                budget_ack_required: true,
+                budget_acknowledged: false,
+                estimateable: true,
+                prompt_tokens: 10_000,
+                completion_tokens: 2_000,
+                retry_count: 2,
+                estimated_cost_usd: 0.048,
+                blockers: vec!["provider budget acknowledgement missing".to_string()],
             }],
         }
     }
