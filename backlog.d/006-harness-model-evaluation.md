@@ -86,9 +86,16 @@ Out of scope:
   reviewer quality.
 - Coupling Cerberus to one harness runtime.
 
-## Research Snapshot
+## Current Source Snapshot
 
-Snapshot date: 2026-06-18.
+Current source observation: 2026-06-19T12:52:39Z.
+
+The checked machine-readable source of truth is
+`fixtures/evals/harness-model-matrix.json`. The direct OpenRouter refresh in
+`tmp/evals/provider-source-refresh-2026-06-19T125239Z/` produced a generated
+matrix semantically equal to the checked matrix after normalizing only
+observation timestamps. Previous 2026-06-18 catalog values remain preserved in
+the checked `previous` fields where they explain drift.
 
 Local harnesses available:
 
@@ -97,15 +104,14 @@ Local harnesses available:
 - `opencode` 1.2.6 at `/Users/phaedrus/.opencode/bin/opencode`
 - `omp` 16.0.9 at `/Users/phaedrus/.bun/bin/omp` after backlog 014 refresh
 
-Current model facts from `https://openrouter.ai/api/v1/models` on
-2026-06-18:
+Current model facts from `https://openrouter.ai/api/v1/models`:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Notes |
 |---|---:|---:|---:|---:|---:|---|
-| `z-ai/glm-5.2` | 1,048,576 | 65,536 | 1.20 | 3.20 | 0.20 | Backlog 014 refreshed OpenRouter API facts after the initial snapshot; OpenRouter's public model page still presents coarse pricing/context, so live probes must record the exact serving ceiling. |
+| `z-ai/glm-5.2` | 1,048,576 | 131,072 | 1.20 | 4.10 | 0.20 | OpenRouter's current row and Z.ai docs support the 1M long-horizon coding rationale; the previous 65,536 / $3.20 values are historical drift evidence, not current source truth. |
 | `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | Kimi docs say K2.7 Code improves long-horizon coding over K2.6 and keeps a 256K context window. |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | DeepSeek's 2026-04-24 V4 preview states V4-Pro and V4-Flash are API-available and support 1M context. |
-| `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | Candidate for cheap smoke and simple reviewer lanes; must be graded separately from Pro. |
+| `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | Candidate for cheap smoke and simple reviewer lanes; OpenRouter's top-provider context is lower than the model context, so live runs must capture truncation/serving limits. |
 
 Official harness facts:
 
@@ -134,6 +140,8 @@ Relevant Cerberus drift:
   `docs/shaping/harness-model-evaluation.md`
 - Rendered plan:
   `docs/shaping/harness-model-evaluation-plan.html`
+- Eval source-truth consolidation plan:
+  `docs/shaping/006-eval-source-truth-consolidation-plan.html`
 - Goose docs:
   `https://goose-docs.ai/`
 - OpenCode + OpenRouter docs:
@@ -468,6 +476,36 @@ Provider full-suite rerun gate refresh, 2026-06-19T11:36:40Z:
 - This is a freshness and gate receipt only. The full provider-backed six-task
   rerun is still the next acceptance step before ranking, comparison, or
   reviewer-default promotion.
+
+Eval source-truth consolidation receipt, 2026-06-19T12:52:39Z:
+
+- Added `docs/shaping/006-eval-source-truth-consolidation-plan.html`.
+- Replaced the top-level research snapshot with a current source snapshot
+  anchored to `fixtures/evals/harness-model-matrix.json`, so stale 2026-06-18
+  GLM 5.2 values are no longer presented as current.
+- No-spend source evidence lives under
+  `tmp/evals/provider-source-refresh-2026-06-19T125239Z/`:
+  - Candidate extract:
+    `openrouter-candidates.json`
+    (`sha256:ef008501aedcc092ffe64cc885fc55c96b0cf0976ab2312afb8132bb37bef7f0`).
+  - Harness version transcript:
+    `harness-versions.txt`
+    (`sha256:341f6dc063d1fd9761dfa08c61b1f7a53fc03a9f1b0a92658043500d3d644322`).
+  - Generated matrix:
+    `harness-model-matrix.url-generated.json`
+    (`sha256:8cc0864fb0bd6a8c0d9be3513f93715a65947148a3a3243c6cb161ba74ebb238`).
+  - Raw OpenRouter catalog:
+    `openrouter-models.url.raw.json`
+    (`sha256:4f080a5fc88ccf8f55716030c69145bbd38722a8e87e6b312f1641d806c266bf`).
+- The generated matrix validates and is semantically equal to the checked
+  matrix after normalizing only `observed_at` and `catalog_observed_at`.
+- No provider budget acknowledgement was present. Fresh readiness and budget
+  reports validate with 96 total cells, 0 runnable cells, 96 budget-blocked
+  cells, 96 estimateable cells, and `$2.013600000000001` estimated total under
+  the documented 20,000 prompt / 4,000 completion token assumption with 1 retry.
+- This is source-truth hygiene only. It does not spend provider budget, rank
+  harness/model pairs, promote defaults, or close the remaining full
+  provider-backed six-task rerun.
 
 ## Notes
 

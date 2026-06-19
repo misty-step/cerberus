@@ -330,6 +330,15 @@ runnable cells, 96 budget-blocked cells, 96 estimateable cells, and
 budget only when the operator explicitly approves the full six-task live
 provider rerun.
 
+Source-truth consolidation at `2026-06-19T12:52:39Z` removed the remaining stale
+top-level snapshot in backlog 006. The source-refresh packet at
+`tmp/evals/provider-source-refresh-2026-06-19T125239Z/` captures the current
+OpenRouter raw catalog, candidate extract, harness versions, validated generated
+matrix, validated readiness report, and validated budget estimate. The generated
+matrix is semantically identical to `fixtures/evals/harness-model-matrix.json`
+after normalizing observation timestamps, so the checked fixture remains the
+machine-readable source of truth.
+
 ## Alternatives Considered
 
 ### Public Leaderboards Only
@@ -422,5 +431,7 @@ retry policy are approved.
 
 - Backlog ticket: `backlog.d/006-harness-model-evaluation.md`
 - HTML plan: `docs/shaping/harness-model-evaluation-plan.html`
+- Source-truth consolidation plan:
+  `docs/shaping/006-eval-source-truth-consolidation-plan.html`
 - Rust contract ticket: `backlog.d/001-rust-review-engine-contract.md`
 - Daedalus promotion ticket: `backlog.d/004-daedalus-reviewer-config-promotion.md`
