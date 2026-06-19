@@ -195,6 +195,17 @@ completion-token, and retry-count assumptions, then writes a schema-valid
 that are ready except for provider budget acknowledgement. It does not estimate
 quality, infer real token usage, invoke providers, or change defaults.
 
+`eval-harness`, `eval-readiness`, and `eval-budget` also accept repeated
+`--harness <id>`, `--model <id>`, and `--task <id>` selectors. Selectors are
+additive and filter the loaded suite/matrix before the existing eval logic runs;
+omitting selectors preserves the full matrix. `eval-budget` may read a full
+readiness report and estimate only the selected cells, as long as that readiness
+report covers the selected harness/model/task set. This is for staged reruns and
+cost review only. A selected report is not full-suite provider quality evidence
+and cannot justify default promotion by itself. Selected reports currently rely
+on their output path and cell list for subset identity; add explicit subset
+metadata before storing them as durable automation artifacts.
+
 No-spend refresh at `2026-06-19T09:55:18Z` captured a fresh OpenRouter API
 snapshot and local harness version transcript under
 `tmp/evals/provider-refresh-2026-06-19/`. The four checked candidate model rows

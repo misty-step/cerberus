@@ -189,6 +189,9 @@ Relevant Cerberus drift:
 12. Remaining: rerun the budget-approved provider-backed matrix over
    clean, seeded-bug, prompt-injection, long-context, degraded, and
    schema-hostile tasks before any default promotion.
+13. Done: add harness/model/task subset selectors for eval, readiness, and
+   budget commands so hardened cells can be staged without a new planner or
+   provider spend.
 
 ## Implementation Receipt
 
@@ -506,6 +509,39 @@ Eval source-truth consolidation receipt, 2026-06-19T12:52:39Z:
 - This is source-truth hygiene only. It does not spend provider budget, rank
   harness/model pairs, promote defaults, or close the remaining full
   provider-backed six-task rerun.
+
+Eval subset selection receipt, 2026-06-19:
+
+- Added rendered selector plan:
+  `docs/shaping/006-eval-subset-selection-plan.html`.
+- Added repeated `--harness <id>`, `--model <id>`, and `--task <id>` selectors
+  to `cerberus-cli eval-harness`, `eval-readiness`, and `eval-budget`.
+  Selectors filter the loaded suite/matrix before the existing core eval logic
+  runs; no selectors preserve full-matrix behavior.
+- `eval-budget` can estimate a selected subset from a full readiness report by
+  filtering the readiness cells to the same selected harness/model/task set
+  before budget calculation.
+- Added focused CLI module tests proving selected offline eval output, selected
+  budget estimation from full readiness, and unknown selector rejection.
+- No-spend proof lives under `tmp/evals/subset-selection-2026-06-19/`:
+  `offline-eval/report.json`
+  (`sha256:238da2bd3c25a04495f1cb6313d0b7a8c19882323be90309eb3bc084be11932d`),
+  `offline-eval/transcripts/goose__z-ai_glm-5_2__clean-no-finding.txt`
+  (`sha256:70a1fd8cb952ec3c7b2cbcd43d71f09e802b3715505344ed40d9e25c60e6866c`),
+  `readiness-goose-glm-clean.json`
+  (`sha256:9b1eafd3a6bed4d6500f1e82f512ee0e57ec251271229577a0fdc5bf4e0d5592`),
+  and `budget-goose-glm-clean.json`
+  (`sha256:dbd89a8811f87b566fd0c4ad5c0cf85d9e5def9e5106fba3bfa1d8c888107dee`).
+- Selected QA cell: `goose` + `z-ai/glm-5.2` + `clean-no-finding`. Offline
+  eval wrote 1 warn cell with a valid artifact and score `1.0`; no-ack
+  readiness wrote 1 budget-blocked cell; selected budget from the prior full
+  readiness report estimated 1 cell at `$0.040400000000000005` under the
+  documented 20,000 prompt / 4,000 completion token assumption with 1 retry.
+- This is rerun-control hardening only. It does not spend provider budget, rank
+  harness/model pairs, promote defaults, or close the remaining full
+  provider-backed six-task rerun. Selected reports currently rely on output
+  path plus cell list for subset identity; add explicit subset metadata before
+  feeding selected reports to durable stores or automation.
 
 ## Notes
 
