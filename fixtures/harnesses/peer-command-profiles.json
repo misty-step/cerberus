@@ -1,5 +1,5 @@
 {
-  "schema_version": "peer-harness-command-profiles.v1",
+  "schema_version": "peer-harness-command-profiles.v2",
   "observed_at": "2026-06-18",
   "profiles": [
     {
@@ -13,6 +13,7 @@
       "env_required": [
         "OPENROUTER_API_KEY"
       ],
+      "requires_provider_budget_ack": true,
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "pi",
@@ -46,6 +47,7 @@
       "env_required": [
         "OPENROUTER_API_KEY"
       ],
+      "requires_provider_budget_ack": true,
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "goose",
@@ -81,6 +83,7 @@
       "env_required": [
         "OPENROUTER_API_KEY"
       ],
+      "requires_provider_budget_ack": true,
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "opencode",
@@ -115,6 +118,7 @@
       "env_required": [
         "OPENROUTER_API_KEY"
       ],
+      "requires_provider_budget_ack": true,
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "omp",

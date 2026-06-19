@@ -96,6 +96,11 @@
         "cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-artifact.json --execution-plan-output tmp/peer-runner-execution-plan.json",
         "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-execution-plan.json",
         "CERBERUS_PEER_HARNESS_LIVE=1 cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-live-artifact.json --execution-plan-output tmp/peer-runner-live-plan.json (expected non-zero, writes plan, no artifact)",
+        "cargo test --workspace peer_harness_live",
+        "cargo test -p cerberus-adapter command_harness",
+        "cargo run --locked -p cerberus-cli -- validate fixtures/harnesses/live-peer-command-profiles.json",
+        "CERBERUS_PEER_HARNESS_LIVE=1 cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- --harness fixture-live --profiles fixtures/harnesses/live-peer-command-profiles.json --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-runner-live-artifact.json --transcript-output tmp/peer-runner-live-transcript.txt",
+        "cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-live-artifact.json",
         "cargo test --workspace local_review",
         "cargo run --locked -p cerberus-cli -- review-local --diff-file fixtures/local-review/local.diff --out tmp/local-review",
         "cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-request.json",
@@ -105,7 +110,7 @@
         "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
       ],
       "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
-      "next_action": "Port routing, live peer command invocation, live transcript capture, timeout enforcement, and hosted/API review fixtures before retiring Elixir execution."
+      "next_action": "Port routing, safe provider prompt transport, budget-approved provider-backed peer evals, and hosted/API review fixtures before retiring Elixir execution."
     },
     {
       "surface_id": "elixir-verdict-store",

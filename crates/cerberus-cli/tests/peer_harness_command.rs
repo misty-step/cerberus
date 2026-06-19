@@ -43,7 +43,7 @@ fn peer_harness_command_profile_runs_through_command_harness() {
     artifact.validate().expect("run artifact validates");
 
     let plan_json = fs::read_to_string(&plan).expect("execution plan is written");
-    assert!(plan_json.contains("\"schema_version\": \"peer-harness-execution-plan.v1\""));
+    assert!(plan_json.contains("\"schema_version\": \"peer-harness-execution-plan.v2\""));
     assert!(plan_json.contains("\"peer_command\": \"pi\""));
     assert!(plan_json.contains("\"openrouter/test-model\""));
     let _ = fs::remove_file(&plan);

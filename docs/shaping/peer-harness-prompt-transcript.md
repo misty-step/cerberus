@@ -48,5 +48,7 @@ finding. The default no-transcript runner path remains degraded `SKIP`.
 
 ## Live Boundary
 
-`CERBERUS_PEER_HARNESS_LIVE=1` still fails closed. The runner does not call Pi,
-Goose, OpenCode, OMP, OpenRouter, or paid providers in this slice.
+Backlog 016 adds fixture-backed live command invocation. Pi, Goose, OpenCode,
+OMP, OpenRouter, and other provider-backed profiles remain budget-gated by
+`CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1` and require non-argv prompt
+transport before live provider execution.

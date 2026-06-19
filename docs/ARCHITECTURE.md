@@ -46,7 +46,7 @@ local fixture behavior stable; live Pi, Goose, OpenCode, OMP, Sprites, or
 provider adapters attach behind this boundary.
 
 Peer harness command profiles are validated data before they are live execution.
-`PeerHarnessCommandProfiles.v1` records the future protocol runner command and
+`PeerHarnessCommandProfiles.v2` records the future protocol runner command and
 the underlying peer CLI template; raw peer CLIs do not define the Cerberus
 input/output contract.
 
@@ -54,8 +54,10 @@ input/output contract.
 It currently proves file handoff and artifact validation offline by emitting a
 degraded `SKIP` artifact with exact request coverage. It can also render a
 deterministic prompt and parse exact marked local transcript fixtures into
-reviewer artifacts. It does not call Pi/Goose/OpenCode/OMP or spend provider
-budget.
+reviewer artifacts. Fixture-backed live peer invocation now runs behind
+`CERBERUS_PEER_HARNESS_LIVE=1`; provider-backed Pi/Goose/OpenCode/OMP profiles
+remain blocked until both provider-budget acknowledgement and non-argv prompt
+transport are in place.
 
 `cerberus-cli review-local` is the Rust local diff replay path. It reads a
 git-style diff file, builds a `ReviewRequest.v1` with `LocalDiff` source, runs
@@ -204,14 +206,17 @@ Responsibilities:
 - write schema-valid execution plans that expose the exact peer command,
   resolved args, environment status, timeout, output contract, and transcript
   markers without embedding secret values or the rendered prompt
+- invoke peer commands under `CERBERUS_PEER_HARNESS_LIVE=1` through the
+  bounded Rust adapter subprocess primitive
+- capture live stdout transcripts and parse exact marked reviewer artifact JSON
 - parse local transcripts that contain exactly one marked reviewer artifact JSON
   block
 - validate parsed artifacts against the core reviewer/request acceptance rule
-- fail closed if live peer execution is requested
+- fail closed before provider-backed execution unless the profile budget
+  acknowledgement is explicit and prompt transport avoids argv
 
 Non-responsibilities:
 
-- peer CLI invocation
 - execution-plan scheduling or retry policy
 - free-form transcript interpretation
 - model budget or quality evaluation

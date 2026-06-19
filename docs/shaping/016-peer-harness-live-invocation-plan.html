@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>015 - Peer Harness Execution Plan</title>
+  <title>016 - Peer Harness Live Invocation</title>
   <style>
     :root {
-      --bg: #f7f1e5;
+      --bg: #f5f1e8;
       --panel: #fffaf0;
       --ink: #171713;
       --muted: #5f5a4f;
       --line: #d7cebd;
-      --accent: #246a5c;
-      --warn: #8a4b18;
+      --accent: #245f78;
+      --danger: #8a371f;
     }
     body {
       margin: 0;
@@ -26,7 +26,7 @@
       padding: 40px 24px 72px;
     }
     .hero {
-      min-height: 56vh;
+      min-height: 54vh;
       display: grid;
       align-content: center;
       border-bottom: 1px solid var(--line);
@@ -41,12 +41,12 @@
     h1 {
       max-width: 940px;
       margin: 14px 0 18px;
-      font-size: clamp(42px, 7vw, 86px);
-      line-height: 0.96;
+      font-size: clamp(42px, 7vw, 82px);
+      line-height: 0.98;
       letter-spacing: 0;
     }
     .lede {
-      max-width: 760px;
+      max-width: 780px;
       color: var(--muted);
       font-size: 20px;
       line-height: 1.45;
@@ -77,7 +77,7 @@
     }
     code {
       color: var(--ink);
-      background: #eee5d4;
+      background: #ece3d3;
       border-radius: 4px;
       padding: 1px 4px;
     }
@@ -104,7 +104,11 @@
     }
     th {
       color: var(--ink);
-      background: #eee5d4;
+      background: #ece3d3;
+    }
+    .danger {
+      color: var(--danger);
+      font-weight: 700;
     }
     @media (max-width: 760px) {
       .grid { grid-template-columns: 1fr; }
@@ -115,12 +119,12 @@
 <body>
   <main>
     <section class="hero">
-      <div class="eyebrow">Backlog 015 · Peer Harness Boundary</div>
-      <h1>Make live peer execution inspectable before making it executable.</h1>
+      <div class="eyebrow">Backlog 016 | Peer Harness Boundary</div>
+      <h1>Run fixture-backed peer commands before spending provider budget.</h1>
       <p class="lede">
-        The runner already renders prompts and parses transcript fixtures. The next deep-module step is a schema-valid
-        execution plan that resolves the peer command, prompt mode, environment requirements, markers, timeout, and
-        unsupported boundaries without invoking Pi, Goose, OpenCode, OMP, or OpenRouter.
+        The execution plan now makes the command inspectable. The next step is a bounded live runner:
+        render the prompt, invoke the configured command, capture the transcript, parse the marked artifact,
+        and keep paid provider profiles behind explicit budget acknowledgement plus non-argv prompt transport.
       </p>
     </section>
 
@@ -128,28 +132,29 @@
       <div class="box">
         <h2>Target Outcome</h2>
         <p>
-          `cerberus-peer-harness --execution-plan-output ...` writes `PeerHarnessExecutionPlan.v2` for any validated
-          profile and input. Operators can inspect the live command contract before enabling paid execution.
+          `CERBERUS_PEER_HARNESS_LIVE=1 cerberus-peer-harness` can execute a fixture peer command and
+          emit a completed `ReviewerArtifact.v1` from the captured transcript.
         </p>
       </div>
       <div class="box">
         <h2>Chosen Design</h2>
         <p>
-          Add one schema artifact and one runner flag. Do not add a new executor, provider client, background job,
-          budget system, or raw harness wrapper.
+          Extract one bounded subprocess primitive from the adapter crate, then let the peer runner own only
+          prompt rendering, budget gating, transcript capture, and artifact parsing.
         </p>
       </div>
       <div class="box">
-        <h2>Verification System</h2>
+        <h2>Delete-First</h2>
         <p>
-          CLI driver writes an execution plan, schema validation checks it, unit tests cover environment and prompt
-          placeholder behavior, and a fresh critic checks the public workflow.
+          No new provider client, retry engine, scheduler, queue, or harness wrapper. The existing command profile
+          contract is enough for this slice.
         </p>
       </div>
       <div class="box">
         <h2>Stop Rule</h2>
         <p>
-          Stop before live provider invocation. A plan artifact plus fail-closed live mode is enough for this slice.
+          Stop when fixture live execution, timeout containment, provider-budget and provider-argv refusal, docs, full gates, and
+          fresh critic review are green.
         </p>
       </div>
     </section>
@@ -166,27 +171,23 @@
         <tbody>
           <tr>
             <td>Claim</td>
-            <td>Peer harness live execution can be reviewed as data before any paid call runs.</td>
+            <td>Peer commands can run through the configured protocol without provider spend or unbounded child processes.</td>
           </tr>
           <tr>
             <td>Falsifier</td>
-            <td>The plan omits required env, leaves `{model}` unresolved, leaks the full prompt into argv unintentionally, or lets live mode call a peer CLI.</td>
+            <td>A paid profile executes without budget acknowledgement, a provider prompt travels through argv, timeout leaves a child alive, transcript is not captured, or malformed output becomes an artifact.</td>
           </tr>
           <tr>
             <td>Driver</td>
-            <td>`cerberus-peer-harness --execution-plan-output tmp/peer-runner-execution-plan.json`.</td>
+            <td>Fixture live profile plus `CERBERUS_PEER_HARNESS_LIVE=1` CLI invocation.</td>
           </tr>
           <tr>
             <td>Grader</td>
-            <td>`cerberus-cli validate` plus tests for env availability, unresolved model placeholders, prompt placeholder count, and live-mode fail-closed behavior.</td>
-          </tr>
-          <tr>
-            <td>Evidence Packet</td>
-            <td>`tmp/peer-runner-execution-plan.json` and command transcript in the backlog receipt.</td>
+            <td>Artifact schema validation, transcript marker inspection, timeout tests, and full Rust/legacy/static gates.</td>
           </tr>
           <tr>
             <td>Critic</td>
-            <td>Fresh-context review gets only the diff and oracle, with the works-critique card.</td>
+            <td>Fresh-context review gets only the diff, this oracle, and the works-critique card.</td>
           </tr>
         </tbody>
       </table>
@@ -194,19 +195,20 @@
 
     <section>
       <h2>Commands</h2>
-      <pre><code>cargo test --workspace peer_harness_execution_plan
+      <pre><code>cargo test -p cerberus-adapter command_harness
+cargo test --workspace peer_harness_live
 cargo test -p cerberus-cli --test peer_harness_command
-cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- \
-  --harness pi \
-  --input fixtures/harnesses/peer-runner-input.json \
-  --output tmp/peer-runner-artifact.json \
-  --execution-plan-output tmp/peer-runner-execution-plan.json
-cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-execution-plan.json
+mkdir -p tmp
 CERBERUS_PEER_HARNESS_LIVE=1 cargo run --locked -p cerberus-cli --bin cerberus-peer-harness -- \
-  --harness pi \
+  --harness fixture-live \
+  --profiles fixtures/harnesses/live-peer-command-profiles.json \
   --input fixtures/harnesses/peer-runner-input.json \
   --output tmp/peer-runner-live-artifact.json \
-  --execution-plan-output tmp/peer-runner-live-plan.json</code></pre>
+  --transcript-output tmp/peer-runner-live-transcript.txt
+cargo run --locked -p cerberus-cli -- validate tmp/peer-runner-live-artifact.json</code></pre>
+      <p class="danger">
+        Default OpenRouter-backed profiles remain budget-gated and are not exercised by this slice.
+      </p>
     </section>
   </main>
 </body>

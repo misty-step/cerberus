@@ -2,8 +2,8 @@ use crate::SchemaError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const PEER_HARNESS_COMMAND_PROFILES_VERSION: &str = "peer-harness-command-profiles.v1";
-pub const PEER_HARNESS_EXECUTION_PLAN_VERSION: &str = "peer-harness-execution-plan.v1";
+pub const PEER_HARNESS_COMMAND_PROFILES_VERSION: &str = "peer-harness-command-profiles.v2";
+pub const PEER_HARNESS_EXECUTION_PLAN_VERSION: &str = "peer-harness-execution-plan.v2";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PeerHarnessCommandProfiles {
@@ -49,10 +49,12 @@ pub struct PeerHarnessExecutionPlan {
     pub timeout_ms: u64,
     #[serde(default)]
     pub env_required: Vec<String>,
+    pub requires_provider_budget_ack: bool,
     #[serde(default)]
     pub env_available: Vec<String>,
     #[serde(default)]
     pub env_missing: Vec<String>,
+    pub provider_budget_acknowledged: bool,
     pub live_mode_requested: bool,
     pub transcript_markers: PeerHarnessTranscriptMarkers,
     #[serde(default)]
@@ -141,6 +143,7 @@ pub struct PeerHarnessCommandProfile {
     pub timeout_ms: u64,
     #[serde(default)]
     pub env_required: Vec<String>,
+    pub requires_provider_budget_ack: bool,
     pub output_contract: PeerHarnessOutputContract,
     pub peer: PeerHarnessInvocation,
     #[serde(default)]
@@ -393,6 +396,8 @@ mod tests {
 
     const PEER_PROFILES: &str =
         include_str!("../../../fixtures/harnesses/peer-command-profiles.json");
+    const LIVE_PEER_PROFILES: &str =
+        include_str!("../../../fixtures/harnesses/live-peer-command-profiles.json");
 
     #[test]
     fn peer_harness_command_profiles_fixture_validates() {
@@ -400,6 +405,15 @@ mod tests {
             serde_json::from_str(PEER_PROFILES).expect("fixture parses");
 
         profiles.validate().expect("fixture validates");
+    }
+
+    #[test]
+    fn peer_harness_live_command_profiles_fixture_validates() {
+        let profiles: PeerHarnessCommandProfiles =
+            serde_json::from_str(LIVE_PEER_PROFILES).expect("fixture parses");
+
+        profiles.validate().expect("fixture validates");
+        assert!(!profiles.profiles[0].requires_provider_budget_ack);
     }
 
     #[test]
@@ -624,8 +638,10 @@ mod tests {
             output_contract: PeerHarnessOutputContract::ReviewerArtifactFile,
             timeout_ms: 300_000,
             env_required: vec!["OPENROUTER_API_KEY".to_string()],
+            requires_provider_budget_ack: true,
             env_available: vec![],
             env_missing: vec!["OPENROUTER_API_KEY".to_string()],
+            provider_budget_acknowledged: false,
             live_mode_requested: false,
             transcript_markers: PeerHarnessTranscriptMarkers {
                 begin: "CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN".to_string(),

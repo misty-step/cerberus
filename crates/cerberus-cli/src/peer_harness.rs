@@ -1,18 +1,20 @@
 use anyhow::{bail, Context, Result};
-use cerberus_adapter::CommandHarnessInput;
+use cerberus_adapter::{BoundedCommand, CommandHarnessInput};
 use cerberus_core::validate_reviewer_artifact_for_request;
 use cerberus_schema::{
     Coverage, PeerHarnessCommandProfile, PeerHarnessCommandProfiles, PeerHarnessExecutionPlan,
-    PeerHarnessTranscriptMarkers, ReviewerArtifact, ReviewerStatus, TokenUsage, Verdict,
-    PEER_HARNESS_EXECUTION_PLAN_VERSION, REVIEWER_ARTIFACT_VERSION,
+    PeerHarnessPromptMode, PeerHarnessTranscriptMarkers, ReviewerArtifact, ReviewerStatus,
+    TokenUsage, Verdict, PEER_HARNESS_EXECUTION_PLAN_VERSION, REVIEWER_ARTIFACT_VERSION,
 };
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 const PROFILES_ENV: &str = "CERBERUS_PEER_HARNESS_PROFILES";
 const LIVE_ENV: &str = "CERBERUS_PEER_HARNESS_LIVE";
+const PROVIDER_BUDGET_ACK_ENV: &str = "CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK";
 const DEFAULT_PROFILES_PATH: &str = "fixtures/harnesses/peer-command-profiles.json";
 const ARTIFACT_BEGIN_MARKER: &str = "CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN";
 const ARTIFACT_END_MARKER: &str = "CERBERUS_REVIEWER_ARTIFACT_JSON_END";
@@ -22,6 +24,14 @@ fn main() -> Result<()> {
 }
 
 fn run(args: impl IntoIterator<Item = String>, live_mode: bool) -> Result<()> {
+    run_inner(args, live_mode, provider_budget_acknowledged())
+}
+
+fn run_inner(
+    args: impl IntoIterator<Item = String>,
+    live_mode: bool,
+    provider_budget_acknowledged: bool,
+) -> Result<()> {
     let args = args.into_iter().collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!("{}", usage());
@@ -33,24 +43,45 @@ fn run(args: impl IntoIterator<Item = String>, live_mode: bool) -> Result<()> {
     let profiles = read_profiles(&profiles_path)?;
     let profile = select_profile(&profiles, &args.harness_id)?;
     let input = read_input(&args.input_path)?;
+    let prompt = if live_mode || args.prompt_output_path.is_some() {
+        Some(render_prompt(profile, &input))
+    } else {
+        None
+    };
 
     if let Some(path) = args.execution_plan_output_path.as_ref() {
-        write_execution_plan(path, &execution_plan(profile, &input, live_mode))?;
+        write_execution_plan(
+            path,
+            &execution_plan(profile, &input, live_mode, provider_budget_acknowledged),
+        )?;
     }
 
-    if live_mode {
-        bail!(
-            "live peer harness execution is not implemented; inspect --execution-plan-output and unset {LIVE_ENV} to use the offline protocol runner"
-        );
+    if !live_mode && args.transcript_output_path.is_some() {
+        bail!("--transcript-output requires {LIVE_ENV}=1");
     }
 
     if let Some(path) = args.prompt_output_path.as_ref() {
-        write_prompt(path, &render_prompt(profile, &input))?;
+        write_prompt(path, prompt.as_deref().expect("prompt is rendered"))?;
     }
 
-    let artifact = match args.transcript_path.as_ref() {
-        Some(path) => read_transcript_artifact(path)?,
-        None => offline_artifact(profile, &input),
+    let artifact = if live_mode {
+        if args.transcript_path.is_some() {
+            bail!(
+                "--transcript is an offline fixture input and cannot be combined with {LIVE_ENV}=1"
+            );
+        }
+        live_peer_artifact(
+            profile,
+            &input,
+            prompt.as_deref().expect("prompt is rendered"),
+            args.transcript_output_path.as_deref(),
+            provider_budget_acknowledged,
+        )?
+    } else {
+        match args.transcript_path.as_ref() {
+            Some(path) => read_transcript_artifact(path)?,
+            None => offline_artifact(profile, &input),
+        }
     };
     let artifact =
         validate_reviewer_artifact_for_request(&input.reviewer, &input.request, artifact)
@@ -67,6 +98,7 @@ struct RunnerArgs {
     profiles_path: Option<PathBuf>,
     prompt_output_path: Option<PathBuf>,
     transcript_path: Option<PathBuf>,
+    transcript_output_path: Option<PathBuf>,
     execution_plan_output_path: Option<PathBuf>,
 }
 
@@ -78,6 +110,7 @@ impl RunnerArgs {
         let mut profiles_path = None;
         let mut prompt_output_path = None;
         let mut transcript_path = None;
+        let mut transcript_output_path = None;
         let mut execution_plan_output_path = None;
         let mut index = 0;
 
@@ -112,6 +145,14 @@ impl RunnerArgs {
                         Some(PathBuf::from(required_value(args, index, "--transcript")?));
                     index += 2;
                 }
+                "--transcript-output" => {
+                    transcript_output_path = Some(PathBuf::from(required_value(
+                        args,
+                        index,
+                        "--transcript-output",
+                    )?));
+                    index += 2;
+                }
                 "--execution-plan-output" => {
                     execution_plan_output_path = Some(PathBuf::from(required_value(
                         args,
@@ -131,13 +172,14 @@ impl RunnerArgs {
             profiles_path,
             prompt_output_path,
             transcript_path,
+            transcript_output_path,
             execution_plan_output_path,
         })
     }
 }
 
 fn usage() -> &'static str {
-    "usage: cerberus-peer-harness --harness <id> --input <CommandHarnessInput.json> --output <ReviewerArtifact.v1.json> [--profiles <PeerHarnessCommandProfiles.v1.json>] [--prompt-output <path>] [--transcript <path>] [--execution-plan-output <path>]"
+    "usage: cerberus-peer-harness --harness <id> --input <CommandHarnessInput.json> --output <ReviewerArtifact.v1.json> [--profiles <PeerHarnessCommandProfiles.v2.json>] [--prompt-output <path>] [--transcript <path>] [--transcript-output <path>] [--execution-plan-output <path>]"
 }
 
 fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<String> {
@@ -149,6 +191,12 @@ fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<S
 
 fn live_mode_requested() -> bool {
     env::var(LIVE_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn provider_budget_acknowledged() -> bool {
+    env::var(PROVIDER_BUDGET_ACK_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
 }
@@ -247,6 +295,7 @@ fn execution_plan(
     profile: &PeerHarnessCommandProfile,
     input: &CommandHarnessInput,
     live_mode: bool,
+    provider_budget_acknowledged: bool,
 ) -> PeerHarnessExecutionPlan {
     let model = model_for_template(&profile.peer.args_template, &input.reviewer.model);
     let resolved_args = profile
@@ -270,8 +319,10 @@ fn execution_plan(
         output_contract: profile.output_contract,
         timeout_ms: profile.timeout_ms,
         env_required: profile.env_required.clone(),
+        requires_provider_budget_ack: profile.requires_provider_budget_ack,
         env_available,
         env_missing,
+        provider_budget_acknowledged,
         live_mode_requested: live_mode,
         transcript_markers: PeerHarnessTranscriptMarkers {
             begin: ARTIFACT_BEGIN_MARKER.to_string(),
@@ -296,6 +347,96 @@ fn model_for_template(args_template: &[String], reviewer_model: &str) -> String 
             .to_string();
     }
     reviewer_model.to_string()
+}
+
+fn live_peer_artifact(
+    profile: &PeerHarnessCommandProfile,
+    input: &CommandHarnessInput,
+    prompt: &str,
+    transcript_output_path: Option<&Path>,
+    provider_budget_acknowledged: bool,
+) -> Result<ReviewerArtifact> {
+    ensure_provider_budget_ack(profile, provider_budget_acknowledged)?;
+    ensure_live_prompt_transport(profile)?;
+    ensure_required_env(profile)?;
+    let output = live_peer_command(profile, input, prompt)
+        .run()
+        .context("live peer command failed")?;
+    if let Some(path) = transcript_output_path {
+        fs::write(path, &output.stdout)
+            .with_context(|| format!("failed to write live peer transcript {}", path.display()))?;
+    }
+    parse_transcript_artifact(&output.stdout)
+        .context("live peer transcript was not a valid artifact")
+}
+
+fn ensure_provider_budget_ack(
+    profile: &PeerHarnessCommandProfile,
+    provider_budget_acknowledged: bool,
+) -> Result<()> {
+    if profile.requires_provider_budget_ack && !provider_budget_acknowledged {
+        bail!(
+            "peer harness profile {:?} requires provider budget acknowledgement; set {PROVIDER_BUDGET_ACK_ENV}=1 to allow paid/provider-backed execution",
+            profile.harness_id
+        );
+    }
+    Ok(())
+}
+
+fn ensure_live_prompt_transport(profile: &PeerHarnessCommandProfile) -> Result<()> {
+    if profile.requires_provider_budget_ack
+        && matches!(
+            profile.peer.prompt_mode,
+            PeerHarnessPromptMode::ArgvMessage | PeerHarnessPromptMode::WrapperRenderedPrompt
+        )
+    {
+        bail!(
+            "peer harness profile {:?} uses argv prompt transport; provider-backed live execution requires stdin or a private prompt-file wrapper",
+            profile.harness_id
+        );
+    }
+    Ok(())
+}
+
+fn ensure_required_env(profile: &PeerHarnessCommandProfile) -> Result<()> {
+    let missing = profile
+        .env_required
+        .iter()
+        .filter(|name| env::var_os(name.as_str()).is_none())
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        bail!(
+            "peer harness profile {:?} is missing required environment variable(s): {}",
+            profile.harness_id,
+            missing.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn live_peer_command(
+    profile: &PeerHarnessCommandProfile,
+    input: &CommandHarnessInput,
+    prompt: &str,
+) -> BoundedCommand {
+    let model = model_for_template(&profile.peer.args_template, &input.reviewer.model);
+    let resolved_model_args = profile
+        .peer
+        .args_template
+        .iter()
+        .map(|arg| arg.replace("{model}", &model));
+    let command = BoundedCommand::new(profile.peer.command.clone())
+        .timeout(Duration::from_millis(profile.timeout_ms));
+
+    match profile.peer.prompt_mode {
+        PeerHarnessPromptMode::ArgvMessage | PeerHarnessPromptMode::WrapperRenderedPrompt => {
+            command.args(resolved_model_args.map(|arg| arg.replace("{prompt}", prompt)))
+        }
+        PeerHarnessPromptMode::StdinText => command
+            .args(resolved_model_args)
+            .stdin_text(prompt.to_string()),
+    }
 }
 
 fn render_prompt(profile: &PeerHarnessCommandProfile, input: &CommandHarnessInput) -> String {
@@ -549,6 +690,11 @@ mod tests {
             .iter()
             .any(|arg| arg.contains("diff --git")));
         assert_eq!(plan.env_required, vec!["OPENROUTER_API_KEY".to_string()]);
+        assert!(plan.requires_provider_budget_ack);
+        assert_eq!(
+            plan.provider_budget_acknowledged,
+            provider_budget_acknowledged()
+        );
         assert_eq!(resolved_env_names(&plan), required_env_names(&plan));
         assert!(!plan.live_mode_requested);
 
@@ -557,11 +703,11 @@ mod tests {
     }
 
     #[test]
-    fn peer_harness_runner_writes_execution_plan_before_refusing_live_mode() {
+    fn peer_harness_runner_writes_execution_plan_before_refusing_provider_profile_live_mode() {
         let paths = TestPaths::new();
         write_input(&paths.input);
 
-        let error = run(
+        let error = run_inner(
             vec![
                 "--harness".to_string(),
                 "pi".to_string(),
@@ -575,14 +721,224 @@ mod tests {
                 paths.plan.display().to_string(),
             ],
             true,
+            false,
         )
-        .expect_err("live mode remains fail closed after plan emission");
+        .expect_err("provider profile live mode requires budget acknowledgement");
 
-        assert!(error
-            .to_string()
-            .contains("live peer harness execution is not implemented"));
+        assert!(error.to_string().contains("requires provider budget"));
         let plan = read_execution_plan(&paths.plan);
         assert!(plan.live_mode_requested);
+        assert!(plan.requires_provider_budget_ack);
+        assert!(!plan.provider_budget_acknowledged);
+        assert!(!paths.output.exists());
+    }
+
+    #[test]
+    fn peer_harness_live_invokes_fixture_peer_and_writes_transcript() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live",
+            "argv-success",
+            PeerHarnessPromptMode::ArgvMessage,
+            2_000,
+            false,
+        );
+
+        run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+                "--transcript-output".to_string(),
+                paths.transcript.display().to_string(),
+            ],
+            true,
+            false,
+        )
+        .expect("fixture live peer writes artifact");
+
+        let artifact = read_artifact(&paths.output);
+        assert_eq!(artifact.status, ReviewerStatus::Completed);
+        assert_eq!(artifact.verdict, Verdict::Pass);
+        assert_eq!(artifact.coverage.files_reviewed, ["src/lib.rs"]);
+        let transcript = fs::read_to_string(&paths.transcript).expect("transcript is written");
+        assert!(transcript.contains(ARTIFACT_BEGIN_MARKER));
+        assert!(transcript.contains(ARTIFACT_END_MARKER));
+    }
+
+    #[test]
+    fn peer_harness_live_supports_stdin_prompt_mode() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live-stdin",
+            "stdin-success",
+            PeerHarnessPromptMode::StdinText,
+            2_000,
+            false,
+        );
+
+        run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live-stdin".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+            ],
+            true,
+            false,
+        )
+        .expect("stdin live peer writes artifact");
+
+        let artifact = read_artifact(&paths.output);
+        assert_eq!(artifact.status, ReviewerStatus::Completed);
+        assert_eq!(artifact.verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn peer_harness_live_rejects_malformed_peer_transcript() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live-malformed",
+            "malformed",
+            PeerHarnessPromptMode::ArgvMessage,
+            2_000,
+            false,
+        );
+
+        let error = run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live-malformed".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+                "--transcript-output".to_string(),
+                paths.transcript.display().to_string(),
+            ],
+            true,
+            false,
+        )
+        .expect_err("malformed live transcript rejects");
+
+        assert!(error_chain_contains(&error, "exactly one"));
+        assert!(paths.transcript.exists());
+        assert!(!paths.output.exists());
+    }
+
+    #[test]
+    fn peer_harness_live_times_out_without_artifact() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live-sleep",
+            "sleep",
+            PeerHarnessPromptMode::ArgvMessage,
+            20,
+            false,
+        );
+
+        let error = run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live-sleep".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+            ],
+            true,
+            false,
+        )
+        .expect_err("live peer timeout rejects");
+
+        assert!(error_chain_contains(&error, "exceeded"));
+        assert!(!paths.output.exists());
+    }
+
+    #[test]
+    fn peer_harness_live_requires_budget_ack_before_provider_profile_execution() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live-provider",
+            "argv-success",
+            PeerHarnessPromptMode::ArgvMessage,
+            2_000,
+            true,
+        );
+
+        let error = run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live-provider".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+            ],
+            true,
+            false,
+        )
+        .expect_err("budget acknowledgement is required");
+
+        assert!(error.to_string().contains("requires provider budget"));
+        assert!(!paths.output.exists());
+    }
+
+    #[test]
+    fn peer_harness_live_rejects_provider_argv_prompt_transport_even_with_budget_ack() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live-provider",
+            "argv-success",
+            PeerHarnessPromptMode::ArgvMessage,
+            2_000,
+            true,
+        );
+
+        let error = run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live-provider".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+            ],
+            true,
+            true,
+        )
+        .expect_err("provider-backed argv prompt transport is refused");
+
+        assert!(error.to_string().contains("argv prompt transport"));
         assert!(!paths.output.exists());
     }
 
@@ -750,7 +1106,7 @@ mod tests {
         let paths = TestPaths::new();
         write_input(&paths.input);
 
-        let error = run(
+        let error = run_inner(
             vec![
                 "--harness".to_string(),
                 "pi".to_string(),
@@ -762,12 +1118,11 @@ mod tests {
                 profiles_path().display().to_string(),
             ],
             true,
+            false,
         )
-        .expect_err("live mode is fail closed");
+        .expect_err("provider profile live mode is budget gated");
 
-        assert!(error
-            .to_string()
-            .contains("live peer harness execution is not implemented"));
+        assert!(error.to_string().contains("requires provider budget"));
         assert!(!paths.output.exists());
     }
 
@@ -833,6 +1188,8 @@ mod tests {
         output: PathBuf,
         prompt: PathBuf,
         plan: PathBuf,
+        transcript: PathBuf,
+        profiles: PathBuf,
     }
 
     impl TestPaths {
@@ -848,6 +1205,8 @@ mod tests {
                 output: root.join("output.json"),
                 prompt: root.join("prompt.txt"),
                 plan: root.join("execution-plan.json"),
+                transcript: root.join("transcript.txt"),
+                profiles: root.join("profiles.json"),
             }
         }
 
@@ -895,6 +1254,61 @@ mod tests {
                 .expect("plan parses");
         plan.validate().expect("plan validates");
         plan
+    }
+
+    fn write_live_profile(
+        path: &Path,
+        harness_id: &str,
+        mode: &str,
+        prompt_mode: PeerHarnessPromptMode,
+        timeout_ms: u64,
+        requires_provider_budget_ack: bool,
+    ) {
+        let args_template = match prompt_mode {
+            PeerHarnessPromptMode::ArgvMessage | PeerHarnessPromptMode::WrapperRenderedPrompt => {
+                vec![
+                    fixture_live_script().display().to_string(),
+                    mode.to_string(),
+                    "{prompt}".to_string(),
+                ]
+            }
+            PeerHarnessPromptMode::StdinText => {
+                vec![
+                    fixture_live_script().display().to_string(),
+                    mode.to_string(),
+                ]
+            }
+        };
+        let profiles = PeerHarnessCommandProfiles {
+            schema_version: cerberus_schema::PEER_HARNESS_COMMAND_PROFILES_VERSION.to_string(),
+            observed_at: "2026-06-18".to_string(),
+            profiles: vec![PeerHarnessCommandProfile {
+                harness_id: harness_id.to_string(),
+                command: "cerberus-peer-harness".to_string(),
+                args: vec!["--harness".to_string(), harness_id.to_string()],
+                timeout_ms,
+                env_required: vec![],
+                requires_provider_budget_ack,
+                output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
+                peer: cerberus_schema::PeerHarnessInvocation {
+                    command: "sh".to_string(),
+                    args_template,
+                    prompt_mode,
+                    notes: None,
+                },
+                unsupported: vec!["provider-backed execution".to_string()],
+                notes: None,
+            }],
+        };
+        profiles.validate().expect("live profile validates");
+        let json = serde_json::to_string_pretty(&profiles).expect("profiles serialize");
+        fs::write(path, format!("{json}\n")).expect("profiles fixture is written");
+    }
+
+    fn fixture_live_script() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("fixtures/harnesses/live-peer-reviewer.sh")
     }
 
     fn required_env_names(plan: &PeerHarnessExecutionPlan) -> BTreeSet<String> {

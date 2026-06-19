@@ -6,7 +6,10 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, TryRecvError},
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -15,12 +18,177 @@ use std::{
 use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+const CAPTURE_MAX_BYTES: u64 = 1_048_576;
 const DIAGNOSTIC_MAX_BYTES: u64 = 4096;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CommandHarnessInput {
     pub reviewer: ReviewerConfig,
     pub request: ReviewRequest,
+}
+
+#[derive(Debug, Clone)]
+pub struct BoundedCommand {
+    command: String,
+    args: Vec<String>,
+    timeout: Duration,
+    stdin_text: Option<String>,
+    capture_max_bytes: u64,
+}
+
+impl BoundedCommand {
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            args: vec![],
+            timeout: Duration::from_secs(120),
+            stdin_text: None,
+            capture_max_bytes: CAPTURE_MAX_BYTES,
+        }
+    }
+
+    pub fn arg(mut self, arg: impl Into<String>) -> Self {
+        self.args.push(arg.into());
+        self
+    }
+
+    pub fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn stdin_text(mut self, stdin_text: impl Into<String>) -> Self {
+        self.stdin_text = Some(stdin_text.into());
+        self
+    }
+
+    pub fn capture_max_bytes(mut self, capture_max_bytes: u64) -> Self {
+        self.capture_max_bytes = capture_max_bytes;
+        self
+    }
+
+    pub fn run(&self) -> Result<BoundedCommandOutput, HarnessRuntimeError> {
+        let files = BoundedCommandFiles::create()?;
+        let stdout = create_private_file(&files.stdout).map_err(|error| {
+            HarnessRuntimeError::Failed(format!(
+                "failed to create bounded command stdout {}: {error}",
+                files.stdout.display()
+            ))
+        })?;
+        let stderr = create_private_file(&files.stderr).map_err(|error| {
+            HarnessRuntimeError::Failed(format!(
+                "failed to create bounded command stderr {}: {error}",
+                files.stderr.display()
+            ))
+        })?;
+        let mut command = Command::new(&self.command);
+        command
+            .args(&self.args)
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr));
+        if self.stdin_text.is_some() {
+            command.stdin(Stdio::piped());
+        }
+        start_new_process_group(&mut command);
+        let mut child = command.spawn().map_err(|error| {
+            HarnessRuntimeError::Failed(format!("failed to launch {:?}: {error}", self.command))
+        })?;
+
+        let mut stdin_write =
+            start_stdin_write(&mut child, self.stdin_text.clone(), &self.command)?;
+
+        let deadline = Instant::now() + self.timeout;
+        let status = loop {
+            if let Err(error) = poll_stdin_write(&mut stdin_write, &self.command) {
+                terminate_process_group(&mut child);
+                return Err(error);
+            }
+            if let Err(error) = ensure_bounded_capture(
+                &files.stdout,
+                self.capture_max_bytes,
+                "stdout",
+                &self.command,
+            ) {
+                terminate_process_group(&mut child);
+                return Err(error);
+            }
+            if let Err(error) = ensure_bounded_capture(
+                &files.stderr,
+                self.capture_max_bytes,
+                "stderr",
+                &self.command,
+            ) {
+                terminate_process_group(&mut child);
+                return Err(error);
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() >= deadline => {
+                    terminate_process_group(&mut child);
+                    return Err(HarnessRuntimeError::Timeout(format!(
+                        "{:?} exceeded {} ms",
+                        self.command,
+                        self.timeout.as_millis()
+                    )));
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(10)),
+                Err(error) => {
+                    return Err(HarnessRuntimeError::Failed(format!(
+                        "failed while waiting for {:?}: {error}",
+                        self.command
+                    )));
+                }
+            }
+        };
+        if let Err(error) = finish_stdin_write(&mut stdin_write, &self.command) {
+            terminate_process_group(&mut child);
+            return Err(error);
+        }
+
+        ensure_bounded_capture(
+            &files.stderr,
+            self.capture_max_bytes,
+            "stderr",
+            &self.command,
+        )?;
+        let stderr = read_bounded_lossy(&files.stderr, DIAGNOSTIC_MAX_BYTES);
+        if !status.success() {
+            return Err(HarnessRuntimeError::Failed(format!(
+                "{:?} exited with {status}: {}",
+                self.command,
+                stderr.trim()
+            )));
+        }
+        ensure_bounded_capture(
+            &files.stdout,
+            self.capture_max_bytes,
+            "stdout",
+            &self.command,
+        )?;
+
+        Ok(BoundedCommandOutput {
+            stdout: read_bounded_utf8(
+                &files.stdout,
+                self.capture_max_bytes,
+                "stdout",
+                &self.command,
+            )?,
+            stderr,
+        })
+    }
+}
+
+type StdinWriteResult = Result<(), String>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundedCommandOutput {
+    pub stdout: String,
+    pub stderr: String,
 }
 
 #[derive(Debug, Clone)]
@@ -105,62 +273,14 @@ impl ReviewHarness for CommandHarness {
                 files.output.display()
             ))
         })?;
-        let stdout = create_private_file(&files.stdout).map_err(|error| {
-            HarnessRuntimeError::Failed(format!(
-                "failed to create command harness stdout {}: {error}",
-                files.stdout.display()
-            ))
-        })?;
-        let stderr = create_private_file(&files.stderr).map_err(|error| {
-            HarnessRuntimeError::Failed(format!(
-                "failed to create command harness stderr {}: {error}",
-                files.stderr.display()
-            ))
-        })?;
-        let mut command = Command::new(&self.command);
-        command
-            .args(&self.args)
+        BoundedCommand::new(&self.command)
+            .args(self.args.clone())
             .arg("--input")
-            .arg(&files.input)
+            .arg(files.input.display().to_string())
             .arg("--output")
-            .arg(&files.output)
-            .stdout(Stdio::from(stdout))
-            .stderr(Stdio::from(stderr));
-        start_new_process_group(&mut command);
-        let mut child = command.spawn().map_err(|error| {
-            HarnessRuntimeError::Failed(format!("failed to launch {:?}: {error}", self.command))
-        })?;
-
-        let deadline = Instant::now() + self.timeout;
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break status,
-                Ok(None) if Instant::now() >= deadline => {
-                    terminate_process_group(&mut child);
-                    return Err(HarnessRuntimeError::Timeout(format!(
-                        "{:?} exceeded {} ms",
-                        self.command,
-                        self.timeout.as_millis()
-                    )));
-                }
-                Ok(None) => thread::sleep(Duration::from_millis(10)),
-                Err(error) => {
-                    return Err(HarnessRuntimeError::Failed(format!(
-                        "failed while waiting for {:?}: {error}",
-                        self.command
-                    )));
-                }
-            }
-        };
-
-        let stderr = read_bounded_lossy(&files.stderr, DIAGNOSTIC_MAX_BYTES);
-        if !status.success() {
-            return Err(HarnessRuntimeError::Failed(format!(
-                "{:?} exited with {status}: {}",
-                self.command,
-                stderr.trim()
-            )));
-        }
+            .arg(files.output.display().to_string())
+            .timeout(self.timeout)
+            .run()?;
 
         let raw_artifact = fs::read_to_string(&files.output).map_err(|error| {
             HarnessRuntimeError::Failed(format!(
@@ -182,8 +302,6 @@ struct CommandHarnessFiles {
     root: PathBuf,
     input: PathBuf,
     output: PathBuf,
-    stdout: PathBuf,
-    stderr: PathBuf,
 }
 
 impl Drop for CommandHarnessFiles {
@@ -217,8 +335,47 @@ impl CommandHarnessFiles {
             root: root.clone(),
             input: root.join(format!("{stem}.input.json")),
             output: root.join(format!("{stem}.output.json")),
-            stdout: root.join(format!("{stem}.stdout.txt")),
-            stderr: root.join(format!("{stem}.stderr.txt")),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct BoundedCommandFiles {
+    root: PathBuf,
+    stdout: PathBuf,
+    stderr: PathBuf,
+}
+
+impl Drop for BoundedCommandFiles {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+impl BoundedCommandFiles {
+    fn create() -> Result<Self, HarnessRuntimeError> {
+        let root = std::env::temp_dir().join(format!(
+            "cerberus-bounded-command-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        fs::create_dir(&root).map_err(|error| {
+            HarnessRuntimeError::Failed(format!(
+                "failed to create bounded command temp dir {}: {error}",
+                root.display()
+            ))
+        })?;
+        if let Err(error) = set_private_dir_permissions(&root) {
+            let _ = fs::remove_dir_all(&root);
+            return Err(HarnessRuntimeError::Failed(format!(
+                "failed to restrict bounded command temp dir {}: {error}",
+                root.display()
+            )));
+        }
+        Ok(Self {
+            root: root.clone(),
+            stdout: root.join("stdout.txt"),
+            stderr: root.join("stderr.txt"),
         })
     }
 }
@@ -283,6 +440,64 @@ fn terminate_process_group(child: &mut Child) {
     }
 }
 
+fn start_stdin_write(
+    child: &mut Child,
+    stdin_text: Option<String>,
+    command: &str,
+) -> Result<Option<mpsc::Receiver<StdinWriteResult>>, HarnessRuntimeError> {
+    let Some(stdin_text) = stdin_text else {
+        return Ok(None);
+    };
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        HarnessRuntimeError::Failed(format!("failed to open stdin for {command:?}"))
+    })?;
+    let command = command.to_string();
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let result = stdin
+            .write_all(stdin_text.as_bytes())
+            .map_err(|error| format!("failed to write stdin for {command:?}: {error}"));
+        let _ = sender.send(result);
+    });
+    Ok(Some(receiver))
+}
+
+fn poll_stdin_write(
+    stdin_write: &mut Option<mpsc::Receiver<StdinWriteResult>>,
+    command: &str,
+) -> Result<(), HarnessRuntimeError> {
+    let Some(receiver) = stdin_write.as_ref() else {
+        return Ok(());
+    };
+    match receiver.try_recv() {
+        Ok(Ok(())) => {
+            *stdin_write = None;
+            Ok(())
+        }
+        Ok(Err(error)) => Err(HarnessRuntimeError::Failed(error)),
+        Err(TryRecvError::Empty) => Ok(()),
+        Err(TryRecvError::Disconnected) => Err(HarnessRuntimeError::Failed(format!(
+            "stdin writer for {command:?} disconnected"
+        ))),
+    }
+}
+
+fn finish_stdin_write(
+    stdin_write: &mut Option<mpsc::Receiver<StdinWriteResult>>,
+    command: &str,
+) -> Result<(), HarnessRuntimeError> {
+    let Some(receiver) = stdin_write.take() else {
+        return Ok(());
+    };
+    match receiver.recv_timeout(Duration::from_millis(100)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(HarnessRuntimeError::Failed(error)),
+        Err(error) => Err(HarnessRuntimeError::Failed(format!(
+            "stdin writer for {command:?} did not finish after child exit: {error}"
+        ))),
+    }
+}
+
 fn unique_suffix() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -328,6 +543,44 @@ fn read_bounded_lossy(path: &Path, max_bytes: u64) -> String {
     output
 }
 
+fn read_bounded_utf8(
+    path: &Path,
+    max_bytes: u64,
+    stream: &'static str,
+    command: &str,
+) -> Result<String, HarnessRuntimeError> {
+    let mut file = File::open(path).map_err(|error| {
+        HarnessRuntimeError::Failed(format!("failed to read {stream} for {command:?}: {error}"))
+    })?;
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file)
+        .take(max_bytes)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            HarnessRuntimeError::Failed(format!("failed to read {stream} for {command:?}: {error}"))
+        })?;
+    String::from_utf8(bytes).map_err(|error| {
+        HarnessRuntimeError::Failed(format!("{command:?} {stream} was not valid UTF-8: {error}"))
+    })
+}
+
+fn ensure_bounded_capture(
+    path: &Path,
+    max_bytes: u64,
+    stream: &'static str,
+    command: &str,
+) -> Result<(), HarnessRuntimeError> {
+    let length = fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    if length > max_bytes {
+        return Err(HarnessRuntimeError::Failed(format!(
+            "{command:?} {stream} exceeded {max_bytes} bytes"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,6 +615,88 @@ mod tests {
         assert_eq!(harness.command(), "cerberus-peer-harness");
         assert_eq!(harness.configured_args(), ["--harness", "fixture-peer"]);
         assert_eq!(harness.configured_timeout(), Duration::from_secs(2));
+    }
+
+    #[test]
+    fn bounded_command_captures_stdout_stderr_and_stdin() {
+        let output = BoundedCommand::new("sh")
+            .arg("-c")
+            .arg("cat; printf fixture-stderr >&2")
+            .stdin_text("fixture-stdin")
+            .timeout(Duration::from_secs(2))
+            .run()
+            .expect("bounded command runs");
+
+        assert_eq!(output.stdout, "fixture-stdin");
+        assert_eq!(output.stderr, "fixture-stderr");
+    }
+
+    #[test]
+    fn bounded_command_rejects_oversized_stdout() {
+        let error = BoundedCommand::new("sh")
+            .arg("-c")
+            .arg("printf 1234567890")
+            .capture_max_bytes(4)
+            .timeout(Duration::from_secs(2))
+            .run()
+            .expect_err("oversized stdout rejects");
+
+        assert!(error.to_string().contains("stdout exceeded 4 bytes"));
+    }
+
+    #[test]
+    fn bounded_command_timeout_covers_blocked_stdin_writer() {
+        let large_stdin = "x".repeat(2_000_000);
+        let started = Instant::now();
+        let error = BoundedCommand::new("sh")
+            .arg("-c")
+            .arg("sleep 2")
+            .stdin_text(large_stdin)
+            .timeout(Duration::from_millis(50))
+            .run()
+            .expect_err("blocked stdin writer must not bypass timeout");
+
+        assert!(error.to_string().contains("exceeded 50 ms"));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn bounded_command_kills_stdin_holding_descendant_after_child_exit() {
+        let marker = std::env::temp_dir().join(format!(
+            "cerberus-stdin-descendant-marker-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        let script = format!(
+            "(sleep 1; printf leaked > {}) &",
+            shell_single_quote(&marker.display().to_string())
+        );
+        let large_stdin = "x".repeat(2_000_000);
+
+        let error = BoundedCommand::new("sh")
+            .arg("-c")
+            .arg(script)
+            .stdin_text(large_stdin)
+            .timeout(Duration::from_secs(2))
+            .run()
+            .expect_err("blocked descendant stdin writer rejects");
+
+        assert!(!error.to_string().is_empty());
+        thread::sleep(Duration::from_millis(1200));
+        assert!(!marker.exists());
+        let _ = fs::remove_file(marker);
+    }
+
+    #[test]
+    fn bounded_command_rejects_invalid_utf8_stdout() {
+        let error = BoundedCommand::new("sh")
+            .arg("-c")
+            .arg("printf '\\377'")
+            .timeout(Duration::from_secs(2))
+            .run()
+            .expect_err("invalid utf-8 stdout rejects");
+
+        assert!(error.to_string().contains("stdout was not valid UTF-8"));
     }
 
     #[test]
@@ -515,6 +850,10 @@ mod tests {
             .join("../../fixtures/harnesses/command-reviewer.sh")
     }
 
+    fn shell_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+
     fn fixture_peer_profile() -> PeerHarnessCommandProfile {
         cerberus_schema::PeerHarnessCommandProfile {
             harness_id: "fixture-peer".to_string(),
@@ -522,6 +861,7 @@ mod tests {
             args: vec!["--harness".to_string(), "fixture-peer".to_string()],
             timeout_ms: 2_000,
             env_required: vec![],
+            requires_provider_budget_ack: false,
             output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
             peer: cerberus_schema::PeerHarnessInvocation {
                 command: "fixture-peer".to_string(),
