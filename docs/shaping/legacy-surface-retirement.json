@@ -42,8 +42,9 @@
         "cargo test -p cerberus-cli --test github_action_dispatch",
         "cargo test -p cerberus-cli --test github_action_entrypoint"
       ],
+      "deletion_or_archive_commit": "e916c7b9d893e57ed0edfc0d04858fb8d82b67d5",
       "rollback_path": "Restore dispatch.sh from the deletion commit parent and restore action.yml only if the Rust dispatcher regresses.",
-      "next_action": "Record the deletion/archive commit after the shell dispatcher deletion commit lands."
+      "next_action": "Keep the Rust GitHub Action dispatcher covered by action-entrypoint and hosted-dispatch gates."
     },
     {
       "surface_id": "node-scaffolder",

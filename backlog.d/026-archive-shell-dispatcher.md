@@ -1,6 +1,6 @@
 # 026 - Archive Shell Dispatcher
 
-Status: planned
+Status: implemented
 Priority: P0
 Type: compatibility
 Created: 2026-06-19
@@ -70,5 +70,9 @@ Out of scope:
 
 ## Result
 
-Planned. The deletion commit must land first, then the retirement inventory must
-record that commit hash in a follow-up receipt commit.
+Implemented. The root `dispatch.sh` file was deleted in
+`e916c7b9d893e57ed0edfc0d04858fb8d82b67d5`. The retirement validator now
+continues to reject missing live paths, but accepts a missing legacy path when
+the surface records a deletion/archive commit. Current docs and repo
+instructions now point at `action.yml` plus `cerberus-cli github-action-dispatch`
+as the active GitHub Action client.
