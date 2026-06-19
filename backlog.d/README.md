@@ -23,6 +23,7 @@ Current sequence:
 15. `015-peer-harness-execution-plan.md`
 16. `016-peer-harness-live-invocation.md`
 17. `017-peer-harness-prompt-file-transport.md`
+18. `018-live-peer-harness-evaluation-mode.md`
 
 Planning rules:
 
@@ -55,3 +56,5 @@ Planning rules:
 - Prove live peer command invocation with a fixture profile, then private
   prompt-file transport, before budget-approved provider evals or default
   reviewer promotion.
+- Run at least one local live peer eval cell and capture its evidence packet
+  before spending provider eval budget or promoting defaults.

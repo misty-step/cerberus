@@ -59,6 +59,14 @@ reviewer artifacts. Fixture-backed live peer invocation now runs behind
 now use private prompt-file transport and remain blocked until provider-budget
 acknowledgement and required credentials are present.
 
+`cerberus-cli eval-harness --execution-mode live-peer` drives the same peer
+protocol runner for harness/model evaluation cells. `cerberus-core` owns eval
+artifact validation and scoring; the CLI owns live process orchestration and
+writes per-cell input, reviewer artifact, transcript, and execution-plan
+evidence. Offline eval cells remain warning-only; local live fixture cells may
+pass, while provider-backed live cells remain unavailable until budget and
+credentials are explicitly supplied.
+
 `cerberus-cli review-local` is the Rust local diff replay path. It reads a
 git-style diff file, builds a `ReviewRequest.v1` with `LocalDiff` source, runs
 the Rust review core, and writes the same request, artifact, and Markdown
@@ -222,6 +230,28 @@ Non-responsibilities:
 - execution-plan scheduling or retry policy
 - free-form transcript interpretation
 - model budget or quality evaluation
+
+### Harness and Model Evaluation
+
+Lives in `crates/cerberus-core/src/harness_eval.rs`,
+`cerberus-cli eval-harness`, and `fixtures/evals/`.
+
+Responsibilities:
+
+- grade reviewer artifacts against eval tasks in `cerberus-core`
+- emit `HarnessModelEvaluationReport.v1`
+- scan stale model IDs in configured source paths
+- run offline contract cells without marking them production-ready
+- run local live peer cells through `cerberus-peer-harness` when explicitly
+  requested
+- write inspectable input, artifact, transcript, and execution-plan evidence
+  for live peer cells
+
+Non-responsibilities:
+
+- promoting reviewer defaults without a reviewed report
+- spending provider budget without explicit acknowledgement and required env
+- running Daedalus experiments inside Cerberus
 
 ### Rust Local Review Replay
 

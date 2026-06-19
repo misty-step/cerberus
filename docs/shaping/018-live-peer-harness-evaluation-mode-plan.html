@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>018 Live Peer Harness Evaluation Mode</title>
+  <style>
+    :root { color-scheme: light; --ink:#171717; --muted:#5f6368; --line:#d7d7d7; --paper:#fbfaf7; --accent:#225c4a; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--paper); }
+    main { max-width:1120px; margin:0 auto; padding:40px 28px 64px; }
+    .hero { min-height:58vh; display:grid; grid-template-columns:1.15fr .85fr; gap:28px; align-items:center; border-bottom:1px solid var(--line); }
+    h1 { font-size:52px; line-height:1.02; margin:0 0 18px; letter-spacing:0; }
+    h2 { font-size:18px; margin:0 0 12px; text-transform:uppercase; letter-spacing:0; }
+    p, li { font-size:16px; line-height:1.55; }
+    .muted { color:var(--muted); }
+    .panel { border:1px solid var(--line); border-radius:8px; padding:18px; background:#fff; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:24px; }
+    .wide { grid-column:1 / -1; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { overflow:auto; padding:16px; border:1px solid var(--line); border-radius:8px; background:#101513; color:#e9f3ee; }
+    table { width:100%; border-collapse:collapse; font-size:15px; }
+    th, td { text-align:left; padding:10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--accent); }
+    @media (max-width: 820px) { .hero, .grid { grid-template-columns:1fr; } h1 { font-size:38px; } }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div>
+      <p class="muted">Backlog 018</p>
+      <h1>Run Cerberus eval cells through the live peer harness without spending provider budget by default.</h1>
+      <p>
+        The peer runner can now use private prompt files. The next step is to
+        make the evaluation runner drive that live protocol and keep the proof
+        packet: input, execution plan, transcript, artifact, and report cell.
+      </p>
+    </div>
+    <div class="panel">
+      <h2>Work Contract</h2>
+      <p><strong>Outcome:</strong> `eval-harness --execution-mode live-peer` emits a schema-valid report with `live_harness` cells from `cerberus-peer-harness`.</p>
+      <p><strong>Design:</strong> core grades externally produced artifacts; CLI owns subprocess orchestration and evidence files.</p>
+      <p><strong>Stop:</strong> no provider launch without budget acknowledgement and required env; no reviewer default change.</p>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <h2>Verification System</h2>
+      <ul>
+        <li><strong>Claim:</strong> live peer eval creates a valid report cell and durable evidence.</li>
+        <li><strong>Falsifier:</strong> missing transcript/plan, offline pass, provider spend, or duplicated grading semantics.</li>
+        <li><strong>Driver:</strong> `cerberus-cli eval-harness --execution-mode live-peer`.</li>
+        <li><strong>Grader:</strong> report validation, transcript markers, focused Rust tests, provider gated QA.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h2>Quality System</h2>
+      <ul>
+        <li>Substantive CLI/operator workflow change.</li>
+        <li>Proof: live fixture QA, structural gates, full repo gates, fresh critic.</li>
+        <li>Review lens: public CLI workflow, compatibility, operations, module depth.</li>
+        <li>Residual risk must name skipped paid provider bakeoff.</li>
+      </ul>
+    </div>
+    <div class="panel wide">
+      <h2>Acceptance Commands</h2>
+      <pre><code>CERBERUS_PEER_HARNESS_LIVE=1 cargo run --locked -p cerberus-cli -- eval-harness \
+  --execution-mode live-peer \
+  --peer-profiles fixtures/harnesses/live-peer-command-profiles.json \
+  --suite fixtures/evals/reviewer-harness-live-peer-smoke.json \
+  --matrix fixtures/evals/harness-model-live-peer-matrix.json \
+  --out tmp/evals/live-peer
+
+cargo run --locked -p cerberus-cli -- validate tmp/evals/live-peer/report.json</code></pre>
+    </div>
+    <div class="panel">
+      <h2>Alternatives</h2>
+      <table>
+        <tr><th>Option</th><th>Decision</th></tr>
+        <tr><td>Run paid providers now</td><td>Rejected for this slice; budget and retry policy remain explicit gates.</td></tr>
+        <tr><td>Put subprocess logic in core</td><td>Rejected; core grades artifacts, CLI owns live process details.</td></tr>
+        <tr><td>Only write plans</td><td>Rejected; backlog needs at least one live fixture cell.</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Adversarial Focus</h2>
+      <ul>
+        <li>Can a provider profile run without budget acknowledgement?</li>
+        <li>Does the report preserve live vs offline semantics?</li>
+        <li>Can another agent inspect the exact transcript and execution plan?</li>
+        <li>Did the diff create a shallow eval wrapper instead of deepening the existing modules?</li>
+      </ul>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -161,12 +161,13 @@ Relevant Cerberus drift:
 4. Done: add stale-model drift reporting over Cerberus-owned config/source
    paths.
 5. Done: add current-model catalog ingestion with cached raw evidence.
-6. Remaining: run paid/live harness adapters rather than the offline fixture
-   reviewer.
-7. Remaining: convert report winners into a candidate `ReviewConfig.v1`; keep
+6. Done: add local live peer harness evaluation mode and fixture evidence.
+7. Remaining: run budget-approved provider-backed peer evals rather than the
+   local fixture reviewer.
+8. Remaining: convert report winners into a candidate `ReviewConfig.v1`; keep
    production defaults unchanged until the report and cost envelope are
    reviewed.
-8. Remaining: feed accepted configs into backlog 004's Daedalus promotion
+9. Remaining: feed accepted configs into backlog 004's Daedalus promotion
    packet flow.
 
 ## Implementation Receipt
@@ -188,6 +189,10 @@ First local smoke delivery, 2026-06-18:
 
 This receipt proves the local evaluation contract and report mechanics. It does
 not prove that any paid model/harness pair is production-ready.
+
+Backlog 018 adds a local live peer eval fixture path. It proves the eval runner
+can drive `cerberus-peer-harness` and grade a `live_harness` cell, but it still
+does not prove that any paid model/harness pair is production-ready.
 
 ## Notes
 

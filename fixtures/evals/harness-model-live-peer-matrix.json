@@ -1,0 +1,34 @@
+{
+  "schema_version": "harness-model-matrix.v1",
+  "matrix_id": "2026-06-19-live-peer-fixture",
+  "observed_at": "2026-06-19",
+  "harnesses": [
+    {
+      "schema_version": "harness-profile.v1",
+      "harness_id": "fixture-live-file",
+      "command": "sh",
+      "version": "fixture",
+      "path": "/bin/sh",
+      "notes": "Fixture harness for local live-peer eval QA; the matching peer profile uses private prompt-file transport."
+    }
+  ],
+  "models": [
+    {
+      "schema_version": "model-candidate.v1",
+      "model_id": "openrouter/test-model",
+      "provider": "fixture",
+      "context_length": 8192,
+      "max_completion_tokens": 1024,
+      "input_usd_per_m": 0.0,
+      "output_usd_per_m": 0.0,
+      "cache_read_usd_per_m": 0.0,
+      "supported_parameters": [
+        "response_format"
+      ],
+      "catalog_source": "fixture",
+      "catalog_observed_at": "2026-06-19"
+    }
+  ],
+  "stale_model_patterns": [],
+  "drift_scan_paths": []
+}

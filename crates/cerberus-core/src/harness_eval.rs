@@ -1,4 +1,4 @@
-use crate::{review, CoreError};
+use crate::{review, validate_reviewer_artifact_for_request, CoreError};
 use cerberus_schema::{
     EvalCellStatus, EvalExecutionMode, EvalTask, EvalTaskSuite, ExpectedFinding,
     FakeReviewerBehavior, HarnessModelEvaluationCell, HarnessModelEvaluationReport,
@@ -68,6 +68,16 @@ pub fn evaluate_harness_model_matrix(
         }
     }
 
+    harness_model_evaluation_output(suite, matrix, cells, transcripts, stale_model_findings)
+}
+
+pub fn harness_model_evaluation_output(
+    suite: &EvalTaskSuite,
+    matrix: &HarnessModelMatrix,
+    cells: Vec<HarnessModelEvaluationCell>,
+    transcripts: Vec<(String, String)>,
+    stale_model_findings: Vec<StaleModelFinding>,
+) -> Result<HarnessModelEvaluationOutput, CoreError> {
     let summary = summarize_cells(&cells);
     let report = HarnessModelEvaluationReport {
         schema_version: HARNESS_MODEL_EVALUATION_REPORT_VERSION.to_string(),
@@ -88,6 +98,19 @@ pub fn evaluate_harness_model_matrix(
     })
 }
 
+pub fn eval_reviewer_config(
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+) -> ReviewerConfig {
+    ReviewerConfig {
+        id: format!("{}-{}", harness.harness_id, task.task_id),
+        perspective: "evaluation".to_string(),
+        model: model.model_id.clone(),
+        fake_behavior: FakeReviewerBehavior::Directive,
+    }
+}
+
 fn evaluate_cell(
     harness: &HarnessProfile,
     model: &ModelCandidate,
@@ -96,39 +119,69 @@ fn evaluate_cell(
     let config = ReviewConfig {
         schema_version: REVIEW_CONFIG_VERSION.to_string(),
         config_id: format!("eval-{}-{}", harness.harness_id, model.model_id),
-        reviewers: vec![ReviewerConfig {
-            id: format!("{}-{}", harness.harness_id, task.task_id),
-            perspective: "evaluation".to_string(),
-            model: model.model_id.clone(),
-            fake_behavior: FakeReviewerBehavior::Directive,
-        }],
+        reviewers: vec![eval_reviewer_config(harness, model, task)],
         confidence_min: 0.7,
     };
     let run = review(&task.review_request, &config)?;
-    let mut artifact = run
+    let artifact = run
         .reviewer_artifacts
         .into_iter()
         .next()
         .expect("single-reviewer config produces one reviewer artifact");
-    let cost_usd = estimate_cost_usd(&artifact, model);
+
+    evaluate_harness_model_artifact(
+        harness,
+        model,
+        task,
+        EvalExecutionMode::OfflineContract,
+        artifact,
+        0,
+        transcript_path(&harness.harness_id, &model.model_id, &task.task_id),
+    )
+}
+
+pub fn evaluate_harness_model_artifact(
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+    execution_mode: EvalExecutionMode,
+    artifact: ReviewerArtifact,
+    latency_ms: u64,
+    transcript_path: String,
+) -> Result<HarnessModelEvaluationCell, CoreError> {
+    let reviewer = eval_reviewer_config(harness, model, task);
+    let mut artifact =
+        match validate_reviewer_artifact_for_request(&reviewer, &task.review_request, artifact) {
+            Ok(artifact) => artifact,
+            Err(error) => {
+                return Ok(failed_harness_model_cell(
+                    harness,
+                    model,
+                    task,
+                    execution_mode,
+                    latency_ms,
+                    transcript_path,
+                    format!("invalid reviewer artifact: {error}"),
+                ));
+            }
+        };
+    let cost_usd = if artifact.cost_usd > 0.0 {
+        artifact.cost_usd
+    } else {
+        estimate_cost_usd(&artifact, model)
+    };
     artifact.cost_usd = cost_usd;
-    let artifact_valid = artifact.validate().is_ok();
     let degraded = artifact.status != ReviewerStatus::Completed;
     let (found, false_positives, fixture_score) = grade_artifact(&artifact, task);
     let score = if degraded { 0.0 } else { fixture_score };
-    let status = cell_status(
-        EvalExecutionMode::OfflineContract,
-        task,
-        artifact_valid,
-        degraded,
-        false_positives,
-        score,
-    );
+    let status = cell_status(execution_mode, task, true, degraded, false_positives, score);
     let failure_reason = if degraded {
         artifact
             .degraded_reason
             .clone()
             .or_else(|| Some("reviewer degraded".to_string()))
+    } else if status == EvalCellStatus::Fail {
+        Some("artifact did not meet eval rubric".to_string())
     } else {
         None
     };
@@ -138,34 +191,36 @@ fn evaluate_cell(
         harness_id: harness.harness_id.clone(),
         model_id: model.model_id.clone(),
         task_id: task.task_id.clone(),
-        execution_mode: EvalExecutionMode::OfflineContract,
+        execution_mode,
         status,
-        artifact_valid,
+        artifact_valid: true,
         reviewer_artifact: Some(artifact),
         expected_findings_found: found,
         expected_findings_total: task.expected_findings.len() as u64,
         false_positives,
         score,
-        latency_ms: 0,
+        latency_ms,
         cost_usd,
         degraded,
-        transcript_path: transcript_path(&harness.harness_id, &model.model_id, &task.task_id),
+        transcript_path,
         failure_reason,
     })
 }
 
-fn unavailable_cell(
+pub fn unavailable_harness_model_cell(
     harness: &HarnessProfile,
     model: &ModelCandidate,
     task: &EvalTask,
-    probe: &HarnessProbe,
+    execution_mode: EvalExecutionMode,
+    transcript_path: String,
+    failure_reason: String,
 ) -> HarnessModelEvaluationCell {
     HarnessModelEvaluationCell {
         cell_id: cell_id(&harness.harness_id, &model.model_id, &task.task_id),
         harness_id: harness.harness_id.clone(),
         model_id: model.model_id.clone(),
         task_id: task.task_id.clone(),
-        execution_mode: EvalExecutionMode::OfflineContract,
+        execution_mode,
         status: EvalCellStatus::Unavailable,
         artifact_valid: false,
         reviewer_artifact: None,
@@ -176,11 +231,57 @@ fn unavailable_cell(
         latency_ms: 0,
         cost_usd: 0.0,
         degraded: false,
-        transcript_path: transcript_path(&harness.harness_id, &model.model_id, &task.task_id),
-        failure_reason: probe
+        transcript_path,
+        failure_reason: Some(failure_reason),
+    }
+}
+
+fn unavailable_cell(
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+    probe: &HarnessProbe,
+) -> HarnessModelEvaluationCell {
+    unavailable_harness_model_cell(
+        harness,
+        model,
+        task,
+        EvalExecutionMode::OfflineContract,
+        transcript_path(&harness.harness_id, &model.model_id, &task.task_id),
+        probe
             .failure_reason
             .clone()
-            .or_else(|| Some("harness unavailable".to_string())),
+            .unwrap_or_else(|| "harness unavailable".to_string()),
+    )
+}
+
+fn failed_harness_model_cell(
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+    execution_mode: EvalExecutionMode,
+    latency_ms: u64,
+    transcript_path: String,
+    failure_reason: String,
+) -> HarnessModelEvaluationCell {
+    HarnessModelEvaluationCell {
+        cell_id: cell_id(&harness.harness_id, &model.model_id, &task.task_id),
+        harness_id: harness.harness_id.clone(),
+        model_id: model.model_id.clone(),
+        task_id: task.task_id.clone(),
+        execution_mode,
+        status: EvalCellStatus::Fail,
+        artifact_valid: false,
+        reviewer_artifact: None,
+        expected_findings_found: 0,
+        expected_findings_total: task.expected_findings.len() as u64,
+        false_positives: 0,
+        score: 0.0,
+        latency_ms,
+        cost_usd: 0.0,
+        degraded: false,
+        transcript_path,
+        failure_reason: Some(failure_reason),
     }
 }
 
@@ -470,6 +571,67 @@ mod tests {
             .cells
             .iter()
             .all(|cell| cell.status == EvalCellStatus::Unavailable));
+    }
+
+    #[test]
+    fn harness_model_eval_grades_external_live_artifact_as_pass() {
+        let matrix = matrix();
+        let harness = &matrix.harnesses[0];
+        let model = &matrix.models[0];
+        let task = clean_task();
+        let reviewer = eval_reviewer_config(harness, model, &task);
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "external-live-cell".to_string(),
+            reviewers: vec![reviewer],
+            confidence_min: 0.7,
+        };
+        let artifact = crate::review(&task.review_request, &config)
+            .expect("fixture review succeeds")
+            .reviewer_artifacts
+            .into_iter()
+            .next()
+            .expect("one artifact");
+
+        let cell = evaluate_harness_model_artifact(
+            harness,
+            model,
+            &task,
+            EvalExecutionMode::LiveHarness,
+            artifact,
+            42,
+            "transcripts/live.txt".to_string(),
+        )
+        .expect("live artifact grades");
+
+        assert_eq!(cell.execution_mode, EvalExecutionMode::LiveHarness);
+        assert_eq!(cell.status, EvalCellStatus::Pass);
+        assert_eq!(cell.latency_ms, 42);
+        assert_eq!(cell.transcript_path, "transcripts/live.txt");
+    }
+
+    #[test]
+    fn harness_model_eval_unavailable_cell_preserves_execution_mode() {
+        let matrix = matrix();
+        let harness = &matrix.harnesses[0];
+        let model = &matrix.models[0];
+        let task = clean_task();
+
+        let cell = unavailable_harness_model_cell(
+            harness,
+            model,
+            &task,
+            EvalExecutionMode::LiveHarness,
+            "transcripts/unavailable.txt".to_string(),
+            "missing provider budget acknowledgement".to_string(),
+        );
+
+        assert_eq!(cell.execution_mode, EvalExecutionMode::LiveHarness);
+        assert_eq!(cell.status, EvalCellStatus::Unavailable);
+        assert_eq!(
+            cell.failure_reason.as_deref(),
+            Some("missing provider budget acknowledgement")
+        );
     }
 
     fn suite() -> EvalTaskSuite {

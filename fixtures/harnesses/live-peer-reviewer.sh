@@ -50,8 +50,21 @@ require_prompt() {
   fi
 }
 
+extract_prompt_field() {
+  field="$1"
+  printf '%s\n' "$prompt" | sed -n "s/^- ${field}: //p" | sed -n '1p'
+}
+
+reviewer_id="$(extract_prompt_field id)"
+perspective="$(extract_prompt_field perspective)"
+model="$(extract_prompt_field model)"
+if [ -z "$reviewer_id" ] || [ -z "$perspective" ] || [ -z "$model" ]; then
+  printf '%s\n' 'prompt does not contain reviewer metadata' >&2
+  exit 65
+fi
+
 require_prompt 'ReviewerArtifact.v1' 'artifact contract'
-require_prompt 'peer-runner-reviewer' 'reviewer id'
+require_prompt 'Reviewer:' 'reviewer section'
 require_prompt 'request_id:' 'request id field'
 require_prompt 'diff --git a/src/lib.rs b/src/lib.rs' 'diff body'
 
@@ -64,11 +77,13 @@ cat <<'TRANSCRIPT'
 Fixture live peer transcript.
 
 CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN
+TRANSCRIPT
+cat <<TRANSCRIPT
 {
   "schema_version": "reviewer-artifact.v1",
-  "reviewer_id": "peer-runner-reviewer",
-  "perspective": "correctness",
-  "model": "openrouter/test-model",
+  "reviewer_id": "$reviewer_id",
+  "perspective": "$perspective",
+  "model": "$model",
   "status": "completed",
   "verdict": "PASS",
   "summary": "Fixture live peer accepted the prompt and returned a valid artifact.",

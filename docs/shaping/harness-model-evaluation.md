@@ -1,7 +1,7 @@
 # Harness and Model Evaluation Shape
 
-Date: 2026-06-18
-Status: local smoke implemented
+Date: 2026-06-19
+Status: local live-peer fixture implemented
 
 ## Goal
 
@@ -162,6 +162,15 @@ GLM 5.2's current OpenRouter row reports max completion `65,536` and output
 price `$3.20/M` while preserving the earlier `16,384` / `$4.20/M` matrix values
 as the previous snapshot.
 
+Backlog 018 adds `cerberus-cli eval-harness --execution-mode live-peer` with
+`--peer-profiles <PeerHarnessCommandProfiles.v3.json>`. The CLI drives
+`cerberus-peer-harness` live, writes per-cell input, artifact, transcript, and
+execution-plan files, then asks `cerberus-core` to grade the resulting
+`ReviewerArtifact.v1`. The checked local fixture matrix proves one
+`live_harness` pass cell without provider spend. Provider-backed Pi, Goose,
+OpenCode, and OMP cells still fail closed as `unavailable` unless provider
+budget acknowledgement and required credentials are present.
+
 The current smoke result is intentionally not a live model bake-off. Cells run
 in `offline_contract` mode and must validate as `warn` or structured
 degraded/unavailable outcomes, not as production-ready `pass` outcomes. This
@@ -215,9 +224,10 @@ cargo test --workspace harness_model_eval
 Local smoke acceptance requires each locally installed harness profile to be
 probed and each matrix cell to emit either a schema-valid offline
 `ReviewerArtifact.v1` in `warn` status or a structured degraded/unavailable
-record. Live adapter acceptance later requires at least one task to run through
-each harness with a real harness/model transcript. Paid external model cells
-may be marked manual/nightly until budget and retry policy exist.
+record. Local live-peer acceptance requires at least one task to run through
+`cerberus-peer-harness` with a captured transcript and `live_harness` report
+cell. Paid external model cells may be marked manual/nightly until budget and
+retry policy exist.
 
 ## Verification System
 
