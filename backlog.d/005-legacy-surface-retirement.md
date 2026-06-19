@@ -395,3 +395,19 @@ Fifteenth local retirement delivery, 2026-06-19:
 - Kept `elixir-verdict-store` pending and did not delete legacy files:
   production API persistence, deployment smoke, live GitHub acquisition, and
   provider-backed execution remain separate retirement gates.
+
+Sixteenth local retirement delivery, 2026-06-19:
+
+- Added `docs/walkthroughs/ARCHIVE.md` as the index for historical evidence
+  roots before any future archive move: 34 historical files under
+  `docs/walkthroughs/` excluding the new index, 16 under `artifacts/`, and 8
+  under `walkthrough/`.
+- Kept historical walkthroughs and artifacts in place. This slice does not
+  delete, move, rewrite, or reclassify any old receipt as current architecture.
+- Added `docs/shaping/005-historical-walkthrough-archive-index-plan.html` as
+  the work contract for this retirement slice.
+- Updated top-level docs and the docs index to route readers through the
+  archive index when they need old evidence.
+- Updated the retirement inventory so `historical-walkthroughs-and-artifacts`
+  no longer has an open "create archive index" action; future movement must be
+  a separate archive commit with rollback path preserved.

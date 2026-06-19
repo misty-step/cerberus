@@ -143,3 +143,5 @@ pipeline. The supported compatibility surface in this repository is now the
 API-dispatch action plus the legacy Elixir engine; the Rust-only target and
 deletion sequence are tracked in
 [`docs/shaping/legacy-surface-retirement.md`](docs/shaping/legacy-surface-retirement.md).
+Historical walkthrough and artifact roots are indexed in
+[`docs/walkthroughs/ARCHIVE.md`](docs/walkthroughs/ARCHIVE.md).

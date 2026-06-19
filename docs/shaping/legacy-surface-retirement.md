@@ -26,7 +26,7 @@ cargo run --locked -p cerberus-cli -- validate docs/shaping/legacy-surface-retir
 | `elixir-review-tools` | port to Rust | pending | Rust harness/provider adapters with typed peer-harness read capabilities; current Pi, Goose, OpenCode, OMP, and fixture profiles declare no Cerberus-granted local repository or GitHub read authority. This is a profile and prompt contract, not runtime sandboxing. | Implement actual Rust GitHub/local read adapters only when a measured harness profile requires those capabilities. |
 | `legacy-defaults-and-personas` | port to Rust | pending | Measured `ReviewerConfigPacket.v1` imports from Daedalus or harness/model eval evidence. | Replace static defaults only after live eval evidence. |
 | `elixir-release-and-deploy` | archive after parity | pending | Keep only while the hosted API remains Elixir-backed. | Define Rust API deployment smoke before archiving scripts. |
-| `historical-walkthroughs-and-artifacts` | archive after parity | intentionally rejected | Evidence artifacts, not active runtime surfaces. | Create an archive index before moving or deleting historical walkthrough material. |
+| `historical-walkthroughs-and-artifacts` | archive after parity | intentionally rejected | Evidence artifacts, not active runtime surfaces. `docs/walkthroughs/ARCHIVE.md` indexes current walkthrough, artifact, and raw evidence roots. | Keep the archive index current; move or delete historical material only in a separate archive commit with rollback path preserved. |
 
 ## Rule
 

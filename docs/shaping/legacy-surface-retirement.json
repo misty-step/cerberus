@@ -285,10 +285,11 @@
       "keep_reason": "These are evidence artifacts, not active runtime surfaces; they should be archived only after current docs link the replacement receipts.",
       "parity_evidence": [
         "docs/README.md labels historical walkthroughs as reference material",
+        "docs/walkthroughs/ARCHIVE.md indexes current historical walkthrough, artifact, and raw evidence roots",
         "docs/shaping/thinktank-migration-inventory.md records historical donor material"
       ],
       "rollback_path": "Restore archived walkthroughs from the archive commit or release tag if a migration audit needs them.",
-      "next_action": "Create an archive index before moving or deleting historical walkthrough material."
+      "next_action": "Keep the archive index current; move or delete historical material only in a separate archive commit with rollback path preserved."
     }
   ]
 }

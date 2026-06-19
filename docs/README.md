@@ -68,10 +68,14 @@ Current docs:
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`
+- Historical walkthrough archive index: `docs/walkthroughs/ARCHIVE.md`
+- Historical walkthrough archive index plan:
+  `docs/shaping/005-historical-walkthrough-archive-index-plan.html`
 - ADRs: `docs/adr/`
 - Legacy compatibility engine details: `cerberus-elixir/README.md`
 
-Historical walkthroughs and ADRs remain in-repo for reference. Some older
-documents describe the retired matrix pipeline or the legacy Elixir API mode and
-should be read as historical context unless the current backlog names them as
-compatibility surfaces.
+Historical walkthroughs and ADRs remain in-repo for reference.
+`docs/walkthroughs/ARCHIVE.md` indexes the old walkthrough, artifact, and raw
+evidence roots. Some older documents describe the retired matrix pipeline or
+the legacy Elixir API mode and should be read as historical context unless the
+current backlog names them as compatibility surfaces.
