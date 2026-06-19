@@ -1,9 +1,11 @@
 use anyhow::{bail, Context, Result};
 use cerberus_adapter::{
     github_action_review_decision_from_event, github_action_skip_decision_from_event,
-    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, GithubActionReviewDecision,
-    HostedApiDispatchConfig, HostedApiDispatchRequest, HostedApiDispatchSettings,
+    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, FileReviewRunArtifactStore,
+    GithubActionReviewDecision, HostedApiDispatchConfig, HostedApiDispatchDecision,
+    HostedApiDispatchOutcome, HostedApiDispatchRequest, HostedApiDispatchSettings,
     HostedApiDispatchTranscript, HostedApiDispatchTransport, HostedApiHttpResponse,
+    ReviewRunArtifactStore,
 };
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
@@ -321,6 +323,7 @@ fn github_action_request(args: Vec<String>) -> Result<()> {
 fn hosted_api_dispatch_fixture(args: Vec<String>) -> Result<()> {
     let mut transcript = None;
     let mut out = None;
+    let mut artifact_store = None;
     let mut index = 0;
 
     while index < args.len() {
@@ -333,6 +336,10 @@ fn hosted_api_dispatch_fixture(args: Vec<String>) -> Result<()> {
                 out = Some(required_arg(&args, index, "--out")?);
                 index += 2;
             }
+            "--artifact-store" => {
+                artifact_store = Some(required_arg(&args, index, "--artifact-store")?);
+                index += 2;
+            }
             other => bail!("unknown hosted-api-dispatch-fixture argument {other:?}"),
         }
     }
@@ -343,6 +350,11 @@ fn hosted_api_dispatch_fixture(args: Vec<String>) -> Result<()> {
     let out_path = PathBuf::from(out.context("hosted-api-dispatch-fixture requires --out <path>")?);
     let transcript = read_hosted_api_dispatch_transcript(&transcript_path)?;
     let decision = run_hosted_api_dispatch_fixture(&transcript)?;
+    persist_decision_artifact_if_requested(
+        &decision,
+        artifact_store.map(PathBuf::from),
+        "--artifact-store",
+    )?;
     write_json(&out_path, &decision)?;
     println!("{}", out_path.display());
     Ok(())
@@ -400,6 +412,11 @@ fn github_action_dispatch(args: Vec<String>) -> Result<()> {
 
     let mut transport = UreqHostedApiTransport::new();
     let decision = run_hosted_api_dispatch(&config, &mut transport)?;
+    persist_decision_artifact_if_requested(
+        &decision,
+        optional_env("CERBERUS_ARTIFACT_STORE").map(PathBuf::from),
+        "CERBERUS_ARTIFACT_STORE",
+    )?;
     append_decision_outputs(&github_output_path, &decision.github_outputs)?;
     if let Some(path) = decision_out {
         write_json(&PathBuf::from(path), &decision)?;
@@ -417,6 +434,38 @@ fn github_action_dispatch(args: Vec<String>) -> Result<()> {
             decision.verdict
         );
     }
+    Ok(())
+}
+
+fn persist_decision_artifact_if_requested(
+    decision: &HostedApiDispatchDecision,
+    store_root: Option<PathBuf>,
+    source: &str,
+) -> Result<()> {
+    let Some(store_root) = store_root else {
+        return Ok(());
+    };
+
+    match (&decision.outcome, &decision.review_run_artifact) {
+        (HostedApiDispatchOutcome::Completed, Some(artifact)) => {
+            let store = FileReviewRunArtifactStore::new(store_root);
+            let path = store.put(artifact)?;
+            println!("Cerberus: persisted review artifact to {}", path.display());
+        }
+        (HostedApiDispatchOutcome::Completed, None) => {
+            bail!(
+                "Cerberus: {source} requested artifact persistence, but the completed hosted API response did not include review_run_artifact"
+            );
+        }
+        (_, None) if decision.review_run_artifact_error.is_some() => {
+            bail!(
+                "Cerberus: {source} requested artifact persistence, but the hosted API response included invalid review_run_artifact: {}",
+                decision.review_run_artifact_error.as_deref().unwrap_or("invalid artifact")
+            );
+        }
+        _ => {}
+    }
+
     Ok(())
 }
 
@@ -1285,6 +1334,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli init [--repo-root <path>] [--template <workflow.yml>] [--report-out <report.json>] [--api-key-stdin]\n  cerberus-cli init-workflow [--repo-root <path>] [--template <workflow.yml>] [--report-out <report.json>]\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli github-action-dispatch [--github-output <path>] [--decision-out <decision.json>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json>\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli eval-readiness --suite <eval-suite.json> --matrix <matrix.json> --peer-profiles <PeerHarnessCommandProfiles.v3.json> --out <EvalReadinessReport.v1.json>\n  cerberus-cli eval-budget --suite <eval-suite.json> --matrix <matrix.json> --readiness <EvalReadinessReport.v1.json> --prompt-tokens <n> --completion-tokens <n> [--retry-count <n>] --out <EvalBudgetEstimateReport.v1.json>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli init [--repo-root <path>] [--template <workflow.yml>] [--report-out <report.json>] [--api-key-stdin]\n  cerberus-cli init-workflow [--repo-root <path>] [--template <workflow.yml>] [--report-out <report.json>]\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli github-action-dispatch [--github-output <path>] [--decision-out <decision.json>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json> [--artifact-store <dir>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli eval-readiness --suite <eval-suite.json> --matrix <matrix.json> --peer-profiles <PeerHarnessCommandProfiles.v3.json> --out <EvalReadinessReport.v1.json>\n  cerberus-cli eval-budget --suite <eval-suite.json> --matrix <matrix.json> --readiness <EvalReadinessReport.v1.json> --prompt-tokens <n> --completion-tokens <n> [--retry-count <n>] --out <EvalBudgetEstimateReport.v1.json>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

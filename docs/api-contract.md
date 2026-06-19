@@ -67,6 +67,29 @@ Starts an asynchronous review run.
 
 Returns the current status and, when complete, the aggregated verdict.
 
+Completed responses may also include a full Rust review artifact under
+`review_run_artifact` (abbreviated here):
+
+```json
+{
+  "status": "completed",
+  "aggregated_verdict": { "verdict": "PASS" },
+  "review_run_artifact": {
+    "schema_version": "review-run-artifact.v1",
+    "run_id": "review-run-abc123"
+  }
+}
+```
+
+`cerberus-cli github-action-dispatch` validates the embedded artifact before
+using it. If `CERBERUS_ARTIFACT_STORE` is set, completed responses must include
+`review_run_artifact`; the CLI persists it through
+`FileReviewRunArtifactStore` at `review-runs/<run_id>.json` and fails closed if
+the hosted verdict and artifact verdict disagree, or if the artifact
+`reviewed_head_sha` does not match the dispatch request `head_sha`. Dispatch
+decision JSON and the optional verdict JSON file remain status transcripts and
+do not serialize the embedded artifact.
+
 ### `GET /api/health`
 
 Simple liveness probe:
@@ -111,8 +134,9 @@ Simple liveness probe:
 
 ### Client
 
-| Input | Required | Description |
+| Variable / input | Required | Description |
 |-------|----------|-------------|
 | `api-key` | yes | `CERBERUS_API_KEY` value |
 | `cerberus-url` | no | Optional API base URL override; defaults to `https://cerberus.fly.dev` |
 | `github-token` | no | Optional request-scoped GitHub token forwarded in `POST /api/reviews` |
+| `CERBERUS_ARTIFACT_STORE` | no | Optional local directory where the action dispatcher persists completed `ReviewRunArtifact.v1` payloads when the hosted API returns them |

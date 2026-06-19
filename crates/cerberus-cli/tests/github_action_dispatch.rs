@@ -1,3 +1,6 @@
+use cerberus_adapter::{FileReviewRunArtifactStore, ReviewRunArtifactStore};
+use cerberus_core::{default_config, review};
+use cerberus_schema::{ReviewRequest, ReviewRunArtifact};
 use serde_json::Value;
 use std::{
     fs,
@@ -9,6 +12,8 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+const CLEAN_REQUEST: &str = include_str!("../../../fixtures/review-request/clean.json");
 
 #[test]
 fn github_action_dispatch_posts_polls_and_writes_outputs() {
@@ -62,6 +67,204 @@ fn github_action_dispatch_posts_polls_and_writes_outputs() {
         requests[1].header("authorization"),
         Some("Bearer test-api-key")
     );
+}
+
+#[test]
+fn github_action_dispatch_persists_completed_review_artifact_when_store_requested() {
+    let temp = temp_dir("persist-artifact");
+    let output = temp.join("github-output.txt");
+    let decision = temp.join("decision.json");
+    let runner_temp = temp.join("runner-temp");
+    let store_root = temp.join("artifact-store");
+    fs::create_dir_all(&runner_temp).expect("runner temp");
+    let artifact = fixture_review_artifact();
+    let completed = serde_json::json!({
+        "status": "completed",
+        "aggregated_verdict": { "verdict": "PASS" },
+        "review_run_artifact": artifact.clone()
+    })
+    .to_string();
+    let server = FakeServer::start(vec![
+        response(202, r#"{"review_id":"review-459"}"#),
+        response(200, completed),
+    ]);
+
+    let status = base_command(&server.base_url, &output, &decision, &runner_temp)
+        .env("CERBERUS_ARTIFACT_STORE", &store_root)
+        .status()
+        .expect("run command");
+
+    assert!(status.success(), "expected success, got {status}");
+    assert_eq!(
+        fs::read_to_string(&output).expect("github output"),
+        "review-id=review-459\nverdict=PASS\n"
+    );
+    let decision_json = read_json(&decision);
+    assert_eq!(decision_json["outcome"], "completed");
+    assert_eq!(decision_json["verdict"], "PASS");
+    assert_no_review_artifact_key(&decision_json);
+    let verdict_json = read_json(&runner_temp.join("cerberus-api-verdict.json"));
+    assert_no_review_artifact_key(&verdict_json);
+    let store = FileReviewRunArtifactStore::new(&store_root);
+    let artifact_path = store.artifact_path(&artifact.run_id).expect("safe id");
+    assert!(artifact_path.exists(), "persisted artifact path missing");
+    assert_eq!(
+        store.get(&artifact.run_id).expect("artifact replays"),
+        artifact
+    );
+
+    let requests = server.join();
+    assert_eq!(requests.len(), 2);
+}
+
+#[test]
+fn github_action_dispatch_does_not_serialize_artifact_without_store_request() {
+    let temp = temp_dir("artifact-not-serialized");
+    let output = temp.join("github-output.txt");
+    let decision = temp.join("decision.json");
+    let runner_temp = temp.join("runner-temp");
+    fs::create_dir_all(&runner_temp).expect("runner temp");
+    let artifact = fixture_review_artifact();
+    let completed = serde_json::json!({
+        "status": "completed",
+        "aggregated_verdict": { "verdict": "PASS" },
+        "review_run_artifact": artifact.clone(),
+        "diagnostics": {
+            "review_run_artifact": artifact.clone()
+        },
+        "events": [
+            { "review_run_artifact": artifact }
+        ]
+    })
+    .to_string();
+    let server = FakeServer::start(vec![
+        response(202, r#"{"review_id":"review-459"}"#),
+        response(200, completed),
+    ]);
+
+    let status = base_command(&server.base_url, &output, &decision, &runner_temp)
+        .status()
+        .expect("run command");
+
+    assert!(status.success(), "expected success, got {status}");
+    let decision_json = read_json(&decision);
+    assert_eq!(decision_json["outcome"], "completed");
+    assert_eq!(decision_json["verdict"], "PASS");
+    assert_no_review_artifact_key(&decision_json);
+    let verdict_json = read_json(&runner_temp.join("cerberus-api-verdict.json"));
+    assert_no_review_artifact_key(&verdict_json);
+
+    let requests = server.join();
+    assert_eq!(requests.len(), 2);
+}
+
+#[test]
+fn github_action_dispatch_rejects_wrong_head_artifact_when_store_requested() {
+    let temp = temp_dir("wrong-head-artifact");
+    let output = temp.join("github-output.txt");
+    let decision = temp.join("decision.json");
+    let runner_temp = temp.join("runner-temp");
+    let store_root = temp.join("artifact-store");
+    fs::create_dir_all(&runner_temp).expect("runner temp");
+    let artifact = fixture_review_artifact_for_head("different-head-sha");
+    let completed = serde_json::json!({
+        "status": "completed",
+        "aggregated_verdict": { "verdict": "PASS" },
+        "review_run_artifact": artifact
+    })
+    .to_string();
+    let server = FakeServer::start(vec![
+        response(202, r#"{"review_id":"review-459"}"#),
+        response(200, completed),
+    ]);
+
+    let status = base_command(&server.base_url, &output, &decision, &runner_temp)
+        .env("CERBERUS_ARTIFACT_STORE", &store_root)
+        .status()
+        .expect("run command");
+
+    assert!(
+        !status.success(),
+        "mismatched artifact should fail before persistence"
+    );
+    assert!(
+        !output.exists(),
+        "outputs should not be written after invalid artifact"
+    );
+    assert!(
+        !decision.exists(),
+        "decision should not be written after invalid artifact"
+    );
+    assert!(!store_root.exists(), "store root should remain absent");
+
+    let requests = server.join();
+    assert_eq!(requests.len(), 2);
+}
+
+#[test]
+fn hosted_api_dispatch_fixture_does_not_serialize_artifact_without_store_request() {
+    let temp = temp_dir("fixture-artifact-not-serialized");
+    let transcript = temp.join("transcript.json");
+    let decision = temp.join("decision.json");
+    fs::write(
+        &transcript,
+        fixture_transcript_json(fixture_review_artifact()),
+    )
+    .expect("transcript");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("hosted-api-dispatch-fixture")
+        .arg("--transcript")
+        .arg(&transcript)
+        .arg("--out")
+        .arg(&decision)
+        .status()
+        .expect("run command");
+
+    assert!(status.success(), "expected success, got {status}");
+    let decision_json = read_json(&decision);
+    assert_eq!(decision_json["outcome"], "completed");
+    assert_eq!(decision_json["verdict"], "PASS");
+    assert_no_review_artifact_key(&decision_json);
+}
+
+#[test]
+fn github_action_dispatch_requires_artifact_when_store_requested() {
+    let temp = temp_dir("missing-artifact");
+    let output = temp.join("github-output.txt");
+    let decision = temp.join("decision.json");
+    let runner_temp = temp.join("runner-temp");
+    let store_root = temp.join("artifact-store");
+    fs::create_dir_all(&runner_temp).expect("runner temp");
+    let server = FakeServer::start(vec![
+        response(202, r#"{"review_id":"review-459"}"#),
+        response(
+            200,
+            r#"{"status":"completed","aggregated_verdict":{"verdict":"PASS"}}"#,
+        ),
+    ]);
+
+    let status = base_command(&server.base_url, &output, &decision, &runner_temp)
+        .env("CERBERUS_ARTIFACT_STORE", &store_root)
+        .status()
+        .expect("run command");
+
+    assert!(
+        !status.success(),
+        "explicit artifact store should fail without artifact"
+    );
+    assert!(
+        !output.exists(),
+        "outputs should not be written after store error"
+    );
+    assert!(
+        !decision.exists(),
+        "decision should not be written after store error"
+    );
+    assert!(!store_root.exists(), "store root should remain absent");
+
+    let requests = server.join();
+    assert_eq!(requests.len(), 2);
 }
 
 #[test]
@@ -249,13 +452,16 @@ fn temp_dir(name: &str) -> PathBuf {
     path
 }
 
-fn response(status: u16, body: &'static str) -> FakeResponse {
-    FakeResponse { status, body }
+fn response(status: u16, body: impl Into<String>) -> FakeResponse {
+    FakeResponse {
+        status,
+        body: body.into(),
+    }
 }
 
 struct FakeResponse {
     status: u16,
-    body: &'static str,
+    body: String,
 }
 
 struct FakeServer {
@@ -373,4 +579,70 @@ fn write_response(stream: &mut TcpStream, response: FakeResponse) {
         response.body
     )
     .expect("write response");
+}
+
+fn fixture_review_artifact() -> ReviewRunArtifact {
+    fixture_review_artifact_for_head("abc123def456")
+}
+
+fn fixture_review_artifact_for_head(head_sha: &str) -> ReviewRunArtifact {
+    let mut request: ReviewRequest =
+        serde_json::from_str(CLEAN_REQUEST).expect("request fixture parses");
+    request.change.head_sha = Some(head_sha.to_string());
+    review(&request, &default_config()).expect("core review succeeds")
+}
+
+fn fixture_transcript_json(artifact: ReviewRunArtifact) -> String {
+    serde_json::json!({
+        "api_base_url": "https://cerberus.example",
+        "request": {
+            "repo": "misty-step/cerberus",
+            "pr_number": 459,
+            "head_sha": "abc123def456",
+            "model": "fake/model",
+            "github_token_present": true
+        },
+        "settings": {
+            "timeout_seconds": 600,
+            "poll_interval_seconds": 5,
+            "max_poll_errors": 10,
+            "fail_on_verdict": false,
+            "write_verdict_json": true
+        },
+        "post": {
+            "http_status": 202,
+            "body": { "review_id": "review-459" }
+        },
+        "polls": [
+            {
+                "http_status": 200,
+                "body": {
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": artifact.verdict },
+                    "review_run_artifact": artifact
+                }
+            }
+        ]
+    })
+    .to_string()
+}
+
+fn assert_no_review_artifact_key(value: &Value) {
+    match value {
+        Value::Object(fields) => {
+            assert!(
+                !fields.contains_key("review_run_artifact"),
+                "review_run_artifact leaked into {value}"
+            );
+            for value in fields.values() {
+                assert_no_review_artifact_key(value);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                assert_no_review_artifact_key(value);
+            }
+        }
+        _ => {}
+    }
 }

@@ -1,5 +1,5 @@
 use crate::AdapterError;
-use cerberus_schema::Verdict;
+use cerberus_schema::{ReviewRunArtifact, Verdict};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
@@ -77,6 +77,10 @@ pub struct HostedApiDispatchDecision {
     pub consecutive_poll_errors: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict_json: Option<Value>,
+    #[serde(skip)]
+    pub review_run_artifact: Option<ReviewRunArtifact>,
+    #[serde(skip)]
+    pub review_run_artifact_error: Option<String>,
     pub messages: Vec<String>,
 }
 
@@ -295,6 +299,29 @@ pub fn run_hosted_api_dispatch(
                         ));
                     }
                 };
+                let review_run_artifact = match completed_review_artifact(
+                    &poll.body,
+                    verdict,
+                    &config.request.head_sha,
+                ) {
+                    Ok(artifact) => artifact,
+                    Err(reason) => {
+                        messages.push(reason.clone());
+                        let mut rejected_artifact = decision(
+                            HostedApiDispatchOutcome::InvalidDispatchResponse,
+                            1,
+                            review_id,
+                            Verdict::Skip.as_str(),
+                            elapsed_seconds,
+                            poll_attempts,
+                            consecutive_poll_errors,
+                            None,
+                            messages,
+                        );
+                        rejected_artifact.review_run_artifact_error = Some(reason);
+                        return Ok(rejected_artifact);
+                    }
+                };
                 let exit_code = i32::from(config.settings.fail_on_verdict && verdict == "FAIL");
                 if exit_code != 0 {
                     messages.push("fail-on-verdict converted FAIL verdict to exit 1".to_string());
@@ -302,8 +329,8 @@ pub fn run_hosted_api_dispatch(
                 let verdict_json = config
                     .settings
                     .write_verdict_json
-                    .then(|| poll.body.clone());
-                return Ok(decision(
+                    .then(|| verdict_json_body(&poll.body));
+                let mut completed = decision(
                     HostedApiDispatchOutcome::Completed,
                     exit_code,
                     review_id,
@@ -313,7 +340,9 @@ pub fn run_hosted_api_dispatch(
                     consecutive_poll_errors,
                     verdict_json,
                     messages,
-                ));
+                );
+                completed.review_run_artifact = review_run_artifact;
+                return Ok(completed);
             }
             Some(status) => {
                 messages.push(format!(
@@ -409,6 +438,58 @@ fn completed_verdict(body: &Value) -> Result<&'static str, String> {
     }
 }
 
+fn completed_review_artifact(
+    body: &Value,
+    completed_verdict: &str,
+    expected_head_sha: &str,
+) -> Result<Option<ReviewRunArtifact>, String> {
+    let Some(raw) = body.get("review_run_artifact") else {
+        return Ok(None);
+    };
+    let artifact: ReviewRunArtifact = serde_json::from_value(raw.clone()).map_err(|error| {
+        format!("completed review returned invalid review_run_artifact: {error}")
+    })?;
+    artifact.validate().map_err(|error| {
+        format!("completed review returned invalid review_run_artifact: {error}")
+    })?;
+    if artifact.verdict.as_str() != completed_verdict {
+        return Err(format!(
+            "completed review_run_artifact verdict {} did not match hosted verdict {completed_verdict}",
+            artifact.verdict.as_str()
+        ));
+    }
+    if artifact.reviewed_head_sha.as_deref() != Some(expected_head_sha) {
+        return Err(format!(
+            "completed review_run_artifact reviewed_head_sha {:?} did not match hosted request head_sha {expected_head_sha:?}",
+            artifact.reviewed_head_sha
+        ));
+    }
+    Ok(Some(artifact))
+}
+
+fn verdict_json_body(body: &Value) -> Value {
+    let mut redacted = body.clone();
+    redact_review_artifact_keys(&mut redacted);
+    redacted
+}
+
+fn redact_review_artifact_keys(value: &mut Value) {
+    match value {
+        Value::Object(fields) => {
+            fields.remove("review_run_artifact");
+            for value in fields.values_mut() {
+                redact_review_artifact_keys(value);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                redact_review_artifact_keys(value);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn is_safe_github_output_value(value: &str) -> bool {
     !value.contains(['\n', '\r', '='])
 }
@@ -437,6 +518,8 @@ fn decision(
         poll_attempts,
         consecutive_poll_errors,
         verdict_json,
+        review_run_artifact: None,
+        review_run_artifact_error: None,
         messages,
     }
 }
@@ -470,7 +553,11 @@ impl HostedApiDispatchTransport for TranscriptHostedApiTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use cerberus_core::{default_config, review};
+    use cerberus_schema::ReviewRequest;
+    use serde_json::{json, Value};
+
+    const CLEAN_REQUEST: &str = include_str!("../../../fixtures/review-request/clean.json");
 
     #[test]
     fn completes_after_queued_and_running_polls() {
@@ -543,6 +630,37 @@ mod tests {
     }
 
     #[test]
+    fn verdict_json_redacts_embedded_review_artifact() {
+        let artifact = fixture_review_artifact();
+        let mut settings = settings(false);
+        settings.write_verdict_json = true;
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings,
+            response(202, json!({ "review_id": "review-459" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "PASS" },
+                    "review_run_artifact": artifact,
+                    "diagnostics": {
+                        "review_run_artifact": fixture_review_artifact()
+                    },
+                    "events": [
+                        { "review_run_artifact": fixture_review_artifact() }
+                    ]
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        let verdict_json = decision.verdict_json.expect("verdict json");
+        assert_eq!(verdict_json["status"], "completed");
+        assert_eq!(verdict_json["aggregated_verdict"]["verdict"], "PASS");
+        assert_no_review_artifact_key(&verdict_json);
+    }
+
+    #[test]
     fn fail_on_verdict_defaults_to_action_compatibility_true() {
         let raw = json!({
             "api_base_url": "https://cerberus.example",
@@ -576,6 +694,115 @@ mod tests {
 
         assert_eq!(decision.exit_code, 1);
         assert_eq!(decision.verdict, "FAIL");
+    }
+
+    #[test]
+    fn completed_review_exposes_valid_review_run_artifact() {
+        let artifact = fixture_review_artifact();
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": "review-459" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "PASS" },
+                    "review_run_artifact": artifact
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        let parsed = decision
+            .review_run_artifact
+            .expect("completed response exposes artifact");
+        assert_eq!(parsed.run_id, fixture_review_artifact().run_id);
+        assert_eq!(parsed.verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn completed_review_rejects_invalid_review_run_artifact() {
+        let mut artifact = serde_json::to_value(fixture_review_artifact()).expect("artifact json");
+        artifact["stats"]["total"] = json!(999);
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": "review-459" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "PASS" },
+                    "review_run_artifact": artifact
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        assert_eq!(
+            decision.outcome,
+            HostedApiDispatchOutcome::InvalidDispatchResponse
+        );
+        assert_eq!(decision.exit_code, 1);
+        assert!(decision
+            .messages
+            .iter()
+            .any(|message| message.contains("review_run_artifact")));
+    }
+
+    #[test]
+    fn completed_review_rejects_artifact_verdict_mismatch() {
+        let artifact = fixture_review_artifact();
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": "review-459" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "FAIL" },
+                    "review_run_artifact": artifact
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        assert_eq!(
+            decision.outcome,
+            HostedApiDispatchOutcome::InvalidDispatchResponse
+        );
+        assert_eq!(decision.verdict, Verdict::Skip.as_str());
+        assert!(decision
+            .messages
+            .iter()
+            .any(|message| message.contains("did not match hosted verdict")));
+    }
+
+    #[test]
+    fn completed_review_rejects_artifact_head_sha_mismatch() {
+        let artifact = fixture_review_artifact_for_head("different-head-sha");
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": "review-459" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "PASS" },
+                    "review_run_artifact": artifact
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        assert_eq!(
+            decision.outcome,
+            HostedApiDispatchOutcome::InvalidDispatchResponse
+        );
+        assert_eq!(decision.verdict, Verdict::Skip.as_str());
+        assert!(decision
+            .messages
+            .iter()
+            .any(|message| message.contains("reviewed_head_sha")));
     }
 
     #[test]
@@ -765,5 +992,36 @@ mod tests {
 
     fn response(http_status: u16, body: Value) -> HostedApiHttpResponse {
         HostedApiHttpResponse { http_status, body }
+    }
+
+    fn fixture_review_artifact() -> cerberus_schema::ReviewRunArtifact {
+        fixture_review_artifact_for_head("abc123def456")
+    }
+
+    fn fixture_review_artifact_for_head(head_sha: &str) -> cerberus_schema::ReviewRunArtifact {
+        let mut request: ReviewRequest =
+            serde_json::from_str(CLEAN_REQUEST).expect("request fixture parses");
+        request.change.head_sha = Some(head_sha.to_string());
+        review(&request, &default_config()).expect("core review succeeds")
+    }
+
+    fn assert_no_review_artifact_key(value: &Value) {
+        match value {
+            Value::Object(fields) => {
+                assert!(
+                    !fields.contains_key("review_run_artifact"),
+                    "review_run_artifact leaked into {value}"
+                );
+                for value in fields.values() {
+                    assert_no_review_artifact_key(value);
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    assert_no_review_artifact_key(value);
+                }
+            }
+            _ => {}
+        }
     }
 }

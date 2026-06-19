@@ -93,7 +93,10 @@ Outputs:
 2. The Rust dispatcher validates the PR context, skips fork or draft PRs, and
    sends `POST /api/reviews`.
 3. The action polls `GET /api/reviews/:id` until the review completes or times out.
-4. The aggregated verdict becomes the GitHub Action result.
+4. If `CERBERUS_ARTIFACT_STORE` is set and the completed hosted response
+   includes `review_run_artifact`, the dispatcher persists that validated
+   `ReviewRunArtifact.v1` under `review-runs/<run_id>.json`.
+5. The aggregated verdict becomes the GitHub Action result.
 
 The legacy compatibility engine lives in
 [`cerberus-elixir/`](cerberus-elixir/README.md). The Rust engine target lives in
@@ -116,6 +119,7 @@ the workspace crates and is tracked by the backlog.
 cargo test -p cerberus-cli init_workflow
 cargo test -p cerberus-cli --test github_action_entrypoint
 cargo test -p cerberus-cli --test github_action_dispatch
+cargo test -p cerberus-adapter hosted_api
 shellcheck cerberus-elixir/deploy-sprite.sh \
   cerberus-elixir/test/release_contract.sh \
   fixtures/harnesses/command-reviewer.sh \

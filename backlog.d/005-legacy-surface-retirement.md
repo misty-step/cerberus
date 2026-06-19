@@ -159,3 +159,31 @@ Sixth local retirement delivery, 2026-06-19:
   `elixir-verdict-store` replacement evidence while keeping the surface pending
   until hosted/API persistence fixtures and any SQLite compatibility decision
   are complete.
+
+Seventh local retirement delivery, 2026-06-19:
+
+- Extended hosted API dispatch decisions with an optional validated
+  `ReviewRunArtifact.v1` carried in completed poll responses as
+  `review_run_artifact`.
+- Added verdict consistency protection: a completed hosted response is invalid
+  when the embedded artifact verdict disagrees with the top-level hosted
+  verdict.
+- Added request-head binding protection: a completed hosted response is invalid
+  when the embedded artifact `reviewed_head_sha` does not match the hosted
+  dispatch request `head_sha`.
+- Added explicit Rust persistence wiring:
+  `cerberus-cli github-action-dispatch` persists completed artifacts through
+  `FileReviewRunArtifactStore` only when `CERBERUS_ARTIFACT_STORE` is set, and
+  `hosted-api-dispatch-fixture` exposes the same path through
+  `--artifact-store`.
+- Kept parsed artifacts out of generic dispatch decision and recursively
+  redacted verdict JSON serialization, so `--decision-out`, fixture `--out`,
+  and `RUNNER_TEMP/cerberus-api-verdict.json` remain status transcripts rather
+  than hidden artifact persistence paths.
+- Added adapter and CLI fake-server coverage proving valid artifacts persist and
+  replay, invalid artifacts fail closed, verdict mismatches fail closed, and an
+  explicit store request fails if a completed hosted response omits the
+  artifact or returns an artifact for the wrong head SHA.
+- Updated API docs and the retirement inventory to record hosted/API
+  persistence fixture evidence while keeping `elixir-verdict-store` pending
+  until the SQLite compatibility decision is made.
