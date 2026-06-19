@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-ae-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus 005 Verdict Store SQLite Decision Plan</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/misty-step/aesthetic@v2.5.1/aesthetic.css">
+  <style>
+    .plan { width: min(92rem, 100% - 4rem); margin: 0 auto; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(22rem, 0.75fr); gap: 2.5rem; align-items: end; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--ae-line); margin-top: 2rem; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cell { background: var(--ae-surface); padding: 1.15rem 1.25rem; min-width: 0; }
+    .wash { background: var(--ae-wash); }
+    .phase { display: grid; grid-template-columns: 8rem minmax(0, 1fr) minmax(18rem, 0.7fr); gap: 1.25rem; padding: 1rem 0; border-top: 1px solid var(--ae-line); }
+    .phase:first-child { border-top: 0; }
+    @media (max-width: 900px) { .plan { width: min(100% - 2rem, 92rem); } .hero, .grid, .grid-2, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="ae-screen">
+    <article class="ae-stage plan">
+      <section class="hero">
+        <div>
+          <p class="ae-chrome">BACKLOG 005 / ELIXIR VERDICT STORE RETIREMENT DECISION</p>
+          <h1 class="ae-strong">Do not port the legacy SQLite verdict store into Rust.</h1>
+          <p class="ae-lede">The Elixir store is a runtime-internal queue, verdict, event, and cost database. The Rust contract is the source-agnostic <code>ReviewRunArtifact.v1</code> receipt plus explicit hosted API fixture state. SQLite compatibility is not required for Rust cutover unless a real consumer depends on reading historical Elixir databases.</p>
+        </div>
+        <aside class="ae-panel">
+          <h2 class="ae-h">Chosen Design</h2>
+          <p>Keep Rust persistence as immutable validated JSON receipts through <code>FileReviewRunArtifactStore</code>. Keep hosted API fixture state as JSON. Do not add a Rust SQLite schema, migration layer, or compatibility importer in this backlog slice.</p>
+          <h2 class="ae-h">Quality System</h2>
+          <p>Risk tier: retirement boundary decision. Proof: source audit, focused Elixir store tests, Rust artifact-store tests, machine inventory validation, full gates, and fresh critic on whether the decision overclaims parity.</p>
+        </aside>
+      </section>
+
+      <section class="grid">
+        <article class="cell">
+          <h2 class="ae-h">Elixir Surface</h2>
+          <p><code>Cerberus.Store</code> owns <code>review_runs</code>, <code>verdicts</code>, <code>events</code>, and <code>review_costs</code> tables plus model-performance queries.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Rust Surface</h2>
+          <p><code>ReviewRunArtifact.v1</code> contains verdicts, findings, reviewer artifacts, stats, coverage, reserves, and cost summaries, then validates replay consistency.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Acceptance</h2>
+          <p>The retirement inventory records that SQLite compatibility is intentionally not a cutover requirement, while production hosted queue/store work remains pending.</p>
+        </article>
+        <article class="cell wash">
+          <h2 class="ae-h">Stop If</h2>
+          <p>A current caller reads Elixir SQLite directly, historical database import is required for production cutover, or Rust artifact receipts cannot answer review evidence needs.</p>
+        </article>
+      </section>
+
+      <section class="grid grid-2">
+        <article class="cell">
+          <h2 class="ae-h">Verification System</h2>
+          <p><strong>Claim:</strong> Rust cutover does not need SQLite compatibility before the Elixir verdict store can be retired through the remaining production queue/store gates.</p>
+          <p><strong>Falsifier:</strong> active docs, code, tests, or callers treat the SQLite tables as a public artifact or require Rust to replay historical <code>*.sqlite3</code> databases.</p>
+          <p><strong>Driver:</strong> search for SQLite/store usage, compare Elixir store tests with Rust artifact-store/schema tests, and validate the retirement inventory.</p>
+          <p><strong>Grader:</strong> the inventory states the rejected compatibility surface without marking full parity complete, and gates keep both old and new surfaces healthy.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Tradeoff</h2>
+          <p><strong>Deleted requirement:</strong> a second Rust persistence schema that mirrors Elixir's normalized tables.</p>
+          <p><strong>Retained requirement:</strong> production Rust hosted queue/store lifecycle still needs a real persistence choice before API cutover.</p>
+          <p><strong>Deferred only on evidence:</strong> historical SQLite import can become a future backlog item if an operator names a concrete database and consumer query.</p>
+        </article>
+      </section>
+
+      <section class="ae-panel" style="margin-top: 2rem">
+        <h2 class="ae-h">Execution</h2>
+        <div class="phase">
+          <strong class="ae-accent">1 audit</strong>
+          <p>Read <code>cerberus-elixir/lib/cerberus/store.ex</code>, store tests, Rust artifact-store code, schema validation, API docs, and retirement rows.</p>
+          <p class="ae-dim">Do not infer from old walkthroughs without live code evidence.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">2 decide</strong>
+          <p>Classify legacy SQLite as internal compatibility state, not the cross-harness evidence contract.</p>
+          <p class="ae-dim">Keep the Elixir store pending until production Rust hosted queue/store lifecycle is proved.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">3 codify</strong>
+          <p>Update the inventory, readable table, docs index, and backlog receipt with the no-SQLite-bridge decision.</p>
+          <p class="ae-dim">Avoid claiming production API parity or deleting legacy files.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">4 verify</strong>
+          <p>Run focused Rust and Elixir store gates, retirement validation, full workspace gates, and a fresh critic.</p>
+          <p class="ae-dim">A blocker is any stale next action or parity claim that suggests SQLite was fully replaced.</p>
+        </div>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

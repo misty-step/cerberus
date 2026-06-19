@@ -193,18 +193,20 @@
       "current_responsibility": "Legacy verdict aggregation, finding normalization, dedupe, cost accounting, override handling, and persisted review state.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "cerberus-core ReviewRunArtifact.v1 generation plus FileReviewRunArtifactStore for immutable, schema-valid local, CI, and Sprites receipt persistence.",
+      "rust_replacement": "cerberus-core ReviewRunArtifact.v1 generation plus FileReviewRunArtifactStore for immutable, schema-valid local, CI, and Sprites receipt persistence. The legacy Elixir SQLite tables are internal runtime state, not the cross-harness evidence contract; SQLite compatibility is intentionally not required for Rust cutover unless a concrete consumer needs historical database import.",
       "parity_evidence": [
         "cargo test -p cerberus-adapter artifact_store",
         "cargo test -p cerberus-adapter hosted_api",
         "cargo test -p cerberus-cli --test github_action_dispatch",
         "cargo run --locked -p cerberus-cli -- hosted-api-dispatch-fixture --transcript tmp/hosted-api-artifact-store-2026-06-19-head-bound/transcript.json --out tmp/hosted-api-artifact-store-2026-06-19-head-bound/decision.json --artifact-store tmp/hosted-api-artifact-store-2026-06-19-head-bound/store",
         "cargo run --locked -p cerberus-cli -- validate tmp/hosted-api-artifact-store-2026-06-19-head-bound/store/review-runs/review-run-6257c56a79b5.json",
+        "rg -n \"Exqlite|database_path|review_runs|verdicts|review_costs|events|model_performance|review_run_costs|review_run_verdicts\" cerberus-elixir docs crates fixtures",
+        "rg -n \"FileReviewRunArtifactStore|CERBERUS_ARTIFACT_STORE|ReviewRunArtifactStore|ReviewRunArtifact\" crates docs fixtures",
         "cargo test --workspace",
         "cd cerberus-elixir && mix test test/cerberus/verdict_test.exs test/cerberus/verdict test/store_test.exs test/cerberus/store_review_run_test.exs"
       ],
       "rollback_path": "Keep Elixir store and verdict modules until Rust artifacts cover legacy aggregate and persistence cases.",
-      "next_action": "Decide whether SQLite compatibility is required before retiring the Elixir store."
+      "next_action": "Add production Rust hosted queue/store lifecycle proof before retiring the Elixir store; do not build a SQLite bridge without a named historical database consumer."
     },
     {
       "surface_id": "elixir-review-tools",

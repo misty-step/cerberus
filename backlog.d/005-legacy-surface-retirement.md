@@ -375,3 +375,23 @@ Fourteenth local retirement delivery, 2026-06-19:
 - Kept `elixir-review-tools` pending: this is a profile and prompt contract
   boundary for Cerberus-granted tool authority, not runtime sandboxing or an
   implementation of Rust local repo or GitHub read tools.
+
+Fifteenth local retirement delivery, 2026-06-19:
+
+- Decided the Rust cutover does not require a SQLite compatibility bridge for
+  the legacy Elixir verdict store. The SQLite tables remain internal runtime
+  state for review runs, per-reviewer verdicts, events, costs, and model
+  performance queries, not the durable cross-harness evidence contract.
+- Kept the Rust side on the existing deep interface:
+  `ReviewRunArtifact.v1` plus `FileReviewRunArtifactStore` for immutable,
+  schema-valid local, CI, Sprites, and hosted-dispatch receipts.
+- Added `docs/shaping/005-verdict-store-sqlite-decision-plan.html` as the
+  execution contract for the decision, including the falsifier that would
+  reopen SQLite import work: a named consumer that needs to read historical
+  Elixir database files.
+- Updated the machine-checked and readable retirement inventories so the next
+  `elixir-verdict-store` action is production Rust hosted queue/store
+  lifecycle proof, not a SQLite port.
+- Kept `elixir-verdict-store` pending and did not delete legacy files:
+  production API persistence, deployment smoke, live GitHub acquisition, and
+  provider-backed execution remain separate retirement gates.
