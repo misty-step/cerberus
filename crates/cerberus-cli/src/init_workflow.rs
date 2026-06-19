@@ -7,6 +7,9 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+
 const DEFAULT_TEMPLATE_SOURCE: &str = "embedded:templates/consumer-workflow-reusable.yml";
 const DEFAULT_WORKFLOW_TEMPLATE: &str =
     include_str!("../../../templates/consumer-workflow-reusable.yml");
@@ -265,9 +268,161 @@ fn read_secret_for_init(args: &InitArgs) -> Result<Option<String>> {
 
     let secret = env::var(SECRET_NAME).unwrap_or_default().trim().to_string();
     if secret.is_empty() {
-        bail!("init requires CERBERUS_API_KEY or --api-key-stdin");
+        return read_hidden_secret_from_tty();
     }
     Ok(Some(secret))
+}
+
+#[cfg(unix)]
+fn read_hidden_secret_from_tty() -> Result<Option<String>> {
+    let mut stdin = io::stdin();
+    if !stdin.is_terminal() {
+        bail!("init requires CERBERUS_API_KEY, --api-key-stdin, or an interactive TTY");
+    }
+
+    let mut stdout = io::stdout();
+    stdout
+        .write_all(b"Enter Cerberus API key (input hidden): ")
+        .context("failed to write API key prompt")?;
+    stdout.flush().context("failed to flush API key prompt")?;
+
+    let mut guard = EchoGuard::disable(stdin.as_raw_fd())?;
+    let read_result = read_hidden_line(&mut stdin);
+    let restore_result = guard.restore();
+    stdout
+        .write_all(b"\n")
+        .context("failed to finish API key prompt")?;
+    stdout.flush().context("failed to flush API key prompt")?;
+
+    let secret = read_result.context("failed to read API key from TTY")?;
+    restore_result?;
+
+    let secret = secret.trim().to_string();
+    if secret.is_empty() {
+        bail!("No API key entered.");
+    }
+    Ok(Some(secret))
+}
+
+#[cfg(unix)]
+fn read_hidden_line(input: &mut impl Read) -> io::Result<String> {
+    let mut value = Vec::new();
+    let mut escape_state = EscapeState::None;
+
+    loop {
+        let mut byte = [0_u8; 1];
+        if input.read(&mut byte)? == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "No API key entered.",
+            ));
+        }
+
+        match (escape_state, byte[0]) {
+            (_, b'\r' | b'\n') => break,
+            (_, 3 | 4) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "No API key entered.",
+                ));
+            }
+            (_, 8 | 127) => {
+                value.pop();
+                escape_state = EscapeState::None;
+            }
+            (_, 0x1b) => {
+                escape_state = EscapeState::Esc;
+            }
+            (EscapeState::Esc, b'[' | b'O') => {
+                escape_state = EscapeState::Sequence;
+            }
+            (EscapeState::Esc, byte) => {
+                escape_state = if is_escape_sequence_terminator(byte) {
+                    EscapeState::None
+                } else {
+                    EscapeState::Sequence
+                };
+            }
+            (EscapeState::Sequence, byte) => {
+                if is_escape_sequence_terminator(byte) {
+                    escape_state = EscapeState::None;
+                }
+            }
+            (EscapeState::None, byte) if byte < b' ' => {}
+            (EscapeState::None, byte) => value.push(byte),
+        }
+    }
+
+    String::from_utf8(value)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "API key was not UTF-8"))
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy)]
+enum EscapeState {
+    None,
+    Esc,
+    Sequence,
+}
+
+#[cfg(unix)]
+fn is_escape_sequence_terminator(byte: u8) -> bool {
+    (b'@'..=b'~').contains(&byte)
+}
+
+#[cfg(not(unix))]
+fn read_hidden_secret_from_tty() -> Result<Option<String>> {
+    bail!(
+        "init requires CERBERUS_API_KEY or --api-key-stdin; interactive hidden prompt is unavailable on this platform"
+    );
+}
+
+#[cfg(unix)]
+struct EchoGuard {
+    fd: i32,
+    original: libc::termios,
+    active: bool,
+}
+
+#[cfg(unix)]
+impl EchoGuard {
+    fn disable(fd: i32) -> Result<Self> {
+        let mut original = std::mem::MaybeUninit::<libc::termios>::uninit();
+        if unsafe { libc::tcgetattr(fd, original.as_mut_ptr()) } != 0 {
+            return Err(io::Error::last_os_error()).context("failed to read terminal settings");
+        }
+        let original = unsafe { original.assume_init() };
+        let mut hidden = original;
+        hidden.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
+        hidden.c_cc[libc::VMIN] = 1;
+        hidden.c_cc[libc::VTIME] = 0;
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &hidden) } != 0 {
+            return Err(io::Error::last_os_error()).context("failed to hide terminal input");
+        }
+
+        Ok(Self {
+            fd,
+            original,
+            active: true,
+        })
+    }
+
+    fn restore(&mut self) -> Result<()> {
+        if self.active {
+            if unsafe { libc::tcsetattr(self.fd, libc::TCSANOW, &self.original) } != 0 {
+                return Err(io::Error::last_os_error()).context("failed to restore terminal input");
+            }
+            self.active = false;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for EchoGuard {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
 }
 
 fn set_github_secret(repo_root: &Path, gh_command: &Path, secret: &str) -> Result<()> {
@@ -385,6 +540,7 @@ mod tests {
     fn init_configures_secret_with_fake_gh_and_redacted_report() {
         let root = temp_repo("init-secret");
         let fake_gh = fake_gh(&root, 0, None);
+        let _env_guard = EnvGuard::set(SECRET_NAME, "parent-secret-value");
         let args = InitArgs {
             workflow: InitWorkflowArgs {
                 repo_root: Some(root.clone()),
@@ -542,6 +698,24 @@ mod tests {
         cleanup(&root);
     }
 
+    #[test]
+    fn hidden_line_handles_backspace_and_escape_sequences() {
+        let mut input = b"abc\x7fd\x1b[Ae\n".as_slice();
+
+        let secret = read_hidden_line(&mut input).expect("hidden line");
+
+        assert_eq!(secret, "abde");
+    }
+
+    #[test]
+    fn hidden_line_treats_ctrl_c_as_empty_secret() {
+        let mut input = b"abc\x03".as_slice();
+
+        let error = read_hidden_line(&mut input).expect_err("ctrl-c exits prompt");
+
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+    }
+
     fn temp_repo(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -560,6 +734,29 @@ mod tests {
 
     fn cleanup(root: &Path) {
         let _ = fs::remove_dir_all(root);
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = env::var_os(key);
+            env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                env::set_var(self.key, previous);
+            } else {
+                env::remove_var(self.key);
+            }
+        }
     }
 
     #[cfg(unix)]

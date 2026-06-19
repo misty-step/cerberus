@@ -66,6 +66,7 @@ dependencies = [
  "cerberus-adapter",
  "cerberus-core",
  "cerberus-schema",
+ "libc",
  "serde",
  "serde_json",
  "ureq",

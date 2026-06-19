@@ -149,9 +149,9 @@ Responsibilities:
 - poll until completion
 - expose workflow outputs
 - keep the public input/output contract stable
-- scaffold the consumer workflow and set `CERBERUS_API_KEY` through Rust for
-  noninteractive/source-checkout setup, while the Node wrapper still preserves
-  npm and hidden-prompt compatibility
+- scaffold the consumer workflow, prompt for `CERBERUS_API_KEY` on interactive
+  Unix TTYs, and set the repository secret through Rust, while the Node wrapper
+  still preserves npm package compatibility
 
 Rollback surface:
 

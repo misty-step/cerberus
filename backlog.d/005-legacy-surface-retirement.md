@@ -107,3 +107,19 @@ Third local retirement delivery, 2026-06-19:
   only for npm packaging and hidden TTY prompt compatibility.
 - Did not delete `bin/cerberus.js`; `node-scaffolder` remains pending until the
   package/prompt boundary is ported or explicitly kept.
+
+Fourth local retirement delivery, 2026-06-19:
+
+- Added Rust hidden-prompt parity for `cerberus-cli init` on interactive Unix
+  TTYs when `CERBERUS_API_KEY` and `--api-key-stdin` are absent.
+- Added raw-mode terminal echo restoration around the prompt, handled Ctrl-C
+  and Ctrl-D without leaving echo disabled, and kept non-TTY no-key setup
+  fail-closed before workflow writes.
+- Proved the prompt path through PTY fake-`gh` QA: the terminal transcript does
+  not contain the typed key, cancel restores terminal echo without writing a
+  workflow, fake `gh` receives the key through stdin, and the child `gh`
+  process still does not inherit `CERBERUS_API_KEY`.
+- Updated active docs and inventory to record that `bin/cerberus.js` remains
+  only for npm package compatibility.
+- Did not delete `bin/cerberus.js`; `node-scaffolder` remains pending until npm
+  package compatibility is ported or explicitly kept.

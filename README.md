@@ -58,8 +58,15 @@ npx @misty-step/cerberus init
 ```
 
 When working from this source checkout, the Rust CLI can create or verify the
-workflow and configure the repository secret through `gh` without putting the
-API key in argv:
+workflow and configure the repository secret through `gh`. If
+`CERBERUS_API_KEY` is unset and stdin is an interactive Unix TTY, `init`
+prompts with hidden input:
+
+```bash
+cargo run --locked -p cerberus-cli -- init --repo-root .
+```
+
+For noninteractive setup, pipe the key through stdin instead of argv:
 
 ```bash
 printf '%s' "$CERBERUS_API_KEY" |
@@ -107,8 +114,8 @@ the workspace crates and is tracked by the backlog.
 - `defaults/`: model and product data consumed by the engine
 - `pi/agents/`: reviewer personas
 - `templates/`: consumer workflow templates
-- `bin/cerberus.js`: compatibility npm scaffolder with hidden prompt support
-- `cerberus-cli init`: Rust source-checkout scaffolder plus GitHub secret setup
+- `bin/cerberus.js`: compatibility npm scaffolder wrapper
+- `cerberus-cli init`: Rust source-checkout scaffolder, hidden prompt, and GitHub secret setup
 - `cerberus-cli init-workflow`: Rust workflow-file-only scaffolder path
 
 ## Local Verification
