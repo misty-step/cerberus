@@ -246,12 +246,15 @@ Responsibilities:
   requested
 - write inspectable input, artifact, transcript, and execution-plan evidence
   for live peer cells
+- derive sandbox-only `ReviewerConfigPacket.v1` candidates from fully passing
+  live eval groups
 
 Non-responsibilities:
 
 - promoting reviewer defaults without a reviewed report
 - spending provider budget without explicit acknowledgement and required env
 - running Daedalus experiments inside Cerberus
+- approving production imports from sandbox candidate packets
 
 ### Rust Local Review Replay
 

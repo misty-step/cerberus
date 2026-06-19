@@ -25,6 +25,8 @@ Current docs:
   `docs/shaping/peer-harness-live-invocation.md`
 - Live peer harness evaluation plan:
   `docs/shaping/018-live-peer-harness-evaluation-mode-plan.html`
+- Eval report reviewer config candidate plan:
+  `docs/shaping/019-eval-report-reviewer-config-candidate-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

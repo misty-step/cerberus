@@ -24,6 +24,8 @@ pub enum CoreError {
     ReviewerConfigPacketHashMismatch { expected: String, actual: String },
     #[error("non-sandbox reviewer config packets require signature verification, which is not configured")]
     UntrustedNonSandboxReviewerConfigPacket,
+    #[error("eval report cannot produce reviewer config candidate: {0}")]
+    EvalReportCandidate(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

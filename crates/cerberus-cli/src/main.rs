@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
-    reviewer_config_import_dry_run, reviewer_config_promotion_fixture_request,
-    validate_reviewer_config_packet, HarnessProbe,
+    reviewer_config_candidate_from_eval_report, reviewer_config_import_dry_run,
+    reviewer_config_promotion_fixture_request, validate_reviewer_config_packet, HarnessProbe,
 };
 use cerberus_schema::{
     EvalTaskSuite, HarnessModelEvaluationReport, HarnessModelMatrix, HarnessProfile,
@@ -17,8 +17,9 @@ use cerberus_schema::{
     REVIEW_RUN_ARTIFACT_VERSION,
 };
 use std::{
+    collections::BTreeMap,
     env, fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
 };
 
@@ -43,6 +44,7 @@ fn main() -> Result<()> {
         "review" => review_command(args.collect()),
         "review-local" => review_local(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
+        "propose-reviewer-config" => propose_reviewer_config(args.collect()),
         "refresh-model-catalog" => refresh_model_catalog(args.collect()),
         "import-reviewer-config" => import_reviewer_config(args.collect()),
         "render" => render(args.collect()),
@@ -286,6 +288,63 @@ fn import_reviewer_config(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn propose_reviewer_config(args: Vec<String>) -> Result<()> {
+    let mut report = None;
+    let mut matrix = None;
+    let mut suite = None;
+    let mut evidence_dir = None;
+    let mut out = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--report" => {
+                report = Some(required_arg(&args, index, "--report")?);
+                index += 2;
+            }
+            "--matrix" => {
+                matrix = Some(required_arg(&args, index, "--matrix")?);
+                index += 2;
+            }
+            "--suite" => {
+                suite = Some(required_arg(&args, index, "--suite")?);
+                index += 2;
+            }
+            "--evidence-dir" => {
+                evidence_dir = Some(required_arg(&args, index, "--evidence-dir")?);
+                index += 2;
+            }
+            "--out" => {
+                out = Some(required_arg(&args, index, "--out")?);
+                index += 2;
+            }
+            other => bail!("unknown propose-reviewer-config argument {other:?}"),
+        }
+    }
+
+    let report_path =
+        PathBuf::from(report.context("propose-reviewer-config requires --report <path>")?);
+    let matrix_path =
+        PathBuf::from(matrix.context("propose-reviewer-config requires --matrix <path>")?);
+    let suite_path =
+        PathBuf::from(suite.context("propose-reviewer-config requires --suite <path>")?);
+    let evidence_dir_path = PathBuf::from(
+        evidence_dir.context("propose-reviewer-config requires --evidence-dir <dir>")?,
+    );
+    let out_path = PathBuf::from(out.context("propose-reviewer-config requires --out <path>")?);
+    remove_stale_file(&out_path)?;
+    let report = read_harness_model_evaluation_report(&report_path)?;
+    let matrix = read_eval_matrix(&matrix_path)?;
+    let suite = read_eval_suite(&suite_path)?;
+    let transcripts = read_eval_evidence_transcripts(&report, &evidence_dir_path)?;
+    let packet =
+        reviewer_config_candidate_from_eval_report(&report, &matrix, &suite, &transcripts)?;
+
+    write_json(&out_path, &packet)?;
+    println!("{}", out_path.display());
+    Ok(())
+}
+
 fn required_arg(args: &[String], index: usize, flag: &str) -> Result<String> {
     let Some(value) = args.get(index + 1) else {
         bail!("{flag} requires a value");
@@ -431,6 +490,47 @@ fn read_eval_matrix(path: &PathBuf) -> Result<HarnessModelMatrix> {
         .with_context(|| format!("failed to parse eval matrix {}", path.display()))?;
     matrix.validate()?;
     Ok(matrix)
+}
+
+fn read_harness_model_evaluation_report(path: &PathBuf) -> Result<HarnessModelEvaluationReport> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read eval report {}", path.display()))?;
+    let report: HarnessModelEvaluationReport = serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse eval report {}", path.display()))?;
+    report.validate()?;
+    Ok(report)
+}
+
+fn read_eval_evidence_transcripts(
+    report: &HarnessModelEvaluationReport,
+    evidence_dir: &Path,
+) -> Result<BTreeMap<String, String>> {
+    let mut transcripts = BTreeMap::new();
+    for cell in &report.cells {
+        let transcript_path = safe_evidence_relative_path(&cell.transcript_path)?;
+        let path = evidence_dir.join(transcript_path);
+        let transcript = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read eval transcript {}", path.display()))?;
+        if transcripts
+            .insert(cell.transcript_path.clone(), transcript)
+            .is_some()
+        {
+            bail!("duplicate eval transcript path {:?}", cell.transcript_path);
+        }
+    }
+    Ok(transcripts)
+}
+
+fn safe_evidence_relative_path(path: &str) -> Result<&Path> {
+    let path = Path::new(path);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+    {
+        bail!("eval transcript path must be relative and stay inside evidence dir");
+    }
+    Ok(path)
 }
 
 fn read_config(path: &PathBuf) -> Result<ReviewConfig> {
@@ -644,6 +744,16 @@ fn write_json<T: serde::Serialize>(path: &PathBuf, value: &T) -> Result<()> {
         .with_context(|| format!("failed to write {}", path.display()))
 }
 
+fn remove_stale_file(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to remove stale file {}", path.display()))
+        }
+    }
+}
+
 fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
     if let Some(parent) = path
         .parent()
@@ -657,6 +767,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

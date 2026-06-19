@@ -171,6 +171,14 @@ execution-plan files, then asks `cerberus-core` to grade the resulting
 OpenCode, and OMP cells still fail closed as `unavailable` unless provider
 budget acknowledgement and required credentials are present.
 
+Backlog 019 adds `cerberus-cli propose-reviewer-config`. The command reads a
+`HarnessModelEvaluationReport.v1` plus its matrix, suite, and eval evidence
+directory, refuses weak, truncated, or transcript-mismatched reports, and emits
+a sandbox-only `ReviewerConfigPacket.v1` only when a harness/model group fully
+passes live eval cells for the suite. The generated packet feeds
+`validate-reviewer-config` and `import-reviewer-config --dry-run`; it does not
+approve production import or mutate defaults.
+
 The current smoke result is intentionally not a live model bake-off. Cells run
 in `offline_contract` mode and must validate as `warn` or structured
 degraded/unavailable outcomes, not as production-ready `pass` outcomes. This
@@ -226,8 +234,10 @@ probed and each matrix cell to emit either a schema-valid offline
 `ReviewerArtifact.v1` in `warn` status or a structured degraded/unavailable
 record. Local live-peer acceptance requires at least one task to run through
 `cerberus-peer-harness` with a captured transcript and `live_harness` report
-cell. Paid external model cells may be marked manual/nightly until budget and
-retry policy exist.
+cell. Candidate config acceptance requires the generated packet to validate and
+dry-run through the existing import path while still rejecting production import
+without approval. Paid external model cells may be marked manual/nightly until
+budget and retry policy exist.
 
 ## Verification System
 

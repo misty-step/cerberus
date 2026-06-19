@@ -24,6 +24,7 @@ Current sequence:
 16. `016-peer-harness-live-invocation.md`
 17. `017-peer-harness-prompt-file-transport.md`
 18. `018-live-peer-harness-evaluation-mode.md`
+19. `019-eval-report-reviewer-config-candidate.md`
 
 Planning rules:
 
@@ -58,3 +59,5 @@ Planning rules:
   reviewer promotion.
 - Run at least one local live peer eval cell and capture its evidence packet
   before spending provider eval budget or promoting defaults.
+- Convert passing live eval reports into sandbox-only reviewer config packets
+  before any reviewer defaults or Daedalus promotion packets are hand-authored.

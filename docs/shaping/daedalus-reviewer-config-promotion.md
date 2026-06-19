@@ -32,7 +32,7 @@ verification trust path.
 ## Import Flow
 
 ```text
-Daedalus measured run
+Daedalus measured run or Cerberus eval report
     -> ReviewerConfigPacket.v1
     -> cerberus-cli validate-reviewer-config
     -> cerberus-cli import-reviewer-config --dry-run
@@ -43,6 +43,14 @@ Daedalus measured run
 `import-reviewer-config --dry-run` compares the packet config against the
 current baseline on a clean fixture and records verdict, finding, degraded, and
 reviewer/model deltas. The command does not write defaults or caller policy.
+
+Cerberus-owned eval reports use the same packet path through
+`cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1>
+--matrix <HarnessModelMatrix.v1> --suite <EvalTaskSuite.v1> --evidence-dir
+<eval-output-dir> --out <ReviewerConfigPacket.v1>`. That bridge only emits
+sandbox-only candidate packets from fully passing `live_harness` groups with
+full suite coverage and matching transcript artifact envelopes; offline,
+unavailable, truncated, or transcript-mismatched reports must fail closed.
 
 ## Rejection Rules
 

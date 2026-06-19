@@ -164,7 +164,8 @@ Relevant Cerberus drift:
 6. Done: add local live peer harness evaluation mode and fixture evidence.
 7. Remaining: run budget-approved provider-backed peer evals rather than the
    local fixture reviewer.
-8. Remaining: convert report winners into a candidate `ReviewConfig.v1`; keep
+8. Done: convert fully passing live report winners into a sandbox-only
+   `ReviewerConfigPacket.v1` candidate with embedded `ReviewConfig.v1`; keep
    production defaults unchanged until the report and cost envelope are
    reviewed.
 9. Remaining: feed accepted configs into backlog 004's Daedalus promotion
@@ -193,6 +194,12 @@ not prove that any paid model/harness pair is production-ready.
 Backlog 018 adds a local live peer eval fixture path. It proves the eval runner
 can drive `cerberus-peer-harness` and grade a `live_harness` cell, but it still
 does not prove that any paid model/harness pair is production-ready.
+
+Backlog 019 adds `cerberus-cli propose-reviewer-config`. It converts a fully
+passing live eval group with full suite coverage into a sandbox-only
+`ReviewerConfigPacket.v1` and refuses offline-only, provider-gated unavailable,
+truncated, or transcript-mismatched reports. This proves the report-to-packet
+bridge, not production approval or provider-backed quality.
 
 ## Notes
 

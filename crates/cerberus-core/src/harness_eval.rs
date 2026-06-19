@@ -1,12 +1,18 @@
-use crate::{review, validate_reviewer_artifact_for_request, CoreError};
-use cerberus_schema::{
-    EvalCellStatus, EvalExecutionMode, EvalTask, EvalTaskSuite, ExpectedFinding,
-    FakeReviewerBehavior, HarnessModelEvaluationCell, HarnessModelEvaluationReport,
-    HarnessModelEvaluationSummary, HarnessModelMatrix, HarnessProfile, ModelCandidate,
-    ModelCatalogDelta, ReviewConfig, ReviewerArtifact, ReviewerConfig, ReviewerStatus,
-    StaleModelFinding, HARNESS_MODEL_EVALUATION_REPORT_VERSION, REVIEW_CONFIG_VERSION,
+use crate::{
+    default_config, digest_json, review, validate_reviewer_artifact_for_request,
+    validate_reviewer_config_packet, CoreError,
 };
-use std::collections::BTreeMap;
+use cerberus_schema::{
+    CostEnvelope, EvalCellStatus, EvalExecutionMode, EvalTask, EvalTaskSuite, ExpectedFinding,
+    FakeReviewerBehavior, GateResult, GateStatus, HarnessModelEvaluationCell,
+    HarnessModelEvaluationReport, HarnessModelEvaluationSummary, HarnessModelMatrix,
+    HarnessProfile, ModelCandidate, ModelCatalogDelta, PromotionGate, PromotionStatus,
+    ReviewConfig, ReviewerArtifact, ReviewerConfig, ReviewerConfigBenchmark, ReviewerConfigPacket,
+    ReviewerConfigProducer, ReviewerHarnessMetadata, ReviewerModelMetadata, ReviewerStatus,
+    RollbackMetadata, ScoreDistribution, StaleModelFinding,
+    HARNESS_MODEL_EVALUATION_REPORT_VERSION, REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HarnessProbe {
@@ -22,6 +28,9 @@ pub struct HarnessModelEvaluationOutput {
     pub report: HarnessModelEvaluationReport,
     pub transcripts: Vec<(String, String)>,
 }
+
+const LIVE_TRANSCRIPT_ARTIFACT_BEGIN_MARKER: &str = "CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN";
+const LIVE_TRANSCRIPT_ARTIFACT_END_MARKER: &str = "CERBERUS_REVIEWER_ARTIFACT_JSON_END";
 
 pub fn evaluate_harness_model_matrix(
     suite: &EvalTaskSuite,
@@ -109,6 +118,271 @@ pub fn eval_reviewer_config(
         model: model.model_id.clone(),
         fake_behavior: FakeReviewerBehavior::Directive,
     }
+}
+
+pub fn reviewer_config_candidate_from_eval_report(
+    report: &HarnessModelEvaluationReport,
+    matrix: &HarnessModelMatrix,
+    suite: &EvalTaskSuite,
+    transcripts: &BTreeMap<String, String>,
+) -> Result<ReviewerConfigPacket, CoreError> {
+    report.validate()?;
+    matrix.validate()?;
+    suite.validate()?;
+    if report.matrix_id != matrix.matrix_id {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "report matrix_id {:?} does not match matrix {:?}",
+            report.matrix_id, matrix.matrix_id
+        )));
+    }
+    if report.suite_id != suite.suite_id {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "report suite_id {:?} does not match suite {:?}",
+            report.suite_id, suite.suite_id
+        )));
+    }
+
+    let harness_by_id = matrix
+        .harnesses
+        .iter()
+        .map(|harness| (harness.harness_id.as_str(), harness))
+        .collect::<BTreeMap<_, _>>();
+    let model_by_id = matrix
+        .models
+        .iter()
+        .map(|model| (model.model_id.as_str(), model))
+        .collect::<BTreeMap<_, _>>();
+    let required_task_ids = suite
+        .tasks
+        .iter()
+        .map(|task| task.task_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let task_by_id = suite
+        .tasks
+        .iter()
+        .map(|task| (task.task_id.as_str(), task))
+        .collect::<BTreeMap<_, _>>();
+    let mut cells_by_pair = BTreeMap::<(String, String), Vec<&HarnessModelEvaluationCell>>::new();
+
+    for cell in &report.cells {
+        if !harness_by_id.contains_key(cell.harness_id.as_str()) {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "cell {:?} references unknown harness {:?}",
+                cell.cell_id, cell.harness_id
+            )));
+        }
+        if !model_by_id.contains_key(cell.model_id.as_str()) {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "cell {:?} references unknown model {:?}",
+                cell.cell_id, cell.model_id
+            )));
+        }
+        if !task_by_id.contains_key(cell.task_id.as_str()) {
+            return Err(CoreError::EvalReportCandidate(format!(
+                "cell {:?} references unknown task {:?}",
+                cell.cell_id, cell.task_id
+            )));
+        }
+        cells_by_pair
+            .entry((cell.harness_id.clone(), cell.model_id.clone()))
+            .or_default()
+            .push(cell);
+    }
+
+    let mut candidates = Vec::new();
+    for ((harness_id, model_id), cells) in cells_by_pair {
+        if !covers_required_tasks(&cells, &required_task_ids)
+            || !cells.iter().all(|cell| candidate_cell_claims_pass(cell))
+        {
+            continue;
+        }
+        let harness = harness_by_id[harness_id.as_str()];
+        let model = model_by_id[model_id.as_str()];
+        for cell in &cells {
+            let task = task_by_id[cell.task_id.as_str()];
+            verify_regraded_candidate_cell(cell, harness, model, task, transcripts)?;
+        }
+        candidates.push(EvalWinner {
+            harness,
+            model,
+            cells,
+        });
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .cells
+            .len()
+            .cmp(&left.cells.len())
+            .then_with(|| right.mean_score().total_cmp(&left.mean_score()))
+            .then_with(|| {
+                left.measured_cost_usd()
+                    .total_cmp(&right.measured_cost_usd())
+            })
+            .then_with(|| {
+                left.measured_wall_sec()
+                    .total_cmp(&right.measured_wall_sec())
+            })
+            .then_with(|| left.harness.harness_id.cmp(&right.harness.harness_id))
+            .then_with(|| left.model.model_id.cmp(&right.model.model_id))
+    });
+    let winner = candidates.into_iter().next().ok_or_else(|| {
+        CoreError::EvalReportCandidate(
+            "no fully passing live_harness harness/model group found".to_string(),
+        )
+    })?;
+
+    reviewer_config_packet_for_winner(report, &winner)
+}
+
+fn covers_required_tasks(
+    cells: &[&HarnessModelEvaluationCell],
+    required_task_ids: &BTreeSet<&str>,
+) -> bool {
+    if cells.len() != required_task_ids.len() {
+        return false;
+    }
+    let observed = cells
+        .iter()
+        .map(|cell| cell.task_id.as_str())
+        .collect::<BTreeSet<_>>();
+    observed == *required_task_ids
+}
+
+fn candidate_cell_claims_pass(cell: &HarnessModelEvaluationCell) -> bool {
+    cell.execution_mode == EvalExecutionMode::LiveHarness
+        && cell.status == EvalCellStatus::Pass
+        && cell.artifact_valid
+        && !cell.degraded
+        && cell.false_positives == 0
+}
+
+fn verify_regraded_candidate_cell(
+    cell: &HarnessModelEvaluationCell,
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+    transcripts: &BTreeMap<String, String>,
+) -> Result<(), CoreError> {
+    let artifact = cell.reviewer_artifact.clone().ok_or_else(|| {
+        CoreError::EvalReportCandidate(format!(
+            "cell {:?} claims pass but has no reviewer artifact",
+            cell.cell_id
+        ))
+    })?;
+    verify_live_transcript_artifact(cell, &artifact, transcripts)?;
+    let regraded = evaluate_harness_model_artifact(
+        harness,
+        model,
+        task,
+        cell.execution_mode,
+        artifact,
+        cell.latency_ms,
+        cell.transcript_path.clone(),
+    )?;
+    if !candidate_cell_claims_pass(&regraded) {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "cell {:?} regraded as {:?}, not pass",
+            cell.cell_id, regraded.status
+        )));
+    }
+    if !regraded_cell_matches_report(cell, &regraded) {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "cell {:?} report fields do not match regraded reviewer artifact",
+            cell.cell_id
+        )));
+    }
+    Ok(())
+}
+
+fn verify_live_transcript_artifact(
+    cell: &HarnessModelEvaluationCell,
+    artifact: &ReviewerArtifact,
+    transcripts: &BTreeMap<String, String>,
+) -> Result<(), CoreError> {
+    let transcript = transcripts.get(&cell.transcript_path).ok_or_else(|| {
+        CoreError::EvalReportCandidate(format!(
+            "cell {:?} missing live transcript {:?}",
+            cell.cell_id, cell.transcript_path
+        ))
+    })?;
+    let transcript_artifact = reviewer_artifact_from_live_transcript(transcript)?;
+    if &transcript_artifact != artifact {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "cell {:?} transcript artifact does not match report artifact",
+            cell.cell_id
+        )));
+    }
+    Ok(())
+}
+
+fn reviewer_artifact_from_live_transcript(transcript: &str) -> Result<ReviewerArtifact, CoreError> {
+    let begin_count = transcript
+        .matches(LIVE_TRANSCRIPT_ARTIFACT_BEGIN_MARKER)
+        .count();
+    if begin_count != 1 {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "live transcript must contain exactly one {LIVE_TRANSCRIPT_ARTIFACT_BEGIN_MARKER} marker, found {begin_count}"
+        )));
+    }
+    let end_count = transcript
+        .matches(LIVE_TRANSCRIPT_ARTIFACT_END_MARKER)
+        .count();
+    if end_count != 1 {
+        return Err(CoreError::EvalReportCandidate(format!(
+            "live transcript must contain exactly one {LIVE_TRANSCRIPT_ARTIFACT_END_MARKER} marker, found {end_count}"
+        )));
+    }
+
+    let (_, after_begin) = transcript
+        .split_once(LIVE_TRANSCRIPT_ARTIFACT_BEGIN_MARKER)
+        .ok_or_else(|| {
+            CoreError::EvalReportCandidate(
+                "live transcript artifact begin marker was missing".to_string(),
+            )
+        })?;
+    let (json, _) = after_begin
+        .split_once(LIVE_TRANSCRIPT_ARTIFACT_END_MARKER)
+        .ok_or_else(|| {
+            CoreError::EvalReportCandidate(
+                "live transcript artifact end marker appeared before begin marker".to_string(),
+            )
+        })?;
+    let json = json.trim();
+    if json.is_empty() {
+        return Err(CoreError::EvalReportCandidate(
+            "live transcript artifact JSON block was empty".to_string(),
+        ));
+    }
+
+    serde_json::from_str(json).map_err(|error| {
+        CoreError::EvalReportCandidate(format!(
+            "live transcript artifact JSON was not ReviewerArtifact.v1: {error}"
+        ))
+    })
+}
+
+fn regraded_cell_matches_report(
+    reported: &HarnessModelEvaluationCell,
+    regraded: &HarnessModelEvaluationCell,
+) -> bool {
+    reported.cell_id == regraded.cell_id
+        && reported.harness_id == regraded.harness_id
+        && reported.model_id == regraded.model_id
+        && reported.task_id == regraded.task_id
+        && reported.execution_mode == regraded.execution_mode
+        && reported.status == regraded.status
+        && reported.artifact_valid == regraded.artifact_valid
+        && reported.expected_findings_found == regraded.expected_findings_found
+        && reported.expected_findings_total == regraded.expected_findings_total
+        && reported.false_positives == regraded.false_positives
+        && float_eq(reported.score, regraded.score)
+        && float_eq(reported.cost_usd, regraded.cost_usd)
+        && reported.degraded == regraded.degraded
+}
+
+fn float_eq(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 0.000_000_001
 }
 
 fn evaluate_cell(
@@ -465,6 +739,214 @@ fn money(value: f64) -> String {
     format!("{value:.6}")
 }
 
+struct EvalWinner<'a> {
+    harness: &'a HarnessProfile,
+    model: &'a ModelCandidate,
+    cells: Vec<&'a HarnessModelEvaluationCell>,
+}
+
+impl EvalWinner<'_> {
+    fn mean_score(&self) -> f64 {
+        self.cells.iter().map(|cell| cell.score).sum::<f64>() / self.cells.len() as f64
+    }
+
+    fn measured_cost_usd(&self) -> f64 {
+        self.cells.iter().map(|cell| cell.cost_usd).sum()
+    }
+
+    fn measured_wall_sec(&self) -> f64 {
+        self.cells
+            .iter()
+            .map(|cell| cell.latency_ms as f64 / 1000.0)
+            .sum()
+    }
+}
+
+fn reviewer_config_packet_for_winner(
+    report: &HarnessModelEvaluationReport,
+    winner: &EvalWinner<'_>,
+) -> Result<ReviewerConfigPacket, CoreError> {
+    let provider = normalize_provider(&winner.model.provider);
+    let config_model = format!("{}:{}", provider, winner.model.model_id);
+    let reviewers = default_candidate_reviewers()
+        .iter()
+        .map(|(id, perspective)| ReviewerConfig {
+            id: (*id).to_string(),
+            perspective: (*perspective).to_string(),
+            model: config_model.clone(),
+            fake_behavior: FakeReviewerBehavior::Directive,
+        })
+        .collect::<Vec<_>>();
+    let config = ReviewConfig {
+        schema_version: REVIEW_CONFIG_VERSION.to_string(),
+        config_id: format!(
+            "eval-candidate-{}",
+            sanitize(&format!(
+                "{}__{}",
+                winner.harness.harness_id, winner.model.model_id
+            ))
+        ),
+        reviewers,
+        confidence_min: 0.7,
+    };
+    let config_hash = digest_json(&config)?;
+    let mut prompt_hashes = BTreeMap::new();
+    for reviewer in &config.reviewers {
+        prompt_hashes.insert(
+            reviewer.id.clone(),
+            candidate_prompt_hash(report, winner, &reviewer.id)?,
+        );
+    }
+    let models = config
+        .reviewers
+        .iter()
+        .map(|reviewer| ReviewerModelMetadata {
+            reviewer_id: reviewer.id.clone(),
+            harness_id: winner.harness.harness_id.clone(),
+            provider: provider.clone(),
+            model: winner.model.model_id.clone(),
+            prompt_hash: prompt_hashes[reviewer.id.as_str()].clone(),
+            context_length: Some(winner.model.context_length),
+        })
+        .collect::<Vec<_>>();
+    let measured_cost_usd = winner.measured_cost_usd();
+    let measured_wall_sec = winner.measured_wall_sec();
+    let packet = ReviewerConfigPacket {
+        schema_version: REVIEWER_CONFIG_PACKET_VERSION.to_string(),
+        packet_id: format!(
+            "eval-candidate-{}",
+            sanitize(&format!(
+                "{}__{}__{}",
+                report.report_id, winner.harness.harness_id, winner.model.model_id
+            ))
+        ),
+        producer: ReviewerConfigProducer {
+            system: "cerberus-eval-harness".to_string(),
+            delivery_id: report.report_id.clone(),
+            generated_at: report.generated_at.clone(),
+            sandbox_only: true,
+            signature: None,
+        },
+        benchmark: ReviewerConfigBenchmark {
+            benchmark_id: report.report_id.clone(),
+            suite_id: report.suite_id.clone(),
+            arena_version: HARNESS_MODEL_EVALUATION_REPORT_VERSION.to_string(),
+            run_id: report.report_id.clone(),
+            task_count: winner.cells.len() as u64,
+            score_distribution: score_distribution(&winner.cells),
+        },
+        promotion: PromotionGate {
+            status: PromotionStatus::Candidate,
+            gates: vec![
+                GateResult {
+                    name: "live_harness_eval".to_string(),
+                    status: GateStatus::Passed,
+                    evidence: format!(
+                        "{} passed {} live task(s) with mean score {:.3}",
+                        winner.harness.harness_id,
+                        winner.cells.len(),
+                        winner.mean_score()
+                    ),
+                    waiver: None,
+                },
+                GateResult {
+                    name: "artifact_contract".to_string(),
+                    status: GateStatus::Passed,
+                    evidence: "every selected cell has artifact_valid=true and status=pass"
+                        .to_string(),
+                    waiver: None,
+                },
+                GateResult {
+                    name: "sandbox_boundary".to_string(),
+                    status: GateStatus::Passed,
+                    evidence:
+                        "producer.sandbox_only=true; production import still requires approval"
+                            .to_string(),
+                    waiver: None,
+                },
+            ],
+            rationale: format!(
+                "Best fully passing live eval group from {}; sandbox candidate only.",
+                report.report_id
+            ),
+        },
+        rollback: RollbackMetadata {
+            baseline_config_id: default_config().config_id,
+            rollback_command: "restore ReviewConfig.v1 defaults from cerberus-core::default_config"
+                .to_string(),
+            reason: "Eval-derived candidates must remain reversible until approved.".to_string(),
+            previous_packet_id: None,
+        },
+        cost: CostEnvelope {
+            measured_cost_usd,
+            max_cost_usd: (measured_cost_usd * 1.25).max(measured_cost_usd + 0.01),
+            measured_wall_sec,
+            max_wall_sec: (measured_wall_sec * 1.25).max(measured_wall_sec + 1.0),
+        },
+        harnesses: vec![ReviewerHarnessMetadata {
+            harness_id: winner.harness.harness_id.clone(),
+            kind: winner.harness.harness_id.clone(),
+            provider_name: provider,
+            command: winner.harness.command.clone(),
+            version: winner.harness.version.clone(),
+            execution_mode: "live_harness".to_string(),
+        }],
+        models,
+        prompt_hashes,
+        config_hash,
+        config,
+    };
+    validate_reviewer_config_packet(&packet)?;
+    Ok(packet)
+}
+
+fn default_candidate_reviewers() -> [(&'static str, &'static str); 3] {
+    [
+        ("correctness", "correctness"),
+        ("security", "security"),
+        ("testing", "testing"),
+    ]
+}
+
+fn candidate_prompt_hash(
+    report: &HarnessModelEvaluationReport,
+    winner: &EvalWinner<'_>,
+    reviewer_id: &str,
+) -> Result<String, serde_json::Error> {
+    let material = serde_json::json!({
+        "report_id": report.report_id,
+        "suite_id": report.suite_id,
+        "matrix_id": report.matrix_id,
+        "harness_id": winner.harness.harness_id,
+        "model_id": winner.model.model_id,
+        "reviewer_id": reviewer_id,
+        "prompt_family": "cerberus-reviewer-config-candidate.v1"
+    });
+    digest_json(&material).map(|digest| format!("sha256:{digest}"))
+}
+
+fn score_distribution(cells: &[&HarnessModelEvaluationCell]) -> ScoreDistribution {
+    let mut scores = cells.iter().map(|cell| cell.score).collect::<Vec<_>>();
+    scores.sort_by(f64::total_cmp);
+    let mean = scores.iter().sum::<f64>() / scores.len() as f64;
+    let median = if scores.len() % 2 == 0 {
+        (scores[scores.len() / 2 - 1] + scores[scores.len() / 2]) / 2.0
+    } else {
+        scores[scores.len() / 2]
+    };
+    ScoreDistribution {
+        min: scores[0],
+        mean,
+        median,
+        max: scores[scores.len() - 1],
+        certified_trials: cells.len() as u64,
+    }
+}
+
+fn normalize_provider(provider: &str) -> String {
+    provider.trim().to_ascii_lowercase()
+}
+
 fn transcript_for_cell(cell: &HarnessModelEvaluationCell, probe: Option<&HarnessProbe>) -> String {
     let mut out = String::new();
     out.push_str(&format!("cell_id: {}\n", cell.cell_id));
@@ -632,6 +1114,277 @@ mod tests {
             cell.failure_reason.as_deref(),
             Some("missing provider budget acknowledgement")
         );
+    }
+
+    #[test]
+    fn reviewer_config_candidate_from_live_eval_report_builds_sandbox_packet() {
+        let matrix = matrix();
+        let harness = &matrix.harnesses[0];
+        let model = &matrix.models[0];
+        let task = clean_task();
+        let reviewer = eval_reviewer_config(harness, model, &task);
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "live-candidate-source".to_string(),
+            reviewers: vec![reviewer],
+            confidence_min: 0.7,
+        };
+        let artifact = crate::review(&task.review_request, &config)
+            .expect("fixture review succeeds")
+            .reviewer_artifacts
+            .into_iter()
+            .next()
+            .expect("one artifact");
+        let cell = evaluate_harness_model_artifact(
+            harness,
+            model,
+            &task,
+            EvalExecutionMode::LiveHarness,
+            artifact,
+            100,
+            "transcripts/live.txt".to_string(),
+        )
+        .expect("live cell evaluates");
+        let suite = EvalTaskSuite {
+            schema_version: EVAL_TASK_SUITE_VERSION.to_string(),
+            suite_id: "candidate-suite".to_string(),
+            description: None,
+            tasks: vec![task],
+        };
+        let output = harness_model_evaluation_output(&suite, &matrix, vec![cell], vec![], vec![])
+            .expect("report builds");
+        let transcripts = live_transcripts(&output.report.cells);
+
+        let packet = reviewer_config_candidate_from_eval_report(
+            &output.report,
+            &matrix,
+            &suite,
+            &transcripts,
+        )
+        .expect("candidate packet builds");
+        let digest =
+            crate::validate_reviewer_config_packet(&packet).expect("packet validates in core");
+        let dry_run = crate::reviewer_config_import_dry_run(
+            &packet,
+            &crate::default_config(),
+            &crate::reviewer_config_promotion_fixture_request(),
+        )
+        .expect("candidate imports as dry run");
+
+        assert_eq!(packet.producer.system, "cerberus-eval-harness");
+        assert!(packet.producer.sandbox_only);
+        assert_eq!(packet.promotion.status, PromotionStatus::Candidate);
+        assert_eq!(packet.config.reviewers.len(), 3);
+        assert!(packet
+            .config
+            .reviewers
+            .iter()
+            .all(|reviewer| reviewer.model == "fake:fake/model"));
+        assert_eq!(packet.config_hash, digest);
+        assert!(dry_run.accepted_for_dry_run);
+        assert!(!dry_run.accepted_for_import);
+        assert!(dry_run
+            .rejection_reasons
+            .iter()
+            .any(|reason| reason.contains("sandbox-only")));
+    }
+
+    #[test]
+    fn reviewer_config_candidate_refuses_offline_eval_report() {
+        let suite = suite();
+        let matrix = matrix();
+        let probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: Some("0.78.1".to_string()),
+            path: Some("/bin/pi".to_string()),
+            failure_reason: None,
+        }];
+        let output =
+            evaluate_harness_model_matrix(&suite, &matrix, &probes, vec![]).expect("eval passes");
+
+        let transcripts = output.transcripts.into_iter().collect::<BTreeMap<_, _>>();
+        let error = reviewer_config_candidate_from_eval_report(
+            &output.report,
+            &matrix,
+            &suite,
+            &transcripts,
+        )
+        .expect_err("offline warn cells cannot produce candidates");
+
+        assert!(error.to_string().contains("no fully passing live_harness"));
+    }
+
+    #[test]
+    fn reviewer_config_candidate_refuses_cherry_picked_report_without_suite_coverage() {
+        let matrix = matrix();
+        let harness = &matrix.harnesses[0];
+        let model = &matrix.models[0];
+        let task = clean_task();
+        let reviewer = eval_reviewer_config(harness, model, &task);
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "cherry-picked-source".to_string(),
+            reviewers: vec![reviewer],
+            confidence_min: 0.7,
+        };
+        let artifact = crate::review(&task.review_request, &config)
+            .expect("fixture review succeeds")
+            .reviewer_artifacts
+            .into_iter()
+            .next()
+            .expect("one artifact");
+        let cell = evaluate_harness_model_artifact(
+            harness,
+            model,
+            &task,
+            EvalExecutionMode::LiveHarness,
+            artifact,
+            100,
+            "transcripts/live.txt".to_string(),
+        )
+        .expect("live cell evaluates");
+        let suite = suite();
+        let truncated_suite = EvalTaskSuite {
+            schema_version: EVAL_TASK_SUITE_VERSION.to_string(),
+            suite_id: suite.suite_id.clone(),
+            description: None,
+            tasks: vec![task],
+        };
+        let output =
+            harness_model_evaluation_output(&truncated_suite, &matrix, vec![cell], vec![], vec![])
+                .expect("report builds");
+        let transcripts = live_transcripts(&output.report.cells);
+
+        let error = reviewer_config_candidate_from_eval_report(
+            &output.report,
+            &matrix,
+            &suite,
+            &transcripts,
+        )
+        .expect_err("candidate requires full suite coverage");
+
+        assert!(error.to_string().contains("no fully passing live_harness"));
+    }
+
+    #[test]
+    fn reviewer_config_candidate_regrades_report_artifacts_before_accepting_pass() {
+        let matrix = matrix();
+        let harness = &matrix.harnesses[0];
+        let model = &matrix.models[0];
+        let task = seeded_task();
+        let reviewer = eval_reviewer_config(harness, model, &task);
+        let config = ReviewConfig {
+            schema_version: REVIEW_CONFIG_VERSION.to_string(),
+            config_id: "tampered-live-source".to_string(),
+            reviewers: vec![reviewer],
+            confidence_min: 0.7,
+        };
+        let artifact = crate::review(&task.review_request, &config)
+            .expect("fixture review succeeds")
+            .reviewer_artifacts
+            .into_iter()
+            .next()
+            .expect("one artifact");
+        let mut cell = evaluate_harness_model_artifact(
+            harness,
+            model,
+            &task,
+            EvalExecutionMode::LiveHarness,
+            artifact,
+            100,
+            "transcripts/live.txt".to_string(),
+        )
+        .expect("live cell evaluates");
+        assert_eq!(cell.status, EvalCellStatus::Pass);
+        cell.reviewer_artifact
+            .as_mut()
+            .expect("passing cell has artifact")
+            .findings
+            .clear();
+        let suite = EvalTaskSuite {
+            schema_version: EVAL_TASK_SUITE_VERSION.to_string(),
+            suite_id: "tampered-suite".to_string(),
+            description: None,
+            tasks: vec![task],
+        };
+        let output = harness_model_evaluation_output(&suite, &matrix, vec![cell], vec![], vec![])
+            .expect("report builds");
+        let transcripts = live_transcripts(&output.report.cells);
+
+        let error = reviewer_config_candidate_from_eval_report(
+            &output.report,
+            &matrix,
+            &suite,
+            &transcripts,
+        )
+        .expect_err("candidate regrades embedded artifacts before accepting pass");
+
+        assert!(error.to_string().contains("regraded as Fail"));
+    }
+
+    #[test]
+    fn reviewer_config_candidate_refuses_offline_report_edited_to_live_pass() {
+        let suite = suite();
+        let matrix = matrix();
+        let probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: Some("0.78.1".to_string()),
+            path: Some("/bin/pi".to_string()),
+            failure_reason: None,
+        }];
+        let mut output =
+            evaluate_harness_model_matrix(&suite, &matrix, &probes, vec![]).expect("eval passes");
+        let transcripts = output
+            .transcripts
+            .iter()
+            .cloned()
+            .collect::<BTreeMap<_, _>>();
+        for cell in &mut output.report.cells {
+            assert_eq!(cell.execution_mode, EvalExecutionMode::OfflineContract);
+            assert_eq!(cell.status, EvalCellStatus::Warn);
+            cell.execution_mode = EvalExecutionMode::LiveHarness;
+            cell.status = EvalCellStatus::Pass;
+        }
+        output.report.summary = summarize_cells(&output.report.cells);
+
+        let error = reviewer_config_candidate_from_eval_report(
+            &output.report,
+            &matrix,
+            &suite,
+            &transcripts,
+        )
+        .expect_err("offline transcripts cannot be promoted by editing cell mode");
+
+        assert!(error
+            .to_string()
+            .contains("live transcript must contain exactly one"));
+    }
+
+    fn live_transcripts(cells: &[HarnessModelEvaluationCell]) -> BTreeMap<String, String> {
+        cells
+            .iter()
+            .map(|cell| {
+                (
+                    cell.transcript_path.clone(),
+                    live_transcript_for_cell(cell).expect("live transcript builds"),
+                )
+            })
+            .collect()
+    }
+
+    fn live_transcript_for_cell(cell: &HarnessModelEvaluationCell) -> Result<String, CoreError> {
+        let artifact = cell.reviewer_artifact.as_ref().ok_or_else(|| {
+            CoreError::EvalReportCandidate(format!(
+                "cell {:?} has no reviewer artifact",
+                cell.cell_id
+            ))
+        })?;
+        let json = serde_json::to_string_pretty(artifact)?;
+        Ok(format!(
+            "fixture live transcript\n{LIVE_TRANSCRIPT_ARTIFACT_BEGIN_MARKER}\n{json}\n{LIVE_TRANSCRIPT_ARTIFACT_END_MARKER}\n"
+        ))
     }
 
     fn suite() -> EvalTaskSuite {
