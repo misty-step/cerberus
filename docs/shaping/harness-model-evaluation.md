@@ -194,6 +194,16 @@ completion-token, and retry-count assumptions, then writes a schema-valid
 that are ready except for provider budget acknowledgement. It does not estimate
 quality, infer real token usage, invoke providers, or change defaults.
 
+No-spend refresh at `2026-06-19T09:55:18Z` captured a fresh OpenRouter API
+snapshot and local harness version transcript under
+`tmp/evals/provider-refresh-2026-06-19/`. The four checked candidate model rows
+matched the current matrix; the generated refresh changed only observation
+timestamps, so the checked matrix was not rewritten. Readiness still reports 16
+total cells, 0 runnable cells, 0 missing-env cells, and 16 cells blocked only by
+missing `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK`; the budget estimate remains
+`$0.3356` total with the documented 20,000 prompt / 4,000 completion token
+assumption and one retry.
+
 The current smoke result is intentionally not a live model bake-off. Cells run
 in `offline_contract` mode and must validate as `warn` or structured
 degraded/unavailable outcomes, not as production-ready `pass` outcomes. This

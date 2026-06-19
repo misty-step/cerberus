@@ -267,6 +267,52 @@ Provider launch readiness receipt, 2026-06-19:
   budget-blocked state; it does not spend provider budget, rank harness/model
   pairs, promote reviewer defaults, or prove provider-backed review quality.
 
+No-spend provider refresh receipt, 2026-06-19T09:55:18Z:
+
+- Added rendered refresh plan:
+  `docs/shaping/006-no-spend-provider-eval-refresh-plan.html`.
+- Current no-spend evidence packet:
+  `tmp/evals/provider-refresh-2026-06-19/`.
+  - OpenRouter live model snapshot:
+    `openrouter-models.live.json`
+    (`sha256:d1a67c59601069540f5e4c87a5f436f9ae0666e2b2f061e44f9a632771dac009`).
+  - Candidate extract for `z-ai/glm-5.2`,
+    `moonshotai/kimi-k2.7-code`, `deepseek/deepseek-v4-pro`, and
+    `deepseek/deepseek-v4-flash`:
+    `openrouter-candidates.json`
+    (`sha256:ef008501aedcc092ffe64cc885fc55c96b0cf0976ab2312afb8132bb37bef7f0`).
+  - Local harness version transcript:
+    `harness-versions.txt`
+    (`sha256:481c1ff779c81543b558db54e26d01c6c5b5a3278428357d3cbdd55d3d4c1dca`).
+- Source refresh result: `refresh-model-catalog` from
+  `https://openrouter.ai/api/v1/models` produced the same candidate model
+  rows as the checked matrix. The only generated matrix diff was observation
+  timestamp metadata, so no checked fixture refresh was committed.
+- Current local harness versions still match the checked matrix: `pi` 0.78.1,
+  `goose` 1.12.1, `opencode` 1.2.6, and `omp` 16.0.9.
+- Current no-spend readiness with `OPENROUTER_API_KEY` present and
+  `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK` absent validates at
+  `readiness-no-ack.json`
+  (`sha256:331a9fd41a4b4d0acdf82cdacb75dac7afc402e351e6e18cf2e005a350ab2999`):
+  16 total cells, 0 runnable, 0 missing env, and 16 budget-blocked cells.
+- Current no-spend budget estimate validates at `budget-estimate.json`
+  (`sha256:255c30b787981f3ee13f81314099ca8eee4ccbff62ea52354b1134082e3ed461`):
+  with 20,000 prompt tokens, 4,000 completion tokens, and 1 retry per cell,
+  the 16-cell estimate is `$0.3356` total and `$0.0404` max single-cell cost.
+- Exact no-spend command trail:
+  - `curl -fsSL https://openrouter.ai/api/v1/models -o tmp/evals/provider-refresh-2026-06-19/openrouter-models.live.json`
+  - `jq '[.data[] | select(.id == "z-ai/glm-5.2" or .id == "moonshotai/kimi-k2.7-code" or .id == "deepseek/deepseek-v4-pro" or .id == "deepseek/deepseek-v4-flash") | {id, context_length, top_provider: .top_provider, pricing, supported_parameters}]' tmp/evals/provider-refresh-2026-06-19/openrouter-models.live.json > tmp/evals/provider-refresh-2026-06-19/openrouter-candidates.json`
+  - `cargo run --locked -q -p cerberus-cli -- refresh-model-catalog --matrix fixtures/evals/harness-model-matrix.json --catalog-source https://openrouter.ai/api/v1/models --out tmp/evals/provider-refresh-2026-06-19/harness-model-matrix.url-refreshed.json --raw-out tmp/evals/provider-refresh-2026-06-19/openrouter-models.url-raw.json --observed-at 2026-06-19T09:55:18Z`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-refresh-2026-06-19/harness-model-matrix.url-refreshed.json`
+  - `env -u CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK cargo run --locked -q -p cerberus-cli -- eval-readiness --suite fixtures/evals/reviewer-harness-live-peer-smoke.json --matrix fixtures/evals/harness-model-matrix.json --peer-profiles fixtures/harnesses/peer-command-profiles.json --out tmp/evals/provider-refresh-2026-06-19/readiness-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-refresh-2026-06-19/readiness-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- eval-budget --suite fixtures/evals/reviewer-harness-live-peer-smoke.json --matrix fixtures/evals/harness-model-matrix.json --readiness tmp/evals/provider-refresh-2026-06-19/readiness-no-ack.json --prompt-tokens 20000 --completion-tokens 4000 --retry-count 1 --out tmp/evals/provider-refresh-2026-06-19/budget-estimate.json`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-refresh-2026-06-19/budget-estimate.json`
+- Child work 9 remains the only open provider-eval step: run the
+  budget-approved provider-backed peer eval. This receipt updates launch
+  evidence; it still does not spend provider budget, rank harness/model pairs,
+  promote reviewer defaults, or prove provider-backed review quality.
+
 ## Notes
 
 This should start after backlog 001 creates the Rust schema/fixture path. It can
