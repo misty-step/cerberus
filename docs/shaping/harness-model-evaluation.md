@@ -351,6 +351,24 @@ matrix is semantically identical to `fixtures/evals/harness-model-matrix.json`
 after normalizing observation timestamps, so the checked fixture remains the
 machine-readable source of truth.
 
+A post-metadata full-suite preflight at `2026-06-19T13:56:14Z` reconfirmed the
+same gate after selected-report provenance landed. The packet at
+`tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/` includes a
+schema-valid OpenRouter-generated matrix
+(`sha256:a38ad455fbbabdaae0bb676ff321468c47dcb0c42a56e70b59dcb2001f64fd54`),
+an empty normalized diff against the checked matrix
+(`sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`),
+the stable four-candidate extract
+(`sha256:ef008501aedcc092ffe64cc885fc55c96b0cf0976ab2312afb8132bb37bef7f0`),
+fresh harness probes for `pi` 0.78.1, `goose` 1.12.1, `opencode` 1.2.6, and
+`omp` 16.0.9, and validated full-suite readiness/budget reports. Readiness
+still reports 96 cells, 0 runnable, 0 missing env, and 96 budget-blocked; the
+budget estimate still reports 96 estimateable cells and
+`$2.013600000000001` total. Full unselected reports still omit `selection`,
+leaving that metadata only on explicitly filtered rerun artifacts. This remains
+no-spend proof only; the live quality comparison is still the budget-approved
+provider rerun.
+
 ## Alternatives Considered
 
 ### Public Leaderboards Only

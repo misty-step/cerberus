@@ -88,11 +88,11 @@ Out of scope:
 
 ## Current Source Snapshot
 
-Current source observation: 2026-06-19T12:52:39Z.
+Current source observation: 2026-06-19T13:56:14Z.
 
 The checked machine-readable source of truth is
 `fixtures/evals/harness-model-matrix.json`. The direct OpenRouter refresh in
-`tmp/evals/provider-source-refresh-2026-06-19T125239Z/` produced a generated
+`tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/` produced a generated
 matrix semantically equal to the checked matrix after normalizing only
 observation timestamps. Previous 2026-06-18 catalog values remain preserved in
 the checked `previous` fields where they explain drift.
@@ -142,6 +142,8 @@ Relevant Cerberus drift:
   `docs/shaping/harness-model-evaluation-plan.html`
 - Eval source-truth consolidation plan:
   `docs/shaping/006-eval-source-truth-consolidation-plan.html`
+- Provider full-suite rerun gate plan:
+  `docs/shaping/006-provider-full-suite-rerun-gate-plan.html`
 - Goose docs:
   `https://goose-docs.ai/`
 - OpenCode + OpenRouter docs:
@@ -512,6 +514,54 @@ Eval source-truth consolidation receipt, 2026-06-19T12:52:39Z:
 - This is source-truth hygiene only. It does not spend provider budget, rank
   harness/model pairs, promote defaults, or close the remaining full
   provider-backed six-task rerun.
+
+Post-metadata full-suite preflight receipt, 2026-06-19T13:56:14Z:
+
+- No-spend evidence packet:
+  `tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/`.
+- Direct OpenRouter refresh from `https://openrouter.ai/api/v1/models`
+  produced a schema-valid generated matrix semantically equal to the checked
+  matrix after normalizing only `observed_at` and `catalog_observed_at`.
+  Generated matrix:
+  `harness-model-matrix.url-generated.json`
+  (`sha256:a38ad455fbbabdaae0bb676ff321468c47dcb0c42a56e70b59dcb2001f64fd54`).
+  Normalized diff:
+  `matrix.normalized.diff`
+  (`sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+- Raw OpenRouter catalog:
+  `openrouter-models.url.raw.json`
+  (`sha256:3852a96bdd2f839cbe01a0fbc01ad650c93c9cd9ddfb54da3a51e9d25db87670`).
+  Candidate extract for the four checked model rows remained stable:
+  `openrouter-candidates.json`
+  (`sha256:ef008501aedcc092ffe64cc885fc55c96b0cf0976ab2312afb8132bb37bef7f0`).
+- Local harness version transcript:
+  `harness-versions.txt`
+  (`sha256:d01820e6c6d348fc1b750124cb53081ee4bf62caa6355b8bba164736449ae6f9`):
+  `pi` 0.78.1, `goose` 1.12.1, `opencode` 1.2.6, and `omp` 16.0.9.
+- Full-suite no-ack readiness validates at `readiness-no-ack.json`
+  (`sha256:1b38b11cc97927c81cfa91a0cd13fd7e20bab5fd17d7f30741e194e7f12a39d3`):
+  96 total cells, 0 runnable cells, 0 missing-env cells, and 96
+  budget-blocked cells.
+- Matching budget estimate validates at `budget-estimate.json`
+  (`sha256:685f73082ffb569aa8905ec39cc5d107d57490d851f52204e58b1291e4a2fd9e`):
+  96 estimateable cells, `$2.013600000000001` estimated total, and
+  `$0.040400000000000005` max single-cell cost under the documented 20,000
+  prompt / 4,000 completion token assumption with 1 retry.
+- Full unselected readiness and budget reports still omit `selection` metadata;
+  the selection field remains reserved for explicitly filtered rerun artifacts.
+- Exact no-spend command trail:
+  - `cargo run --locked -q -p cerberus-cli -- refresh-model-catalog --matrix fixtures/evals/harness-model-matrix.json --catalog-source https://openrouter.ai/api/v1/models --out tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/harness-model-matrix.url-generated.json --raw-out tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/openrouter-models.url.raw.json --observed-at 2026-06-19T135614Z`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/harness-model-matrix.url-generated.json`
+  - `jq 'del(.observed_at) | .models |= map(del(.catalog_observed_at))' fixtures/evals/harness-model-matrix.json > tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/checked.normalized.json`
+  - `jq 'del(.observed_at) | .models |= map(del(.catalog_observed_at))' tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/harness-model-matrix.url-generated.json > tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/generated.normalized.json`
+  - `diff -u tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/checked.normalized.json tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/generated.normalized.json > tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/matrix.normalized.diff`
+  - `env -u CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK cargo run --locked -q -p cerberus-cli -- eval-readiness --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --peer-profiles fixtures/harnesses/peer-command-profiles.json --out tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/readiness-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/readiness-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- eval-budget --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --readiness tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/readiness-no-ack.json --prompt-tokens 20000 --completion-tokens 4000 --retry-count 1 --out tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/budget-estimate.json`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/budget-estimate.json`
+- This is another freshness and budget-gate receipt after subset metadata
+  landed. It does not spend provider budget, rank harness/model pairs, promote
+  defaults, or close the remaining full provider-backed six-task rerun.
 
 Eval subset selection receipt, 2026-06-19:
 
