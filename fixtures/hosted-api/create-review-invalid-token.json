@@ -1,0 +1,6 @@
+{
+  "repo": "misty-step/cerberus",
+  "pr_number": 459,
+  "head_sha": "abc123def456",
+  "github_token": "good\r\nbad"
+}

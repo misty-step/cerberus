@@ -90,13 +90,20 @@
       "current_responsibility": "Hosted review API, runtime supervision, API-mode contract docs, and migration instructions.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "Rust API adapter that accepts source-agnostic ReviewRequest.v1 payloads and preserves current public API compatibility where still needed.",
+      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation is fixture-backed; full ReviewRequest.v1 acquisition, GET status replay, storage, and deployment remain pending.",
       "parity_evidence": [
         "cd cerberus-elixir && mix test test/cerberus/api_test.exs",
-        "future Rust fixture: POST /api/reviews and GET /api/reviews/:id compatibility"
+        "cargo test -p cerberus-adapter hosted_api_ingress",
+        "cargo test -p cerberus-adapter dispatch_accepts_elixir_integer_review_id_response",
+        "cargo test -p cerberus-cli --test hosted_api_ingress",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-valid.json --out tmp/hosted-api-ingress-2026-06-19/valid.json --review-id 77",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-invalid-token.json --out tmp/hosted-api-ingress-2026-06-19/invalid-token.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-whitespace-token.json --out tmp/hosted-api-ingress-2026-06-19/whitespace-token.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-missing-repo.json --out tmp/hosted-api-ingress-2026-06-19/missing-repo.json",
+        "future Rust fixture: GET /api/reviews/:id compatibility, API auth, store error mapping, and ReviewRequest.v1 acquisition"
       ],
       "rollback_path": "Keep cerberus-elixir API serving compatibility traffic until Rust API adapter is deployed and verified.",
-      "next_action": "Capture hosted API request/response fixtures and map them to ReviewRequest.v1."
+      "next_action": "Implement Rust API service/status fixtures and GitHub acquisition from the ingress pointer into ReviewRequest.v1."
     },
     {
       "surface_id": "elixir-review-execution",

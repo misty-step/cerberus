@@ -23,10 +23,11 @@ pub use github_action::{
     GithubActionReviewDecision, GithubActionSkipReason,
 };
 pub use hosted_api::{
-    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, HostedApiDispatchConfig,
-    HostedApiDispatchDecision, HostedApiDispatchOutcome, HostedApiDispatchRequest,
-    HostedApiDispatchSettings, HostedApiDispatchTranscript, HostedApiDispatchTransport,
-    HostedApiHttpResponse,
+    hosted_api_ingress_fixture_report, run_hosted_api_dispatch, run_hosted_api_dispatch_fixture,
+    HostedApiDispatchConfig, HostedApiDispatchDecision, HostedApiDispatchOutcome,
+    HostedApiDispatchRequest, HostedApiDispatchSettings, HostedApiDispatchTranscript,
+    HostedApiDispatchTransport, HostedApiHttpResponse, HostedApiIngressFixtureReport,
+    HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION,
 };
 pub use thinktank_migration::{
     import_thinktank_historical_run, ThinkTankHistoricalRun, ThinkTankMigrationOutput,

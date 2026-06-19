@@ -83,6 +83,13 @@ repo metadata as a skip, and writes `ReviewRequest.v1` for same-repo PRs. It
 does not call GitHub, call the hosted Cerberus API, poll for verdicts, write
 GitHub Actions outputs, or own the full action runtime.
 
+`cerberus-cli hosted-api-ingress-fixture` is the Rust hosted API compatibility
+ingress slice. It accepts the legacy `POST /api/reviews` JSON body, applies the
+Elixir validation contract, emits the `202` or `422` response body shape, and
+writes only a safe dispatch pointer with `github_token_present` instead of the
+raw request token. It does not build `ReviewRequest.v1`; the hosted POST body
+has no diff or file list until a later GitHub acquisition adapter runs.
+
 `cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
 adapter slice. It consumes checked hosted API POST and poll transcripts, then
 writes the simulated action decision: outcome, exit code, review-id, verdict,

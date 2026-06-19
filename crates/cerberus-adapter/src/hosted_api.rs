@@ -1,8 +1,10 @@
 use crate::AdapterError;
 use cerberus_schema::{ReviewRunArtifact, Verdict};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
+
+pub const HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION: &str = "hosted-api-ingress-fixture-report.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostedApiDispatchRequest {
@@ -13,6 +15,15 @@ pub struct HostedApiDispatchRequest {
     pub model: String,
     #[serde(default)]
     pub github_token_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HostedApiIngressFixtureReport {
+    pub schema_version: String,
+    pub http_status: u16,
+    pub body: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_request: Option<HostedApiDispatchRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -116,6 +127,29 @@ pub fn run_hosted_api_dispatch_fixture(
     run_hosted_api_dispatch(&config, &mut transport)
 }
 
+pub fn hosted_api_ingress_fixture_report(
+    body: &Value,
+    review_id: u64,
+) -> HostedApiIngressFixtureReport {
+    match parse_hosted_api_review_submission(body) {
+        Ok(submission) => HostedApiIngressFixtureReport {
+            schema_version: HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION.to_string(),
+            http_status: 202,
+            body: json!({
+                "review_id": review_id,
+                "status": "queued"
+            }),
+            dispatch_request: Some(submission.into_dispatch_request()),
+        },
+        Err(reason) => HostedApiIngressFixtureReport {
+            schema_version: HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION.to_string(),
+            http_status: 422,
+            body: json!({ "error": reason }),
+            dispatch_request: None,
+        },
+    }
+}
+
 pub fn run_hosted_api_dispatch(
     config: &HostedApiDispatchConfig,
     transport: &mut impl HostedApiDispatchTransport,
@@ -159,7 +193,7 @@ pub fn run_hosted_api_dispatch(
         ));
     }
 
-    let Some(review_id) = string_field(&post.body, "review_id") else {
+    let Some(review_id) = review_id_field(&post.body) else {
         messages.push("dispatch POST response did not include review_id".to_string());
         return Ok(decision(
             HostedApiDispatchOutcome::InvalidDispatchResponse,
@@ -173,7 +207,7 @@ pub fn run_hosted_api_dispatch(
             messages,
         ));
     };
-    if !is_safe_github_output_value(review_id) {
+    if !is_safe_github_output_value(&review_id) {
         messages.push("dispatch POST response included unsafe review_id".to_string());
         return Ok(decision(
             HostedApiDispatchOutcome::InvalidDispatchResponse,
@@ -197,7 +231,7 @@ pub fn run_hosted_api_dispatch(
         elapsed_seconds += config.settings.poll_interval_seconds;
         poll_attempts += 1;
 
-        let Some(poll) = (match transport.poll_review(config, review_id) {
+        let Some(poll) = (match transport.poll_review(config, &review_id) {
             Ok(response) => response,
             Err(reason) => {
                 consecutive_poll_errors += 1;
@@ -211,7 +245,7 @@ pub fn run_hosted_api_dispatch(
                     return Ok(decision(
                         HostedApiDispatchOutcome::PollErrorsExhausted,
                         1,
-                        review_id,
+                        &review_id,
                         "SKIP",
                         elapsed_seconds,
                         poll_attempts,
@@ -229,7 +263,7 @@ pub fn run_hosted_api_dispatch(
             return Ok(decision(
                 HostedApiDispatchOutcome::TranscriptExhausted,
                 1,
-                review_id,
+                &review_id,
                 "SKIP",
                 elapsed_seconds,
                 poll_attempts,
@@ -252,7 +286,7 @@ pub fn run_hosted_api_dispatch(
                 return Ok(decision(
                     HostedApiDispatchOutcome::PollErrorsExhausted,
                     1,
-                    review_id,
+                    &review_id,
                     "SKIP",
                     elapsed_seconds,
                     poll_attempts,
@@ -272,7 +306,7 @@ pub fn run_hosted_api_dispatch(
                 return Ok(decision(
                     HostedApiDispatchOutcome::ReviewFailed,
                     1,
-                    review_id,
+                    &review_id,
                     "SKIP",
                     elapsed_seconds,
                     poll_attempts,
@@ -289,7 +323,7 @@ pub fn run_hosted_api_dispatch(
                         return Ok(decision(
                             HostedApiDispatchOutcome::InvalidDispatchResponse,
                             1,
-                            review_id,
+                            &review_id,
                             Verdict::Skip.as_str(),
                             elapsed_seconds,
                             poll_attempts,
@@ -310,7 +344,7 @@ pub fn run_hosted_api_dispatch(
                         let mut rejected_artifact = decision(
                             HostedApiDispatchOutcome::InvalidDispatchResponse,
                             1,
-                            review_id,
+                            &review_id,
                             Verdict::Skip.as_str(),
                             elapsed_seconds,
                             poll_attempts,
@@ -333,7 +367,7 @@ pub fn run_hosted_api_dispatch(
                 let mut completed = decision(
                     HostedApiDispatchOutcome::Completed,
                     exit_code,
-                    review_id,
+                    &review_id,
                     &verdict,
                     elapsed_seconds,
                     poll_attempts,
@@ -363,7 +397,7 @@ pub fn run_hosted_api_dispatch(
     Ok(decision(
         HostedApiDispatchOutcome::TimedOut,
         1,
-        review_id,
+        &review_id,
         "SKIP",
         elapsed_seconds,
         poll_attempts,
@@ -409,6 +443,81 @@ fn invalid(reason: impl Into<String>) -> Result<(), AdapterError> {
     Err(AdapterError::HostedApiDispatchTranscript {
         reason: reason.into(),
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HostedApiReviewSubmission {
+    repo: String,
+    pr_number: u64,
+    head_sha: String,
+    model: String,
+    github_token_present: bool,
+}
+
+impl HostedApiReviewSubmission {
+    fn into_dispatch_request(self) -> HostedApiDispatchRequest {
+        HostedApiDispatchRequest {
+            repo: self.repo,
+            pr_number: self.pr_number,
+            head_sha: self.head_sha,
+            model: self.model,
+            github_token_present: self.github_token_present,
+        }
+    }
+}
+
+fn parse_hosted_api_review_submission(body: &Value) -> Result<HostedApiReviewSubmission, String> {
+    let repo = required_string(body, "repo", "missing required field: repo")?;
+    let pr_number = match body.get("pr_number").and_then(Value::as_u64) {
+        Some(pr_number) => pr_number,
+        None => return Err("missing or invalid field: pr_number (must be integer)".to_string()),
+    };
+    let head_sha = required_string(body, "head_sha", "missing required field: head_sha")?;
+    let github_token = normalize_optional_string(body.get("github_token"));
+    if github_token
+        .as_deref()
+        .is_some_and(|value| value.contains(['\r', '\n']))
+    {
+        return Err("invalid field: github_token".to_string());
+    }
+
+    Ok(HostedApiReviewSubmission {
+        repo,
+        pr_number,
+        head_sha,
+        model: body
+            .get("model")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        github_token_present: github_token.is_some(),
+    })
+}
+
+fn required_string(body: &Value, field: &str, error: &str) -> Result<String, String> {
+    match body.get(field).and_then(Value::as_str) {
+        Some(value) if !value.is_empty() => Ok(value.to_string()),
+        _ => Err(error.to_string()),
+    }
+}
+
+fn normalize_optional_string(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn review_id_field(body: &Value) -> Option<String> {
+    match body.get("review_id")? {
+        Value::String(value) => {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        }
+        Value::Number(number) => number.as_u64().map(|value| value.to_string()),
+        _ => None,
+    }
 }
 
 fn string_field<'a>(body: &'a Value, field: &str) -> Option<&'a str> {
@@ -558,6 +667,114 @@ mod tests {
     use serde_json::{json, Value};
 
     const CLEAN_REQUEST: &str = include_str!("../../../fixtures/review-request/clean.json");
+
+    #[test]
+    fn hosted_api_ingress_accepts_valid_review_request_and_redacts_token() {
+        let report = hosted_api_ingress_fixture_report(
+            &json!({
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "model": "fake/model",
+                "github_token": " request-scope-token ",
+                "extra_field": "ignored"
+            }),
+            7,
+        );
+
+        assert_eq!(
+            report.schema_version,
+            HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION
+        );
+        assert_eq!(report.http_status, 202);
+        assert_eq!(report.body, json!({ "review_id": 7, "status": "queued" }));
+        let serialized = serde_json::to_string(&report).expect("report serializes");
+        assert!(!serialized.contains("request-scope-token"));
+        assert!(!serialized.contains("extra_field"));
+
+        let dispatch = report.dispatch_request.expect("dispatch request");
+        assert_eq!(dispatch.repo, "misty-step/cerberus");
+        assert_eq!(dispatch.pr_number, 459);
+        assert_eq!(dispatch.head_sha, "abc123def456");
+        assert_eq!(dispatch.model, "fake/model");
+        assert!(dispatch.github_token_present);
+    }
+
+    #[test]
+    fn hosted_api_ingress_treats_whitespace_token_as_omitted() {
+        let report = hosted_api_ingress_fixture_report(
+            &json!({
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "github_token": " \t "
+            }),
+            8,
+        );
+
+        assert_eq!(report.http_status, 202);
+        let dispatch = report.dispatch_request.expect("dispatch request");
+        assert!(!dispatch.github_token_present);
+        assert_eq!(dispatch.model, "");
+    }
+
+    #[test]
+    fn hosted_api_ingress_rejects_legacy_validation_errors() {
+        for (body, expected_error) in [
+            (json!({}), "missing required field: repo"),
+            (
+                json!({ "repo": "", "pr_number": 1, "head_sha": "abc123" }),
+                "missing required field: repo",
+            ),
+            (
+                json!({ "repo": "org/repo", "pr_number": "abc", "head_sha": "abc123" }),
+                "missing or invalid field: pr_number (must be integer)",
+            ),
+            (
+                json!({ "repo": "org/repo", "pr_number": 1 }),
+                "missing required field: head_sha",
+            ),
+            (
+                json!({ "repo": "org/repo", "pr_number": 1, "head_sha": "" }),
+                "missing required field: head_sha",
+            ),
+            (
+                json!({
+                    "repo": "org/repo",
+                    "pr_number": 1,
+                    "head_sha": "abc123",
+                    "github_token": "good\r\nbad"
+                }),
+                "invalid field: github_token",
+            ),
+        ] {
+            let report = hosted_api_ingress_fixture_report(&body, 1);
+            assert_eq!(report.http_status, 422);
+            assert_eq!(report.body, json!({ "error": expected_error }));
+            assert!(report.dispatch_request.is_none());
+        }
+    }
+
+    #[test]
+    fn dispatch_accepts_elixir_integer_review_id_response() {
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": 459 })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "PASS" }
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        assert_eq!(decision.outcome, HostedApiDispatchOutcome::Completed);
+        assert_eq!(decision.review_id, "459");
+        assert_eq!(decision.github_outputs["review-id"], "459");
+        assert_eq!(decision.verdict, "PASS");
+    }
 
     #[test]
     fn completes_after_queued_and_running_polls() {

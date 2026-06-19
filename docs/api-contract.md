@@ -63,6 +63,29 @@ Starts an asynchronous review run.
 | `500` | `{"error": "store_error"}` | Database write failed |
 | `500` | `{"error": "store_unavailable"}` | Store GenServer unreachable |
 
+#### Rust Ingress Fixture
+
+`cerberus-cli hosted-api-ingress-fixture` freezes the legacy POST-body
+compatibility contract without starting a server or fetching PR data:
+
+```bash
+cargo run --locked -q -p cerberus-cli -- \
+  hosted-api-ingress-fixture \
+  --body fixtures/hosted-api/create-review-valid.json \
+  --out tmp/hosted-api-ingress-2026-06-19/valid.json \
+  --review-id 77
+```
+
+Accepted reports contain the Elixir-compatible `202` body with integer
+`review_id` plus a safe `dispatch_request` pointer. Request-scoped
+`github_token` values are never serialized; reports expose only
+`github_token_present`. Rejected reports still exit successfully as fixture
+evidence and write the legacy `422` error body.
+
+This fixture is not a `ReviewRequest.v1` builder. The POST body is a hosted API
+pointer; mapping it to `ReviewRequest.v1` requires a later GitHub acquisition
+step that reads PR context, diff, and file metadata.
+
 ### `GET /api/reviews/:id`
 
 Returns the current status and, when complete, the aggregated verdict.

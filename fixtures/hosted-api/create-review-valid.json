@@ -1,0 +1,8 @@
+{
+  "repo": "misty-step/cerberus",
+  "pr_number": 459,
+  "head_sha": "abc123def456",
+  "model": "fake/model",
+  "github_token": "fixture-request-token",
+  "extra_field": "ignored by the hosted API ingress contract"
+}

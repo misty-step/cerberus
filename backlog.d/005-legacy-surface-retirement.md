@@ -187,3 +187,25 @@ Seventh local retirement delivery, 2026-06-19:
 - Updated API docs and the retirement inventory to record hosted/API
   persistence fixture evidence while keeping `elixir-verdict-store` pending
   until the SQLite compatibility decision is made.
+
+Eighth local retirement delivery, 2026-06-19:
+
+- Added a Rust hosted API ingress compatibility contract for legacy
+  `POST /api/reviews` bodies. It preserves Elixir validation for `repo`,
+  integer `pr_number`, `head_sha`, request-scoped `github_token`, optional
+  `model`, and ignored unknown fields.
+- Added `cerberus-cli hosted-api-ingress-fixture --body ... --out ...` so
+  accepted and rejected POST bodies produce reviewable fixture reports without
+  starting a server or fetching GitHub data.
+- Kept token handling explicit: fixture reports expose only
+  `github_token_present` and never serialize the raw request token.
+- Fixed the Rust hosted dispatch adapter to accept the Elixir API's integer
+  `review_id` response shape, while still rejecting unsafe string output
+  values.
+- Added checked fixtures under `fixtures/hosted-api/` plus adapter and CLI
+  tests for valid requests, whitespace tokens, invalid header-breaking tokens,
+  and missing required fields.
+- Updated API docs, architecture docs, and the retirement inventory to record
+  POST ingress parity while keeping `elixir-http-api` pending until Rust covers
+  API auth/server wiring, GET status replay, storage/error mapping, deployment,
+  and GitHub acquisition into `ReviewRequest.v1`.
