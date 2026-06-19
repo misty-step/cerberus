@@ -106,9 +106,11 @@ reviewer execution happens here.
 `cerberus-cli hosted-api-serve-fixture` wraps that same compatibility contract
 in a bounded local Rust HTTP listener. It binds a configured address, writes
 the chosen `host:port` to a ready file, serves exact JSON response bodies over
-TCP, then exits after `--max-requests`. This is an HTTP smoke target for
-server wiring only; queue/store lifecycle, SQLite compatibility, deployment,
-live GitHub acquisition, and reviewer execution remain pending.
+TCP, then exits after `--max-requests`. With `--store-state`, it can persist a
+POST-created queued review into a local JSON state file and replay that record
+through a later `GET /api/reviews/:id`. This is still a bounded local smoke
+target; production queue workers, SQLite compatibility, deployment, live GitHub
+acquisition, and reviewer execution remain pending.
 
 `cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
 adapter slice. It consumes checked hosted API POST and poll transcripts, then

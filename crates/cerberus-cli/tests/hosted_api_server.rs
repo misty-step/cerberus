@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     fs,
     io::{Read, Write},
@@ -55,6 +55,97 @@ fn hosted_api_fixture_server_serves_contract_over_http() {
 fn hosted_api_fixture_server_maps_store_error_over_http() {
     let temp = temp_dir("store-error");
     let mut server = FixtureServer::start(&temp, "service-store-error.json", 1);
+    let create_body = fs::read_to_string(fixture("create-review-valid.json")).expect("body");
+
+    let response = request(
+        &server.addr,
+        "POST",
+        "/api/reviews",
+        Some("Bearer fixture-api-key"),
+        Some(&create_body),
+    );
+
+    assert_eq!(response.status, 500);
+    assert_eq!(response.body["error"], "store_error");
+    assert!(!response.raw_body.contains("fixture-api-key"));
+    assert!(!response.raw_body.contains("fixture-request-token"));
+    server.join();
+}
+
+#[test]
+fn hosted_api_fixture_server_persists_posted_reviews() {
+    let temp = temp_dir("stateful-store");
+    let store_state = temp.join("store-state.json");
+    let mut server = FixtureServer::start_stateful(&temp, &store_state, 2);
+    let create_body = fs::read_to_string(fixture("create-review-valid.json")).expect("body");
+
+    let created = request(
+        &server.addr,
+        "POST",
+        "/api/reviews",
+        Some("Bearer fixture-api-key"),
+        Some(&create_body),
+    );
+
+    assert_eq!(created.status, 202);
+    let review_id = created.body["review_id"].as_u64().expect("review id");
+    assert_eq!(review_id, 1);
+    assert_eq!(created.body["status"], "queued");
+
+    let status_path = format!("/api/reviews/{review_id}");
+    let status = request(
+        &server.addr,
+        "GET",
+        &status_path,
+        Some("Bearer fixture-api-key"),
+        None,
+    );
+
+    assert_eq!(status.status, 200);
+    assert_eq!(status.body["review_id"], review_id);
+    assert_eq!(status.body["repo"], "misty-step/cerberus");
+    assert_eq!(status.body["pr_number"], 459);
+    assert_eq!(status.body["head_sha"], "abc123def456");
+    assert_eq!(status.body["status"], "queued");
+    assert_eq!(status.body["aggregated_verdict"], Value::Null);
+
+    server.join();
+
+    let persisted = fs::read_to_string(&store_state).expect("store state written");
+    assert!(persisted.contains(&format!("\"{review_id}\"")));
+    assert!(persisted.contains(&format!("\"next_review_id\":{}", review_id + 1)));
+    assert!(!persisted.contains("fixture-api-key"));
+    assert!(!persisted.contains("fixture-request-token"));
+    assert!(!persisted.contains("github_token"));
+}
+
+#[test]
+fn hosted_api_fixture_server_maps_state_collision_to_store_error() {
+    let temp = temp_dir("stateful-store-collision");
+    let store_state = temp.join("store-state.json");
+    fs::write(
+        &store_state,
+        serde_json::to_string(&json!({
+            "next_review_id": 1,
+            "create_outcome": "created",
+            "read_unavailable": false,
+            "reviews": {
+                "1": {
+                    "review_id": 1,
+                    "repo": "misty-step/cerberus",
+                    "pr_number": 459,
+                    "head_sha": "abc123def456",
+                    "status": "queued",
+                    "aggregated_verdict": null,
+                    "completed_at": null,
+                    "inserted_at": "1970-01-01T00:00:00Z"
+                }
+            }
+        }))
+        .expect("state json"),
+    )
+    .expect("write state");
+    let mut server = FixtureServer::start_stateful(&temp, &store_state, 1);
     let create_body = fs::read_to_string(fixture("create-review-valid.json")).expect("body");
 
     let response = request(
@@ -160,6 +251,28 @@ impl FixtureServer {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn fixture server");
+        let addr = wait_for_ready(&ready, &mut child);
+        Self { child, addr }
+    }
+
+    fn start_stateful(temp: &Path, store_state: &Path, max_requests: u64) -> Self {
+        let ready = temp.join("ready.txt");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+            .arg("hosted-api-serve-fixture")
+            .arg("--addr")
+            .arg("127.0.0.1:0")
+            .arg("--api-key")
+            .arg("fixture-api-key")
+            .arg("--store-state")
+            .arg(store_state)
+            .arg("--ready-file")
+            .arg(&ready)
+            .arg("--max-requests")
+            .arg(max_requests.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn stateful fixture server");
         let addr = wait_for_ready(&ready, &mut child);
         Self { child, addr }
     }

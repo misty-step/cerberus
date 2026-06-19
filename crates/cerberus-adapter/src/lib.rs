@@ -53,6 +53,8 @@ pub enum AdapterError {
     HostedApiDispatchTranscript { reason: String },
     #[error("invalid hosted API request acquisition: {reason}")]
     HostedApiRequestAcquisition { reason: String },
+    #[error("invalid hosted API service store: {reason}")]
+    HostedApiServiceStore { reason: String },
     #[error("invalid git diff: {reason}")]
     InvalidGitDiff { reason: String },
     #[error("artifact has no reviewed head sha for caller projection")]

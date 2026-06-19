@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Duration,
 };
 
@@ -13,11 +13,12 @@ pub struct HostedApiFixtureServerConfig {
     pub addr: String,
     pub api_key: String,
     pub store: HostedApiServiceStoreFixture,
+    pub store_state: Option<PathBuf>,
     pub max_requests: u64,
     pub ready_file: Option<PathBuf>,
 }
 
-pub fn run_hosted_api_fixture_server(config: HostedApiFixtureServerConfig) -> Result<()> {
+pub fn run_hosted_api_fixture_server(mut config: HostedApiFixtureServerConfig) -> Result<()> {
     if config.max_requests == 0 {
         bail!("hosted-api-serve-fixture requires --max-requests greater than zero");
     }
@@ -42,7 +43,12 @@ pub fn run_hosted_api_fixture_server(config: HostedApiFixtureServerConfig) -> Re
 
     for _ in 0..config.max_requests {
         let (mut stream, _) = listener.accept().context("failed to accept HTTP request")?;
-        handle_connection(&mut stream, &config.api_key, &config.store)?;
+        handle_connection(
+            &mut stream,
+            &config.api_key,
+            &mut config.store,
+            config.store_state.as_deref(),
+        )?;
     }
 
     Ok(())
@@ -51,7 +57,8 @@ pub fn run_hosted_api_fixture_server(config: HostedApiFixtureServerConfig) -> Re
 fn handle_connection(
     stream: &mut TcpStream,
     api_key: &str,
-    store: &HostedApiServiceStoreFixture,
+    store: &mut HostedApiServiceStoreFixture,
+    store_state: Option<&Path>,
 ) -> Result<()> {
     let request = match read_http_request(stream) {
         Ok(request) => request,
@@ -94,7 +101,31 @@ fn handle_connection(
         body.as_ref(),
         store,
     );
+    if request.method.eq_ignore_ascii_case("POST") && report.http_status == 202 {
+        if let (Some(dispatch), Some(store_state)) = (&report.dispatch_request, store_state) {
+            let mut next_store = store.clone();
+            if next_store.record_queued_review(dispatch).is_err()
+                || write_store_state(store_state, &next_store).is_err()
+            {
+                return write_json_response(stream, 500, &json!({ "error": "store_error" }));
+            }
+            *store = next_store;
+        }
+    }
     write_json_response(stream, report.http_status, &report.body)
+}
+
+fn write_store_state(path: &Path, store: &HostedApiServiceStoreFixture) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create store-state dir {}", parent.display()))?;
+    }
+    let raw = serde_json::to_string(store).context("failed to serialize hosted API store state")?;
+    fs::write(path, raw)
+        .with_context(|| format!("failed to write hosted API store state {}", path.display()))
 }
 
 struct HttpRequest {

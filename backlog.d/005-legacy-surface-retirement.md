@@ -268,3 +268,37 @@ Eleventh local retirement delivery, 2026-06-19:
   to record HTTP listener smoke evidence while keeping `elixir-http-api`
   pending until real queue/store lifecycle, live GitHub acquisition, reviewer
   execution, and deployment smoke exist.
+
+Twelfth local retirement delivery, 2026-06-19:
+
+- Added `--store-state <path>` to `cerberus-cli hosted-api-serve-fixture` so the
+  bounded local Rust HTTP listener can persist POST-created queued reviews into
+  a local `HostedApiServiceStoreFixture` JSON state file.
+- Kept `--store <fixture>` read-only unless `--store-state` is explicitly
+  provided; stateful mode resumes from an existing state file, otherwise seeds
+  from `--store` or the default empty store.
+- Kept queued review compatibility semantics in `cerberus-adapter` through
+  `HostedApiServiceStoreFixture::record_queued_review`; the CLI server only
+  wires loopback HTTP and file persistence.
+- Added `hosted_api_fixture_server_persists_posted_reviews`, proving a real TCP
+  `POST /api/reviews` returns a review id and a later
+  `GET /api/reviews/:id` reads the persisted queued run shape.
+- Added `hosted_api_fixture_server_maps_state_collision_to_store_error`,
+  proving corrupted state that reuses the next review id returns structured
+  `500 {"error":"store_error"}` instead of dropping the HTTP connection.
+- Added dated QA evidence under
+  `tmp/hosted-api-stateful-store-2026-06-19/`:
+  `post-created.json`
+  (`sha256:c07ee2f30445139ce946761a2d63a84cb44b639b81ca7ec53aaf85c1fd49f2e9`),
+  `get-created.json`
+  (`sha256:ca2e5511db233042fb609734d655f64b01bf237b23c3aab36fedf62049e4f628`),
+  `store-state.json`
+  (`sha256:bb6ec3702afc2fbbf8ef008cf2f3380a6eff5bb6040975e6f14ac9227692383b`),
+  and `store-state-summary.json`
+  (`sha256:3fb6647870fd98aee6e74b0cfff883131463fe7589f27fb1479a6dadd1b94e0f`).
+- Token-leak grep over the QA packet found no `fixture-api-key`,
+  `fixture-request-token`, or `github_token` material.
+- Updated API docs, architecture docs, docs index, and the retirement inventory
+  to record stateful local POST/GET store replay while keeping `elixir-http-api`
+  pending until production queue/store lifecycle, live GitHub acquisition,
+  reviewer execution, and deployment smoke exist.

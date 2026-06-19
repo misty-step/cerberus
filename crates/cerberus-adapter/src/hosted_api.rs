@@ -64,6 +64,31 @@ impl Default for HostedApiServiceStoreFixture {
     }
 }
 
+impl HostedApiServiceStoreFixture {
+    pub fn record_queued_review(
+        &mut self,
+        dispatch_request: &HostedApiDispatchRequest,
+    ) -> Result<Value, AdapterError> {
+        let review_id = self.next_review_id;
+        let review_key = review_id.to_string();
+        if self.reviews.contains_key(&review_key) {
+            return Err(AdapterError::HostedApiServiceStore {
+                reason: format!("review id {review_id} already exists"),
+            });
+        }
+        let next_review_id =
+            review_id
+                .checked_add(1)
+                .ok_or_else(|| AdapterError::HostedApiServiceStore {
+                    reason: "next review id overflowed".to_string(),
+                })?;
+        let review = queued_review_body(review_id, dispatch_request);
+        self.reviews.insert(review_key, review.clone());
+        self.next_review_id = next_review_id;
+        Ok(review)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HostedApiCreateOutcome {
@@ -312,6 +337,19 @@ fn hosted_api_service_get(
         Some(run) => service_report(method, path, 200, run.clone(), None),
         None => service_report(method, path, 404, json!({ "error": "not_found" }), None),
     }
+}
+
+fn queued_review_body(review_id: u64, dispatch_request: &HostedApiDispatchRequest) -> Value {
+    json!({
+        "review_id": review_id,
+        "repo": dispatch_request.repo,
+        "pr_number": dispatch_request.pr_number,
+        "head_sha": dispatch_request.head_sha,
+        "status": "queued",
+        "aggregated_verdict": null,
+        "completed_at": null,
+        "inserted_at": "1970-01-01T00:00:00Z"
+    })
 }
 
 pub fn hosted_api_review_request_from_body(

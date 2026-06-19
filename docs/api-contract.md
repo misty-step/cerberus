@@ -166,20 +166,31 @@ returns HTTP response bodies directly rather than fixture report wrappers. It
 is intended for local smoke tests of health, auth, review creation, status
 reads, and store-error mapping.
 
+Pass `--store-state <path>` when the smoke needs a mutable local queue/store
+lifecycle. In stateful mode the server loads an existing
+`HostedApiServiceStoreFixture` JSON state file when present, otherwise seeds
+from `--store` or an empty default store. A valid `POST /api/reviews` writes a
+safe queued review record to that state file, increments `next_review_id`, and a
+later `GET /api/reviews/:id` can replay that created record. The persisted state
+does not contain the API key, bearer token, or request-scoped `github_token`.
+Without `--store-state`, `--store` remains a read-only fixture input.
+
 Covered HTTP smoke behavior:
 
 - `GET /api/health` works without auth over an actual TCP connection.
 - Non-health routes require the configured bearer token over HTTP.
 - Valid `POST /api/reviews` returns the queued `202` body and omits API key,
   bearer token, and request-scoped `github_token` values.
+- With `--store-state`, a valid POST-created review can be read back through
+  `GET /api/reviews/:id` from Rust-owned local state.
 - Fixture store failures return the same `500` JSON bodies as the offline
   service fixture.
 - The server exits after `--max-requests`, so tests do not leave background
   listeners behind.
 
-This is still not the production Rust hosted API. A real queue/store lifecycle,
-deployment smoke, live GitHub acquisition, and reviewer execution remain
-pending.
+This is still not the production Rust hosted API. A production queue/store
+lifecycle, deployment smoke, live GitHub acquisition, and reviewer execution
+remain pending.
 
 ### `GET /api/reviews/:id`
 
