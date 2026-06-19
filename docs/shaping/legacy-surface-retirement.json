@@ -90,7 +90,7 @@
       "current_responsibility": "Hosted review API, runtime supervision, API-mode contract docs, and migration instructions.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation, offline ReviewRequest.v1 acquisition from explicit PR context plus diff, and service response fixtures for auth, health, queued creation, status reads, not-found responses, and store error mapping are fixture-backed; HTTP server wiring, real queue/store lifecycle, deployment smoke, and live GitHub acquisition remain pending.",
+      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation, offline ReviewRequest.v1 acquisition from explicit PR context plus diff, service response fixtures for auth, health, queued creation, status reads, not-found responses, and store error mapping, plus bounded local HTTP listener smoke are fixture-backed; real queue/store lifecycle, deployment smoke, live GitHub acquisition, and reviewer execution remain pending.",
       "parity_evidence": [
         "cd cerberus-elixir && mix test test/cerberus/api_test.exs",
         "cargo test -p cerberus-adapter hosted_api_ingress",
@@ -113,10 +113,18 @@
         "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method POST --path /api/reviews --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --body fixtures/hosted-api/create-review-valid.json --store fixtures/hosted-api/service-store.json --out tmp/hosted-api-service-2026-06-19/post-queued.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method POST --path /api/reviews --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --body fixtures/hosted-api/create-review-valid.json --store fixtures/hosted-api/service-store-error.json --out tmp/hosted-api-service-2026-06-19/post-store-error.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/reviews/77 --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --store fixtures/hosted-api/service-store-unavailable.json --out tmp/hosted-api-service-2026-06-19/read-unavailable.json",
-        "future Rust fixture: HTTP server wiring, real queue/store lifecycle, deployment smoke, and live GitHub acquisition"
+        "cargo test -p cerberus-cli --test hosted_api_server",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-serve-fixture --addr 127.0.0.1:0 --api-key fixture-api-key --store fixtures/hosted-api/service-store.json --ready-file tmp/hosted-api-http-service-2026-06-19/ready.txt --max-requests 4 > tmp/hosted-api-http-service-2026-06-19/server.log 2>&1 &",
+        "curl -fsS http://$(cat tmp/hosted-api-http-service-2026-06-19/ready.txt)/api/health -o tmp/hosted-api-http-service-2026-06-19/health.json",
+        "curl -sS -o tmp/hosted-api-http-service-2026-06-19/missing-auth.json -w '%{http_code}' http://$(cat tmp/hosted-api-http-service-2026-06-19/ready.txt)/api/reviews/77 > tmp/hosted-api-http-service-2026-06-19/missing-auth.status",
+        "curl -fsS -H 'Authorization: Bearer fixture-api-key' http://$(cat tmp/hosted-api-http-service-2026-06-19/ready.txt)/api/reviews/77 -o tmp/hosted-api-http-service-2026-06-19/queued.json",
+        "curl -fsS -H 'Authorization: Bearer fixture-api-key' -H 'Content-Type: application/json' --data @fixtures/hosted-api/create-review-valid.json http://$(cat tmp/hosted-api-http-service-2026-06-19/ready.txt)/api/reviews -o tmp/hosted-api-http-service-2026-06-19/post-queued.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-serve-fixture --addr 127.0.0.1:0 --api-key fixture-api-key --store fixtures/hosted-api/service-store-error.json --ready-file tmp/hosted-api-http-service-2026-06-19/ready-store-error.txt --max-requests 1 > tmp/hosted-api-http-service-2026-06-19/server-store-error.log 2>&1 &",
+        "curl -sS -o tmp/hosted-api-http-service-2026-06-19/post-store-error.json -w '%{http_code}' -H 'Authorization: Bearer fixture-api-key' -H 'Content-Type: application/json' --data @fixtures/hosted-api/create-review-valid.json http://$(cat tmp/hosted-api-http-service-2026-06-19/ready-store-error.txt)/api/reviews > tmp/hosted-api-http-service-2026-06-19/post-store-error.status",
+        "future Rust fixture: real queue/store lifecycle, deployment smoke, live GitHub acquisition, and reviewer execution"
       ],
       "rollback_path": "Keep cerberus-elixir API serving compatibility traffic until Rust API adapter is deployed and verified.",
-      "next_action": "Wire a Rust HTTP service around the fixture-backed hosted API contract, then add deployment smoke before cutting over from Elixir."
+      "next_action": "Add real Rust queue/store lifecycle and live GitHub acquisition, then define deployment smoke before cutting over from Elixir."
     },
     {
       "surface_id": "elixir-review-execution",

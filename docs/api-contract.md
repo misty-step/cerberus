@@ -140,8 +140,46 @@ Covered fixture behavior:
 - `GET /api/reviews/:id` returns stored run JSON for known integer IDs and
   `404 {"error":"not_found"}` for missing or non-integer IDs.
 
-This is still not a hosted Rust API service. HTTP listener wiring, a real queue
-or store, deployment smoke, and live GitHub acquisition remain pending.
+This offline fixture still does not open a socket. A bounded local Rust
+listener now wraps the same contract so HTTP clients can exercise it without a
+production queue or store.
+
+#### Rust HTTP Fixture Server
+
+`cerberus-cli hosted-api-serve-fixture` serves the same compatibility contract
+through a real local HTTP listener. Run it in a separate terminal or background
+process, then read `--ready-file` to discover the bound address:
+
+```bash
+cargo run --locked -q -p cerberus-cli -- \
+  hosted-api-serve-fixture \
+  --addr 127.0.0.1:0 \
+  --api-key fixture-api-key \
+  --store fixtures/hosted-api/service-store.json \
+  --ready-file tmp/hosted-api-http-service-2026-06-19/ready.txt \
+  --max-requests 4
+```
+
+The command accepts loopback bind addresses only, writes the bound `host:port`
+to `--ready-file`, handles exactly the configured number of requests, and
+returns HTTP response bodies directly rather than fixture report wrappers. It
+is intended for local smoke tests of health, auth, review creation, status
+reads, and store-error mapping.
+
+Covered HTTP smoke behavior:
+
+- `GET /api/health` works without auth over an actual TCP connection.
+- Non-health routes require the configured bearer token over HTTP.
+- Valid `POST /api/reviews` returns the queued `202` body and omits API key,
+  bearer token, and request-scoped `github_token` values.
+- Fixture store failures return the same `500` JSON bodies as the offline
+  service fixture.
+- The server exits after `--max-requests`, so tests do not leave background
+  listeners behind.
+
+This is still not the production Rust hosted API. A real queue/store lifecycle,
+deployment smoke, live GitHub acquisition, and reviewer execution remain
+pending.
 
 ### `GET /api/reviews/:id`
 

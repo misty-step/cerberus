@@ -250,3 +250,21 @@ Tenth local retirement delivery, 2026-06-19:
   to record service/status/auth/store-error fixture evidence while keeping
   `elixir-http-api` pending until Rust HTTP server wiring, real queue/store
   lifecycle, live GitHub acquisition, and deployment smoke exist.
+
+Eleventh local retirement delivery, 2026-06-19:
+
+- Added `cerberus-cli hosted-api-serve-fixture` as a bounded local Rust HTTP
+  listener around the existing hosted API service fixture contract.
+- Kept compatibility semantics in `cerberus-adapter`; the listener only binds
+  an address, writes a ready file, parses minimal HTTP requests, returns JSON
+  response bodies, and exits after `--max-requests`.
+- Added CLI integration tests that spawn the server, make real TCP requests for
+  health, missing auth, queued status, queued creation, and store-error
+  creation, then assert the child process exits cleanly.
+- Added dated QA evidence under
+  `tmp/hosted-api-http-service-2026-06-19/` for health, missing auth, queued
+  status, queued POST, and POST store error served over HTTP.
+- Updated API docs, architecture docs, docs index, and the retirement inventory
+  to record HTTP listener smoke evidence while keeping `elixir-http-api`
+  pending until real queue/store lifecycle, live GitHub acquisition, reviewer
+  execution, and deployment smoke exist.

@@ -39,6 +39,8 @@ Current docs:
   `docs/shaping/024-hosted-api-http-dispatch-plan.html`
 - Hosted API service fixture plan:
   `docs/shaping/005-hosted-api-service-fixture-plan.html`
+- Hosted API HTTP service smoke plan:
+  `docs/shaping/005-hosted-api-http-service-smoke-plan.html`
 - Rust action entrypoint plan:
   `docs/shaping/025-rust-action-entrypoint-plan.html`
 - Archive shell dispatcher plan:
