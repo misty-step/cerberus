@@ -139,5 +139,6 @@ Fifth local retirement delivery, 2026-06-19:
   retirement inventory validation so the merge gate covers the Rust surface
   that replaced the deleted Node check.
 - Updated the retirement inventory to mark `node-scaffolder` covered by Rust
-  fixture evidence. The deletion commit is recorded in a follow-up receipt
-  commit because a Git commit cannot name its own final hash.
+  fixture evidence.
+- Recorded deletion commit `fba7271` in the machine-checked inventory in the
+  follow-up receipt commit because a Git commit cannot name its own final hash.

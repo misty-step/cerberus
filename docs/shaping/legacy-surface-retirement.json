@@ -74,7 +74,7 @@
         "cargo run --locked -p cerberus-cli -- init-workflow --repo-root tmp/init-workflow-2026-06-19/repo --template templates/consumer-workflow-reusable.yml --report-out tmp/init-workflow-2026-06-19/report-created.json",
         "diff -u templates/consumer-workflow-reusable.yml tmp/init-workflow-2026-06-19/repo/.github/workflows/cerberus.yml"
       ],
-      "deletion_or_archive_commit": "pending-node-scaffolder-deletion-commit",
+      "deletion_or_archive_commit": "fba7271",
       "rollback_path": "Restore bin/cerberus.js and package.json from the deletion commit parent only if a real npm package compatibility requirement appears; otherwise use cerberus-cli init.",
       "next_action": "Keep Rust init covered; add a native package distribution later only if a real consumer requires it."
     },
