@@ -2,12 +2,12 @@ use anyhow::{bail, Context, Result};
 use cerberus_adapter::{
     github_action_review_decision_from_event, github_action_skip_decision_from_event,
     hosted_api_ingress_fixture_report, hosted_api_review_request_from_body,
-    hosted_api_service_fixture_report, run_hosted_api_dispatch, run_hosted_api_dispatch_fixture,
-    FileReviewRunArtifactStore, GithubActionReviewDecision, HostedApiDispatchConfig,
-    HostedApiDispatchDecision, HostedApiDispatchOutcome, HostedApiDispatchRequest,
-    HostedApiDispatchSettings, HostedApiDispatchTranscript, HostedApiDispatchTransport,
-    HostedApiHttpResponse, HostedApiPullRequestContext, HostedApiServiceStoreFixture,
-    ReviewRunArtifactStore,
+    hosted_api_review_request_from_dispatch_request, hosted_api_service_fixture_report,
+    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, FileReviewRunArtifactStore,
+    GithubActionReviewDecision, HostedApiDispatchConfig, HostedApiDispatchDecision,
+    HostedApiDispatchOutcome, HostedApiDispatchRequest, HostedApiDispatchSettings,
+    HostedApiDispatchTranscript, HostedApiDispatchTransport, HostedApiHttpResponse,
+    HostedApiPullRequestContext, HostedApiServiceStoreFixture, ReviewRunArtifactStore,
 };
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
@@ -70,6 +70,7 @@ fn main() -> Result<()> {
         "hosted-api-request-fixture" => hosted_api_request_fixture(args.collect()),
         "hosted-api-service-fixture" => hosted_api_service_fixture(args.collect()),
         "hosted-api-serve-fixture" => hosted_api_serve_fixture(args.collect()),
+        "hosted-api-worker-fixture" => hosted_api_worker_fixture(args.collect()),
         "hosted-api-dispatch-fixture" => hosted_api_dispatch_fixture(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
         "eval-readiness" => eval_readiness(args.collect()),
@@ -553,6 +554,139 @@ fn hosted_api_serve_fixture(args: Vec<String>) -> Result<()> {
         max_requests,
         ready_file,
     })
+}
+
+fn hosted_api_worker_fixture(args: Vec<String>) -> Result<()> {
+    let mut store_state = None;
+    let mut review_id = None;
+    let mut pr_context = None;
+    let mut diff_file = None;
+    let mut out = None;
+    let mut config = None;
+    let mut config_packet = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--store-state" => {
+                store_state = Some(PathBuf::from(required_arg(&args, index, "--store-state")?));
+                index += 2;
+            }
+            "--review-id" => {
+                review_id = Some(required_arg(&args, index, "--review-id")?);
+                index += 2;
+            }
+            "--pr-context" => {
+                pr_context = Some(PathBuf::from(required_arg(&args, index, "--pr-context")?));
+                index += 2;
+            }
+            "--diff-file" => {
+                diff_file = Some(PathBuf::from(required_arg(&args, index, "--diff-file")?));
+                index += 2;
+            }
+            "--out" => {
+                out = Some(PathBuf::from(required_arg(&args, index, "--out")?));
+                index += 2;
+            }
+            "--config" => {
+                config = Some(PathBuf::from(required_arg(&args, index, "--config")?));
+                index += 2;
+            }
+            "--config-packet" => {
+                config_packet = Some(PathBuf::from(required_arg(
+                    &args,
+                    index,
+                    "--config-packet",
+                )?));
+                index += 2;
+            }
+            other => bail!("unknown hosted-api-worker-fixture argument {other:?}"),
+        }
+    }
+
+    let store_state =
+        store_state.context("hosted-api-worker-fixture requires --store-state <path>")?;
+    let review_id = review_id
+        .context("hosted-api-worker-fixture requires --review-id <id>")?
+        .parse::<u64>()
+        .context("hosted-api-worker-fixture --review-id must be an unsigned integer")?;
+    let pr_context =
+        pr_context.context("hosted-api-worker-fixture requires --pr-context <path>")?;
+    let diff_file = diff_file.context("hosted-api-worker-fixture requires --diff-file <path>")?;
+    let out_dir = out.context("hosted-api-worker-fixture requires --out <dir>")?;
+    let request_path = out_dir.join("review-request.json");
+    let artifact_path = out_dir.join("review-run-artifact.json");
+    let completed_path = out_dir.join("completed-status.json");
+    ensure_worker_state_path_is_not_output(
+        &store_state,
+        [&request_path, &artifact_path, &completed_path],
+    )?;
+    remove_stale_file(&request_path)?;
+    remove_stale_file(&artifact_path)?;
+    remove_stale_file(&completed_path)?;
+
+    let mut store = read_hosted_api_service_store_fixture(&store_state)?;
+    let dispatch_request = store.queued_dispatch_request(review_id)?;
+    let pr_context = read_hosted_api_pull_request_context(&pr_context)?;
+    let diff = fs::read_to_string(&diff_file)
+        .with_context(|| format!("failed to read hosted API diff {}", diff_file.display()))?;
+    let request = hosted_api_review_request_from_dispatch_request(
+        &dispatch_request,
+        &pr_context,
+        &diff,
+        format!("hosted-api-worker-{review_id}"),
+    )?;
+    let config = read_review_config_source(
+        config.as_deref(),
+        config_packet.as_deref(),
+        "hosted-api-worker-fixture",
+    )?;
+    let artifact = review(&request, &config)?;
+    let completed = store.complete_review(review_id, &artifact, "1970-01-01T00:00:00Z")?;
+
+    write_json(&request_path, &request)?;
+    write_json(&artifact_path, &artifact)?;
+    write_json(&completed_path, &completed)?;
+    write_json(&store_state, &store)?;
+
+    println!("{}", completed_path.display());
+    Ok(())
+}
+
+fn ensure_worker_state_path_is_not_output<'a>(
+    store_state: &Path,
+    output_paths: impl IntoIterator<Item = &'a PathBuf>,
+) -> Result<()> {
+    let store_state = lexical_absolute_path(store_state)?;
+    for output_path in output_paths {
+        let output_path = lexical_absolute_path(output_path)?;
+        if store_state == output_path {
+            bail!(
+                "hosted-api-worker-fixture --store-state must not be one of the worker output files"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn lexical_absolute_path(path: &Path) -> Result<PathBuf> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(value) => normalized.push(value),
+            Component::RootDir | Component::Prefix(_) => normalized.push(component.as_os_str()),
+        }
+    }
+    Ok(normalized)
 }
 
 fn hosted_api_dispatch_fixture(args: Vec<String>) -> Result<()> {
@@ -1611,6 +1745,7 @@ fn usage() {
             "  cerberus-cli hosted-api-request-fixture --body <request-body.json> --pr-context <pr-context.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n",
             "  cerberus-cli hosted-api-service-fixture --method <GET|POST> --path <route> --api-key <key> [--authorization <header>] [--body <json>] [--store <service-store.json>] --out <report.json>\n",
             "  cerberus-cli hosted-api-serve-fixture --api-key <key> [--addr <host:port>] [--store <service-store.json>] [--store-state <service-store.json>] [--ready-file <path>] [--max-requests <n>]\n",
+            "  cerberus-cli hosted-api-worker-fixture --store-state <service-store.json> --review-id <id> --pr-context <pr-context.json> --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n",
             "  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json> [--artifact-store <dir>]\n",
             "  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>] [--harness <id>] [--model <id>] [--task <id>]\n",
             "  cerberus-cli eval-readiness --suite <eval-suite.json> --matrix <matrix.json> --peer-profiles <PeerHarnessCommandProfiles.v3.json> --out <EvalReadinessReport.v1.json> [--harness <id>] [--model <id>] [--task <id>]\n",

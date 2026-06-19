@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>005 Hosted API Worker Lifecycle</title>
+  <style>
+    body { margin: 0; font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #152019; background: #f6f3ec; }
+    main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 56px; }
+    header { display: grid; grid-template-columns: 1.15fr .85fr; gap: 28px; align-items: end; border-top: 6px solid #304137; padding-top: 22px; }
+    h1 { margin: 0 0 12px; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
+    h2 { margin: 0 0 8px; font-size: 15px; text-transform: uppercase; letter-spacing: .08em; }
+    p { margin: 0 0 12px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .94em; }
+    .panel { background: #fffdf8; border: 1px solid #cbd5ce; padding: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 26px; }
+    .wide { grid-column: span 2; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 6px 0; }
+    .ok { color: #145a37; font-weight: 700; }
+    .stop { color: #8b2d16; font-weight: 700; }
+    @media (max-width: 860px) { header, .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <section>
+      <h1>Move One Hosted Review from Queued to Completed in Rust</h1>
+      <p>Target outcome: backlog 005 has a no-network worker lifecycle proof. A queued hosted API review is acquired from explicit PR context and diff, reviewed by the Rust engine, written back as a completed status with a validated <code>ReviewRunArtifact.v1</code>, and read through the existing local HTTP fixture.</p>
+      <p>Chosen design: add a narrow worker fixture command. Keep queue semantics in the adapter, file/CLI wiring in <code>cerberus-cli</code>, and avoid schedulers, live GitHub calls, provider spend, or Elixir deletion.</p>
+    </section>
+    <aside class="panel">
+      <h2>Quality System</h2>
+      <p><span class="ok">Proof:</span> failing tests, schema validation, loopback GET replay, token-leak grep, full gates, fresh critic.</p>
+      <p><span class="stop">Stop:</span> if this needs live GitHub credentials, changes the hosted API public contract without fixtures, or claims Elixir can be retired.</p>
+    </aside>
+  </header>
+
+  <section class="grid">
+    <article class="panel">
+      <h2>Delete-First</h2>
+      <p>No daemon, queue scheduler, new store engine, or provider integration. The existing JSON store and Rust review command are enough to prove the lifecycle boundary.</p>
+    </article>
+    <article class="panel">
+      <h2>Interface</h2>
+      <p><code>cerberus-cli hosted-api-worker-fixture --store-state ... --review-id ... --pr-context ... --diff-file ... --out ...</code></p>
+    </article>
+    <article class="panel">
+      <h2>Boundary</h2>
+      <p>The adapter owns state transition rules. The CLI reads inputs, runs review, writes artifacts, and persists the updated store.</p>
+    </article>
+    <article class="panel wide">
+      <h2>Acceptance Oracle</h2>
+      <ul>
+        <li>A queued review becomes <code>completed</code> with <code>aggregated_verdict.verdict</code> matching the generated artifact.</li>
+        <li>The completed status includes a schema-valid <code>review_run_artifact</code> bound to the hosted request head SHA.</li>
+        <li>Wrong head SHA, missing review id, non-queued status, and stale worker outputs fail closed without mutating the store.</li>
+        <li>Loopback <code>GET /api/reviews/:id</code> reads the completed status after the worker writes state.</li>
+      </ul>
+    </article>
+    <article class="panel">
+      <h2>Residual</h2>
+      <p>Live GitHub acquisition, production deployment smoke, provider-backed reviewer quality, and Elixir deletion remain separate backlog gates.</p>
+    </article>
+  </section>
+</main>
+</body>
+</html>

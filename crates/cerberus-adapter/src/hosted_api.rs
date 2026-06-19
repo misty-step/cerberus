@@ -65,6 +65,26 @@ impl Default for HostedApiServiceStoreFixture {
 }
 
 impl HostedApiServiceStoreFixture {
+    pub fn queued_dispatch_request(
+        &self,
+        review_id: u64,
+    ) -> Result<HostedApiDispatchRequest, AdapterError> {
+        let review = self.review(review_id)?;
+        let status = required_review_string(review, "status")?;
+        if status != "queued" {
+            return Err(hosted_api_store_error(format!(
+                "review id {review_id} has status {status:?}, expected queued"
+            )));
+        }
+        Ok(HostedApiDispatchRequest {
+            repo: required_review_string(review, "repo")?,
+            pr_number: required_review_u64(review, "pr_number")?,
+            head_sha: required_review_string(review, "head_sha")?,
+            model: optional_review_string(review, "model").unwrap_or_default(),
+            github_token_present: false,
+        })
+    }
+
     pub fn record_queued_review(
         &mut self,
         dispatch_request: &HostedApiDispatchRequest,
@@ -86,6 +106,54 @@ impl HostedApiServiceStoreFixture {
         self.reviews.insert(review_key, review.clone());
         self.next_review_id = next_review_id;
         Ok(review)
+    }
+
+    pub fn complete_review(
+        &mut self,
+        review_id: u64,
+        artifact: &ReviewRunArtifact,
+        completed_at: &str,
+    ) -> Result<Value, AdapterError> {
+        artifact.validate()?;
+        let review = self.review(review_id)?.clone();
+        let status = required_review_string(&review, "status")?;
+        if status != "queued" && status != "running" {
+            return Err(hosted_api_store_error(format!(
+                "review id {review_id} has status {status:?}, expected queued or running"
+            )));
+        }
+
+        let head_sha = required_review_string(&review, "head_sha")?;
+        if artifact.reviewed_head_sha.as_deref() != Some(head_sha.as_str()) {
+            return Err(hosted_api_store_error(format!(
+                "review artifact reviewed_head_sha {:?} did not match stored review head_sha {:?}",
+                artifact.reviewed_head_sha, head_sha
+            )));
+        }
+
+        let completed = json!({
+            "review_id": review_id,
+            "repo": required_review_string(&review, "repo")?,
+            "pr_number": required_review_u64(&review, "pr_number")?,
+            "head_sha": head_sha,
+            "status": "completed",
+            "aggregated_verdict": {
+                "verdict": artifact.verdict.as_str()
+            },
+            "completed_at": completed_at,
+            "inserted_at": optional_review_string(&review, "inserted_at")
+                .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string()),
+            "review_run_artifact": serde_json::to_value(artifact)?
+        });
+        self.reviews
+            .insert(review_id.to_string(), completed.clone());
+        Ok(completed)
+    }
+
+    fn review(&self, review_id: u64) -> Result<&Value, AdapterError> {
+        self.reviews
+            .get(&review_id.to_string())
+            .ok_or_else(|| hosted_api_store_error(format!("review id {review_id} not found")))
     }
 }
 
@@ -337,6 +405,27 @@ fn hosted_api_service_get(
         Some(run) => service_report(method, path, 200, run.clone(), None),
         None => service_report(method, path, 404, json!({ "error": "not_found" }), None),
     }
+}
+
+fn required_review_string(review: &Value, field: &'static str) -> Result<String, AdapterError> {
+    optional_review_string(review, field)
+        .ok_or_else(|| hosted_api_store_error(format!("stored review missing {field}")))
+}
+
+fn optional_review_string(review: &Value, field: &'static str) -> Option<String> {
+    review
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn required_review_u64(review: &Value, field: &'static str) -> Result<u64, AdapterError> {
+    review
+        .get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| hosted_api_store_error(format!("stored review missing integer {field}")))
 }
 
 fn queued_review_body(review_id: u64, dispatch_request: &HostedApiDispatchRequest) -> Value {
@@ -742,6 +831,12 @@ fn invalid(reason: impl Into<String>) -> Result<(), AdapterError> {
 
 fn hosted_api_request_invalid(reason: impl Into<String>) -> AdapterError {
     AdapterError::HostedApiRequestAcquisition {
+        reason: reason.into(),
+    }
+}
+
+fn hosted_api_store_error(reason: impl Into<String>) -> AdapterError {
+    AdapterError::HostedApiServiceStore {
         reason: reason.into(),
     }
 }

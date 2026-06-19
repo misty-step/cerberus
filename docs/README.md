@@ -43,6 +43,8 @@ Current docs:
   `docs/shaping/005-hosted-api-http-service-smoke-plan.html`
 - Hosted API stateful store smoke plan:
   `docs/shaping/005-hosted-api-stateful-store-smoke-plan.html`
+- Hosted API worker lifecycle plan:
+  `docs/shaping/005-hosted-api-worker-lifecycle-plan.html`
 - Rust action entrypoint plan:
   `docs/shaping/025-rust-action-entrypoint-plan.html`
 - Archive shell dispatcher plan:

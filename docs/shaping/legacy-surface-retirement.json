@@ -90,7 +90,7 @@
       "current_responsibility": "Hosted review API, runtime supervision, API-mode contract docs, and migration instructions.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation, offline ReviewRequest.v1 acquisition from explicit PR context plus diff, service response fixtures for auth, health, queued creation, status reads, not-found responses, store error mapping, bounded local HTTP listener smoke, and stateful local POST/GET store replay are fixture-backed; production queue/store lifecycle, deployment smoke, live GitHub acquisition, and reviewer execution remain pending.",
+      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation, offline ReviewRequest.v1 acquisition from explicit PR context plus diff, service response fixtures for auth, health, queued creation, status reads, not-found responses, store error mapping, bounded local HTTP listener smoke, stateful local POST/GET store replay, and local queued-review worker completion with ReviewRunArtifact.v1 are fixture-backed; production queue/store lifecycle, deployment smoke, live GitHub acquisition, and provider-backed reviewer execution remain pending.",
       "parity_evidence": [
         "cd cerberus-elixir && mix test test/cerberus/api_test.exs",
         "cargo test -p cerberus-adapter hosted_api_ingress",
@@ -125,10 +125,17 @@
         "cargo run --locked -q -p cerberus-cli -- hosted-api-serve-fixture --addr 127.0.0.1:0 --api-key fixture-api-key --store-state tmp/hosted-api-stateful-store-2026-06-19/store-state.json --ready-file tmp/hosted-api-stateful-store-2026-06-19/ready.txt --max-requests 2 > tmp/hosted-api-stateful-store-2026-06-19/server.log 2>&1 &",
         "curl -fsS -H 'Authorization: Bearer fixture-api-key' -H 'Content-Type: application/json' --data @fixtures/hosted-api/create-review-valid.json http://$(cat tmp/hosted-api-stateful-store-2026-06-19/ready.txt)/api/reviews -o tmp/hosted-api-stateful-store-2026-06-19/post-created.json",
         "curl -fsS -H 'Authorization: Bearer fixture-api-key' http://$(cat tmp/hosted-api-stateful-store-2026-06-19/ready.txt)/api/reviews/1 -o tmp/hosted-api-stateful-store-2026-06-19/get-created.json",
-        "future Rust fixture: production queue/store lifecycle, deployment smoke, live GitHub acquisition, and reviewer execution"
+        "cargo test -p cerberus-cli --test hosted_api_server hosted_api_worker_fixture",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-worker-fixture --store-state tmp/hosted-api-worker-lifecycle-2026-06-19/store-state.json --review-id 77 --pr-context fixtures/hosted-api/pull-request-context.json --diff-file fixtures/github-actions/pull-request.diff --out tmp/hosted-api-worker-lifecycle-2026-06-19/worker",
+        "cargo run --locked -q -p cerberus-cli -- validate tmp/hosted-api-worker-lifecycle-2026-06-19/worker/review-request.json",
+        "cargo run --locked -q -p cerberus-cli -- validate tmp/hosted-api-worker-lifecycle-2026-06-19/worker/review-run-artifact.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-serve-fixture --addr 127.0.0.1:0 --api-key fixture-api-key --store-state tmp/hosted-api-worker-lifecycle-2026-06-19/store-state.json --ready-file tmp/hosted-api-worker-lifecycle-2026-06-19/ready.txt --max-requests 1 > tmp/hosted-api-worker-lifecycle-2026-06-19/server.log 2>&1 &",
+        "curl -fsS -H 'Authorization: Bearer fixture-api-key' http://$(cat tmp/hosted-api-worker-lifecycle-2026-06-19/ready.txt)/api/reviews/77 -o tmp/hosted-api-worker-lifecycle-2026-06-19/get-completed.json",
+        "! grep -R -E 'fixture-api-key|fixture-request-token|github_token' tmp/hosted-api-worker-lifecycle-2026-06-19",
+        "future Rust fixture: production queue/store lifecycle, deployment smoke, live GitHub acquisition, and provider-backed reviewer execution"
       ],
       "rollback_path": "Keep cerberus-elixir API serving compatibility traffic until Rust API adapter is deployed and verified.",
-      "next_action": "Add production Rust queue/store lifecycle and live GitHub acquisition, then define deployment smoke before cutting over from Elixir."
+      "next_action": "Add production Rust queue/store lifecycle, live GitHub acquisition, and deployment smoke before cutting over from Elixir."
     },
     {
       "surface_id": "elixir-review-execution",
@@ -143,7 +150,7 @@
       "current_responsibility": "Legacy reviewer routing, panel execution, prompt rendering, local review command, and pipeline aggregation entrypoint.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "cerberus-core reviewer execution and harness runtime backed by ReviewConfig.v1 and harness/model evaluation fixtures.",
+      "rust_replacement": "cerberus-core reviewer execution and harness runtime backed by ReviewConfig.v1, harness/model evaluation fixtures, and a hosted API worker fixture that executes queued reviews through Rust core into ReviewRunArtifact.v1.",
       "parity_evidence": [
         "cargo test --workspace command_harness",
         "cargo test --workspace peer_harness_command_profiles",
@@ -167,12 +174,14 @@
         "cargo run --locked -p cerberus-cli -- review-local --diff-file fixtures/local-review/local.diff --out tmp/local-review",
         "cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-request.json",
         "cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-run-artifact.json",
+        "cargo test -p cerberus-cli --test hosted_api_server hosted_api_worker_fixture",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-worker-fixture --store-state tmp/hosted-api-worker-lifecycle-2026-06-19/store-state.json --review-id 77 --pr-context fixtures/hosted-api/pull-request-context.json --diff-file fixtures/github-actions/pull-request.diff --out tmp/hosted-api-worker-lifecycle-2026-06-19/worker",
         "cargo test --workspace harness_runtime",
         "cargo test --workspace",
         "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
       ],
       "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
-      "next_action": "Port routing, budget-approved provider-backed peer evals, and hosted/API review fixtures before retiring Elixir execution."
+      "next_action": "Port routing and budget-approved provider-backed peer evals before retiring Elixir execution."
     },
     {
       "surface_id": "elixir-verdict-store",

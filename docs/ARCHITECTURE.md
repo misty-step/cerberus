@@ -110,7 +110,14 @@ TCP, then exits after `--max-requests`. With `--store-state`, it can persist a
 POST-created queued review into a local JSON state file and replay that record
 through a later `GET /api/reviews/:id`. This is still a bounded local smoke
 target; production queue workers, SQLite compatibility, deployment, live GitHub
-acquisition, and reviewer execution remain pending.
+acquisition, and provider-backed reviewer execution remain pending.
+
+`cerberus-cli hosted-api-worker-fixture` proves the local worker lifecycle for
+that queued state. It reads a queued review from mutable hosted API fixture
+state, rebuilds the safe hosted dispatch request, combines explicit PR context
+and diff into `ReviewRequest.v1`, runs `cerberus-core`, and writes a completed
+status with a validated `ReviewRunArtifact.v1`. It is offline worker parity,
+not production API deployment or live GitHub/provider execution.
 
 `cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
 adapter slice. It consumes checked hosted API POST and poll transcripts, then

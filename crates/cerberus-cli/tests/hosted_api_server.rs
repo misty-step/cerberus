@@ -10,6 +10,173 @@ use std::{
 };
 
 #[test]
+fn hosted_api_worker_fixture_completes_queued_review() {
+    let temp = temp_dir("worker-complete");
+    let store_state = temp.join("store-state.json");
+    fs::copy(fixture("service-store.json"), &store_state).expect("seed store state");
+    let out = temp.join("worker");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("hosted-api-worker-fixture")
+        .arg("--store-state")
+        .arg(&store_state)
+        .arg("--review-id")
+        .arg("77")
+        .arg("--pr-context")
+        .arg(fixture("pull-request-context.json"))
+        .arg("--diff-file")
+        .arg(github_fixture("pull-request.diff"))
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("run worker fixture");
+
+    assert!(
+        output.status.success(),
+        "worker fixture failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("completed-status.json"),
+        "worker stdout should name completed status"
+    );
+
+    let review_request = read_json(&out.join("review-request.json"));
+    assert_eq!(review_request["source"]["kind"], "github_pr");
+    assert_eq!(review_request["source"]["head_sha"], "abc123def456");
+    assert_eq!(review_request["change"]["head_sha"], "abc123def456");
+    let artifact_json = read_json(&out.join("review-run-artifact.json"));
+    let artifact: cerberus_schema::ReviewRunArtifact =
+        serde_json::from_value(artifact_json.clone()).expect("artifact parses");
+    artifact.validate().expect("artifact validates");
+    assert_eq!(artifact.reviewed_head_sha.as_deref(), Some("abc123def456"));
+
+    let completed = read_json(&out.join("completed-status.json"));
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(
+        completed["aggregated_verdict"]["verdict"],
+        artifact.verdict.as_str()
+    );
+    assert_eq!(completed["review_run_artifact"], artifact_json);
+
+    let persisted = fs::read_to_string(&store_state).expect("store state persisted");
+    let persisted_json: Value = serde_json::from_str(&persisted).expect("persisted store parses");
+    assert_eq!(persisted_json["reviews"]["77"]["status"], "completed");
+    assert_eq!(
+        persisted_json["reviews"]["77"]["review_run_artifact"],
+        artifact_json
+    );
+    assert!(!persisted.contains("fixture-api-key"));
+    assert!(!persisted.contains("fixture-request-token"));
+    assert!(!persisted.contains("github_token"));
+
+    let mut server = FixtureServer::start_stateful(&temp, &store_state, 1);
+    let replayed = request(
+        &server.addr,
+        "GET",
+        "/api/reviews/77",
+        Some("Bearer fixture-api-key"),
+        None,
+    );
+
+    assert_eq!(replayed.status, 200);
+    assert_eq!(replayed.body["status"], "completed");
+    assert_eq!(replayed.body["review_run_artifact"], artifact_json);
+    assert!(!replayed.raw_body.contains("fixture-api-key"));
+    assert!(!replayed.raw_body.contains("fixture-request-token"));
+    assert!(!replayed.raw_body.contains("github_token"));
+    server.join();
+}
+
+#[test]
+fn hosted_api_worker_fixture_rejects_head_mismatch_without_mutating_store() {
+    let temp = temp_dir("worker-head-mismatch");
+    let store_state = temp.join("store-state.json");
+    fs::copy(fixture("service-store.json"), &store_state).expect("seed store state");
+    let before = fs::read_to_string(&store_state).expect("read initial state");
+    let out = temp.join("worker");
+    fs::create_dir_all(&out).expect("create stale worker dir");
+    let stale_paths = [
+        out.join("review-request.json"),
+        out.join("review-run-artifact.json"),
+        out.join("completed-status.json"),
+    ];
+    for path in &stale_paths {
+        fs::write(path, "stale worker evidence").expect("write stale worker output");
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("hosted-api-worker-fixture")
+        .arg("--store-state")
+        .arg(&store_state)
+        .arg("--review-id")
+        .arg("77")
+        .arg("--pr-context")
+        .arg(fixture("pull-request-context-wrong-head.json"))
+        .arg("--diff-file")
+        .arg(github_fixture("pull-request.diff"))
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("run worker fixture");
+
+    assert!(!output.status.success(), "head mismatch should fail closed");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("head_sha"), "stderr was {stderr}");
+    for path in &stale_paths {
+        assert!(
+            !path.exists(),
+            "failed worker should remove stale output {}",
+            path.display()
+        );
+    }
+    let after = fs::read_to_string(&store_state).expect("read final state");
+    assert_eq!(after, before, "failed worker must not mutate store state");
+}
+
+#[test]
+fn hosted_api_worker_fixture_rejects_state_output_path_collision() {
+    let temp = temp_dir("worker-state-output-collision");
+    let out = temp.join("worker");
+    fs::create_dir_all(&out).expect("create worker dir");
+    let store_state = out.join("review-request.json");
+    fs::copy(fixture("service-store.json"), &store_state).expect("seed colliding store state");
+    let before = fs::read_to_string(&store_state).expect("read initial state");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("hosted-api-worker-fixture")
+        .arg("--store-state")
+        .arg(&store_state)
+        .arg("--review-id")
+        .arg("77")
+        .arg("--pr-context")
+        .arg(fixture("pull-request-context.json"))
+        .arg("--diff-file")
+        .arg(github_fixture("pull-request.diff"))
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("run worker fixture");
+
+    assert!(
+        !output.status.success(),
+        "path collision should fail closed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--store-state must not be one of the worker output files"),
+        "stderr was {stderr}"
+    );
+    let after = fs::read_to_string(&store_state).expect("read final state");
+    assert_eq!(
+        after, before,
+        "state/output collision must not remove state"
+    );
+    assert!(!out.join("review-run-artifact.json").exists());
+    assert!(!out.join("completed-status.json").exists());
+}
+
+#[test]
 fn hosted_api_fixture_server_serves_contract_over_http() {
     let temp = temp_dir("contract");
     let mut server = FixtureServer::start(&temp, "service-store.json", 4);
@@ -373,6 +540,15 @@ fn wait_for_ready(ready: &Path, child: &mut Child) -> String {
 
 fn fixture(name: &str) -> PathBuf {
     workspace_root().join("fixtures/hosted-api").join(name)
+}
+
+fn github_fixture(name: &str) -> PathBuf {
+    workspace_root().join("fixtures/github-actions").join(name)
+}
+
+fn read_json(path: &Path) -> Value {
+    let raw = fs::read_to_string(path).expect("read json");
+    serde_json::from_str(&raw).expect("json parses")
 }
 
 fn workspace_root() -> PathBuf {

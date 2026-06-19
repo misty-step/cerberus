@@ -302,3 +302,38 @@ Twelfth local retirement delivery, 2026-06-19:
   to record stateful local POST/GET store replay while keeping `elixir-http-api`
   pending until production queue/store lifecycle, live GitHub acquisition,
   reviewer execution, and deployment smoke exist.
+
+Thirteenth local retirement delivery, 2026-06-19:
+
+- Added `cerberus-cli hosted-api-worker-fixture` as the Rust-owned local worker
+  lifecycle proof for a queued hosted review. It reads a mutable hosted API
+  fixture store, reconstructs the dispatch request, combines explicit PR
+  context plus diff into `ReviewRequest.v1`, runs `cerberus-core`, and writes a
+  completed status containing the validated `ReviewRunArtifact.v1`.
+- Kept the worker fixture narrow and offline: no live GitHub acquisition,
+  production queue backend, deployment smoke, or provider-backed reviewer
+  invocation happens in this slice.
+- Added fail-closed coverage for PR-context head SHA mismatch; the command exits
+  non-zero without writing worker outputs or mutating the store state.
+- Added CLI integration coverage proving a completed worker status can be read
+  back through the bounded Rust HTTP fixture server via `GET /api/reviews/77`.
+- Added dated QA evidence under
+  `tmp/hosted-api-worker-lifecycle-2026-06-19/`:
+  `worker/review-request.json`
+  (`sha256:625ffe45e91d5fdd0a28ba39401efdf5bd1dbd720b9389568fe4c384b800b9fe`),
+  `worker/review-run-artifact.json`
+  (`sha256:b68db9ac3853795254a3de482a8aaa30d5491e283412feb5728eb45cb849f981`),
+  `worker/completed-status.json`
+  (`sha256:0f0b0ef7f2eecf571505b9ffb8e36d526a6b7df2a7879e951282a81c5e49e1d0`),
+  `store-state.json`
+  (`sha256:ece95ceb3a926e84b7bbbba220be242c4cb07fd42c5cbe63cb04abff3ae6b0e1`),
+  `get-completed.json`
+  (`sha256:162bd1d3d3421b15ff2c7650c1fda1c122ed852a184dcf24bd230ae0533bc770`),
+  and `get-completed-summary.json`
+  (`sha256:a9001b48342e30b6bd06f59161e60ab4039fdb8f894252ff73b0091e795e8afd`).
+- Token-leak grep over the QA packet found no `fixture-api-key`,
+  `fixture-request-token`, or `github_token` material.
+- Updated API docs, architecture docs, docs index, and the retirement inventory
+  to record local worker completion while keeping `elixir-http-api` pending
+  until production queue/store lifecycle, live GitHub acquisition,
+  provider-backed reviewer execution, and deployment smoke exist.

@@ -189,8 +189,36 @@ Covered HTTP smoke behavior:
   listeners behind.
 
 This is still not the production Rust hosted API. A production queue/store
-lifecycle, deployment smoke, live GitHub acquisition, and reviewer execution
-remain pending.
+lifecycle, deployment smoke, live GitHub acquisition, and provider-backed
+reviewer execution remain pending.
+
+#### Rust Worker Fixture
+
+`cerberus-cli hosted-api-worker-fixture` covers the local worker side of the
+hosted lifecycle. It consumes a queued review from a mutable
+`HostedApiServiceStoreFixture` state file, reconstructs the safe dispatch
+request, combines explicit PR context plus diff into `ReviewRequest.v1`, runs
+the Rust review core, persists a completed status with
+`ReviewRunArtifact.v1`, and writes the worker evidence files:
+
+```bash
+cargo run --locked -q -p cerberus-cli -- \
+  hosted-api-worker-fixture \
+  --store-state tmp/hosted-api-worker-lifecycle-2026-06-19/store-state.json \
+  --review-id 77 \
+  --pr-context fixtures/hosted-api/pull-request-context.json \
+  --diff-file fixtures/github-actions/pull-request.diff \
+  --out tmp/hosted-api-worker-lifecycle-2026-06-19/worker
+```
+
+The worker fixture starts from queued reviews only. It fails closed if the
+stored review is not queued, if the PR context head SHA does not match the
+queued review, or if the generated artifact does not validate. A completed
+local state file can then be served through
+`hosted-api-serve-fixture` and read back with `GET /api/reviews/:id`.
+
+This fixture still does not perform live GitHub acquisition, provider-backed
+reviewer execution, production queue coordination, or deployment smoke.
 
 ### `GET /api/reviews/:id`
 
