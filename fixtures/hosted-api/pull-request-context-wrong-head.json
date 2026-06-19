@@ -1,0 +1,8 @@
+{
+  "title": "GitHub-shaped PR fixture",
+  "author": "testuser",
+  "head_ref": "shape/rust-review-engine-backlog",
+  "base_ref": "master",
+  "head_sha": "different-head-sha",
+  "body": "A hosted API PR context with a mismatched head SHA."
+}

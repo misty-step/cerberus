@@ -1,5 +1,8 @@
-use crate::AdapterError;
-use cerberus_schema::{ReviewRunArtifact, Verdict};
+use crate::{changed_files_from_git_diff, AdapterError};
+use cerberus_schema::{
+    Caller, Change, ReviewContext, ReviewPolicy, ReviewRequest, ReviewRunArtifact, ReviewSource,
+    Verdict, REVIEW_REQUEST_VERSION,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
@@ -24,6 +27,18 @@ pub struct HostedApiIngressFixtureReport {
     pub body: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispatch_request: Option<HostedApiDispatchRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostedApiPullRequestContext {
+    pub title: String,
+    #[serde(default)]
+    pub author: Option<String>,
+    pub head_ref: String,
+    pub base_ref: String,
+    pub head_sha: String,
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -148,6 +163,95 @@ pub fn hosted_api_ingress_fixture_report(
             dispatch_request: None,
         },
     }
+}
+
+pub fn hosted_api_review_request_from_body(
+    body: &Value,
+    pr_context: &HostedApiPullRequestContext,
+    diff: &str,
+    caller_run_id: impl Into<String>,
+) -> Result<ReviewRequest, AdapterError> {
+    let submission =
+        parse_hosted_api_review_submission(body).map_err(hosted_api_request_invalid)?;
+    hosted_api_review_request_from_dispatch_request(
+        &submission.into_dispatch_request(),
+        pr_context,
+        diff,
+        caller_run_id,
+    )
+}
+
+pub fn hosted_api_review_request_from_dispatch_request(
+    request: &HostedApiDispatchRequest,
+    pr_context: &HostedApiPullRequestContext,
+    diff: &str,
+    caller_run_id: impl Into<String>,
+) -> Result<ReviewRequest, AdapterError> {
+    if request.head_sha != pr_context.head_sha {
+        return Err(hosted_api_request_invalid(format!(
+            "hosted API head_sha {:?} did not match PR context head_sha {:?}",
+            request.head_sha, pr_context.head_sha
+        )));
+    }
+
+    let files = changed_files_from_git_diff(diff)?;
+    let linked_artifacts = vec![format!(
+        "github://{}/pull/{}",
+        request.repo, request.pr_number
+    )];
+    let mut metadata = BTreeMap::new();
+    metadata.insert("source_adapter".to_string(), "hosted-api".to_string());
+    if let Some(author) = pr_context
+        .author
+        .as_ref()
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|author| !author.is_empty())
+    {
+        metadata.insert("author".to_string(), author.to_string());
+    }
+    if !request.model.trim().is_empty() {
+        metadata.insert("requested_model".to_string(), request.model.clone());
+    }
+
+    let review_request = ReviewRequest {
+        schema_version: REVIEW_REQUEST_VERSION.to_string(),
+        request_id: format!(
+            "hosted-api-github-pr-{}-{}-{}",
+            request.repo.replace('/', "-"),
+            request.pr_number,
+            short_sha(&request.head_sha)
+        ),
+        source: ReviewSource::GithubPr {
+            repository: request.repo.clone(),
+            pr_number: request.pr_number,
+            base_ref: pr_context.base_ref.clone(),
+            head_ref: pr_context.head_ref.clone(),
+            head_sha: Some(request.head_sha.clone()),
+        },
+        change: Change {
+            title: pr_context.title.clone(),
+            description: pr_context.body.clone(),
+            base_ref: Some(pr_context.base_ref.clone()),
+            head_ref: Some(pr_context.head_ref.clone()),
+            head_sha: Some(request.head_sha.clone()),
+            diff: diff.to_string(),
+            files,
+        },
+        context: ReviewContext {
+            summary: Some("Hosted API GitHub pull request acquisition.".to_string()),
+            acceptance: vec![],
+            linked_artifacts,
+            metadata,
+        },
+        caller: Caller {
+            name: "hosted-api".to_string(),
+            run_id: caller_run_id.into(),
+        },
+        policy: ReviewPolicy::default(),
+    };
+    review_request.validate()?;
+    Ok(review_request)
 }
 
 pub fn run_hosted_api_dispatch(
@@ -445,6 +549,12 @@ fn invalid(reason: impl Into<String>) -> Result<(), AdapterError> {
     })
 }
 
+fn hosted_api_request_invalid(reason: impl Into<String>) -> AdapterError {
+    AdapterError::HostedApiRequestAcquisition {
+        reason: reason.into(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HostedApiReviewSubmission {
     repo: String,
@@ -518,6 +628,10 @@ fn review_id_field(body: &Value) -> Option<String> {
         Value::Number(number) => number.as_u64().map(|value| value.to_string()),
         _ => None,
     }
+}
+
+fn short_sha(sha: &str) -> String {
+    sha.chars().take(12).collect()
 }
 
 fn string_field<'a>(body: &'a Value, field: &str) -> Option<&'a str> {
@@ -667,6 +781,110 @@ mod tests {
     use serde_json::{json, Value};
 
     const CLEAN_REQUEST: &str = include_str!("../../../fixtures/review-request/clean.json");
+    const GITHUB_DIFF: &str = include_str!("../../../fixtures/github-actions/pull-request.diff");
+
+    #[test]
+    fn hosted_api_request_builds_review_request_from_acquired_context() {
+        let body = json!({
+            "repo": "misty-step/cerberus",
+            "pr_number": 459,
+            "head_sha": "abc123def456",
+            "model": "fake/model",
+            "github_token": "fixture-request-token"
+        });
+        let request = hosted_api_review_request_from_body(
+            &body,
+            &pr_context("abc123def456"),
+            GITHUB_DIFF,
+            "hosted-api-run-005",
+        )
+        .expect("request builds");
+
+        request.validate().expect("request validates");
+        assert_eq!(
+            request.request_id,
+            "hosted-api-github-pr-misty-step-cerberus-459-abc123def456"
+        );
+        assert_eq!(request.caller.name, "hosted-api");
+        assert_eq!(request.caller.run_id, "hosted-api-run-005");
+        assert_eq!(request.change.title, "GitHub-shaped PR fixture");
+        assert_eq!(request.change.files.len(), 2);
+        assert_eq!(request.change.files[0].path, "README.md");
+        assert_eq!(request.context.metadata["source_adapter"], "hosted-api");
+        assert_eq!(request.context.metadata["author"], "testuser");
+        assert_eq!(request.context.metadata["requested_model"], "fake/model");
+        assert_eq!(
+            request.context.linked_artifacts,
+            vec!["github://misty-step/cerberus/pull/459"]
+        );
+        assert!(matches!(
+            request.source,
+            ReviewSource::GithubPr {
+                ref repository,
+                pr_number: 459,
+                ref base_ref,
+                ref head_ref,
+                head_sha: Some(ref head_sha)
+            } if repository == "misty-step/cerberus"
+                && base_ref == "master"
+                && head_ref == "shape/rust-review-engine-backlog"
+                && head_sha == "abc123def456"
+        ));
+        let serialized = serde_json::to_string(&request).expect("request serializes");
+        assert!(!serialized.contains("fixture-request-token"));
+        assert!(!serialized.contains("github_token_present"));
+    }
+
+    #[test]
+    fn hosted_api_request_rejects_context_head_sha_drift() {
+        let body = json!({
+            "repo": "misty-step/cerberus",
+            "pr_number": 459,
+            "head_sha": "abc123def456"
+        });
+        let error = hosted_api_review_request_from_body(
+            &body,
+            &pr_context("different-head-sha"),
+            GITHUB_DIFF,
+            "hosted-api-run-005",
+        )
+        .expect_err("head sha drift rejects");
+
+        assert!(error.to_string().contains("did not match PR context"));
+    }
+
+    #[test]
+    fn hosted_api_request_rejects_invalid_ingress_body() {
+        let error = hosted_api_review_request_from_body(
+            &json!({ "pr_number": 459, "head_sha": "abc123def456" }),
+            &pr_context("abc123def456"),
+            GITHUB_DIFF,
+            "hosted-api-run-005",
+        )
+        .expect_err("invalid body rejects");
+
+        assert!(error.to_string().contains("missing required field: repo"));
+    }
+
+    #[test]
+    fn hosted_api_request_rejects_malformed_diff() {
+        let body = json!({
+            "repo": "misty-step/cerberus",
+            "pr_number": 459,
+            "head_sha": "abc123def456"
+        });
+        let error = hosted_api_review_request_from_body(
+            &body,
+            &pr_context("abc123def456"),
+            "not a diff",
+            "hosted-api-run-005",
+        )
+        .expect_err("malformed diff rejects");
+
+        assert!(error
+            .to_string()
+            .contains("must start with a diff --git header"));
+    }
 
     #[test]
     fn hosted_api_ingress_accepts_valid_review_request_and_redacts_token() {
@@ -1194,6 +1412,17 @@ mod tests {
             settings,
             post,
             polls,
+        }
+    }
+
+    fn pr_context(head_sha: &str) -> HostedApiPullRequestContext {
+        HostedApiPullRequestContext {
+            title: "GitHub-shaped PR fixture".to_string(),
+            author: Some("testuser".to_string()),
+            head_ref: "shape/rust-review-engine-backlog".to_string(),
+            base_ref: "master".to_string(),
+            head_sha: head_sha.to_string(),
+            body: Some("A hosted API PR context that should build a ReviewRequest.v1.".to_string()),
         }
     }
 

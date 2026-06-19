@@ -23,10 +23,12 @@ pub use github_action::{
     GithubActionReviewDecision, GithubActionSkipReason,
 };
 pub use hosted_api::{
-    hosted_api_ingress_fixture_report, run_hosted_api_dispatch, run_hosted_api_dispatch_fixture,
-    HostedApiDispatchConfig, HostedApiDispatchDecision, HostedApiDispatchOutcome,
-    HostedApiDispatchRequest, HostedApiDispatchSettings, HostedApiDispatchTranscript,
-    HostedApiDispatchTransport, HostedApiHttpResponse, HostedApiIngressFixtureReport,
+    hosted_api_ingress_fixture_report, hosted_api_review_request_from_body,
+    hosted_api_review_request_from_dispatch_request, run_hosted_api_dispatch,
+    run_hosted_api_dispatch_fixture, HostedApiDispatchConfig, HostedApiDispatchDecision,
+    HostedApiDispatchOutcome, HostedApiDispatchRequest, HostedApiDispatchSettings,
+    HostedApiDispatchTranscript, HostedApiDispatchTransport, HostedApiHttpResponse,
+    HostedApiIngressFixtureReport, HostedApiPullRequestContext,
     HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION,
 };
 pub use thinktank_migration::{
@@ -48,6 +50,8 @@ pub enum AdapterError {
     GithubActionEvent(#[source] serde_json::Error),
     #[error("invalid hosted API dispatch transcript: {reason}")]
     HostedApiDispatchTranscript { reason: String },
+    #[error("invalid hosted API request acquisition: {reason}")]
+    HostedApiRequestAcquisition { reason: String },
     #[error("invalid git diff: {reason}")]
     InvalidGitDiff { reason: String },
     #[error("artifact has no reviewed head sha for caller projection")]

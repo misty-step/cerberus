@@ -90,6 +90,12 @@ writes only a safe dispatch pointer with `github_token_present` instead of the
 raw request token. It does not build `ReviewRequest.v1`; the hosted POST body
 has no diff or file list until a later GitHub acquisition adapter runs.
 
+`cerberus-cli hosted-api-request-fixture` is that acquisition adapter's checked
+fixture path. It combines the hosted API body, explicit PR context, and raw diff
+into a validated `ReviewRequest.v1`, failing closed when the PR context head
+SHA differs from the POST body. It is still offline: no GitHub network call,
+HTTP server, queue, store, deploy, or reviewer execution happens here.
+
 `cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
 adapter slice. It consumes checked hosted API POST and poll transcripts, then
 writes the simulated action decision: outcome, exit code, review-id, verdict,

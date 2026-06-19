@@ -86,6 +86,24 @@ This fixture is not a `ReviewRequest.v1` builder. The POST body is a hosted API
 pointer; mapping it to `ReviewRequest.v1` requires a later GitHub acquisition
 step that reads PR context, diff, and file metadata.
 
+`cerberus-cli hosted-api-request-fixture` covers that acquisition bridge from
+checked inputs:
+
+```bash
+cargo run --locked -q -p cerberus-cli -- \
+  hosted-api-request-fixture \
+  --body fixtures/hosted-api/create-review-valid.json \
+  --pr-context fixtures/hosted-api/pull-request-context.json \
+  --diff-file fixtures/github-actions/pull-request.diff \
+  --out tmp/hosted-api-request-2026-06-19/review-request.json \
+  --run-id hosted-api-run-005
+```
+
+The command validates the legacy POST body, requires PR-context `head_sha` to
+match the POST `head_sha`, parses changed files from the raw diff, and writes a
+schema-valid `ReviewRequest.v1`. It still does not perform live GitHub network
+IO, run the reviewer engine, persist status, or expose an HTTP server.
+
 ### `GET /api/reviews/:id`
 
 Returns the current status and, when complete, the aggregated verdict.

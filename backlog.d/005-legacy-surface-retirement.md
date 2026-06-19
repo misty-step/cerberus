@@ -209,3 +209,21 @@ Eighth local retirement delivery, 2026-06-19:
   POST ingress parity while keeping `elixir-http-api` pending until Rust covers
   API auth/server wiring, GET status replay, storage/error mapping, deployment,
   and GitHub acquisition into `ReviewRequest.v1`.
+
+Ninth local retirement delivery, 2026-06-19:
+
+- Added the offline Rust hosted API acquisition bridge from a validated legacy
+  POST body plus explicit PR context and raw diff into `ReviewRequest.v1`.
+- Added `cerberus-cli hosted-api-request-fixture --body ... --pr-context ...
+  --diff-file ... --out ...` as the runnable QA path for that bridge.
+- Kept the bridge narrow: no live GitHub network call, HTTP server, queue,
+  store lifecycle, deployment, provider execution, or model-selection behavior.
+- Added head-SHA binding protection so acquired PR context must match the
+  hosted POST `head_sha` before a core request is written.
+- Added adapter and CLI tests proving happy-path request generation,
+  malformed-ingress rejection, head-SHA mismatch rejection, malformed-diff
+  rejection, stale-output removal, and request-token non-serialization.
+- Updated API docs, architecture docs, and the retirement inventory to record
+  acquisition evidence while keeping `elixir-http-api` pending until Rust
+  covers API auth/server wiring, GET status replay, store error mapping, and
+  deployment smoke.
