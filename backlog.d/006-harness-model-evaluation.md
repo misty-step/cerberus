@@ -1,6 +1,6 @@
 # 006 - Harness and Model Evaluation Matrix
 
-Status: implemented-local-smoke
+Status: ready-for-provider-budget-ack
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -219,6 +219,53 @@ report plus checked model pricing and explicit token/retry assumptions into a
 schema-valid `EvalBudgetEstimateReport.v1`. This proves the provider spend
 acknowledgement can be reviewed against a concrete envelope; it still does not
 run providers or prove model quality.
+
+Provider launch readiness receipt, 2026-06-19:
+
+- Added rendered launch plan:
+  `docs/shaping/006-provider-eval-launch-readiness-plan.html`.
+- Current upstream/source evidence packet:
+  `tmp/evals/provider-launch-2026-06-19/`.
+  - OpenRouter live model snapshot:
+    `openrouter-models-live.json`
+    (`sha256:d1a67c59601069540f5e4c87a5f436f9ae0666e2b2f061e44f9a632771dac009`).
+  - Candidate extract for `z-ai/glm-5.2`,
+    `moonshotai/kimi-k2.7-code`, `deepseek/deepseek-v4-pro`, and
+    `deepseek/deepseek-v4-flash`:
+    `openrouter-candidates.json`
+    (`sha256:ef008501aedcc092ffe64cc885fc55c96b0cf0976ab2312afb8132bb37bef7f0`).
+  - Local harness version transcript:
+    `harness-versions.txt`
+    (`sha256:0be3b3ac10d804942f4dff139bfd25ac51fe0444561103719733eafcf0c0d1b2`).
+- Source refresh result: OpenRouter's live API still contains all four checked
+  model ids. The checked matrix matches the current local harness versions:
+  `pi` 0.78.1, `goose` 1.12.1, `opencode` 1.2.6, and `omp` 16.0.9.
+  The OMP upstream release surface now shows a newer 16.0.10, so a later
+  matrix refresh should update only after the local runner is upgraded and
+  probed.
+- Current no-spend readiness with `OPENROUTER_API_KEY` present and
+  `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK` absent validates at
+  `readiness-key-no-ack.json`
+  (`sha256:331a9fd41a4b4d0acdf82cdacb75dac7afc402e351e6e18cf2e005a350ab2999`):
+  16 total cells, 0 runnable, 0 missing env, and 16 budget-blocked cells.
+- Current no-spend budget estimate validates at `budget-estimate.json`
+  (`sha256:255c30b787981f3ee13f81314099ca8eee4ccbff62ea52354b1134082e3ed461`):
+  with 20,000 prompt tokens, 4,000 completion tokens, and 1 retry per cell,
+  the 16-cell estimate is `$0.3356` total and `$0.0404` max single-cell cost.
+- Exact no-spend command trail:
+  - `curl -fsSL https://openrouter.ai/api/v1/models -o tmp/evals/provider-launch-2026-06-19/openrouter-models-live.json`
+  - `jq '[.data[] | select(.id == "z-ai/glm-5.2" or .id == "moonshotai/kimi-k2.7-code" or .id == "deepseek/deepseek-v4-pro" or .id == "deepseek/deepseek-v4-flash") | {id, context_length, top_provider: .top_provider, pricing, supported_parameters}]' tmp/evals/provider-launch-2026-06-19/openrouter-models-live.json > tmp/evals/provider-launch-2026-06-19/openrouter-candidates.json`
+  - `env -u CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK cargo run --locked -q -p cerberus-cli -- eval-readiness --suite fixtures/evals/reviewer-harness-live-peer-smoke.json --matrix fixtures/evals/harness-model-matrix.json --peer-profiles fixtures/harnesses/peer-command-profiles.json --out tmp/evals/provider-launch-2026-06-19/readiness-key-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-launch-2026-06-19/readiness-key-no-ack.json`
+  - `cargo run --locked -q -p cerberus-cli -- eval-budget --suite fixtures/evals/reviewer-harness-live-peer-smoke.json --matrix fixtures/evals/harness-model-matrix.json --readiness tmp/evals/provider-launch-2026-06-19/readiness-key-no-ack.json --prompt-tokens 20000 --completion-tokens 4000 --retry-count 1 --out tmp/evals/provider-launch-2026-06-19/budget-estimate.json`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-launch-2026-06-19/budget-estimate.json`
+  - `cargo test --workspace harness_model`
+  - `cargo test --workspace`
+- Exact launch command after operator acknowledgement:
+  `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1 cargo run --locked -q -p cerberus-cli -- eval-harness --execution-mode live-peer --peer-profiles fixtures/harnesses/peer-command-profiles.json --suite fixtures/evals/reviewer-harness-live-peer-smoke.json --matrix fixtures/evals/harness-model-matrix.json --out tmp/evals/provider-live-2026-06-19`.
+- Child work 9 stays Remaining. This receipt proves launch readiness and
+  budget-blocked state; it does not spend provider budget, rank harness/model
+  pairs, promote reviewer defaults, or prove provider-backed review quality.
 
 ## Notes
 
