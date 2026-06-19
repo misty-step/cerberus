@@ -20,8 +20,9 @@ pub use github_action::{
     GithubActionReviewDecision, GithubActionSkipReason,
 };
 pub use hosted_api::{
-    run_hosted_api_dispatch_fixture, HostedApiDispatchDecision, HostedApiDispatchOutcome,
-    HostedApiDispatchRequest, HostedApiDispatchSettings, HostedApiDispatchTranscript,
+    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, HostedApiDispatchConfig,
+    HostedApiDispatchDecision, HostedApiDispatchOutcome, HostedApiDispatchRequest,
+    HostedApiDispatchSettings, HostedApiDispatchTranscript, HostedApiDispatchTransport,
     HostedApiHttpResponse,
 };
 pub use thinktank_migration::{

@@ -29,6 +29,7 @@ Current sequence:
 21. `021-github-action-event-request-adapter.md`
 22. `022-current-model-catalog-drift-refresh.md`
 23. `023-hosted-api-dispatch-state-machine.md`
+24. `024-hosted-api-http-dispatch.md`
 
 Planning rules:
 
@@ -73,3 +74,5 @@ Planning rules:
   before spending provider eval budget or changing reviewer defaults.
 - Prove hosted API dispatch and polling decisions as Rust fixtures before
   adding HTTP transport or replacing the shell action client.
+- Add a real Rust hosted API dispatcher and GitHub output writer before
+  changing the composite action entrypoint.

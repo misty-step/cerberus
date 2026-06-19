@@ -38,10 +38,11 @@
         "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-missing-review-id.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-missing-review-id.decision.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-poll-errors.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-poll-errors.decision.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-review-failed.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-review-failed.decision.json",
-        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-timeout.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-timeout.decision.json"
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-timeout.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-timeout.decision.json",
+        "cargo test -p cerberus-cli --test github_action_dispatch"
       ],
       "rollback_path": "Keep dispatch.sh as the fallback action client until the Rust adapter is released.",
-      "next_action": "Add Rust HTTP transport and GitHub Actions output-file wiring against the hosted dispatch state machine before replacing shell dispatch."
+      "next_action": "Wire action.yml to the Rust command and prove consumer workflow parity before deleting shell dispatch."
     },
     {
       "surface_id": "node-scaffolder",

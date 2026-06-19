@@ -93,6 +93,15 @@ the shell client's sleep-before-poll accounting. It intentionally hardens one
 legacy edge case by treating an accepted dispatch response without `review_id`
 as a failed dispatch instead of polling an empty review URL.
 
+`cerberus-cli github-action-dispatch` is the third Rust GitHub Action adapter
+slice. It reads the same environment contract as `dispatch.sh`, skips fork and
+draft PRs before requiring hosted secrets, sends the hosted API POST with a
+Rust HTTP client, polls the hosted review, appends `review-id` and `verdict` to
+the configured GitHub output file, writes verdict JSON under `RUNNER_TEMP` when
+available, and exits according to the hosted dispatch decision. `action.yml`
+still invokes `dispatch.sh`; replacing that entrypoint is a separate
+consumer-compatibility slice.
+
 ## Request Flow
 
 ```text
@@ -138,7 +147,7 @@ Responsibilities:
 - poll until completion
 - expose workflow outputs
 - remain the compatibility path until Rust-backed request construction,
-  hosted dispatch, polling, and output behavior all have fixture parity
+  hosted dispatch, polling, and output behavior all have consumer parity
 
 ### Rust Adapter SDK
 
@@ -152,6 +161,8 @@ Responsibilities:
 - model hosted API dispatch and polling decisions from checked transcripts,
   including fail-on-verdict, timeout, poll errors, hosted failure, malformed
   dispatch responses, and GitHub output values
+- run hosted dispatch loops through a supplied transport so fixture and real
+  HTTP callers share one decision path
 - prove the local fixture contract shape for Bitterblossom and Olympus without
   cross-caller references
 - project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
@@ -167,7 +178,7 @@ Non-responsibilities:
 - Olympus Argus activation gates, stale-head suppression, marker dedupe, caps,
   or GitHub posting
 - live acquisition from either caller repository
-- real hosted API HTTP transport or GitHub Actions output-file writes
+- concrete hosted API HTTP client selection or GitHub Actions environment IO
 - production review execution through the ThinkTank CLI
 - reviewer artifact acceptance, aggregation, or degradation semantics
 

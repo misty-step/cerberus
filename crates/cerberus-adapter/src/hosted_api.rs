@@ -1,7 +1,8 @@
 use crate::AdapterError;
+use cerberus_schema::Verdict;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostedApiDispatchRequest {
@@ -24,6 +25,15 @@ pub struct HostedApiDispatchSettings {
     pub fail_on_verdict: bool,
     #[serde(default)]
     pub write_verdict_json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostedApiDispatchConfig {
+    pub api_base_url: String,
+    pub api_key: String,
+    pub github_token: Option<String>,
+    pub request: HostedApiDispatchRequest,
+    pub settings: HostedApiDispatchSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -70,16 +80,67 @@ pub struct HostedApiDispatchDecision {
     pub messages: Vec<String>,
 }
 
+pub trait HostedApiDispatchTransport {
+    fn post_review(
+        &mut self,
+        config: &HostedApiDispatchConfig,
+    ) -> Result<HostedApiHttpResponse, String>;
+
+    fn poll_review(
+        &mut self,
+        config: &HostedApiDispatchConfig,
+        review_id: &str,
+    ) -> Result<Option<HostedApiHttpResponse>, String>;
+
+    fn sleep(&mut self, seconds: u64);
+}
+
 pub fn run_hosted_api_dispatch_fixture(
     transcript: &HostedApiDispatchTranscript,
 ) -> Result<HostedApiDispatchDecision, AdapterError> {
-    validate_transcript(transcript)?;
+    let mut transport = TranscriptHostedApiTransport {
+        post: Some(transcript.post.clone()),
+        polls: transcript.polls.clone().into(),
+    };
+    let config = HostedApiDispatchConfig {
+        api_base_url: transcript.api_base_url.clone(),
+        api_key: "fixture-api-key".to_string(),
+        github_token: None,
+        request: transcript.request.clone(),
+        settings: transcript.settings.clone(),
+    };
+    run_hosted_api_dispatch(&config, &mut transport)
+}
 
+pub fn run_hosted_api_dispatch(
+    config: &HostedApiDispatchConfig,
+    transport: &mut impl HostedApiDispatchTransport,
+) -> Result<HostedApiDispatchDecision, AdapterError> {
+    validate_config(config)?;
     let mut messages = Vec::new();
-    if transcript.post.http_status != 202 {
+
+    let post = match transport.post_review(config) {
+        Ok(response) => response,
+        Err(reason) => {
+            messages.push(format!("dispatch POST transport error: {reason}"));
+            return Ok(decision(
+                HostedApiDispatchOutcome::DispatchRejected,
+                1,
+                "",
+                "SKIP",
+                0,
+                0,
+                0,
+                None,
+                messages,
+            ));
+        }
+    };
+
+    if post.http_status != 202 {
         messages.push(format!(
             "dispatch POST returned HTTP {}, expected 202",
-            transcript.post.http_status
+            post.http_status
         ));
         return Ok(decision(
             HostedApiDispatchOutcome::DispatchRejected,
@@ -94,7 +155,7 @@ pub fn run_hosted_api_dispatch_fixture(
         ));
     }
 
-    let Some(review_id) = string_field(&transcript.post.body, "review_id") else {
+    let Some(review_id) = string_field(&post.body, "review_id") else {
         messages.push("dispatch POST response did not include review_id".to_string());
         return Ok(decision(
             HostedApiDispatchOutcome::InvalidDispatchResponse,
@@ -108,18 +169,61 @@ pub fn run_hosted_api_dispatch_fixture(
             messages,
         ));
     };
+    if !is_safe_github_output_value(review_id) {
+        messages.push("dispatch POST response included unsafe review_id".to_string());
+        return Ok(decision(
+            HostedApiDispatchOutcome::InvalidDispatchResponse,
+            1,
+            "",
+            Verdict::Skip.as_str(),
+            0,
+            0,
+            0,
+            None,
+            messages,
+        ));
+    }
 
     let mut elapsed_seconds = 0;
     let mut poll_attempts = 0;
     let mut consecutive_poll_errors = 0;
 
-    for poll in &transcript.polls {
-        if elapsed_seconds >= transcript.settings.timeout_seconds {
+    while elapsed_seconds < config.settings.timeout_seconds {
+        transport.sleep(config.settings.poll_interval_seconds);
+        elapsed_seconds += config.settings.poll_interval_seconds;
+        poll_attempts += 1;
+
+        let Some(poll) = (match transport.poll_review(config, review_id) {
+            Ok(response) => response,
+            Err(reason) => {
+                consecutive_poll_errors += 1;
+                messages.push(format!(
+                    "poll attempt {poll_attempts} transport error: {reason}"
+                ));
+                if consecutive_poll_errors >= config.settings.max_poll_errors {
+                    messages.push(format!(
+                        "polling stopped after {consecutive_poll_errors} consecutive HTTP errors"
+                    ));
+                    return Ok(decision(
+                        HostedApiDispatchOutcome::PollErrorsExhausted,
+                        1,
+                        review_id,
+                        "SKIP",
+                        elapsed_seconds,
+                        poll_attempts,
+                        consecutive_poll_errors,
+                        None,
+                        messages,
+                    ));
+                }
+                continue;
+            }
+        }) else {
             messages.push(format!(
-                "timed out after {elapsed_seconds}s while waiting for review {review_id}"
+                "transcript ended before review {review_id} reached a terminal status"
             ));
             return Ok(decision(
-                HostedApiDispatchOutcome::TimedOut,
+                HostedApiDispatchOutcome::TranscriptExhausted,
                 1,
                 review_id,
                 "SKIP",
@@ -129,17 +233,15 @@ pub fn run_hosted_api_dispatch_fixture(
                 None,
                 messages,
             ));
-        }
+        };
 
-        elapsed_seconds += transcript.settings.poll_interval_seconds;
-        poll_attempts += 1;
         if poll.http_status != 200 {
             consecutive_poll_errors += 1;
             messages.push(format!(
                 "poll attempt {poll_attempts} returned HTTP {}",
                 poll.http_status
             ));
-            if consecutive_poll_errors >= transcript.settings.max_poll_errors {
+            if consecutive_poll_errors >= config.settings.max_poll_errors {
                 messages.push(format!(
                     "polling stopped after {consecutive_poll_errors} consecutive HTTP errors"
                 ));
@@ -176,12 +278,28 @@ pub fn run_hosted_api_dispatch_fixture(
                 ));
             }
             Some("completed") => {
-                let verdict = completed_verdict(&poll.body);
-                let exit_code = i32::from(transcript.settings.fail_on_verdict && verdict == "FAIL");
+                let verdict = match completed_verdict(&poll.body) {
+                    Ok(verdict) => verdict,
+                    Err(reason) => {
+                        messages.push(reason);
+                        return Ok(decision(
+                            HostedApiDispatchOutcome::InvalidDispatchResponse,
+                            1,
+                            review_id,
+                            Verdict::Skip.as_str(),
+                            elapsed_seconds,
+                            poll_attempts,
+                            consecutive_poll_errors,
+                            None,
+                            messages,
+                        ));
+                    }
+                };
+                let exit_code = i32::from(config.settings.fail_on_verdict && verdict == "FAIL");
                 if exit_code != 0 {
                     messages.push("fail-on-verdict converted FAIL verdict to exit 1".to_string());
                 }
-                let verdict_json = transcript
+                let verdict_json = config
                     .settings
                     .write_verdict_json
                     .then(|| poll.body.clone());
@@ -210,28 +328,11 @@ pub fn run_hosted_api_dispatch_fixture(
         }
     }
 
-    if elapsed_seconds >= transcript.settings.timeout_seconds {
-        messages.push(format!(
-            "timed out after {elapsed_seconds}s while waiting for review {review_id}"
-        ));
-        return Ok(decision(
-            HostedApiDispatchOutcome::TimedOut,
-            1,
-            review_id,
-            "SKIP",
-            elapsed_seconds,
-            poll_attempts,
-            consecutive_poll_errors,
-            None,
-            messages,
-        ));
-    }
-
     messages.push(format!(
-        "transcript ended before review {review_id} reached a terminal status"
+        "timed out after {elapsed_seconds}s while waiting for review {review_id}"
     ));
     Ok(decision(
-        HostedApiDispatchOutcome::TranscriptExhausted,
+        HostedApiDispatchOutcome::TimedOut,
         1,
         review_id,
         "SKIP",
@@ -251,17 +352,18 @@ fn default_fail_on_verdict() -> bool {
     true
 }
 
-fn validate_transcript(transcript: &HostedApiDispatchTranscript) -> Result<(), AdapterError> {
-    non_empty("api_base_url", &transcript.api_base_url)?;
-    non_empty("request.repo", &transcript.request.repo)?;
-    if transcript.request.pr_number == 0 {
+fn validate_config(config: &HostedApiDispatchConfig) -> Result<(), AdapterError> {
+    non_empty("api_base_url", &config.api_base_url)?;
+    non_empty("api_key", &config.api_key)?;
+    non_empty("request.repo", &config.request.repo)?;
+    if config.request.pr_number == 0 {
         return invalid("request.pr_number must be greater than zero");
     }
-    non_empty("request.head_sha", &transcript.request.head_sha)?;
-    if transcript.settings.poll_interval_seconds == 0 {
+    non_empty("request.head_sha", &config.request.head_sha)?;
+    if config.settings.poll_interval_seconds == 0 {
         return invalid("settings.poll_interval_seconds must be greater than zero");
     }
-    if transcript.settings.max_poll_errors == 0 {
+    if config.settings.max_poll_errors == 0 {
         return invalid("settings.max_poll_errors must be greater than zero");
     }
     Ok(())
@@ -287,14 +389,28 @@ fn string_field<'a>(body: &'a Value, field: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
-fn completed_verdict(body: &Value) -> String {
-    body.get("aggregated_verdict")
+fn completed_verdict(body: &Value) -> Result<&'static str, String> {
+    let Some(raw) = body
+        .get("aggregated_verdict")
         .and_then(|value| value.get("verdict"))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("SKIP")
-        .to_string()
+    else {
+        return Ok(Verdict::Skip.as_str());
+    };
+
+    match raw {
+        "PASS" => Ok(Verdict::Pass.as_str()),
+        "WARN" => Ok(Verdict::Warn.as_str()),
+        "FAIL" => Ok(Verdict::Fail.as_str()),
+        "SKIP" => Ok(Verdict::Skip.as_str()),
+        _ => Err("completed review returned unsupported verdict".to_string()),
+    }
+}
+
+fn is_safe_github_output_value(value: &str) -> bool {
+    !value.contains(['\n', '\r', '='])
 }
 
 fn decision(
@@ -323,6 +439,32 @@ fn decision(
         verdict_json,
         messages,
     }
+}
+
+struct TranscriptHostedApiTransport {
+    post: Option<HostedApiHttpResponse>,
+    polls: VecDeque<HostedApiHttpResponse>,
+}
+
+impl HostedApiDispatchTransport for TranscriptHostedApiTransport {
+    fn post_review(
+        &mut self,
+        _config: &HostedApiDispatchConfig,
+    ) -> Result<HostedApiHttpResponse, String> {
+        self.post
+            .take()
+            .ok_or_else(|| "transcript did not include dispatch POST response".to_string())
+    }
+
+    fn poll_review(
+        &mut self,
+        _config: &HostedApiDispatchConfig,
+        _review_id: &str,
+    ) -> Result<Option<HostedApiHttpResponse>, String> {
+        Ok(self.polls.pop_front())
+    }
+
+    fn sleep(&mut self, _seconds: u64) {}
 }
 
 #[cfg(test)]
@@ -434,6 +576,58 @@ mod tests {
 
         assert_eq!(decision.exit_code, 1);
         assert_eq!(decision.verdict, "FAIL");
+    }
+
+    #[test]
+    fn rejects_unsafe_dispatch_review_id() {
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": "review-459\nverdict=PASS" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "PASS" }
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        assert_eq!(
+            decision.outcome,
+            HostedApiDispatchOutcome::InvalidDispatchResponse
+        );
+        assert_eq!(decision.exit_code, 1);
+        assert_eq!(decision.github_outputs["review-id"], "");
+        assert_eq!(decision.github_outputs["verdict"], "SKIP");
+        assert_eq!(decision.poll_attempts, 0);
+    }
+
+    #[test]
+    fn rejects_completed_review_with_unsupported_verdict() {
+        let decision = run_hosted_api_dispatch_fixture(&transcript(
+            settings(false),
+            response(202, json!({ "review_id": "review-459" })),
+            vec![response(
+                200,
+                json!({
+                    "status": "completed",
+                    "aggregated_verdict": { "verdict": "FAIL\nverdict=PASS" }
+                }),
+            )],
+        ))
+        .expect("fixture runs");
+
+        assert_eq!(
+            decision.outcome,
+            HostedApiDispatchOutcome::InvalidDispatchResponse
+        );
+        assert_eq!(decision.exit_code, 1);
+        assert_eq!(decision.review_id, "review-459");
+        assert_eq!(decision.verdict, "SKIP");
+        assert_eq!(decision.github_outputs["review-id"], "review-459");
+        assert_eq!(decision.github_outputs["verdict"], "SKIP");
+        assert_eq!(decision.poll_attempts, 1);
     }
 
     #[test]

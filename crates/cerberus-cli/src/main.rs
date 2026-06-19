@@ -1,7 +1,9 @@
 use anyhow::{bail, Context, Result};
 use cerberus_adapter::{
     github_action_review_decision_from_event, github_action_skip_decision_from_event,
-    run_hosted_api_dispatch_fixture, GithubActionReviewDecision, HostedApiDispatchTranscript,
+    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, GithubActionReviewDecision,
+    HostedApiDispatchConfig, HostedApiDispatchRequest, HostedApiDispatchSettings,
+    HostedApiDispatchTranscript, HostedApiDispatchTransport, HostedApiHttpResponse,
 };
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
@@ -23,8 +25,10 @@ use cerberus_schema::{
 use std::{
     collections::BTreeMap,
     env, fs,
+    io::Write,
     path::{Component, Path, PathBuf},
     process::Command,
+    time::Duration,
 };
 
 mod eval_harness;
@@ -48,6 +52,7 @@ fn main() -> Result<()> {
         "review" => review_command(args.collect()),
         "review-local" => review_local(args.collect()),
         "github-action-request" => github_action_request(args.collect()),
+        "github-action-dispatch" => github_action_dispatch(args.collect()),
         "hosted-api-dispatch-fixture" => hosted_api_dispatch_fixture(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
         "propose-reviewer-config" => propose_reviewer_config(args.collect()),
@@ -334,6 +339,78 @@ fn hosted_api_dispatch_fixture(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn github_action_dispatch(args: Vec<String>) -> Result<()> {
+    let mut decision_out = None;
+    let mut github_output = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--decision-out" => {
+                decision_out = Some(required_arg(&args, index, "--decision-out")?);
+                index += 2;
+            }
+            "--github-output" => {
+                github_output = Some(required_arg(&args, index, "--github-output")?);
+                index += 2;
+            }
+            other => bail!("unknown github-action-dispatch argument {other:?}"),
+        }
+    }
+
+    let github_output_path = github_output_path(github_output)?;
+
+    if env_var("HEAD_REPO") != env_var("BASE_REPO") {
+        append_github_outputs(
+            &github_output_path,
+            &[("verdict", "SKIP"), ("review-id", "")],
+        )?;
+        println!("Cerberus: skipping fork PR (no secrets available)");
+        return Ok(());
+    }
+
+    if env_var("IS_DRAFT") == "true" {
+        append_github_outputs(
+            &github_output_path,
+            &[("verdict", "SKIP"), ("review-id", "")],
+        )?;
+        println!("Cerberus: skipping draft PR");
+        return Ok(());
+    }
+
+    let config = match hosted_api_config_from_env() {
+        Ok(config) => config,
+        Err(error) => {
+            append_github_outputs(
+                &github_output_path,
+                &[("verdict", "SKIP"), ("review-id", "")],
+            )?;
+            return Err(error);
+        }
+    };
+
+    let mut transport = UreqHostedApiTransport::new();
+    let decision = run_hosted_api_dispatch(&config, &mut transport)?;
+    append_decision_outputs(&github_output_path, &decision.github_outputs)?;
+    if let Some(path) = decision_out {
+        write_json(&PathBuf::from(path), &decision)?;
+    }
+    if let Some(verdict_json) = &decision.verdict_json {
+        if let Some(path) = verdict_json_path() {
+            write_json(&path, verdict_json)?;
+        }
+    }
+
+    if decision.exit_code != 0 {
+        bail!(
+            "Cerberus dispatch ended with {:?}, verdict {}",
+            decision.outcome,
+            decision.verdict
+        );
+    }
+    Ok(())
+}
+
 fn default_github_action_run_id() -> String {
     match (env::var("GITHUB_RUN_ID"), env::var("GITHUB_RUN_ATTEMPT")) {
         (Ok(run_id), Ok(attempt)) if !run_id.trim().is_empty() && !attempt.trim().is_empty() => {
@@ -342,6 +419,229 @@ fn default_github_action_run_id() -> String {
         (Ok(run_id), _) if !run_id.trim().is_empty() => run_id,
         _ => "github-actions-local".to_string(),
     }
+}
+
+fn hosted_api_config_from_env() -> Result<HostedApiDispatchConfig> {
+    let api_key = required_env("CERBERUS_API_KEY")?;
+    let api_base_url = required_env("CERBERUS_URL")?;
+    let repo = required_env("BASE_REPO")?;
+    let pr_number = parse_required_u64_env("PR_NUMBER")?;
+    let head_sha = required_env("HEAD_SHA")?;
+    let timeout_seconds = parse_optional_u64_env("CERBERUS_TIMEOUT", 600)?;
+    let poll_interval_seconds = parse_optional_u64_env("CERBERUS_POLL_INTERVAL", 5)?;
+    if poll_interval_seconds == 0 {
+        bail!("Cerberus: CERBERUS_POLL_INTERVAL must be greater than zero");
+    }
+
+    let github_token = optional_env("GITHUB_TOKEN");
+    Ok(HostedApiDispatchConfig {
+        api_base_url,
+        api_key,
+        github_token: github_token.clone(),
+        request: HostedApiDispatchRequest {
+            repo,
+            pr_number,
+            head_sha,
+            model: env_var("CERBERUS_MODEL"),
+            github_token_present: github_token.is_some(),
+        },
+        settings: HostedApiDispatchSettings {
+            timeout_seconds,
+            poll_interval_seconds,
+            max_poll_errors: 10,
+            fail_on_verdict: env_var("CERBERUS_FAIL_ON_VERDICT").is_empty()
+                || env_var("CERBERUS_FAIL_ON_VERDICT") == "true",
+            write_verdict_json: verdict_json_path().is_some(),
+        },
+    })
+}
+
+fn required_env(name: &str) -> Result<String> {
+    let value = env_var(name);
+    if value.trim().is_empty() {
+        bail!("Cerberus: {name} is not set");
+    }
+    Ok(value)
+}
+
+fn optional_env(name: &str) -> Option<String> {
+    let value = env_var(name);
+    (!value.trim().is_empty()).then_some(value)
+}
+
+fn env_var(name: &str) -> String {
+    env::var(name).unwrap_or_default()
+}
+
+fn parse_required_u64_env(name: &str) -> Result<u64> {
+    let value = required_env(name)?;
+    value
+        .parse()
+        .with_context(|| format!("Cerberus: {name} must be an integer"))
+}
+
+fn parse_optional_u64_env(name: &str, default: u64) -> Result<u64> {
+    let value = env_var(name);
+    if value.trim().is_empty() {
+        return Ok(default);
+    }
+    value
+        .parse()
+        .with_context(|| format!("Cerberus: {name} must be an integer"))
+}
+
+fn github_output_path(override_path: Option<String>) -> Result<PathBuf> {
+    override_path
+        .or_else(|| optional_env("GITHUB_OUTPUT"))
+        .map(PathBuf::from)
+        .context("github-action-dispatch requires --github-output <path> or GITHUB_OUTPUT")
+}
+
+fn verdict_json_path() -> Option<PathBuf> {
+    optional_env("RUNNER_TEMP").map(|dir| PathBuf::from(dir).join("cerberus-api-verdict.json"))
+}
+
+fn append_decision_outputs(path: &Path, outputs: &BTreeMap<String, String>) -> Result<()> {
+    let review_id = outputs.get("review-id").map(String::as_str).unwrap_or("");
+    let verdict = outputs.get("verdict").map(String::as_str).unwrap_or("SKIP");
+    append_github_outputs(path, &[("review-id", review_id), ("verdict", verdict)])
+}
+
+fn append_github_outputs(path: &Path, outputs: &[(&str, &str)]) -> Result<()> {
+    for (key, value) in outputs {
+        validate_github_output_key(key)?;
+        validate_github_output_value(key, value)?;
+    }
+
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create GitHub output dir {}", parent.display()))?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("failed to open GitHub output file {}", path.display()))?;
+    for (key, value) in outputs {
+        writeln!(file, "{key}={value}")
+            .with_context(|| format!("failed to write GitHub output file {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn validate_github_output_key(key: &str) -> Result<()> {
+    if key.is_empty()
+        || key
+            .bytes()
+            .any(|byte| !byte.is_ascii_alphanumeric() && byte != b'-' && byte != b'_')
+    {
+        bail!("unsafe GitHub output key {key:?}");
+    }
+    Ok(())
+}
+
+fn validate_github_output_value(key: &str, value: &str) -> Result<()> {
+    if value.contains(['\n', '\r', '=']) {
+        bail!("unsafe GitHub output value for {key}");
+    }
+    Ok(())
+}
+
+struct UreqHostedApiTransport {
+    agent: ureq::Agent,
+}
+
+impl UreqHostedApiTransport {
+    fn new() -> Self {
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(30)))
+            .build();
+        Self {
+            agent: config.into(),
+        }
+    }
+}
+
+impl HostedApiDispatchTransport for UreqHostedApiTransport {
+    fn post_review(
+        &mut self,
+        config: &HostedApiDispatchConfig,
+    ) -> std::result::Result<HostedApiHttpResponse, String> {
+        let url = hosted_api_url(&config.api_base_url, "api/reviews");
+        let mut payload = serde_json::json!({
+            "repo": config.request.repo,
+            "pr_number": config.request.pr_number,
+            "head_sha": config.request.head_sha,
+            "model": config.request.model
+        });
+        if let Some(token) = &config.github_token {
+            payload["github_token"] = serde_json::Value::String(token.clone());
+        }
+        let auth = format!("Bearer {}", config.api_key);
+        let response = self
+            .agent
+            .post(&url)
+            .header("Authorization", &auth)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .send_json(&payload)
+            .map_err(|error| error.to_string())?;
+        response_to_hosted_api(response)
+    }
+
+    fn poll_review(
+        &mut self,
+        config: &HostedApiDispatchConfig,
+        review_id: &str,
+    ) -> std::result::Result<Option<HostedApiHttpResponse>, String> {
+        let url = hosted_api_url(
+            &config.api_base_url,
+            &format!("api/reviews/{}", review_id.trim_start_matches('/')),
+        );
+        let auth = format!("Bearer {}", config.api_key);
+        let response = self
+            .agent
+            .get(&url)
+            .header("Authorization", &auth)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .call()
+            .map_err(|error| error.to_string())?;
+        response_to_hosted_api(response).map(Some)
+    }
+
+    fn sleep(&mut self, seconds: u64) {
+        std::thread::sleep(Duration::from_secs(seconds));
+    }
+}
+
+fn hosted_api_url(base: &str, path: &str) -> String {
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
+}
+
+fn response_to_hosted_api(
+    mut response: ureq::http::Response<ureq::Body>,
+) -> std::result::Result<HostedApiHttpResponse, String> {
+    let http_status = response.status().as_u16();
+    let raw = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|error| error.to_string())?;
+    let body = if raw.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({ "raw": raw }))
+    };
+    Ok(HostedApiHttpResponse { http_status, body })
 }
 
 fn import_reviewer_config(args: Vec<String>) -> Result<()> {
@@ -906,6 +1206,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json>\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli github-action-dispatch [--github-output <path>] [--decision-out <decision.json>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json>\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

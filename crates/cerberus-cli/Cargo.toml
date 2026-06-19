@@ -21,3 +21,4 @@ cerberus-core.workspace = true
 cerberus-schema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ureq.workspace = true
