@@ -1,8 +1,0 @@
-{
-  "title": "GitHub-shaped PR fixture",
-  "author": "testuser",
-  "head_ref": "shape/rust-review-engine-backlog",
-  "base_ref": "master",
-  "head_sha": "abc123def456",
-  "body": "A hosted API PR context that should build a ReviewRequest.v1."
-}

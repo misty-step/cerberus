@@ -1,7 +1,0 @@
-{
-  "schema_version": "hosted-api-review-store.v1",
-  "next_review_id": 77,
-  "create_outcome": "store_unavailable",
-  "read_unavailable": true,
-  "reviews": {}
-}
