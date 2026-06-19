@@ -3,7 +3,7 @@
 This repository now has one supported delivery path:
 
 - root `action.yml` is the Cerberus GitHub Action
-- root `dispatch.sh` is its polling client
+- `cerberus-cli github-action-dispatch` is its Rust polling client
 - `cerberus-elixir/` contains the legacy compatibility review engine and HTTP API
 
 The retired Python/Shell matrix pipeline has been removed from the active repo surface.
@@ -17,7 +17,7 @@ pull_request event
 action.yml
     │
     ▼
-dispatch.sh
+cerberus-cli github-action-dispatch
     │
     ├── POST /api/reviews
     ├── poll GET /api/reviews/:id
@@ -33,19 +33,23 @@ cerberus-elixir/
 ## Key Files
 
 - `action.yml` - thin GitHub Action entrypoint
-- `dispatch.sh` - preflight + API dispatch + polling loop
+- `crates/cerberus-cli/` - Rust CLI, action dispatch, local review, and setup
 - `cerberus-elixir/lib/cerberus/` - engine modules
 - `cerberus-elixir/config/` - runtime config
 - `defaults/config.yml` - product/model defaults consumed by the engine
 - `pi/agents/*.md` - reviewer personas
 - `templates/consumer-workflow-reusable.yml` - recommended consumer workflow
-- `bin/cerberus.js` - scaffolder CLI
+- `bin/cerberus.js` - npm compatibility scaffolder CLI
 
 ## Local Commands
 
 ```bash
+cargo test --workspace
 node --check bin/cerberus.js
-shellcheck dispatch.sh
+shellcheck cerberus-elixir/deploy-sprite.sh \
+  cerberus-elixir/test/release_contract.sh \
+  fixtures/harnesses/command-reviewer.sh \
+  fixtures/harnesses/live-peer-reviewer.sh
 
 cd cerberus-elixir
 mix deps.get

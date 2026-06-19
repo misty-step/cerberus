@@ -2,7 +2,7 @@
 
 Cerberus now has two active code surfaces:
 
-- the thin GitHub Action client at repo root
+- the Rust-backed GitHub Action client at repo root
 - the Elixir review engine in `cerberus-elixir/`
 
 If you change the consumer contract, update the docs and templates in the same lane.
@@ -10,8 +10,12 @@ If you change the consumer contract, update the docs and templates in the same l
 ## Local Setup
 
 ```bash
+cargo test --workspace
 node --check bin/cerberus.js
-shellcheck dispatch.sh
+shellcheck cerberus-elixir/deploy-sprite.sh \
+  cerberus-elixir/test/release_contract.sh \
+  fixtures/harnesses/command-reviewer.sh \
+  fixtures/harnesses/live-peer-reviewer.sh
 
 cd cerberus-elixir
 mix deps.get
@@ -33,7 +37,7 @@ mix format --check-formatted
 Touched files usually include:
 
 - `action.yml`
-- `dispatch.sh`
+- `crates/cerberus-cli/src/main.rs`
 - `templates/consumer-workflow-reusable.yml`
 - `bin/cerberus.js`
 - `README.md`
@@ -41,8 +45,9 @@ Touched files usually include:
 Verify with:
 
 ```bash
+cargo test -p cerberus-cli --test github_action_entrypoint
+cargo test -p cerberus-cli --test github_action_dispatch
 node --check bin/cerberus.js
-shellcheck dispatch.sh
 ```
 
 ### Elixir Engine

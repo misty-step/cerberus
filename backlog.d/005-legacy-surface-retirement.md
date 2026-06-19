@@ -94,3 +94,16 @@ Second local retirement delivery, 2026-06-19:
   `gh secret set` compatibility.
 - Did not delete `bin/cerberus.js`; `node-scaffolder` remains pending until the
   secret-setup half is ported or explicitly kept.
+
+Third local retirement delivery, 2026-06-19:
+
+- Added `cerberus-cli init` as the Rust-owned source-checkout setup command for
+  workflow scaffolding plus noninteractive `gh secret set CERBERUS_API_KEY`.
+- Added fake-`gh` tests proving the key is sent through stdin, reports stay
+  redacted, the child `gh` process does not inherit `CERBERUS_API_KEY`, missing
+  keys fail before workflow writes, `gh` errors are redacted, and workflow-only
+  setup remains available through `cerberus-cli init-workflow`.
+- Updated active docs and inventory to record that `bin/cerberus.js` remains
+  only for npm packaging and hidden TTY prompt compatibility.
+- Did not delete `bin/cerberus.js`; `node-scaffolder` remains pending until the
+  package/prompt boundary is ported or explicitly kept.

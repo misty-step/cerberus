@@ -57,16 +57,17 @@ The scaffolder CLI writes the same template:
 npx @misty-step/cerberus init
 ```
 
-When working from this source checkout, the Rust CLI owns the deterministic
-workflow-file path and can create or verify the workflow without configuring
-repository secrets:
+When working from this source checkout, the Rust CLI can create or verify the
+workflow and configure the repository secret through `gh` without putting the
+API key in argv:
 
 ```bash
-cargo run --locked -p cerberus-cli -- init-workflow --repo-root .
+printf '%s' "$CERBERUS_API_KEY" |
+  cargo run --locked -p cerberus-cli -- init --repo-root . --api-key-stdin
 ```
 
-`init-workflow` does not call `gh secret set`; use the Node scaffolder above or
-configure `CERBERUS_API_KEY` yourself until that compatibility path is ported.
+For workflow-file checks that should not touch GitHub secrets, use
+`cerberus-cli init-workflow`.
 
 ## Action Inputs
 
@@ -106,8 +107,9 @@ the workspace crates and is tracked by the backlog.
 - `defaults/`: model and product data consumed by the engine
 - `pi/agents/`: reviewer personas
 - `templates/`: consumer workflow templates
-- `bin/cerberus.js`: compatibility workflow scaffolder plus GitHub secret setup
-- `cerberus-cli init-workflow`: Rust workflow-file scaffolder path
+- `bin/cerberus.js`: compatibility npm scaffolder with hidden prompt support
+- `cerberus-cli init`: Rust source-checkout scaffolder plus GitHub secret setup
+- `cerberus-cli init-workflow`: Rust workflow-file-only scaffolder path
 
 ## Local Verification
 

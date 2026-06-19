@@ -1,9 +1,10 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    env, fs,
+    io::{self, IsTerminal, Read, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 const DEFAULT_TEMPLATE_SOURCE: &str = "embedded:templates/consumer-workflow-reusable.yml";
@@ -11,6 +12,29 @@ const DEFAULT_WORKFLOW_TEMPLATE: &str =
     include_str!("../../../templates/consumer-workflow-reusable.yml");
 const WORKFLOW_RELATIVE_PATH: &str = ".github/workflows/cerberus.yml";
 const SECRET_CONFIGURATION_STATUS: &str = "not_configured_by_init_workflow";
+const SECRET_CONFIGURED_STATUS: &str = "configured_by_gh_secret_set";
+const SECRET_NAME: &str = "CERBERUS_API_KEY";
+const DEFAULT_GH_COMMAND: &str = "gh";
+
+pub(crate) fn init(args: Vec<String>) -> Result<()> {
+    let args = InitArgs::parse(&args)?;
+    let secret = read_secret_for_init(&args)?;
+    let report = run_init_with_secret(&args, secret.as_deref())?;
+    if let Some(report_out) = &args.workflow.report_out {
+        write_report(report_out, &report)?;
+    }
+
+    println!("{}", report.summary_line());
+    println!("Secret configuration: {}", report.secret_configuration);
+    if report.changed {
+        println!(
+            "Run: git add {WORKFLOW_RELATIVE_PATH} && git commit -m \"Add Cerberus workflow\""
+        );
+    } else {
+        println!("No workflow file changes to commit.");
+    }
+    Ok(())
+}
 
 pub(crate) fn init_workflow(args: Vec<String>) -> Result<()> {
     let args = InitWorkflowArgs::parse(&args)?;
@@ -24,7 +48,44 @@ pub(crate) fn init_workflow(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub(crate) struct InitArgs {
+    workflow: InitWorkflowArgs,
+    api_key_stdin: bool,
+    gh_command: PathBuf,
+}
+
+impl InitArgs {
+    fn parse(args: &[String]) -> Result<Self> {
+        let mut workflow_args = Vec::new();
+        let mut api_key_stdin = false;
+        let gh_command = PathBuf::from(DEFAULT_GH_COMMAND);
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--api-key-stdin" => {
+                    api_key_stdin = true;
+                    index += 1;
+                }
+                "--repo-root" | "--template" | "--report-out" => {
+                    workflow_args.push(args[index].clone());
+                    workflow_args.push(required_arg(args, index, &args[index])?);
+                    index += 2;
+                }
+                other => bail!("unknown init argument {other:?}"),
+            }
+        }
+
+        Ok(Self {
+            workflow: InitWorkflowArgs::parse(&workflow_args)?,
+            api_key_stdin,
+            gh_command,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct InitWorkflowArgs {
     repo_root: Option<PathBuf>,
     template: Option<PathBuf>,
@@ -123,6 +184,33 @@ pub(crate) fn run_init_workflow(args: &InitWorkflowArgs) -> Result<InitWorkflowR
     scaffold_workflow(&repo_root, &template, &template_source)
 }
 
+pub(crate) fn run_init_with_secret(
+    args: &InitArgs,
+    secret_value: Option<&str>,
+) -> Result<InitWorkflowReport> {
+    let repo_root = match &args.workflow.repo_root {
+        Some(path) => path.clone(),
+        None => detect_repo_root()?,
+    };
+
+    let secret = secret_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .context("init requires CERBERUS_API_KEY or --api-key-stdin")?;
+
+    let workflow_args = InitWorkflowArgs {
+        repo_root: Some(repo_root.clone()),
+        template: args.workflow.template.clone(),
+        report_out: args.workflow.report_out.clone(),
+    };
+    let mut report = run_init_workflow(&workflow_args)?;
+
+    set_github_secret(&repo_root, &args.gh_command, secret)?;
+    report.secret_configuration = SECRET_CONFIGURED_STATUS.to_string();
+
+    Ok(report)
+}
+
 fn scaffold_workflow(
     repo_root: &Path,
     template: &str,
@@ -157,6 +245,89 @@ fn scaffold_workflow(
         template_source: template_source.to_string(),
         secret_configuration: SECRET_CONFIGURATION_STATUS.to_string(),
     })
+}
+
+fn read_secret_for_init(args: &InitArgs) -> Result<Option<String>> {
+    if args.api_key_stdin {
+        if io::stdin().is_terminal() {
+            bail!("refusing to read API key from an interactive terminal with --api-key-stdin");
+        }
+        let mut secret = String::new();
+        io::stdin()
+            .read_to_string(&mut secret)
+            .context("failed to read API key from stdin")?;
+        let secret = secret.trim().to_string();
+        if secret.is_empty() {
+            bail!("API key from stdin was empty");
+        }
+        return Ok(Some(secret));
+    }
+
+    let secret = env::var(SECRET_NAME).unwrap_or_default().trim().to_string();
+    if secret.is_empty() {
+        bail!("init requires CERBERUS_API_KEY or --api-key-stdin");
+    }
+    Ok(Some(secret))
+}
+
+fn set_github_secret(repo_root: &Path, gh_command: &Path, secret: &str) -> Result<()> {
+    let gh_command = resolved_command_path(gh_command)?;
+    let mut child = Command::new(&gh_command)
+        .args(["secret", "set", SECRET_NAME])
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove(SECRET_NAME)
+        .spawn()
+        .with_context(|| format!("failed to launch {}", gh_command.display()))?;
+
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .context("failed to open gh stdin for secret setup")?;
+        stdin
+            .write_all(secret.as_bytes())
+            .context("failed to write API key to gh stdin")?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .context("failed to wait for gh secret set")?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let message = if stderr.trim().is_empty() {
+        stdout.trim()
+    } else {
+        stderr.trim()
+    };
+    bail!(
+        "Failed to set {SECRET_NAME} in repository secrets: {}",
+        redact_secret(message, secret)
+    );
+}
+
+fn resolved_command_path(command: &Path) -> Result<PathBuf> {
+    if command.components().count() > 1 {
+        command
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", command.display()))
+    } else {
+        Ok(command.to_path_buf())
+    }
+}
+
+fn redact_secret(message: &str, secret: &str) -> String {
+    if secret.is_empty() {
+        message.to_string()
+    } else {
+        message.replace(secret, "[redacted]")
+    }
 }
 
 fn detect_repo_root() -> Result<PathBuf> {
@@ -209,6 +380,89 @@ mod tests {
         env,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn init_configures_secret_with_fake_gh_and_redacted_report() {
+        let root = temp_repo("init-secret");
+        let fake_gh = fake_gh(&root, 0, None);
+        let args = InitArgs {
+            workflow: InitWorkflowArgs {
+                repo_root: Some(root.clone()),
+                template: None,
+                report_out: Some(root.join("report.json")),
+            },
+            api_key_stdin: false,
+            gh_command: fake_gh,
+        };
+
+        let report = run_init_with_secret(&args, Some("test-secret-value")).expect("init succeeds");
+        write_report(
+            args.workflow.report_out.as_ref().expect("report path"),
+            &report,
+        )
+        .expect("report");
+
+        assert_eq!(report.secret_configuration, SECRET_CONFIGURED_STATUS);
+        assert_eq!(
+            fs::read_to_string(root.join("gh-args.txt")).expect("gh args"),
+            "secret\nset\nCERBERUS_API_KEY\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("gh-stdin.txt")).expect("gh stdin"),
+            "test-secret-value"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("gh-env.txt")).expect("gh env"),
+            "unset\n"
+        );
+        let report_json =
+            fs::read_to_string(args.workflow.report_out.as_ref().expect("report path"))
+                .expect("report json");
+        assert!(!report_json.contains("test-secret-value"));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn init_fails_closed_without_secret_before_writing_workflow() {
+        let root = temp_repo("missing-secret");
+        let args = InitArgs {
+            workflow: InitWorkflowArgs {
+                repo_root: Some(root.clone()),
+                template: None,
+                report_out: None,
+            },
+            api_key_stdin: false,
+            gh_command: root.join("missing-gh"),
+        };
+
+        let error = run_init_with_secret(&args, None).expect_err("missing secret rejected");
+
+        assert!(error.to_string().contains("requires CERBERUS_API_KEY"));
+        assert!(!root.join(WORKFLOW_RELATIVE_PATH).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn init_redacts_secret_from_gh_failure() {
+        let root = temp_repo("gh-failure");
+        let fake_gh = fake_gh(&root, 7, Some("gh saw test-secret-value"));
+        let args = InitArgs {
+            workflow: InitWorkflowArgs {
+                repo_root: Some(root.clone()),
+                template: None,
+                report_out: None,
+            },
+            api_key_stdin: false,
+            gh_command: fake_gh,
+        };
+
+        let error = run_init_with_secret(&args, Some("test-secret-value")).expect_err("gh failure");
+        let message = error.to_string();
+
+        assert!(message.contains("[redacted]"));
+        assert!(!message.contains("test-secret-value"));
+        cleanup(&root);
+    }
 
     #[test]
     fn init_workflow_creates_missing_workflow_from_template() {
@@ -306,5 +560,24 @@ mod tests {
 
     fn cleanup(root: &Path) {
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    fn fake_gh(root: &Path, exit_code: i32, stderr: Option<&str>) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = root.join("fake-gh.sh");
+        let stderr_line = stderr
+            .map(|message| format!("printf '%s\\n' {:?} >&2\n", message))
+            .unwrap_or_default();
+        let script = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$PWD/gh-args.txt\"\nprintf '%s\\n' \"${{CERBERUS_API_KEY-unset}}\" > \"$PWD/gh-env.txt\"\ncat > \"$PWD/gh-stdin.txt\"\n{}exit {}\n",
+            stderr_line, exit_code
+        );
+        fs::write(&path, script).expect("fake gh script");
+        let mut permissions = fs::metadata(&path).expect("fake gh metadata").permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&path, permissions).expect("fake gh permissions");
+        path
     }
 }
