@@ -108,7 +108,13 @@ in a bounded local Rust HTTP listener. It binds a configured address, writes
 the chosen `host:port` to a ready file, serves exact JSON response bodies over
 TCP, then exits after `--max-requests`. With `--store-state`, it can persist a
 POST-created queued review into a local JSON state file and replay that record
-through a later `GET /api/reviews/:id`. This is still a bounded local smoke
+through a later `GET /api/reviews/:id`. The state file is the validated
+`HostedApiReviewStore` contract (`hosted-api-review-store.v1`), not an
+unversioned fixture blob; omitted-version compatibility is limited to objects
+with `next_review_id`, `reviews`, and only known store fields. CLI reads and
+server writes fail closed on unsupported versions, empty/unshaped omitted
+objects, unknown top-level fields, invalid review IDs/statuses/verdicts, raw
+token fields, or invalid embedded artifacts. This is still a bounded local smoke
 target; production queue workers, SQLite compatibility, deployment, live GitHub
 acquisition, and provider-backed reviewer execution remain pending.
 

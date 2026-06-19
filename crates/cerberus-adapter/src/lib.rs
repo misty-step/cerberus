@@ -29,8 +29,9 @@ pub use hosted_api::{
     HostedApiDispatchConfig, HostedApiDispatchDecision, HostedApiDispatchOutcome,
     HostedApiDispatchRequest, HostedApiDispatchSettings, HostedApiDispatchTranscript,
     HostedApiDispatchTransport, HostedApiHttpResponse, HostedApiIngressFixtureReport,
-    HostedApiPullRequestContext, HostedApiServiceFixtureReport, HostedApiServiceStoreFixture,
-    HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION, HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION,
+    HostedApiPullRequestContext, HostedApiReviewStore, HostedApiServiceFixtureReport,
+    HostedApiServiceStoreFixture, HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION,
+    HOSTED_API_REVIEW_STORE_VERSION, HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION,
 };
 pub use thinktank_migration::{
     import_thinktank_historical_run, ThinkTankHistoricalRun, ThinkTankMigrationOutput,

@@ -1,4 +1,5 @@
 {
+  "schema_version": "hosted-api-review-store.v1",
   "next_review_id": 77,
   "create_outcome": "created",
   "reviews": {

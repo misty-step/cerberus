@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 pub const HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION: &str = "hosted-api-ingress-fixture-report.v1";
 pub const HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION: &str = "hosted-api-service-fixture-report.v1";
+pub const HOSTED_API_REVIEW_STORE_VERSION: &str = "hosted-api-review-store.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostedApiDispatchRequest {
@@ -42,20 +43,23 @@ pub struct HostedApiServiceFixtureReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct HostedApiServiceStoreFixture {
-    #[serde(default = "default_next_review_id")]
+#[serde(deny_unknown_fields)]
+pub struct HostedApiReviewStore {
+    pub schema_version: String,
     pub next_review_id: u64,
     #[serde(default)]
     pub create_outcome: HostedApiCreateOutcome,
     #[serde(default)]
     pub read_unavailable: bool,
-    #[serde(default)]
     pub reviews: BTreeMap<String, Value>,
 }
 
-impl Default for HostedApiServiceStoreFixture {
+pub type HostedApiServiceStoreFixture = HostedApiReviewStore;
+
+impl Default for HostedApiReviewStore {
     fn default() -> Self {
         Self {
+            schema_version: default_hosted_api_review_store_version(),
             next_review_id: default_next_review_id(),
             create_outcome: HostedApiCreateOutcome::Created,
             read_unavailable: false,
@@ -64,11 +68,132 @@ impl Default for HostedApiServiceStoreFixture {
     }
 }
 
-impl HostedApiServiceStoreFixture {
+impl HostedApiReviewStore {
+    pub fn parse_json_value(mut value: Value) -> Result<Self, AdapterError> {
+        match value.get("schema_version").and_then(Value::as_str) {
+            Some(_) => {}
+            None if Self::is_legacy_omitted_version_value(&value) => {
+                let fields = value
+                    .as_object_mut()
+                    .expect("legacy store shape is an object");
+                fields.insert(
+                    "schema_version".to_string(),
+                    Value::String(HOSTED_API_REVIEW_STORE_VERSION.to_string()),
+                );
+            }
+            None => {
+                return Err(hosted_api_store_error(
+                    "missing schema_version for hosted API review store",
+                ));
+            }
+        }
+
+        let store: Self = serde_json::from_value(value)
+            .map_err(|error| hosted_api_store_error(format!("failed to parse store: {error}")))?;
+        store.validate()?;
+        Ok(store)
+    }
+
+    pub fn is_legacy_omitted_version_value(value: &Value) -> bool {
+        let Some(fields) = value.as_object() else {
+            return false;
+        };
+        fields.contains_key("next_review_id")
+            && fields.contains_key("reviews")
+            && fields.keys().all(|field| {
+                matches!(
+                    field.as_str(),
+                    "next_review_id" | "create_outcome" | "read_unavailable" | "reviews"
+                )
+            })
+    }
+
+    pub fn validate(&self) -> Result<(), AdapterError> {
+        if self.schema_version != HOSTED_API_REVIEW_STORE_VERSION {
+            return Err(hosted_api_store_error(format!(
+                "unsupported version {:?}, expected {:?}",
+                self.schema_version, HOSTED_API_REVIEW_STORE_VERSION
+            )));
+        }
+        if self.next_review_id == 0 {
+            return Err(hosted_api_store_error(
+                "next_review_id must be greater than zero",
+            ));
+        }
+        for (key, review) in &self.reviews {
+            self.validate_review(key, review)?;
+        }
+        Ok(())
+    }
+
+    fn validate_review(&self, key: &str, review: &Value) -> Result<(), AdapterError> {
+        let key_id = key.parse::<u64>().map_err(|_| {
+            hosted_api_store_error(format!("review key {key:?} must be an unsigned integer"))
+        })?;
+        let review_id = required_review_u64(review, "review_id")?;
+        if review_id == 0 {
+            return Err(hosted_api_store_error(
+                "stored review_id must be greater than zero",
+            ));
+        }
+        if key != review_id.to_string() {
+            return Err(hosted_api_store_error(format!(
+                "review key {key:?} did not match canonical review_id {review_id}"
+            )));
+        }
+        if review_id != key_id {
+            return Err(hosted_api_store_error(format!(
+                "review key {key:?} did not match review_id {review_id}"
+            )));
+        }
+        let head_sha = required_review_canonical_string(review, "head_sha")?;
+        required_review_canonical_string(review, "repo")?;
+        required_review_u64(review, "pr_number")?;
+        let status = required_review_canonical_string(review, "status")?;
+        match status {
+            "queued" | "running" | "completed" | "failed" => {}
+            _ => {
+                return Err(hosted_api_store_error(format!(
+                    "review id {review_id} has unsupported status {status:?}"
+                )));
+            }
+        }
+        if let Some(field) = forbidden_secret_field(review) {
+            return Err(hosted_api_store_error(format!(
+                "forbidden secret field {field:?} in review id {review_id}"
+            )));
+        }
+        validate_aggregated_verdict(review_id, status, review)?;
+        if let Some(raw_artifact) = review.get("review_run_artifact") {
+            let artifact: ReviewRunArtifact = serde_json::from_value(raw_artifact.clone())?;
+            artifact.validate()?;
+            if artifact.reviewed_head_sha.as_deref() != Some(head_sha) {
+                return Err(hosted_api_store_error(format!(
+                    "review id {review_id} artifact reviewed_head_sha {:?} did not match stored head_sha {:?}",
+                    artifact.reviewed_head_sha, head_sha
+                )));
+            }
+            if let Some(verdict) = review
+                .get("aggregated_verdict")
+                .and_then(|value| value.get("verdict"))
+                .and_then(Value::as_str)
+            {
+                if artifact.verdict.as_str() != verdict {
+                    return Err(hosted_api_store_error(format!(
+                        "review id {review_id} artifact verdict {} did not match stored verdict {verdict}",
+                        artifact.verdict.as_str()
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn queued_dispatch_request(
         &self,
         review_id: u64,
     ) -> Result<HostedApiDispatchRequest, AdapterError> {
+        self.validate()?;
         let review = self.review(review_id)?;
         let status = required_review_string(review, "status")?;
         if status != "queued" {
@@ -89,6 +214,7 @@ impl HostedApiServiceStoreFixture {
         &mut self,
         dispatch_request: &HostedApiDispatchRequest,
     ) -> Result<Value, AdapterError> {
+        self.validate()?;
         let review_id = self.next_review_id;
         let review_key = review_id.to_string();
         if self.reviews.contains_key(&review_key) {
@@ -103,8 +229,11 @@ impl HostedApiServiceStoreFixture {
                     reason: "next review id overflowed".to_string(),
                 })?;
         let review = queued_review_body(review_id, dispatch_request);
-        self.reviews.insert(review_key, review.clone());
-        self.next_review_id = next_review_id;
+        let mut next_store = self.clone();
+        next_store.reviews.insert(review_key, review.clone());
+        next_store.next_review_id = next_review_id;
+        next_store.validate()?;
+        *self = next_store;
         Ok(review)
     }
 
@@ -114,6 +243,7 @@ impl HostedApiServiceStoreFixture {
         artifact: &ReviewRunArtifact,
         completed_at: &str,
     ) -> Result<Value, AdapterError> {
+        self.validate()?;
         artifact.validate()?;
         let review = self.review(review_id)?.clone();
         let status = required_review_string(&review, "status")?;
@@ -145,8 +275,12 @@ impl HostedApiServiceStoreFixture {
                 .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string()),
             "review_run_artifact": serde_json::to_value(artifact)?
         });
-        self.reviews
+        let mut next_store = self.clone();
+        next_store
+            .reviews
             .insert(review_id.to_string(), completed.clone());
+        next_store.validate()?;
+        *self = next_store;
         Ok(completed)
     }
 
@@ -412,6 +546,23 @@ fn required_review_string(review: &Value, field: &'static str) -> Result<String,
         .ok_or_else(|| hosted_api_store_error(format!("stored review missing {field}")))
 }
 
+fn required_review_canonical_string<'a>(
+    review: &'a Value,
+    field: &'static str,
+) -> Result<&'a str, AdapterError> {
+    let Some(value) = review.get(field).and_then(Value::as_str) else {
+        return Err(hosted_api_store_error(format!(
+            "stored review missing string {field}"
+        )));
+    };
+    if value.is_empty() || value.trim() != value {
+        return Err(hosted_api_store_error(format!(
+            "stored review field {field} must be a non-empty canonical string"
+        )));
+    }
+    Ok(value)
+}
+
 fn optional_review_string(review: &Value, field: &'static str) -> Option<String> {
     review
         .get(field)
@@ -426,6 +577,73 @@ fn required_review_u64(review: &Value, field: &'static str) -> Result<u64, Adapt
         .get(field)
         .and_then(Value::as_u64)
         .ok_or_else(|| hosted_api_store_error(format!("stored review missing integer {field}")))
+}
+
+fn validate_aggregated_verdict(
+    review_id: u64,
+    status: &str,
+    review: &Value,
+) -> Result<(), AdapterError> {
+    match review.get("aggregated_verdict") {
+        Some(Value::Null) | None if status != "completed" => Ok(()),
+        Some(Value::Object(fields)) => {
+            let Some(verdict) = fields.get("verdict").and_then(Value::as_str) else {
+                return Err(hosted_api_store_error(format!(
+                    "review id {review_id} aggregated_verdict.verdict must be a string"
+                )));
+            };
+            validate_store_verdict(review_id, verdict)
+        }
+        Some(Value::Null) | None => Err(hosted_api_store_error(format!(
+            "review id {review_id} completed status requires aggregated_verdict.verdict"
+        ))),
+        Some(_) => Err(hosted_api_store_error(format!(
+            "review id {review_id} aggregated_verdict must be an object or null"
+        ))),
+    }
+}
+
+fn validate_store_verdict(review_id: u64, verdict: &str) -> Result<(), AdapterError> {
+    match verdict {
+        "PASS" | "WARN" | "FAIL" | "SKIP" => Ok(()),
+        other => Err(hosted_api_store_error(format!(
+            "review id {review_id} has unsupported verdict {other:?}"
+        ))),
+    }
+}
+
+fn forbidden_secret_field(value: &Value) -> Option<String> {
+    match value {
+        Value::Object(fields) => {
+            for (field, nested) in fields {
+                if is_forbidden_store_secret_field(field) {
+                    return Some(field.clone());
+                }
+                if let Some(field) = forbidden_secret_field(nested) {
+                    return Some(field);
+                }
+            }
+            None
+        }
+        Value::Array(values) => values.iter().find_map(forbidden_secret_field),
+        _ => None,
+    }
+}
+
+fn is_forbidden_store_secret_field(field: &str) -> bool {
+    let normalized = field
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    matches!(
+        normalized.as_str(),
+        "token" | "apikey" | "authorization" | "secret" | "password"
+    ) || normalized.ends_with("token")
+        || normalized.ends_with("apikey")
+        || normalized.ends_with("authorization")
+        || normalized.ends_with("secret")
+        || normalized.ends_with("password")
 }
 
 fn queued_review_body(review_id: u64, dispatch_request: &HostedApiDispatchRequest) -> Value {
@@ -797,6 +1015,10 @@ fn default_fail_on_verdict() -> bool {
 
 fn default_next_review_id() -> u64 {
     1
+}
+
+fn default_hosted_api_review_store_version() -> String {
+    HOSTED_API_REVIEW_STORE_VERSION.to_string()
 }
 
 fn validate_config(config: &HostedApiDispatchConfig) -> Result<(), AdapterError> {
@@ -1386,6 +1608,239 @@ mod tests {
     }
 
     #[test]
+    fn hosted_api_review_store_accepts_legacy_omitted_schema_version() {
+        let store = HostedApiReviewStore::parse_json_value(json!({
+            "next_review_id": 77,
+            "create_outcome": "created",
+            "reviews": {
+                "77": {
+                    "review_id": 77,
+                    "repo": "misty-step/cerberus",
+                    "pr_number": 459,
+                    "head_sha": "abc123def456",
+                    "status": "queued",
+                    "aggregated_verdict": null,
+                    "completed_at": null,
+                    "inserted_at": "2026-06-19T00:00:00Z"
+                }
+            }
+        }))
+        .expect("legacy store parses");
+
+        assert_eq!(store.schema_version, HOSTED_API_REVIEW_STORE_VERSION);
+        store.validate().expect("legacy omitted version validates");
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_empty_object_store_file() {
+        let error = HostedApiReviewStore::parse_json_value(json!({}))
+            .expect_err("empty store file rejects");
+
+        assert!(error.to_string().contains("missing schema_version"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_unsupported_schema_version() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.schema_version = "hosted-api-review-store.v999".to_string();
+
+        let error = store.validate().expect_err("unsupported version rejects");
+
+        assert!(error.to_string().contains("unsupported version"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_review_id_mismatch() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "99".to_string(),
+            json!({
+                "review_id": 100,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "queued"
+            }),
+        );
+
+        let error = store.validate().expect_err("review id drift rejects");
+
+        assert!(error.to_string().contains("review key"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_non_canonical_review_key() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "01".to_string(),
+            json!({
+                "review_id": 1,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "queued"
+            }),
+        );
+
+        let error = store
+            .validate()
+            .expect_err("non-canonical review key rejects");
+
+        assert!(error.to_string().contains("review key"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_zero_review_id() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "0".to_string(),
+            json!({
+                "review_id": 0,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "queued"
+            }),
+        );
+
+        let error = store.validate().expect_err("zero review id rejects");
+
+        assert!(error.to_string().contains("must be greater than zero"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_top_level_raw_token_fields() {
+        let error = serde_json::from_value::<HostedApiReviewStore>(json!({
+            "schema_version": HOSTED_API_REVIEW_STORE_VERSION,
+            "next_review_id": 77,
+            "create_outcome": "created",
+            "github_token": "fixture-request-token",
+            "reviews": {}
+        }))
+        .expect_err("top-level token field rejects");
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_raw_token_fields() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "99".to_string(),
+            json!({
+                "review_id": 99,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "queued",
+                "github_token": "fixture-request-token"
+            }),
+        );
+
+        let error = store.validate().expect_err("raw token field rejects");
+
+        assert!(error.to_string().contains("forbidden secret field"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_token_field_name_variants() {
+        for field in [
+            "access_token",
+            "refreshToken",
+            "id-token",
+            "token",
+            "apiKey",
+        ] {
+            let mut store = service_store(HostedApiCreateOutcome::Created);
+            store.reviews.insert(
+                "99".to_string(),
+                json!({
+                    "review_id": 99,
+                    "repo": "misty-step/cerberus",
+                    "pr_number": 459,
+                    "head_sha": "abc123def456",
+                    "status": "queued",
+                    "metadata": {
+                        field: "fixture-secret-value"
+                    }
+                }),
+            );
+
+            let error = store.validate().expect_err("token-like field name rejects");
+
+            assert!(
+                error.to_string().contains("forbidden secret field"),
+                "field {field:?} error was {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_malformed_completed_verdict() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "99".to_string(),
+            json!({
+                "review_id": 99,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "completed",
+                "aggregated_verdict": {}
+            }),
+        );
+
+        let error = store
+            .validate()
+            .expect_err("malformed completed verdict rejects");
+
+        assert!(error.to_string().contains("aggregated_verdict.verdict"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_non_canonical_status() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "99".to_string(),
+            json!({
+                "review_id": 99,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": " queued "
+            }),
+        );
+
+        let error = store
+            .validate()
+            .expect_err("whitespace-padded status rejects");
+
+        assert!(error.to_string().contains("status"));
+    }
+
+    #[test]
+    fn hosted_api_review_store_rejects_non_canonical_verdict() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.reviews.insert(
+            "99".to_string(),
+            json!({
+                "review_id": 99,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "completed",
+                "aggregated_verdict": { "verdict": " PASS " }
+            }),
+        );
+
+        let error = store
+            .validate()
+            .expect_err("whitespace-padded verdict rejects");
+
+        assert!(error.to_string().contains("verdict"));
+    }
+
+    #[test]
     fn hosted_api_ingress_accepts_valid_review_request_and_redacts_token() {
         let report = hosted_api_ingress_fixture_report(
             &json!({
@@ -1954,6 +2409,7 @@ mod tests {
             }),
         );
         HostedApiServiceStoreFixture {
+            schema_version: HOSTED_API_REVIEW_STORE_VERSION.to_string(),
             next_review_id: 77,
             create_outcome,
             read_unavailable: false,

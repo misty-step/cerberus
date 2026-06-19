@@ -22,6 +22,10 @@ pub fn run_hosted_api_fixture_server(mut config: HostedApiFixtureServerConfig) -
     if config.max_requests == 0 {
         bail!("hosted-api-serve-fixture requires --max-requests greater than zero");
     }
+    config
+        .store
+        .validate()
+        .context("invalid hosted API fixture server store")?;
 
     let listener = TcpListener::bind(&config.addr)
         .with_context(|| format!("failed to bind hosted API fixture server {}", config.addr))?;
@@ -116,6 +120,7 @@ fn handle_connection(
 }
 
 fn write_store_state(path: &Path, store: &HostedApiServiceStoreFixture) -> Result<()> {
+    store.validate().context("invalid hosted API store state")?;
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

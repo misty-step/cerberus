@@ -343,6 +343,85 @@ fn hosted_api_fixture_server_checks_auth_before_body_json() {
 }
 
 #[test]
+fn hosted_api_fixture_server_rejects_invalid_store_before_ready() {
+    assert_fixture_server_rejects_store_before_ready(
+        "invalid-store-before-ready",
+        r#"{
+          "schema_version": "hosted-api-review-store.v999",
+          "next_review_id": 77,
+          "create_outcome": "created",
+          "reviews": {}
+        }"#,
+        "unsupported version",
+    );
+}
+
+#[test]
+fn hosted_api_fixture_server_rejects_empty_store_before_ready() {
+    assert_fixture_server_rejects_store_before_ready(
+        "empty-store-before-ready",
+        "{}",
+        "missing schema_version",
+    );
+}
+
+fn assert_fixture_server_rejects_store_before_ready(
+    temp_name: &str,
+    store_raw: &str,
+    expected_stderr: &str,
+) {
+    let temp = temp_dir(temp_name);
+    let store_state = temp.join("store-state.json");
+    let ready = temp.join("ready.txt");
+    fs::write(&store_state, store_raw).expect("write invalid state");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("hosted-api-serve-fixture")
+        .arg("--addr")
+        .arg("127.0.0.1:0")
+        .arg("--api-key")
+        .arg("fixture-api-key")
+        .arg("--store-state")
+        .arg(&store_state)
+        .arg("--ready-file")
+        .arg(&ready)
+        .arg("--max-requests")
+        .arg("1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn fixture server");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut stderr = String::new();
+    loop {
+        if ready.exists() {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("invalid store must not write ready file");
+        }
+        if let Some(status) = child.try_wait().expect("server status") {
+            if let Some(mut handle) = child.stderr.take() {
+                let _ = handle.read_to_string(&mut stderr);
+            }
+            assert!(!status.success(), "invalid store should fail closed");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "fixture server did not reject invalid store"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+
+    assert!(
+        !ready.exists(),
+        "invalid store should not publish readiness"
+    );
+    assert!(stderr.contains(expected_stderr), "stderr was {stderr}");
+}
+
+#[test]
 fn hosted_api_fixture_server_rejects_non_loopback_bind() {
     let temp = temp_dir("non-loopback");
     let ready = temp.join("ready.txt");

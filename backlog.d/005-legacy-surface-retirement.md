@@ -411,3 +411,51 @@ Sixteenth local retirement delivery, 2026-06-19:
 - Updated the retirement inventory so `historical-walkthroughs-and-artifacts`
   no longer has an open "create archive index" action; future movement must be
   a separate archive commit with rollback path preserved.
+
+Seventeenth local retirement delivery, 2026-06-19:
+
+- Added `HostedApiReviewStore` as the named Rust contract for mutable hosted
+  API queue/store state and kept `HostedApiServiceStoreFixture` as a
+  compatibility alias.
+- Added `hosted-api-review-store.v1` to checked hosted API store fixtures while
+  still accepting older omitted-version fixtures as v1 only when they contain
+  the hosted store shape (`next_review_id`, `reviews`, and only known store
+  fields).
+- Added validation for unsupported store versions, zero or mismatched review
+  IDs, empty/unshaped omitted-version objects, non-canonical review keys,
+  non-canonical or unsupported statuses/verdicts, raw secret fields such as
+  `github_token`, `access_token`, `refreshToken`, `id-token`, `token`, and
+  `apiKey`, and invalid embedded `ReviewRunArtifact.v1` payloads.
+- Wired CLI reads and HTTP fixture server writes through that validation so
+  invalid state fails before service reports, worker outputs, server ready
+  files, or persisted writes.
+- Added `cerberus-cli validate` support for `hosted-api-review-store.v1` and a
+  narrow legacy fallback for omitted-version store objects that still contain
+  the hosted store shape.
+- Added focused adapter and CLI integration tests for legacy omitted-version
+  compatibility, unsupported version rejection, review-id mismatch rejection,
+  top-level and stored raw token-field rejection, malformed completed-verdict
+  rejection, empty store-object rejection, non-canonical
+  review-key/status/verdict rejection,
+  service-fixture fail-closed behavior, generic validation, and server
+  fail-before-ready behavior.
+- Added dated QA evidence under
+  `tmp/hosted-api-store-contract-2026-06-19/`:
+  `queued.json`
+  (`sha256:e65f6b4256ec0f7a06e0043a15f40e8b01e852c4107254252eb9cc3b6dd842a7`),
+  `invalid-version.stderr`
+  (`sha256:0e32e1381fb383c2ec36e67e3a6b6b1484d9b8e3428cf5f34f188dedf91de2dc`),
+  `token.stderr`
+  (`sha256:df2b7a479ab94b39c4cecf9f9894bc11ca8b7bcc18c606b0c1d341ae7e808473`),
+  and `top-level-token.stderr`
+  (`sha256:c33eeabe4929b7a76133d2903e4578fb4496334ed18f336392ca82ba1a195f77`).
+  After fresh critic review, added `empty-store.stderr`
+  (`sha256:4a6836daf41e1023127bdeaaf55b90b2ef8339ba7e8e059be5600d4d8b4228d4`)
+  to prove `{}` store files fail closed without writing an output report.
+- Raw-value grep over the retained QA packet found no `fixture-api-key` or
+  `fixture-request-token` values; the rejected token-store inputs were removed
+  after producing the fail-closed stderr evidence.
+- Updated API docs, architecture docs, docs index, and the retirement inventory
+  to record the validated local store contract while keeping production
+  queue/store lifecycle, deployment smoke, live GitHub acquisition, and
+  provider-backed reviewer execution as pending cutover gates.

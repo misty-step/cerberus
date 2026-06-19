@@ -168,9 +168,17 @@ reads, and store-error mapping.
 
 Pass `--store-state <path>` when the smoke needs a mutable local queue/store
 lifecycle. In stateful mode the server loads an existing
-`HostedApiServiceStoreFixture` JSON state file when present, otherwise seeds
-from `--store` or an empty default store. A valid `POST /api/reviews` writes a
-safe queued review record to that state file, increments `next_review_id`, and a
+`HostedApiReviewStore` JSON state file when present, otherwise seeds from
+`--store` or an empty default store. Current state files include
+`"schema_version": "hosted-api-review-store.v1"`; the reader accepts older
+omitted-version fixtures as v1 only when the object has the hosted store shape
+(`next_review_id`, `reviews`, and only known store fields). It rejects
+unsupported versions, empty/unshaped omitted-version objects, unknown top-level
+fields, invalid review IDs/statuses/verdicts, raw token fields such as
+`github_token`, `access_token`, `refreshToken`, `id-token`, `token`, or
+`apiKey`, and invalid embedded `ReviewRunArtifact.v1` payloads. A valid
+`POST /api/reviews` writes a safe
+queued review record to that state file, increments `next_review_id`, and a
 later `GET /api/reviews/:id` can replay that created record. The persisted state
 does not contain the API key, bearer token, or request-scoped `github_token`.
 Without `--store-state`, `--store` remains a read-only fixture input.
@@ -196,9 +204,9 @@ reviewer execution remain pending.
 
 `cerberus-cli hosted-api-worker-fixture` covers the local worker side of the
 hosted lifecycle. It consumes a queued review from a mutable
-`HostedApiServiceStoreFixture` state file, reconstructs the safe dispatch
-request, combines explicit PR context plus diff into `ReviewRequest.v1`, runs
-the Rust review core, persists a completed status with
+`HostedApiReviewStore` state file, reconstructs the safe dispatch request,
+combines explicit PR context plus diff into `ReviewRequest.v1`, runs the Rust
+review core, persists a completed status with
 `ReviewRunArtifact.v1`, and writes the worker evidence files:
 
 ```bash

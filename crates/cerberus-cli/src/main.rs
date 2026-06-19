@@ -7,7 +7,8 @@ use cerberus_adapter::{
     GithubActionReviewDecision, HostedApiDispatchConfig, HostedApiDispatchDecision,
     HostedApiDispatchOutcome, HostedApiDispatchRequest, HostedApiDispatchSettings,
     HostedApiDispatchTranscript, HostedApiDispatchTransport, HostedApiHttpResponse,
-    HostedApiPullRequestContext, HostedApiServiceStoreFixture, ReviewRunArtifactStore,
+    HostedApiPullRequestContext, HostedApiReviewStore, HostedApiServiceStoreFixture,
+    ReviewRunArtifactStore, HOSTED_API_REVIEW_STORE_VERSION,
 };
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
@@ -1244,84 +1245,92 @@ fn validate_document(path: &PathBuf) -> Result<()> {
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
     let value: serde_json::Value = serde_json::from_str(&raw)
         .with_context(|| format!("failed to parse {}", path.display()))?;
-    let schema_version = value
-        .get("schema_version")
-        .and_then(|value| value.as_str())
-        .with_context(|| format!("{} is missing schema_version", path.display()))?;
+    let schema_version = value.get("schema_version").and_then(|value| value.as_str());
 
     match schema_version {
-        REVIEW_REQUEST_VERSION => {
+        None if looks_like_legacy_hosted_api_review_store(&value) => {
+            HostedApiReviewStore::parse_json_value(value)?;
+        }
+        None => bail!("{} is missing schema_version", path.display()),
+        Some(REVIEW_REQUEST_VERSION) => {
             let request: ReviewRequest = serde_json::from_value(value)?;
             request.validate()?;
         }
-        REVIEW_CONFIG_VERSION => {
+        Some(REVIEW_CONFIG_VERSION) => {
             let config: ReviewConfig = serde_json::from_value(value)?;
             config.validate()?;
         }
-        REVIEWER_ARTIFACT_VERSION => {
+        Some(REVIEWER_ARTIFACT_VERSION) => {
             let artifact: ReviewerArtifact = serde_json::from_value(value)?;
             artifact.validate()?;
         }
-        REVIEW_RUN_ARTIFACT_VERSION => {
+        Some(REVIEW_RUN_ARTIFACT_VERSION) => {
             let artifact: ReviewRunArtifact = serde_json::from_value(value)?;
             artifact.validate()?;
         }
-        INLINE_COMMENT_CANDIDATE_VERSION => {
+        Some(INLINE_COMMENT_CANDIDATE_VERSION) => {
             let candidate: InlineCommentCandidate = serde_json::from_value(value)?;
             candidate.validate()?;
         }
-        EVAL_TASK_SUITE_VERSION => {
+        Some(EVAL_TASK_SUITE_VERSION) => {
             let suite: EvalTaskSuite = serde_json::from_value(value)?;
             suite.validate()?;
         }
-        HARNESS_PROFILE_VERSION => {
+        Some(HARNESS_PROFILE_VERSION) => {
             let profile: HarnessProfile = serde_json::from_value(value)?;
             profile.validate()?;
         }
-        MODEL_CANDIDATE_VERSION => {
+        Some(MODEL_CANDIDATE_VERSION) => {
             let model: ModelCandidate = serde_json::from_value(value)?;
             model.validate()?;
         }
-        HARNESS_MODEL_MATRIX_VERSION => {
+        Some(HARNESS_MODEL_MATRIX_VERSION) => {
             let matrix: HarnessModelMatrix = serde_json::from_value(value)?;
             matrix.validate()?;
         }
-        HARNESS_MODEL_EVALUATION_REPORT_VERSION => {
+        Some(HARNESS_MODEL_EVALUATION_REPORT_VERSION) => {
             let report: HarnessModelEvaluationReport = serde_json::from_value(value)?;
             report.validate()?;
         }
-        EVAL_READINESS_REPORT_VERSION => {
+        Some(EVAL_READINESS_REPORT_VERSION) => {
             let report: EvalReadinessReport = serde_json::from_value(value)?;
             report.validate()?;
         }
-        EVAL_BUDGET_ESTIMATE_REPORT_VERSION => {
+        Some(EVAL_BUDGET_ESTIMATE_REPORT_VERSION) => {
             let report: EvalBudgetEstimateReport = serde_json::from_value(value)?;
             report.validate()?;
         }
-        PEER_HARNESS_COMMAND_PROFILES_VERSION => {
+        Some(PEER_HARNESS_COMMAND_PROFILES_VERSION) => {
             let profiles: PeerHarnessCommandProfiles = serde_json::from_value(value)?;
             profiles.validate()?;
         }
-        PEER_HARNESS_EXECUTION_PLAN_VERSION => {
+        Some(PEER_HARNESS_EXECUTION_PLAN_VERSION) => {
             let plan: PeerHarnessExecutionPlan = serde_json::from_value(value)?;
             plan.validate()?;
         }
-        REVIEWER_CONFIG_PACKET_VERSION => {
+        Some(REVIEWER_CONFIG_PACKET_VERSION) => {
             let packet: ReviewerConfigPacket = serde_json::from_value(value)?;
             validate_reviewer_config_packet(&packet)?;
         }
-        REVIEWER_CONFIG_IMPORT_REPORT_VERSION => {
+        Some(REVIEWER_CONFIG_IMPORT_REPORT_VERSION) => {
             let report: ReviewerConfigImportReport = serde_json::from_value(value)?;
             report.validate()?;
         }
-        LEGACY_SURFACE_INVENTORY_VERSION => {
+        Some(LEGACY_SURFACE_INVENTORY_VERSION) => {
             let inventory: LegacySurfaceInventory = serde_json::from_value(value)?;
             inventory.validate()?;
         }
-        other => bail!("unsupported schema_version {other:?} in {}", path.display()),
+        Some(HOSTED_API_REVIEW_STORE_VERSION) => {
+            HostedApiReviewStore::parse_json_value(value)?;
+        }
+        Some(other) => bail!("unsupported schema_version {other:?} in {}", path.display()),
     }
 
     Ok(())
+}
+
+fn looks_like_legacy_hosted_api_review_store(value: &serde_json::Value) -> bool {
+    HostedApiReviewStore::is_legacy_omitted_version_value(value)
 }
 
 fn read_request(path: &PathBuf) -> Result<ReviewRequest> {
@@ -1443,12 +1452,15 @@ fn read_hosted_api_pull_request_context(path: &PathBuf) -> Result<HostedApiPullR
 fn read_hosted_api_service_store_fixture(path: &PathBuf) -> Result<HostedApiServiceStoreFixture> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read hosted API service store {}", path.display()))?;
-    serde_json::from_str(&raw).with_context(|| {
+    let value: serde_json::Value = serde_json::from_str(&raw).with_context(|| {
         format!(
             "failed to parse hosted API service store {}",
             path.display()
         )
-    })
+    })?;
+    let store = HostedApiReviewStore::parse_json_value(value)
+        .with_context(|| format!("invalid hosted API service store {}", path.display()))?;
+    Ok(store)
 }
 
 fn read_hosted_api_dispatch_transcript(path: &PathBuf) -> Result<HostedApiDispatchTranscript> {

@@ -126,6 +126,145 @@ fn hosted_api_service_fixture_writes_queued_post_response() {
     assert_eq!(report["dispatch_request"]["github_token_present"], true);
 }
 
+#[test]
+fn validate_accepts_versioned_hosted_api_review_store() {
+    let status = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("validate")
+        .arg(fixture("service-store.json"))
+        .status()
+        .expect("run validate");
+
+    assert!(status.success(), "versioned store should validate");
+}
+
+#[test]
+fn validate_accepts_legacy_omitted_version_hosted_api_review_store() {
+    let temp = temp_dir("legacy-validate");
+    let store = temp.join("legacy-store.json");
+    fs::write(
+        &store,
+        r#"{
+          "next_review_id": 77,
+          "create_outcome": "created",
+          "reviews": {}
+        }"#,
+    )
+    .expect("write legacy store");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("validate")
+        .arg(&store)
+        .status()
+        .expect("run validate");
+
+    assert!(
+        status.success(),
+        "legacy omitted-version store should validate"
+    );
+}
+
+#[test]
+fn validate_rejects_empty_unversioned_hosted_api_review_store() {
+    let temp = temp_dir("empty-validate");
+    let store = temp.join("empty-store.json");
+    fs::write(&store, "{}").expect("write empty store");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cerberus-cli"))
+        .arg("validate")
+        .arg(&store)
+        .output()
+        .expect("run validate");
+
+    assert!(
+        !output.status.success(),
+        "empty unversioned store should not validate"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing schema_version"),
+        "stderr was {stderr}"
+    );
+}
+
+#[test]
+fn hosted_api_service_fixture_rejects_invalid_store_without_output() {
+    let temp = temp_dir("invalid-store");
+    let out = temp.join("queued.json");
+    let store = temp.join("store.json");
+    fs::write(
+        &store,
+        r#"{
+          "schema_version": "hosted-api-review-store.v999",
+          "next_review_id": 77,
+          "create_outcome": "created",
+          "reviews": {}
+        }"#,
+    )
+    .expect("write invalid store");
+
+    let output = authed_command_with_store("GET", "/api/reviews/77", &out, &store)
+        .output()
+        .expect("run command");
+
+    assert!(!output.status.success(), "invalid store should fail closed");
+    assert!(!out.exists(), "invalid store should not write a report");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unsupported version"),
+        "stderr was {stderr}"
+    );
+}
+
+#[test]
+fn hosted_api_service_fixture_rejects_empty_store_without_output() {
+    let temp = temp_dir("empty-store");
+    let out = temp.join("queued.json");
+    let store = temp.join("store.json");
+    fs::write(&store, "{}").expect("write empty store");
+
+    let output = authed_command_with_store("GET", "/api/reviews/77", &out, &store)
+        .output()
+        .expect("run command");
+
+    assert!(!output.status.success(), "empty store should fail closed");
+    assert!(!out.exists(), "empty store should not write a report");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing schema_version"),
+        "stderr was {stderr}"
+    );
+}
+
+#[test]
+fn hosted_api_service_fixture_rejects_top_level_token_store_without_output() {
+    let temp = temp_dir("top-level-token-store");
+    let out = temp.join("queued.json");
+    let store = temp.join("store.json");
+    fs::write(
+        &store,
+        r#"{
+          "schema_version": "hosted-api-review-store.v1",
+          "next_review_id": 77,
+          "create_outcome": "created",
+          "github_token": "fixture-request-token",
+          "reviews": {}
+        }"#,
+    )
+    .expect("write invalid store");
+
+    let output = authed_command_with_store("GET", "/api/reviews/77", &out, &store)
+        .output()
+        .expect("run command");
+
+    assert!(
+        !output.status.success(),
+        "top-level token should fail closed"
+    );
+    assert!(!out.exists(), "top-level token should not write a report");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown field"), "stderr was {stderr}");
+}
+
 fn authed_command(method: &str, path: &str, out: &Path) -> Command {
     authed_command_with_store(method, path, out, &fixture("service-store.json"))
 }
