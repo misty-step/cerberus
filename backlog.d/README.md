@@ -28,6 +28,7 @@ Current sequence:
 20. `020-packet-backed-review-config.md`
 21. `021-github-action-event-request-adapter.md`
 22. `022-current-model-catalog-drift-refresh.md`
+23. `023-hosted-api-dispatch-state-machine.md`
 
 Planning rules:
 
@@ -70,3 +71,5 @@ Planning rules:
   adapter before replacing shell POST/poll behavior.
 - Keep drift-prone model catalog facts refreshed as dated checked evidence
   before spending provider eval budget or changing reviewer defaults.
+- Prove hosted API dispatch and polling decisions as Rust fixtures before
+  adding HTTP transport or replacing the shell action client.

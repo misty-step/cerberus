@@ -33,6 +33,8 @@ Current docs:
   `docs/shaping/021-github-action-event-request-adapter-plan.html`
 - Current model catalog drift refresh plan:
   `docs/shaping/022-current-model-catalog-drift-refresh-plan.html`
+- Hosted API dispatch state machine plan:
+  `docs/shaping/023-hosted-api-dispatch-state-machine-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

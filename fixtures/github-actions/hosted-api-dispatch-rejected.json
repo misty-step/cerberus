@@ -1,0 +1,24 @@
+{
+  "api_base_url": "https://cerberus.example",
+  "request": {
+    "repo": "misty-step/cerberus",
+    "pr_number": 459,
+    "head_sha": "abc123def456",
+    "model": "fake/model",
+    "github_token_present": true
+  },
+  "settings": {
+    "timeout_seconds": 600,
+    "poll_interval_seconds": 5,
+    "max_poll_errors": 10,
+    "fail_on_verdict": false,
+    "write_verdict_json": false
+  },
+  "post": {
+    "http_status": 500,
+    "body": {
+      "error": "unavailable"
+    }
+  },
+  "polls": []
+}

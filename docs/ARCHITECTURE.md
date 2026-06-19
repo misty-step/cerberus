@@ -83,6 +83,16 @@ repo metadata as a skip, and writes `ReviewRequest.v1` for same-repo PRs. It
 does not call GitHub, call the hosted Cerberus API, poll for verdicts, write
 GitHub Actions outputs, or replace `dispatch.sh`.
 
+`cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
+adapter slice. It consumes checked hosted API POST and poll transcripts, then
+writes the simulated action decision: outcome, exit code, review-id, verdict,
+GitHub output map, elapsed poll budget, and optional verdict JSON. It is a pure
+state machine for fixture parity; it does not make network calls, write the
+real `$GITHUB_OUTPUT` file, or replace `dispatch.sh`. Its elapsed seconds follow
+the shell client's sleep-before-poll accounting. It intentionally hardens one
+legacy edge case by treating an accepted dispatch response without `review_id`
+as a failed dispatch instead of polling an empty review URL.
+
 ## Request Flow
 
 ```text
@@ -139,6 +149,9 @@ Responsibilities:
 - build and validate caller-shaped `ReviewRequest.v1` values
 - build GitHub Actions `pull_request` event fixtures into `ReviewRequest.v1`
   without network, token, or hosted API behavior
+- model hosted API dispatch and polling decisions from checked transcripts,
+  including fail-on-verdict, timeout, poll errors, hosted failure, malformed
+  dispatch responses, and GitHub output values
 - prove the local fixture contract shape for Bitterblossom and Olympus without
   cross-caller references
 - project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
@@ -154,7 +167,7 @@ Non-responsibilities:
 - Olympus Argus activation gates, stale-head suppression, marker dedupe, caps,
   or GitHub posting
 - live acquisition from either caller repository
-- hosted API POST/poll or GitHub Actions output writes
+- real hosted API HTTP transport or GitHub Actions output-file writes
 - production review execution through the ThinkTank CLI
 - reviewer artifact acceptance, aggregation, or degradation semantics
 

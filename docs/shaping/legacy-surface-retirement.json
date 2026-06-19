@@ -1,6 +1,6 @@
 {
   "schema_version": "legacy-surface-inventory.v1",
-  "snapshot_date": "2026-06-18",
+  "snapshot_date": "2026-06-19",
   "purpose": "Authoritative retirement inventory for legacy Cerberus surfaces. A surface may not be deleted or archived until this file records replacement, parity evidence or intentional rejection, the deletion/archive commit, and rollback path.",
   "surfaces": [
     {
@@ -31,10 +31,17 @@
         "cargo run --locked -p cerberus-cli -- validate tmp/github-action-request/review-request.json",
         "cargo run --locked -p cerberus-cli -- github-action-request --event fixtures/github-actions/pull-request-fork.json --diff-file /no/such/diff.patch --out tmp/github-action-request/fork-no-diff-review-request.json --run-id gha-run-021",
         "cargo run --locked -p cerberus-cli -- github-action-request --event fixtures/github-actions/pull-request-missing-head-repo.json --diff-file /no/such/diff.patch --out tmp/github-action-request/missing-head-repo-review-request.json --run-id gha-run-021",
-        "future Rust fixture: hosted API POST, timeout, poll failure, fail-on-verdict"
+        "cargo test --workspace hosted_api",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-pass.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-pass.decision.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-fail-verdict.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-fail-verdict.decision.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-dispatch-rejected.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-dispatch-rejected.decision.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-missing-review-id.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-missing-review-id.decision.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-poll-errors.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-poll-errors.decision.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-review-failed.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-review-failed.decision.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-timeout.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-timeout.decision.json"
       ],
       "rollback_path": "Keep dispatch.sh as the fallback action client until the Rust adapter is released.",
-      "next_action": "Port hosted API POST/poll, timeout, fail-on-verdict, and GitHub output behavior after the event-to-request fixture path."
+      "next_action": "Add Rust HTTP transport and GitHub Actions output-file wiring against the hosted dispatch state machine before replacing shell dispatch."
     },
     {
       "surface_id": "node-scaffolder",

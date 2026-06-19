@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use cerberus_adapter::{
     github_action_review_decision_from_event, github_action_skip_decision_from_event,
-    GithubActionReviewDecision,
+    run_hosted_api_dispatch_fixture, GithubActionReviewDecision, HostedApiDispatchTranscript,
 };
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
@@ -48,6 +48,7 @@ fn main() -> Result<()> {
         "review" => review_command(args.collect()),
         "review-local" => review_local(args.collect()),
         "github-action-request" => github_action_request(args.collect()),
+        "hosted-api-dispatch-fixture" => hosted_api_dispatch_fixture(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
         "propose-reviewer-config" => propose_reviewer_config(args.collect()),
         "refresh-model-catalog" => refresh_model_catalog(args.collect()),
@@ -300,6 +301,36 @@ fn github_action_request(args: Vec<String>) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn hosted_api_dispatch_fixture(args: Vec<String>) -> Result<()> {
+    let mut transcript = None;
+    let mut out = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--transcript" => {
+                transcript = Some(required_arg(&args, index, "--transcript")?);
+                index += 2;
+            }
+            "--out" => {
+                out = Some(required_arg(&args, index, "--out")?);
+                index += 2;
+            }
+            other => bail!("unknown hosted-api-dispatch-fixture argument {other:?}"),
+        }
+    }
+
+    let transcript_path = PathBuf::from(
+        transcript.context("hosted-api-dispatch-fixture requires --transcript <path>")?,
+    );
+    let out_path = PathBuf::from(out.context("hosted-api-dispatch-fixture requires --out <path>")?);
+    let transcript = read_hosted_api_dispatch_transcript(&transcript_path)?;
+    let decision = run_hosted_api_dispatch_fixture(&transcript)?;
+    write_json(&out_path, &decision)?;
+    println!("{}", out_path.display());
     Ok(())
 }
 
@@ -660,6 +691,13 @@ fn read_retirement_inventory(path: &PathBuf) -> Result<LegacySurfaceInventory> {
     Ok(inventory)
 }
 
+fn read_hosted_api_dispatch_transcript(path: &PathBuf) -> Result<HostedApiDispatchTranscript> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read hosted API transcript {}", path.display()))?;
+    serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse hosted API transcript {}", path.display()))
+}
+
 fn read_catalog_source(source: &str) -> Result<String> {
     if source.starts_with("https://") || source.starts_with("http://") {
         return fetch_catalog_url(source);
@@ -868,6 +906,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json>\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }
