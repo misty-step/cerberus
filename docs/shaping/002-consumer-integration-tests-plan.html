@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backlog 002 Consumer Integration Proof</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171717;
+      --muted: #5f6368;
+      --line: #d7d2c8;
+      --paper: #fbfaf7;
+      --panel: #ffffff;
+      --accent: #8f1f2d;
+      --good: #1f6f43;
+      --warn: #8c5a00;
+    }
+    body {
+      margin: 0;
+      font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 34px 28px 56px;
+    }
+    header {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 22px;
+      min-height: 58vh;
+      align-items: start;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 26px;
+    }
+    h1 {
+      margin: 0 0 14px;
+      font-size: 46px;
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 19px;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0 0 12px;
+    }
+    .lead {
+      max-width: 680px;
+      font-size: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 24px;
+    }
+    section {
+      margin-top: 28px;
+    }
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    li + li {
+      margin-top: 8px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.93em;
+      background: #f2efe8;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+    }
+    th {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    .accent { color: var(--accent); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <span class="tag">backlog 002</span><span class="tag">consumer proof</span><span class="tag">no provider spend</span>
+        <h1>Prove Cerberus can be consumed by sibling callers without coupling them.</h1>
+        <p class="lead">
+          The remaining acceptance gap is outside Cerberus: Bitterblossom must carry a Cerberus artifact through its run ledger as mechanism, and Olympus Argus must accept a Cerberus <code>ReviewRunArtifact.v1</code> while keeping GitHub posting policy local.
+        </p>
+      </div>
+      <div class="panel">
+        <h2>Stop Conditions</h2>
+        <ul>
+          <li>Do not spend provider budget or run live peer harness evals.</li>
+          <li>Do not import Bitterblossom into Olympus or Olympus into Bitterblossom.</li>
+          <li>Do not move posting policy into Cerberus; Cerberus emits review artifacts, Olympus decides how to post.</li>
+          <li>Stop if a consumer repo has unexpected dirty state or its local gate requires external services.</li>
+        </ul>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>Bitterblossom</h2>
+        <p>Add a test-only local harness that writes a Cerberus <code>ReviewRunArtifact.v1</code> as the required <code>REPORT.json</code>. Export the run and prove the ledger points at the artifact dir and the artifact remains Cerberus-shaped.</p>
+      </div>
+      <div class="panel">
+        <h2>Olympus Argus</h2>
+        <p>Teach the existing poster parser to accept <code>review-run-artifact.v1</code>, translate findings into Argus findings, and reject mismatched reviewed heads. Existing caps, dedupe, anchor folding, and marker writes remain unchanged.</p>
+      </div>
+      <div class="panel">
+        <h2>Cerberus</h2>
+        <p>Update the backlog receipt to mark consumer-side tests complete only after both sibling repos have passing local proof and clean worktrees.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Proof Matrix</h2>
+      <table>
+        <thead>
+          <tr><th>Repo</th><th>Oracle</th><th>Command</th><th>Expected Evidence</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Bitterblossom</td>
+            <td>Run ledger carries external Cerberus artifact as an attempt artifact.</td>
+            <td><code>cargo test runs_export_carries_cerberus_review_artifact_report --test run_export</code>, then <code>./scripts/verify.sh</code> if practical.</td>
+            <td>Exported <code>bb.run_telemetry.v1</code> references the attempt artifact dir; the JSON file inside has <code>schema_version: review-run-artifact.v1</code>.</td>
+          </tr>
+          <tr>
+            <td>Olympus</td>
+            <td>Argus posts from a Cerberus artifact and keeps local safety policy.</td>
+            <td><code>cd orchestrator && npm run test -- argus-review-poster</code>, then <code>npm run lint && npm run typecheck</code>.</td>
+            <td>Parser maps Cerberus severity/citations into Argus comments, rejects head mismatch, and existing duplicate/superseded tests remain green.</td>
+          </tr>
+          <tr>
+            <td>Cerberus</td>
+            <td>Backlog receipt matches sibling evidence.</td>
+            <td><code>cargo test --workspace</code> if touched Rust remains unaffected; otherwise docs/status only.</td>
+            <td><code>backlog.d/002-independent-caller-adapters.md</code> no longer lists consumer integration tests as open.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Review Focus</h2>
+      <ul>
+        <li><span class="accent">Boundary:</span> consumer tests must prove independent consumption, not shared runtime ownership.</li>
+        <li><span class="warn">Compatibility:</span> severity mapping is syntactic protocol translation: Cerberus <code>critical</code> becomes Argus <code>critical</code>; <code>major</code> becomes <code>warning</code>; <code>minor</code> and <code>info</code> become <code>note</code>.</li>
+        <li><span class="good">Acceptance:</span> all three repos finish clean or the remaining dirt is reported as a blocker with exact paths.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

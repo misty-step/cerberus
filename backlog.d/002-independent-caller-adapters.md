@@ -1,6 +1,6 @@
 # 002 - Independent Caller Adapters
 
-Status: implemented-local-fixtures
+Status: implemented-consumer-tests
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -70,7 +70,7 @@ Out of scope:
 4. Done: add no-cross-caller-reference guard.
 5. Done: document ownership boundaries in `docs/ARCHITECTURE.md` after
    fixtures pass.
-6. Remaining: add consumer-side integration tests in Bitterblossom and Olympus.
+6. Done: add consumer-side integration tests in Bitterblossom and Olympus.
 
 ## Implementation Receipt
 
@@ -88,8 +88,51 @@ First local adapter delivery, 2026-06-18:
 - Local proof: `cargo test --workspace caller_contracts` passed with both
   caller fixtures invoking the fake core and validating the returned artifact.
 
-This receipt proves the local contract shape. It does not yet prove that the
-real Bitterblossom and Olympus repositories have switched to these fixtures.
+This first receipt proved the local contract shape before consumer-side proof
+landed in the real Bitterblossom and Olympus repositories.
+
+Consumer-side integration delivery, 2026-06-19:
+
+- Added rendered follow-up plan:
+  `docs/shaping/002-consumer-integration-tests-plan.html`.
+- Bitterblossom branch `bb/build/074-artifact-contract` now has
+  `runs_export_carries_cerberus_review_artifact_report`, which runs a local
+  harness that writes a Cerberus `ReviewRunArtifact.v1` as required
+  `REPORT.json`, exports `bb.run_telemetry.v1`, follows the attempt artifact
+  directory pointer, and verifies the preserved artifact without referencing
+  Olympus.
+- Olympus branch `cerberus/002-consumer-integration` now has Argus poster
+  coverage for `ReviewRunArtifact.v1`: the poster translates Cerberus
+  severities and citations into Argus comments, rejects stale
+  `reviewed_head_sha` values, and keeps duplicate suppression, head freshness,
+  inline caps, and marker recording in Olympus.
+- Focused proof:
+  `cargo test runs_export_carries_cerberus_review_artifact_report --test run_export`
+  in Bitterblossom and `npm run test -- argus-review-poster` in Olympus.
+- Full consumer proof:
+  `./scripts/verify.sh` passed in Bitterblossom. Olympus passed
+  `PATH=/Users/phaedrus/.hermes/node/bin:$PATH npm run lint`,
+  `PATH=/Users/phaedrus/.hermes/node/bin:$PATH npm run test` (98 files,
+  1485 passing, 1 skipped), `PATH=/Users/phaedrus/.hermes/node/bin:$PATH npm run typecheck`,
+  and `dagger call check --source=.` (`ALL GATES GREEN`, including coverage,
+  build, prod audit, secrets scan, docker smoke, and contract checks; Dagger
+  coverage leg reported 97 files passed, 1 skipped, 1481 tests passed, and 5
+  skipped).
+- Consumer closeout evidence after committing the sibling changes:
+  Bitterblossom commit `316e5a5` leaves
+  `git status --short --branch --untracked-files=all` at
+  `## bb/build/074-artifact-contract...origin/bb/build/074-artifact-contract [ahead 1]`;
+  `git rev-list --left-right --count HEAD...origin/bb/build/074-artifact-contract`
+  reports `1 0`. Olympus commit `46508b6` leaves
+  `git status --short --branch --untracked-files=all` at
+  `## cerberus/002-consumer-integration`; that branch has no upstream
+  configured yet.
+- Cerberus contract/regression proof:
+  `cargo test --workspace caller_contracts`,
+  `cargo run --locked -p cerberus-cli -- validate fixtures/callers/bitterblossom-task.json fixtures/callers/olympus-argus.json`,
+  `cd cerberus-elixir && mix test` (360 tests, 0 failures),
+  `cd cerberus-elixir && mix format --check-formatted`, shellcheck over the
+  shell scripts present in this checkout, and `node --check bin/cerberus.js`.
 
 ## Notes
 
