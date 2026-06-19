@@ -1,6 +1,6 @@
 # 002 - Independent Caller Adapters
 
-Status: implemented-consumer-tests
+Status: done
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -133,6 +133,24 @@ Consumer-side integration delivery, 2026-06-19:
   `cd cerberus-elixir && mix test` (360 tests, 0 failures),
   `cd cerberus-elixir && mix format --check-formatted`, shellcheck over the
   shell scripts present in this checkout, and `node --check bin/cerberus.js`.
+
+Closeout recheck, 2026-06-19:
+
+- Cerberus focused contract proof still passes:
+  `cargo test --workspace caller_contracts` and
+  `cargo run --locked -p cerberus-cli -- validate fixtures/callers/bitterblossom-task.json fixtures/callers/olympus-argus.json`.
+- Bitterblossom branch `bb/build/074-artifact-contract` still passes
+  `cargo test runs_export_carries_cerberus_review_artifact_report --test run_export`
+  at commit `316e5a5`.
+- Olympus branch `cerberus/002-consumer-integration` still passes
+  `PATH=/Users/phaedrus/.hermes/node/bin:$PATH npm run test -- argus-review-poster`
+  from a temporary worktree at commit `46508b6` after `npm ci`
+  (1 file, 16 tests).
+- Publication status is deliberately not overstated: Bitterblossom remains one
+  local commit ahead of `origin/bb/build/074-artifact-contract`, and Olympus
+  branch `cerberus/002-consumer-integration` has no upstream and is one commit
+  ahead of, four commits behind, current `main`. That is branch-disposition work,
+  not an unresolved caller-adapter contract gap.
 
 ## Notes
 
