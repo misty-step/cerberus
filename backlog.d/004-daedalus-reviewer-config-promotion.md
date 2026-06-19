@@ -77,3 +77,10 @@ First local promotion delivery, 2026-06-18:
   fixture for baseline comparison.
 - Documented promotion, rollback, and rejection rules in
   `docs/shaping/daedalus-reviewer-config-promotion.md`.
+
+Packet-backed review execution bridge, 2026-06-19:
+
+- Backlog 020 lets `cerberus-cli review` and `cerberus-cli review-local` use a
+  validated `ReviewerConfigPacket.v1` directly through `--config-packet`.
+- This closes the manual `.config` extraction gap for sandbox review runs. It
+  still does not approve or install reviewer defaults.

@@ -160,20 +160,25 @@ fn review_command(args: Vec<String>) -> Result<()> {
     let mut fixture = None;
     let mut out = None;
     let mut config = None;
+    let mut config_packet = None;
     let mut index = 0;
 
     while index < args.len() {
         match args[index].as_str() {
             "--fixture" => {
-                fixture = args.get(index + 1).cloned();
+                fixture = Some(required_arg(&args, index, "--fixture")?);
                 index += 2;
             }
             "--out" => {
-                out = args.get(index + 1).cloned();
+                out = Some(required_arg(&args, index, "--out")?);
                 index += 2;
             }
             "--config" => {
-                config = args.get(index + 1).cloned();
+                config = Some(required_arg(&args, index, "--config")?);
+                index += 2;
+            }
+            "--config-packet" => {
+                config_packet = Some(required_arg(&args, index, "--config-packet")?);
                 index += 2;
             }
             other => bail!("unknown review argument {other:?}"),
@@ -182,11 +187,14 @@ fn review_command(args: Vec<String>) -> Result<()> {
 
     let fixture = fixture.context("review requires --fixture <path>")?;
     let out = out.context("review requires --out <dir>")?;
+    let config_path = config.map(PathBuf::from);
+    let config_packet_path = config_packet.map(PathBuf::from);
+    let config = read_review_config_source(
+        config_path.as_deref(),
+        config_packet_path.as_deref(),
+        "review",
+    )?;
     let request = read_request(&PathBuf::from(&fixture))?;
-    let config = match config {
-        Some(path) => read_config(&PathBuf::from(path))?,
-        None => default_config(),
-    };
     let artifact = review(&request, &config)?;
     let out_dir = PathBuf::from(out);
 
@@ -206,10 +214,11 @@ fn review_command(args: Vec<String>) -> Result<()> {
 fn review_local(args: Vec<String>) -> Result<()> {
     let args = LocalReviewArgs::parse(&args)?;
     let request = local_review_request_from_diff(&args)?;
-    let config = match args.config.as_ref() {
-        Some(path) => read_config(path)?,
-        None => default_config(),
-    };
+    let config = read_review_config_source(
+        args.config.as_deref(),
+        args.config_packet.as_deref(),
+        "review-local",
+    )?;
     let artifact = review(&request, &config)?;
 
     fs::create_dir_all(&args.out)
@@ -353,6 +362,21 @@ fn required_arg(args: &[String], index: usize, flag: &str) -> Result<String> {
         bail!("{flag} requires a value");
     }
     Ok(value.clone())
+}
+
+fn read_review_config_source(
+    config: Option<&Path>,
+    config_packet: Option<&Path>,
+    command: &str,
+) -> Result<ReviewConfig> {
+    match (config, config_packet) {
+        (Some(_), Some(_)) => {
+            bail!("{command} accepts either --config or --config-packet, not both")
+        }
+        (Some(path), None) => read_config(path),
+        (None, Some(path)) => Ok(read_reviewer_config_packet(path)?.config),
+        (None, None) => Ok(default_config()),
+    }
 }
 
 fn render(args: Vec<String>) -> Result<()> {
@@ -533,7 +557,7 @@ fn safe_evidence_relative_path(path: &str) -> Result<&Path> {
     Ok(path)
 }
 
-fn read_config(path: &PathBuf) -> Result<ReviewConfig> {
+fn read_config(path: &Path) -> Result<ReviewConfig> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read review config {}", path.display()))?;
     let config: ReviewConfig = serde_json::from_str(&raw)
@@ -579,7 +603,7 @@ fn fetch_catalog_url(url: &str) -> Result<String> {
         .with_context(|| format!("catalog response was not UTF-8: {url}"))
 }
 
-fn read_reviewer_config_packet(path: &PathBuf) -> Result<ReviewerConfigPacket> {
+fn read_reviewer_config_packet(path: &Path) -> Result<ReviewerConfigPacket> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read reviewer config packet {}", path.display()))?;
     let packet: ReviewerConfigPacket = serde_json::from_str(&raw)
@@ -767,6 +791,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }

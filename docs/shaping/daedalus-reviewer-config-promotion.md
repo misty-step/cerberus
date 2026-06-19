@@ -43,6 +43,11 @@ Daedalus measured run or Cerberus eval report
 `import-reviewer-config --dry-run` compares the packet config against the
 current baseline on a clean fixture and records verdict, finding, degraded, and
 reviewer/model deltas. The command does not write defaults or caller policy.
+Sandbox packets can also drive explicit review runs through
+`cerberus-cli review --config-packet <ReviewerConfigPacket.v1>` and
+`cerberus-cli review-local --config-packet <ReviewerConfigPacket.v1>`. Those
+runs validate the packet and execute its embedded config, but they still do not
+approve, install, or mutate production defaults.
 
 Cerberus-owned eval reports use the same packet path through
 `cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1>

@@ -17,7 +17,11 @@ cargo run --locked -p cerberus-cli -- review-local \
 
 Optional flags:
 
-- `--config <review-config.json>` overrides the default fake panel.
+- `--config <review-config.json>` overrides the default fake panel with a raw
+  `ReviewConfig.v1`.
+- `--config-packet <ReviewerConfigPacket.v1.json>` validates a measured packet
+  and uses its embedded `ReviewConfig.v1`. It is mutually exclusive with
+  `--config` and does not install or approve defaults.
 - `--repo-path <path>` records the local source path on the request.
 - `--request-id <id>` overrides the generated `local-diff-<stem>` id.
 - `--title <title>` overrides the default local review title.
@@ -44,8 +48,10 @@ personas, or classify semantic intent. Reviewer behavior remains owned by
 ```bash
 cargo test --workspace local_review
 cargo run --locked -p cerberus-cli -- review-local --diff-file fixtures/local-review/local.diff --out tmp/local-review
+cargo run --locked -p cerberus-cli -- review-local --diff-file fixtures/local-review/local.diff --config-packet fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json --out tmp/reviewer-config/packet-local-review
 cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-request.json
 cargo run --locked -p cerberus-cli -- validate tmp/local-review/review-run-artifact.json
+cargo run --locked -p cerberus-cli -- validate tmp/reviewer-config/packet-local-review/review-request.json tmp/reviewer-config/packet-local-review/review-run-artifact.json
 ```
 
 The checked fixture contains the exact `CERBERUS_FAKE_FINDING` directive, so the

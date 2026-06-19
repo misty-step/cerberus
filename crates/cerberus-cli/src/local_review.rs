@@ -14,6 +14,7 @@ pub struct LocalReviewArgs {
     pub diff_file: PathBuf,
     pub out: PathBuf,
     pub config: Option<PathBuf>,
+    pub config_packet: Option<PathBuf>,
     pub repo_path: Option<String>,
     pub request_id: String,
     pub title: String,
@@ -24,6 +25,7 @@ impl LocalReviewArgs {
         let mut diff_file = None;
         let mut out = None;
         let mut config = None;
+        let mut config_packet = None;
         let mut repo_path = None;
         let mut request_id = None;
         let mut title = None;
@@ -43,6 +45,14 @@ impl LocalReviewArgs {
                     config = Some(PathBuf::from(required_value(args, index, "--config")?));
                     index += 2;
                 }
+                "--config-packet" => {
+                    config_packet = Some(PathBuf::from(required_value(
+                        args,
+                        index,
+                        "--config-packet",
+                    )?));
+                    index += 2;
+                }
                 "--repo-path" => {
                     repo_path = Some(required_value(args, index, "--repo-path")?);
                     index += 2;
@@ -59,6 +69,9 @@ impl LocalReviewArgs {
             }
         }
 
+        if config.is_some() && config_packet.is_some() {
+            bail!("review-local accepts either --config or --config-packet, not both");
+        }
         let diff_file = diff_file.context("review-local requires --diff-file <path>")?;
         let request_id = request_id.unwrap_or_else(|| {
             let stem = diff_file
@@ -72,6 +85,7 @@ impl LocalReviewArgs {
             diff_file,
             out: out.context("review-local requires --out <dir>")?,
             config,
+            config_packet,
             repo_path,
             request_id,
             title: title.unwrap_or_else(|| "Local diff review".to_string()),
@@ -302,6 +316,7 @@ diff --git a/src/lib.rs b/src/lib.rs\n+two\n",
             diff_file: diff_file.clone(),
             out: root.join("out"),
             config: None,
+            config_packet: None,
             repo_path: Some(".".to_string()),
             request_id: "local-test".to_string(),
             title: "Local test".to_string(),
@@ -324,5 +339,40 @@ diff --git a/src/lib.rs b/src/lib.rs\n+two\n",
         let error = LocalReviewArgs::parse(&["--diff-file".to_string(), "local.diff".to_string()])
             .expect_err("missing out rejects");
         assert!(error.to_string().contains("--out"));
+    }
+
+    #[test]
+    fn local_review_args_accept_config_packet_source() {
+        let args = LocalReviewArgs::parse(&[
+            "--diff-file".to_string(),
+            "local.diff".to_string(),
+            "--out".to_string(),
+            "out".to_string(),
+            "--config-packet".to_string(),
+            "packet.json".to_string(),
+        ])
+        .expect("config packet source parses");
+
+        assert_eq!(args.config, None);
+        assert_eq!(args.config_packet, Some(PathBuf::from("packet.json")));
+    }
+
+    #[test]
+    fn local_review_args_reject_conflicting_config_sources() {
+        let error = LocalReviewArgs::parse(&[
+            "--diff-file".to_string(),
+            "local.diff".to_string(),
+            "--out".to_string(),
+            "out".to_string(),
+            "--config".to_string(),
+            "config.json".to_string(),
+            "--config-packet".to_string(),
+            "packet.json".to_string(),
+        ])
+        .expect_err("conflicting config sources reject");
+
+        assert!(error
+            .to_string()
+            .contains("either --config or --config-packet"));
     }
 }

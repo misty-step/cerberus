@@ -25,6 +25,7 @@ Current sequence:
 17. `017-peer-harness-prompt-file-transport.md`
 18. `018-live-peer-harness-evaluation-mode.md`
 19. `019-eval-report-reviewer-config-candidate.md`
+20. `020-packet-backed-review-config.md`
 
 Planning rules:
 
@@ -61,3 +62,5 @@ Planning rules:
   before spending provider eval budget or promoting defaults.
 - Convert passing live eval reports into sandbox-only reviewer config packets
   before any reviewer defaults or Daedalus promotion packets are hand-authored.
+- Let Rust review commands consume validated reviewer config packets directly
+  before caller integrations depend on measured configs.

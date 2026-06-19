@@ -71,7 +71,10 @@ credentials are explicitly supplied.
 git-style diff file, builds a `ReviewRequest.v1` with `LocalDiff` source, runs
 the Rust review core, and writes the same request, artifact, and Markdown
 surfaces as fixture review. It does not shell out to Git, infer semantic
-reviewer routing from the diff, or replace hosted API compatibility.
+reviewer routing from the diff, or replace hosted API compatibility. Both
+fixture review and local replay can use `--config-packet` to execute the
+embedded `ReviewConfig.v1` from a validated `ReviewerConfigPacket.v1`; that is a
+sandbox execution source, not default promotion.
 
 ## Request Flow
 
@@ -248,6 +251,8 @@ Responsibilities:
   for live peer cells
 - derive sandbox-only `ReviewerConfigPacket.v1` candidates from fully passing
   live eval groups
+- let review commands execute validated packet configs with `--config-packet`
+  before any caller depends on a measured config
 
 Non-responsibilities:
 
@@ -265,6 +270,8 @@ Responsibilities:
 - parse local git-style diff files into `ReviewRequest.v1`
 - preserve local diff source metadata and changed-file counts
 - run the Rust review core through the same artifact surfaces as fixture review
+- accept either a raw `ReviewConfig.v1` or a validated
+  `ReviewerConfigPacket.v1` as the review config source
 - write `review-request.json`, `review-run-artifact.json`, and `review-run.md`
 
 Non-responsibilities:

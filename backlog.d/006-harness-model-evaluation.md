@@ -168,8 +168,10 @@ Relevant Cerberus drift:
    `ReviewerConfigPacket.v1` candidate with embedded `ReviewConfig.v1`; keep
    production defaults unchanged until the report and cost envelope are
    reviewed.
-9. Remaining: feed accepted configs into backlog 004's Daedalus promotion
-   packet flow.
+9. Done: feed accepted configs into backlog 004's Daedalus promotion packet
+   flow by letting Rust review commands run validated packets directly through
+   backlog 020's `--config-packet` bridge. Production defaults remain
+   unchanged.
 
 ## Implementation Receipt
 
@@ -200,6 +202,12 @@ passing live eval group with full suite coverage into a sandbox-only
 `ReviewerConfigPacket.v1` and refuses offline-only, provider-gated unavailable,
 truncated, or transcript-mismatched reports. This proves the report-to-packet
 bridge, not production approval or provider-backed quality.
+
+Backlog 020 adds packet-backed review execution. `review` and `review-local`
+can consume validated `ReviewerConfigPacket.v1` artifacts directly with
+`--config-packet`, which proves the sandbox execution bridge from eval packets
+to review artifacts. The remaining eval gap is budget-approved provider-backed
+quality evidence.
 
 ## Notes
 
