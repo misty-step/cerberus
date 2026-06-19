@@ -1,12 +1,13 @@
 use crate::{
-    probe_harness, read_eval_matrix, read_eval_suite, required_arg, scan_stale_models, write_json,
+    probe_harness, provider_budget::provider_budget_acknowledged, read_eval_matrix,
+    read_eval_suite, required_arg, scan_stale_models, write_json,
 };
 use anyhow::{bail, Context, Result};
 use cerberus_adapter::CommandHarnessInput;
 use cerberus_core::{
     eval_reviewer_config, evaluate_harness_model_artifact, evaluate_harness_model_matrix,
-    harness_model_evaluation_output, unavailable_harness_model_cell, HarnessModelEvaluationOutput,
-    HarnessProbe,
+    harness_model_evaluation_output, harness_model_readiness_report,
+    unavailable_harness_model_cell, HarnessModelEvaluationOutput, HarnessProbe,
 };
 use cerberus_schema::{
     EvalCellStatus, EvalExecutionMode, EvalTask, EvalTaskSuite, HarnessModelEvaluationCell,
@@ -17,8 +18,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
+    process,
     process::Command,
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +36,55 @@ struct EvalHarnessArgs {
     out_dir: PathBuf,
     execution_mode: EvalHarnessMode,
     peer_profiles_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EvalReadinessArgs {
+    suite_path: PathBuf,
+    matrix_path: PathBuf,
+    peer_profiles_path: PathBuf,
+    out_path: PathBuf,
+}
+
+impl EvalReadinessArgs {
+    fn parse(args: &[String]) -> Result<Self> {
+        let mut suite = None;
+        let mut matrix = None;
+        let mut peer_profiles = None;
+        let mut out = None;
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--suite" => {
+                    suite = Some(required_arg(args, index, "--suite")?);
+                    index += 2;
+                }
+                "--matrix" => {
+                    matrix = Some(required_arg(args, index, "--matrix")?);
+                    index += 2;
+                }
+                "--peer-profiles" => {
+                    peer_profiles = Some(required_arg(args, index, "--peer-profiles")?);
+                    index += 2;
+                }
+                "--out" => {
+                    out = Some(required_arg(args, index, "--out")?);
+                    index += 2;
+                }
+                other => bail!("unknown eval-readiness argument {other:?}"),
+            }
+        }
+
+        Ok(Self {
+            suite_path: PathBuf::from(suite.context("eval-readiness requires --suite <path>")?),
+            matrix_path: PathBuf::from(matrix.context("eval-readiness requires --matrix <path>")?),
+            peer_profiles_path: PathBuf::from(
+                peer_profiles.context("eval-readiness requires --peer-profiles <path>")?,
+            ),
+            out_path: PathBuf::from(out.context("eval-readiness requires --out <path>")?),
+        })
+    }
 }
 
 impl EvalHarnessArgs {
@@ -134,6 +185,199 @@ pub fn eval_harness(args: Vec<String>) -> Result<()> {
     write_json(&report_path, &output.report)?;
     println!("{}", report_path.display());
     Ok(())
+}
+
+pub fn eval_readiness(args: Vec<String>) -> Result<()> {
+    let args = EvalReadinessArgs::parse(&args)?;
+    let suite = read_eval_suite(&args.suite_path)?;
+    let matrix = read_eval_matrix(&args.matrix_path)?;
+    let peer_profiles = read_peer_harness_profiles(&args.peer_profiles_path)?;
+    let probes = matrix
+        .harnesses
+        .iter()
+        .map(probe_harness)
+        .collect::<Vec<_>>();
+    let peer_runner_probes =
+        probe_peer_harness_runners(&suite, &matrix, &peer_profiles, &args.peer_profiles_path);
+    let available_env = visible_required_env(&peer_profiles);
+    let report = harness_model_readiness_report(
+        &suite,
+        &matrix,
+        &probes,
+        &peer_runner_probes,
+        &peer_profiles,
+        &available_env,
+        provider_budget_acknowledged(),
+    )?;
+
+    write_json(&args.out_path, &report)?;
+    println!("{}", args.out_path.display());
+    Ok(())
+}
+
+fn visible_required_env(peer_profiles: &PeerHarnessCommandProfiles) -> BTreeSet<String> {
+    peer_profiles
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.env_required.iter())
+        .filter(|name| env::var_os(name.as_str()).is_some())
+        .cloned()
+        .collect()
+}
+
+fn probe_peer_harness_runners(
+    suite: &EvalTaskSuite,
+    matrix: &HarnessModelMatrix,
+    peer_profiles: &PeerHarnessCommandProfiles,
+    peer_profiles_path: &Path,
+) -> Vec<HarnessProbe> {
+    let harness_by_id = matrix
+        .harnesses
+        .iter()
+        .map(|harness| (harness.harness_id.as_str(), harness))
+        .collect::<BTreeMap<_, _>>();
+
+    peer_profiles
+        .profiles
+        .iter()
+        .map(|profile| {
+            match (
+                harness_by_id.get(profile.harness_id.as_str()).copied(),
+                matrix.models.first(),
+                suite.tasks.first(),
+            ) {
+                (Some(harness), Some(model), Some(task)) => {
+                    probe_peer_harness_runner(profile, peer_profiles_path, harness, model, task)
+                }
+                _ => HarnessProbe {
+                    harness_id: profile.harness_id.clone(),
+                    available: false,
+                    version: None,
+                    path: None,
+                    failure_reason: Some(
+                        "peer harness runner probe has no representative matrix cell".to_string(),
+                    ),
+                },
+            }
+        })
+        .collect()
+}
+
+fn probe_peer_harness_runner(
+    profile: &PeerHarnessCommandProfile,
+    peer_profiles_path: &Path,
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+) -> HarnessProbe {
+    let command = peer_protocol_command(&profile.command);
+    let path = peer_protocol_command_path(&profile.command, &command);
+    match run_peer_harness_runner_probe(profile, peer_profiles_path, harness, model, task, &command)
+    {
+        Ok(()) => HarnessProbe {
+            harness_id: profile.harness_id.clone(),
+            available: true,
+            version: None,
+            path,
+            failure_reason: None,
+        },
+        Err(error) => HarnessProbe {
+            harness_id: profile.harness_id.clone(),
+            available: false,
+            version: None,
+            path,
+            failure_reason: Some(error.to_string()),
+        },
+    }
+}
+
+fn run_peer_harness_runner_probe(
+    profile: &PeerHarnessCommandProfile,
+    peer_profiles_path: &Path,
+    harness: &HarnessProfile,
+    model: &ModelCandidate,
+    task: &EvalTask,
+    command: &Path,
+) -> Result<()> {
+    let temp_dir = env::temp_dir().join(format!(
+        "cerberus-readiness-probe-{}-{}-{}",
+        sanitize_eval_path_component(&profile.harness_id),
+        process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0)
+    ));
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create probe dir {}", temp_dir.display()))?;
+
+    let input_path = temp_dir.join("input.json");
+    let output_path = temp_dir.join("artifact.json");
+    let input = CommandHarnessInput {
+        reviewer: eval_reviewer_config(harness, model, task),
+        request: task.review_request.clone(),
+    };
+    let probe_result = (|| -> Result<()> {
+        write_json(&input_path, &input)?;
+        let output = Command::new(command)
+            .args(&profile.args)
+            .arg("--profiles")
+            .arg(peer_profiles_path)
+            .arg("--input")
+            .arg(&input_path)
+            .arg("--output")
+            .arg(&output_path)
+            .env_remove("CERBERUS_PEER_HARNESS_LIVE")
+            .output()
+            .with_context(|| format!("{} unavailable", command.display()))?;
+        if !output.status.success() {
+            bail!(
+                "{} probe exited with {}: {}",
+                command.display(),
+                output.status,
+                command_probe_diagnostic(&output)
+            );
+        }
+        read_reviewer_artifact(&output_path).with_context(|| {
+            format!("{} probe did not write a valid artifact", command.display())
+        })?;
+        Ok(())
+    })();
+
+    let cleanup_result = fs::remove_dir_all(&temp_dir);
+    if probe_result.is_ok() {
+        cleanup_result
+            .with_context(|| format!("failed to remove probe dir {}", temp_dir.display()))?;
+    }
+    probe_result
+}
+
+fn command_probe_diagnostic(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let diagnostic = if stderr.trim().is_empty() {
+        stdout.trim()
+    } else {
+        stderr.trim()
+    };
+    if diagnostic.is_empty() {
+        "no diagnostic".to_string()
+    } else {
+        diagnostic.to_string()
+    }
+}
+
+fn peer_protocol_command_path(command_name: &str, command: &Path) -> Option<String> {
+    if command.components().count() > 1 {
+        return command.exists().then(|| command.display().to_string());
+    }
+
+    env::var_os("PATH").and_then(|path| {
+        env::split_paths(&path)
+            .map(|dir| dir.join(command_name))
+            .find(|candidate| candidate.exists())
+            .map(|candidate| candidate.display().to_string())
+    })
 }
 
 fn parse_eval_harness_mode(value: &str) -> Result<EvalHarnessMode> {

@@ -32,6 +32,7 @@ Current sequence:
 24. `024-hosted-api-http-dispatch.md`
 25. `025-rust-action-entrypoint.md`
 26. `026-archive-shell-dispatcher.md`
+27. `027-eval-readiness-report.md`
 
 Planning rules:
 
@@ -80,3 +81,6 @@ Planning rules:
   changing the composite action entrypoint.
 - After Rust action entrypoint parity, archive legacy dispatch surfaces through
   a deletion commit plus a retirement-inventory receipt commit.
+- Run a schema-valid eval readiness report before budget-approved provider
+  evals so missing harnesses, profiles, env, and budget acknowledgement are
+  visible before any provider spend.

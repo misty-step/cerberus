@@ -3,13 +3,14 @@ use crate::{
     validate_reviewer_config_packet, CoreError,
 };
 use cerberus_schema::{
-    CostEnvelope, EvalCellStatus, EvalExecutionMode, EvalTask, EvalTaskSuite, ExpectedFinding,
-    FakeReviewerBehavior, GateResult, GateStatus, HarnessModelEvaluationCell,
-    HarnessModelEvaluationReport, HarnessModelEvaluationSummary, HarnessModelMatrix,
-    HarnessProfile, ModelCandidate, ModelCatalogDelta, PromotionGate, PromotionStatus,
-    ReviewConfig, ReviewerArtifact, ReviewerConfig, ReviewerConfigBenchmark, ReviewerConfigPacket,
+    CostEnvelope, EvalCellStatus, EvalExecutionMode, EvalReadinessCell, EvalReadinessReport,
+    EvalReadinessSummary, EvalTask, EvalTaskSuite, ExpectedFinding, FakeReviewerBehavior,
+    GateResult, GateStatus, HarnessModelEvaluationCell, HarnessModelEvaluationReport,
+    HarnessModelEvaluationSummary, HarnessModelMatrix, HarnessProfile, ModelCandidate,
+    ModelCatalogDelta, PeerHarnessCommandProfiles, PromotionGate, PromotionStatus, ReviewConfig,
+    ReviewerArtifact, ReviewerConfig, ReviewerConfigBenchmark, ReviewerConfigPacket,
     ReviewerConfigProducer, ReviewerHarnessMetadata, ReviewerModelMetadata, ReviewerStatus,
-    RollbackMetadata, ScoreDistribution, StaleModelFinding,
+    RollbackMetadata, ScoreDistribution, StaleModelFinding, EVAL_READINESS_REPORT_VERSION,
     HARNESS_MODEL_EVALUATION_REPORT_VERSION, REVIEWER_CONFIG_PACKET_VERSION, REVIEW_CONFIG_VERSION,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -105,6 +106,165 @@ pub fn harness_model_evaluation_output(
         report,
         transcripts,
     })
+}
+
+pub fn harness_model_readiness_report(
+    suite: &EvalTaskSuite,
+    matrix: &HarnessModelMatrix,
+    probes: &[HarnessProbe],
+    peer_runner_probes: &[HarnessProbe],
+    peer_profiles: &PeerHarnessCommandProfiles,
+    available_env: &BTreeSet<String>,
+    provider_budget_acknowledged: bool,
+) -> Result<EvalReadinessReport, CoreError> {
+    suite.validate()?;
+    matrix.validate()?;
+    peer_profiles.validate()?;
+
+    let probe_by_harness = probes
+        .iter()
+        .map(|probe| (probe.harness_id.as_str(), probe))
+        .collect::<BTreeMap<_, _>>();
+    let profile_by_harness = peer_profiles
+        .profiles
+        .iter()
+        .map(|profile| (profile.harness_id.as_str(), profile))
+        .collect::<BTreeMap<_, _>>();
+    let peer_runner_probe_by_harness = peer_runner_probes
+        .iter()
+        .map(|probe| (probe.harness_id.as_str(), probe))
+        .collect::<BTreeMap<_, _>>();
+    let mut cells = Vec::new();
+
+    for harness in &matrix.harnesses {
+        let probe = probe_by_harness.get(harness.harness_id.as_str()).copied();
+        let profile = profile_by_harness.get(harness.harness_id.as_str()).copied();
+        let peer_runner_probe = peer_runner_probe_by_harness
+            .get(harness.harness_id.as_str())
+            .copied();
+        for model in &matrix.models {
+            for task in &suite.tasks {
+                let mut blockers = Vec::new();
+                let (harness_available, harness_version, harness_path) = match probe {
+                    Some(probe) if probe.available => {
+                        (true, probe.version.clone(), probe.path.clone())
+                    }
+                    Some(probe) => {
+                        blockers.push(format!(
+                            "harness unavailable: {}",
+                            probe
+                                .failure_reason
+                                .as_deref()
+                                .unwrap_or("harness probe failed")
+                        ));
+                        (false, probe.version.clone(), probe.path.clone())
+                    }
+                    None => {
+                        blockers.push("harness was not probed".to_string());
+                        (false, None, None)
+                    }
+                };
+                let (peer_profile_found, env_required, requires_provider_budget_ack) = match profile
+                {
+                    Some(profile) => (
+                        true,
+                        profile.env_required.clone(),
+                        profile.requires_provider_budget_ack,
+                    ),
+                    None => {
+                        blockers.push("peer harness profile missing".to_string());
+                        (false, Vec::new(), false)
+                    }
+                };
+                let (peer_runner_available, peer_runner_path) = match (profile, peer_runner_probe) {
+                    (Some(_), Some(probe)) if probe.available => (true, probe.path.clone()),
+                    (Some(_), Some(probe)) => {
+                        blockers.push(format!(
+                            "peer harness runner unavailable: {}",
+                            probe
+                                .failure_reason
+                                .as_deref()
+                                .unwrap_or("peer harness runner probe failed")
+                        ));
+                        (false, probe.path.clone())
+                    }
+                    (Some(_), None) => {
+                        blockers.push("peer harness runner was not probed".to_string());
+                        (false, None)
+                    }
+                    (None, _) => (false, None),
+                };
+                let env_missing = env_required
+                    .iter()
+                    .filter(|name| !available_env.contains(*name))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !env_missing.is_empty() {
+                    blockers.push(format!(
+                        "missing environment variable(s): {}",
+                        env_missing.join(", ")
+                    ));
+                }
+                if requires_provider_budget_ack && !provider_budget_acknowledged {
+                    blockers.push(
+                        "provider budget acknowledgement missing: CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK"
+                            .to_string(),
+                    );
+                }
+
+                cells.push(EvalReadinessCell {
+                    cell_id: cell_id(&harness.harness_id, &model.model_id, &task.task_id),
+                    harness_id: harness.harness_id.clone(),
+                    model_id: model.model_id.clone(),
+                    task_id: task.task_id.clone(),
+                    harness_available,
+                    harness_version,
+                    harness_path,
+                    peer_profile_found,
+                    peer_runner_available,
+                    peer_runner_path,
+                    env_required,
+                    env_missing,
+                    requires_provider_budget_ack,
+                    provider_budget_acknowledged,
+                    runnable: blockers.is_empty(),
+                    blockers,
+                });
+            }
+        }
+    }
+
+    let summary = EvalReadinessSummary {
+        total_cells: cells.len() as u64,
+        runnable_cells: cells.iter().filter(|cell| cell.runnable).count() as u64,
+        unavailable_harness_cells: cells.iter().filter(|cell| !cell.harness_available).count()
+            as u64,
+        unavailable_peer_runner_cells: cells
+            .iter()
+            .filter(|cell| cell.peer_profile_found && !cell.peer_runner_available)
+            .count() as u64,
+        missing_profile_cells: cells.iter().filter(|cell| !cell.peer_profile_found).count() as u64,
+        missing_env_cells: cells
+            .iter()
+            .filter(|cell| !cell.env_missing.is_empty())
+            .count() as u64,
+        budget_blocked_cells: cells
+            .iter()
+            .filter(|cell| cell.requires_provider_budget_ack && !cell.provider_budget_acknowledged)
+            .count() as u64,
+    };
+    let report = EvalReadinessReport {
+        schema_version: EVAL_READINESS_REPORT_VERSION.to_string(),
+        report_id: format!("{}-{}-readiness", matrix.matrix_id, suite.suite_id),
+        generated_at: matrix.observed_at.clone(),
+        suite_id: suite.suite_id.clone(),
+        matrix_id: matrix.matrix_id.clone(),
+        peer_profiles_observed_at: Some(peer_profiles.observed_at.clone()),
+        summary,
+        cells,
+    };
+    report.validate()?;
+    Ok(report)
 }
 
 pub fn eval_reviewer_config(
@@ -1117,6 +1277,144 @@ mod tests {
     }
 
     #[test]
+    fn harness_model_readiness_blocks_provider_cells_without_env_or_budget_ack() {
+        let suite = suite();
+        let matrix = matrix();
+        let profiles = provider_profiles(true);
+        let probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: Some("0.78.1".to_string()),
+            path: Some("/bin/pi".to_string()),
+            failure_reason: None,
+        }];
+        let peer_runner_probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: None,
+            path: Some("/bin/cerberus-peer-harness".to_string()),
+            failure_reason: None,
+        }];
+        let available_env = BTreeSet::new();
+
+        let report = harness_model_readiness_report(
+            &suite,
+            &matrix,
+            &probes,
+            &peer_runner_probes,
+            &profiles,
+            &available_env,
+            false,
+        )
+        .expect("readiness report builds");
+
+        report.validate().expect("readiness report validates");
+        assert_eq!(report.summary.total_cells, 2);
+        assert_eq!(report.summary.runnable_cells, 0);
+        assert_eq!(report.summary.unavailable_peer_runner_cells, 0);
+        assert_eq!(report.summary.missing_env_cells, 2);
+        assert_eq!(report.summary.budget_blocked_cells, 2);
+        assert!(report.cells.iter().all(|cell| {
+            !cell.runnable
+                && cell.env_missing == vec!["OPENROUTER_API_KEY".to_string()]
+                && cell
+                    .blockers
+                    .iter()
+                    .any(|blocker| blocker.contains("provider budget"))
+        }));
+    }
+
+    #[test]
+    fn harness_model_readiness_reports_runnable_cells_when_env_and_budget_are_present() {
+        let suite = suite();
+        let matrix = matrix();
+        let profiles = provider_profiles(true);
+        let probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: Some("0.78.1".to_string()),
+            path: Some("/bin/pi".to_string()),
+            failure_reason: None,
+        }];
+        let peer_runner_probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: None,
+            path: Some("/bin/cerberus-peer-harness".to_string()),
+            failure_reason: None,
+        }];
+        let available_env = BTreeSet::from(["OPENROUTER_API_KEY".to_string()]);
+
+        let report = harness_model_readiness_report(
+            &suite,
+            &matrix,
+            &probes,
+            &peer_runner_probes,
+            &profiles,
+            &available_env,
+            true,
+        )
+        .expect("readiness report builds");
+
+        assert_eq!(report.summary.total_cells, 2);
+        assert_eq!(report.summary.runnable_cells, 2);
+        assert_eq!(report.summary.missing_env_cells, 0);
+        assert_eq!(report.summary.budget_blocked_cells, 0);
+        assert!(report
+            .cells
+            .iter()
+            .all(|cell| cell.runnable && cell.peer_runner_available && cell.blockers.is_empty()));
+    }
+
+    #[test]
+    fn harness_model_readiness_blocks_cells_when_peer_runner_is_unavailable() {
+        let suite = suite();
+        let matrix = matrix();
+        let profiles = provider_profiles(true);
+        let probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: true,
+            version: Some("0.78.1".to_string()),
+            path: Some("/bin/pi".to_string()),
+            failure_reason: None,
+        }];
+        let peer_runner_probes = vec![HarnessProbe {
+            harness_id: "pi".to_string(),
+            available: false,
+            version: None,
+            path: None,
+            failure_reason: Some("cerberus-peer-harness unavailable".to_string()),
+        }];
+        let available_env = BTreeSet::from(["OPENROUTER_API_KEY".to_string()]);
+
+        let report = harness_model_readiness_report(
+            &suite,
+            &matrix,
+            &probes,
+            &peer_runner_probes,
+            &profiles,
+            &available_env,
+            true,
+        )
+        .expect("readiness report builds");
+
+        report.validate().expect("readiness report validates");
+        assert_eq!(report.summary.total_cells, 2);
+        assert_eq!(report.summary.runnable_cells, 0);
+        assert_eq!(report.summary.unavailable_peer_runner_cells, 2);
+        assert_eq!(report.summary.missing_env_cells, 0);
+        assert_eq!(report.summary.budget_blocked_cells, 0);
+        assert!(report.cells.iter().all(|cell| {
+            !cell.runnable
+                && !cell.peer_runner_available
+                && cell
+                    .blockers
+                    .iter()
+                    .any(|blocker| blocker.contains("peer harness runner unavailable"))
+        }));
+    }
+
+    #[test]
     fn reviewer_config_candidate_from_live_eval_report_builds_sandbox_packet() {
         let matrix = matrix();
         let harness = &matrix.harnesses[0];
@@ -1432,6 +1730,37 @@ mod tests {
             }],
             stale_model_patterns: vec![],
             drift_scan_paths: vec![],
+        }
+    }
+
+    fn provider_profiles(
+        requires_provider_budget_ack: bool,
+    ) -> cerberus_schema::PeerHarnessCommandProfiles {
+        cerberus_schema::PeerHarnessCommandProfiles {
+            schema_version: cerberus_schema::PEER_HARNESS_COMMAND_PROFILES_VERSION.to_string(),
+            observed_at: "2026-06-19".to_string(),
+            profiles: vec![cerberus_schema::PeerHarnessCommandProfile {
+                harness_id: "pi".to_string(),
+                command: "cerberus-peer-harness".to_string(),
+                args: vec!["--harness".to_string(), "pi".to_string()],
+                timeout_ms: 300_000,
+                env_required: vec!["OPENROUTER_API_KEY".to_string()],
+                requires_provider_budget_ack,
+                output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
+                peer: cerberus_schema::PeerHarnessInvocation {
+                    command: "pi".to_string(),
+                    args_template: vec![
+                        "--print".to_string(),
+                        "--model".to_string(),
+                        "openrouter/{model}".to_string(),
+                        "@{prompt_file}".to_string(),
+                    ],
+                    prompt_mode: cerberus_schema::PeerHarnessPromptMode::PromptFile,
+                    notes: None,
+                },
+                unsupported: vec!["paid provider calls without budget ack".to_string()],
+                notes: None,
+            }],
         }
     }
 

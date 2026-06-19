@@ -19,11 +19,13 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 
+mod provider_budget;
+use provider_budget::{provider_budget_acknowledged, PROVIDER_BUDGET_ACK_ENV};
+
 static NEXT_PROMPT_FILE_ID: AtomicU64 = AtomicU64::new(0);
 
 const PROFILES_ENV: &str = "CERBERUS_PEER_HARNESS_PROFILES";
 const LIVE_ENV: &str = "CERBERUS_PEER_HARNESS_LIVE";
-const PROVIDER_BUDGET_ACK_ENV: &str = "CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK";
 const DEFAULT_PROFILES_PATH: &str = "fixtures/harnesses/peer-command-profiles.json";
 const ARTIFACT_BEGIN_MARKER: &str = "CERBERUS_REVIEWER_ARTIFACT_JSON_BEGIN";
 const ARTIFACT_END_MARKER: &str = "CERBERUS_REVIEWER_ARTIFACT_JSON_END";
@@ -200,12 +202,6 @@ fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<S
 
 fn live_mode_requested() -> bool {
     env::var(LIVE_ENV)
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false)
-}
-
-fn provider_budget_acknowledged() -> bool {
-    env::var(PROVIDER_BUDGET_ACK_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
 }

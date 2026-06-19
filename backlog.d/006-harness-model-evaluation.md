@@ -162,13 +162,16 @@ Relevant Cerberus drift:
    paths.
 5. Done: add current-model catalog ingestion with cached raw evidence.
 6. Done: add local live peer harness evaluation mode and fixture evidence.
-7. Remaining: run budget-approved provider-backed peer evals rather than the
+7. Done: add a provider eval readiness report so missing harnesses, peer
+   profiles, required env, and provider-budget acknowledgement are visible
+   before a live provider run.
+8. Remaining: run budget-approved provider-backed peer evals rather than the
    local fixture reviewer.
-8. Done: convert fully passing live report winners into a sandbox-only
+9. Done: convert fully passing live report winners into a sandbox-only
    `ReviewerConfigPacket.v1` candidate with embedded `ReviewConfig.v1`; keep
    production defaults unchanged until the report and cost envelope are
    reviewed.
-9. Done: feed accepted configs into backlog 004's Daedalus promotion packet
+10. Done: feed accepted configs into backlog 004's Daedalus promotion packet
    flow by letting Rust review commands run validated packets directly through
    backlog 020's `--config-packet` bridge. Production defaults remain
    unchanged.
