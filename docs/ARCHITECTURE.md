@@ -176,6 +176,8 @@ Responsibilities:
 - prove the local fixture contract shape for Bitterblossom and Olympus without
   cross-caller references
 - project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
+- persist and replay immutable, schema-valid `ReviewRunArtifact.v1` receipts
+  through a file-backed store for local, CI, and Sprites handoff
 - guard fixture text against cross-caller references
 - import frozen historical donor artifacts into public Cerberus schemas
 - provide command harness adapters that launch external reviewer processes
@@ -189,6 +191,7 @@ Non-responsibilities:
   or GitHub posting
 - live acquisition from either caller repository
 - concrete hosted API HTTP client selection or GitHub Actions environment IO
+- hosted API database persistence or legacy SQLite compatibility
 - production review execution through the ThinkTank CLI
 - reviewer artifact acceptance, aggregation, or degradation semantics
 

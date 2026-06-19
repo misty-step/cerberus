@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-ae-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus 005 Rust Review Run Artifact Store Plan</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/misty-step/aesthetic@v2.5.1/aesthetic.css">
+  <style>
+    .plan { width: min(92rem, 100% - 4rem); margin: 0 auto; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(22rem, 0.75fr); gap: 2.5rem; align-items: end; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--ae-line); margin-top: 2rem; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cell { background: var(--ae-surface); padding: 1.15rem 1.25rem; min-width: 0; }
+    .wash { background: var(--ae-wash); }
+    .phase { display: grid; grid-template-columns: 8rem minmax(0, 1fr) minmax(18rem, 0.7fr); gap: 1.25rem; padding: 1rem 0; border-top: 1px solid var(--ae-line); }
+    .phase:first-child { border-top: 0; }
+    @media (max-width: 900px) { .plan { width: min(100% - 2rem, 92rem); } .hero, .grid, .grid-2, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="ae-screen">
+    <article class="ae-stage plan">
+      <section class="hero">
+        <div>
+          <p class="ae-chrome">BACKLOG 005 / ELIXIR VERDICT STORE RETIREMENT SLICE</p>
+          <h1 class="ae-strong">Persist review-run artifacts at the adapter edge, and replay only schema-valid receipts.</h1>
+          <p class="ae-lede">Rust already owns <code>ReviewRunArtifact.v1</code> aggregation and replay consistency. This slice adds the small storage boundary needed by local, CI, and Sprites callers without moving legacy SQLite behavior into the core.</p>
+        </div>
+        <aside class="ae-panel">
+          <h2 class="ae-h">Chosen Design</h2>
+          <p>Add a file-backed <code>ReviewRunArtifactStore</code> in <code>cerberus-adapter</code>. It writes artifacts under <code>review-runs/&lt;run_id&gt;.json</code>, rejects unsafe run IDs, validates before persisting, and validates again after replay.</p>
+          <h2 class="ae-h">Quality System</h2>
+          <p>Risk tier: storage boundary for review evidence. Proof: focused adapter tests, schema replay validation, retirement inventory validation, aggregate Rust gates, and fresh critic on the diff plus this oracle.</p>
+        </aside>
+      </section>
+
+      <section class="grid">
+        <article class="cell">
+          <h2 class="ae-h">Standards</h2>
+          <p>Core remains semantic. Adapter owns filesystem IO. No SQLite dependency, no duplicated aggregation logic, and no caller ledger semantics.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Acceptance</h2>
+          <p>A valid review run can be persisted and loaded unchanged; tampered, malformed, or path-escaping artifacts fail closed.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Verify</h2>
+          <p><code>cargo test -p cerberus-adapter artifact_store</code>, schema validation, retirement inventory validation, and workspace gate.</p>
+        </article>
+        <article class="cell wash">
+          <h2 class="ae-h">Stop If</h2>
+          <p>The implementation duplicates verdict aggregation, stores outside the root, claims full Elixir store parity, or weakens existing gates.</p>
+        </article>
+      </section>
+
+      <section class="grid grid-2">
+        <article class="cell">
+          <h2 class="ae-h">Verification System</h2>
+          <p><strong>Claim:</strong> Rust has a minimal, source-agnostic persisted review-run receipt path.</p>
+          <p><strong>Falsifier:</strong> malformed JSON, inconsistent stats/cost/verdict, or unsafe run IDs can be stored or replayed as valid evidence.</p>
+          <p><strong>Driver:</strong> generate a real core artifact, persist it, reload it, mutate pre-persist and post-persist JSON, and validate all failure modes.</p>
+          <p><strong>Grader:</strong> valid artifact round trips byte-semantically through public schema types, while tampering fails through schema or adapter errors.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Delete-First</h2>
+          <p><strong>Requirement questioned:</strong> full legacy SQLite parity as the first Rust store step.</p>
+          <p><strong>Simplified:</strong> JSON artifact receipts are enough for agent workflows, local QA, and Sprites handoff.</p>
+          <p><strong>Deferred:</strong> hosted API persistence and any database compatibility decision stay pending until API cutover proof exists.</p>
+        </article>
+      </section>
+
+      <section class="ae-panel" style="margin-top: 2rem">
+        <h2 class="ae-h">Execution</h2>
+        <div class="phase">
+          <strong class="ae-accent">1 boundary</strong>
+          <p>Add the store trait and file implementation under <code>crates/cerberus-adapter/src/artifact_store.rs</code>, exported from the adapter crate.</p>
+          <p class="ae-dim">No core or CLI ownership change unless the tests prove the boundary is insufficient.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">2 tests</strong>
+          <p>Cover valid round trip, unsafe run IDs, malformed pre-persist artifacts, corrupt replay JSON, and tampered persisted artifacts.</p>
+          <p class="ae-dim">Use public Rust review generation for the happy path.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">3 docs</strong>
+          <p>Update architecture and the legacy retirement inventory to record the partial store replacement evidence without claiming full parity.</p>
+          <p class="ae-dim">The Elixir store remains pending until hosted/API persistence is proven.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">4 review</strong>
+          <p>Fresh critic attacks boundary placement, unsafe paths, replay validation, parity claims, and overengineering.</p>
+          <p class="ae-dim">Fix blockers before commit.</p>
+        </div>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

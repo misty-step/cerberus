@@ -152,13 +152,14 @@
       "current_responsibility": "Legacy verdict aggregation, finding normalization, dedupe, cost accounting, override handling, and persisted review state.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "cerberus-core ReviewRunArtifact.v1 generation plus a Rust storage adapter when persistence is needed.",
+      "rust_replacement": "cerberus-core ReviewRunArtifact.v1 generation plus FileReviewRunArtifactStore for immutable, schema-valid local, CI, and Sprites receipt persistence.",
       "parity_evidence": [
+        "cargo test -p cerberus-adapter artifact_store",
         "cargo test --workspace",
         "cd cerberus-elixir && mix test test/cerberus/verdict_test.exs test/cerberus/verdict test/store_test.exs test/cerberus/store_review_run_test.exs"
       ],
       "rollback_path": "Keep Elixir store and verdict modules until Rust artifacts cover legacy aggregate and persistence cases.",
-      "next_action": "Add Rust fixtures for confidence aggregation, dedupe, override, cost, malformed finding rows, and persisted run replay."
+      "next_action": "Add hosted/API persistence fixtures and decide whether SQLite compatibility is required before retiring the Elixir store."
     },
     {
       "surface_id": "elixir-review-tools",

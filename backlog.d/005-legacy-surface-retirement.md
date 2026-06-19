@@ -142,3 +142,20 @@ Fifth local retirement delivery, 2026-06-19:
   fixture evidence.
 - Recorded deletion commit `fba7271` in the machine-checked inventory in the
   follow-up receipt commit because a Git commit cannot name its own final hash.
+
+Sixth local retirement delivery, 2026-06-19:
+
+- Added `FileReviewRunArtifactStore` to the Rust adapter SDK so local, CI, and
+  Sprites workflows can persist and replay immutable `ReviewRunArtifact.v1`
+  receipts without adopting legacy SQLite semantics.
+- Kept semantic replay validation in `cerberus-schema`: the store validates
+  before writing, validates again after reading, rejects unsafe run IDs, and
+  rejects artifacts loaded from the wrong run-id path or written over an
+  existing receipt.
+- Added focused adapter tests for valid round trip, malformed pre-persist
+  artifacts, corrupt JSON, tampered persisted artifacts, unsafe run IDs, and
+  run-id/path mismatch, and duplicate write rejection.
+- Updated architecture and the retirement inventory to record partial
+  `elixir-verdict-store` replacement evidence while keeping the surface pending
+  until hosted/API persistence fixtures and any SQLite compatibility decision
+  are complete.

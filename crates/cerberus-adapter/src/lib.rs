@@ -5,12 +5,15 @@ use cerberus_schema::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 
+mod artifact_store;
 mod command_harness;
 mod git_diff;
 mod github_action;
 mod hosted_api;
 mod thinktank_migration;
+pub use artifact_store::{FileReviewRunArtifactStore, ReviewRunArtifactStore};
 pub use command_harness::{
     BoundedCommand, BoundedCommandOutput, CommandHarness, CommandHarnessInput,
 };
@@ -48,6 +51,18 @@ pub enum AdapterError {
     InvalidGitDiff { reason: String },
     #[error("artifact has no reviewed head sha for caller projection")]
     MissingReviewedHeadSha,
+    #[error("review run artifact file IO failed for {path:?}: {source}")]
+    ArtifactStoreIo {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("review run artifact already exists at {path:?}")]
+    ArtifactAlreadyExists { path: PathBuf },
+    #[error("review run id {run_id:?} is not safe for artifact storage")]
+    UnsafeArtifactRunId { run_id: String },
+    #[error("review run artifact path expected run_id {expected:?}, got {actual:?}")]
+    ArtifactRunIdMismatch { expected: String, actual: String },
     #[error("{field} mismatch: expected {expected:?}, got {actual:?}")]
     RequestArtifactMismatch {
         field: &'static str,
