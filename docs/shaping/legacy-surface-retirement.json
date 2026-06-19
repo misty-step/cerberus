@@ -13,17 +13,17 @@
       "parity_status": "compatibility_only",
       "keep_reason": "Existing consumers call misty-step/cerberus through the root action; changing this requires a public migration plan.",
       "rollback_path": "Restore action.yml from the last compatible release tag.",
-      "next_action": "Keep aligned with dispatch.sh until a Rust action adapter proves the same pull_request behavior."
+      "next_action": "Keep the public input/output contract stable while the Rust dispatcher remains the active entrypoint."
     },
     {
       "surface_id": "dispatch-shell-client",
       "paths": [
         "dispatch.sh"
       ],
-      "current_responsibility": "GitHub Actions preflight, hosted API dispatch, polling, verdict output, fork/draft skip handling, and fail-on-verdict behavior.",
+      "current_responsibility": "Legacy GitHub Actions shell dispatcher retained as rollback for hosted API dispatch, polling, verdict output, fork/draft skip handling, and fail-on-verdict behavior.",
       "retirement_decision": "port_to_rust",
-      "parity_status": "pending",
-      "rust_replacement": "A Rust GitHub Action adapter backed by cerberus-cli and the ReviewRequest.v1 contract.",
+      "parity_status": "covered_by_rust_fixture",
+      "rust_replacement": "A Rust GitHub Action adapter backed by cerberus-cli, the ReviewRequest.v1 contract, and the hosted API dispatch command.",
       "parity_evidence": [
         "shellcheck dispatch.sh",
         "cargo test -p cerberus-adapter github_action",
@@ -39,10 +39,11 @@
         "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-poll-errors.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-poll-errors.decision.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-review-failed.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-review-failed.decision.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-dispatch-fixture --transcript fixtures/github-actions/hosted-api-timeout.json --out tmp/hosted-api-dispatch-2026-06-19/hosted-api-timeout.decision.json",
-        "cargo test -p cerberus-cli --test github_action_dispatch"
+        "cargo test -p cerberus-cli --test github_action_dispatch",
+        "cargo test -p cerberus-cli --test github_action_entrypoint"
       ],
-      "rollback_path": "Keep dispatch.sh as the fallback action client until the Rust adapter is released.",
-      "next_action": "Wire action.yml to the Rust command and prove consumer workflow parity before deleting shell dispatch."
+      "rollback_path": "Restore action.yml dispatch step to bash ${{ github.action_path }}/dispatch.sh.",
+      "next_action": "Keep dispatch.sh as rollback until a later deletion slice records the archive commit."
     },
     {
       "surface_id": "node-scaffolder",

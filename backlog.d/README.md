@@ -30,6 +30,7 @@ Current sequence:
 22. `022-current-model-catalog-drift-refresh.md`
 23. `023-hosted-api-dispatch-state-machine.md`
 24. `024-hosted-api-http-dispatch.md`
+25. `025-rust-action-entrypoint.md`
 
 Planning rules:
 
@@ -76,3 +77,5 @@ Planning rules:
   adding HTTP transport or replacing the shell action client.
 - Add a real Rust hosted API dispatcher and GitHub output writer before
   changing the composite action entrypoint.
+- Keep `dispatch.sh` as rollback until the Rust composite action entrypoint has
+  fixture-backed parity and a later deletion slice records the archive commit.

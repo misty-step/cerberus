@@ -76,8 +76,10 @@ Outputs:
 
 ## How It Works
 
-1. The root action runs `dispatch.sh`.
-2. `dispatch.sh` validates the PR context, skips fork or draft PRs, and sends `POST /api/reviews`.
+1. The root action runs `cerberus-cli github-action-dispatch` from this Rust
+   workspace.
+2. The Rust dispatcher validates the PR context, skips fork or draft PRs, and
+   sends `POST /api/reviews`.
 3. The action polls `GET /api/reviews/:id` until the review completes or times out.
 4. The aggregated verdict becomes the GitHub Action result.
 
@@ -87,7 +89,8 @@ the workspace crates and is tracked by the backlog.
 
 ## Repository Layout
 
-- `action.yml` / `dispatch.sh`: thin GitHub Action client
+- `action.yml`: thin GitHub Action client that launches the Rust dispatcher
+- `dispatch.sh`: legacy rollback dispatcher retained until deletion parity
 - `crates/`: Rust schemas, core review artifact engine, adapters, and CLI
 - `cerberus-elixir/`: legacy Elixir API server and compatibility review engine
 - `defaults/`: model and product data consumed by the engine
@@ -98,6 +101,8 @@ the workspace crates and is tracked by the backlog.
 ## Local Verification
 
 ```bash
+cargo test -p cerberus-cli --test github_action_entrypoint
+cargo test -p cerberus-cli --test github_action_dispatch
 node --check bin/cerberus.js
 shellcheck dispatch.sh
 cd cerberus-elixir && mix test

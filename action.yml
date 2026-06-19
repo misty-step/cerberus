@@ -58,5 +58,17 @@ runs:
         BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
         HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         IS_DRAFT: ${{ github.event.pull_request.draft }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        bash "${{ github.action_path }}/dispatch.sh"
+        set -euo pipefail
+        if ! command -v cargo >/dev/null 2>&1; then
+          echo "::error::Cerberus Rust dispatcher requires cargo on PATH"
+          exit 1
+        fi
+
+        export CARGO_TARGET_DIR="${RUNNER_TEMP:-/tmp}/cerberus-cargo-target"
+        (
+          unset CERBERUS_API_KEY GITHUB_TOKEN
+          cargo build --locked --manifest-path "$GITHUB_ACTION_PATH/Cargo.toml" -q -p cerberus-cli --bin cerberus-cli
+        )
+        "$CARGO_TARGET_DIR/debug/cerberus-cli" github-action-dispatch

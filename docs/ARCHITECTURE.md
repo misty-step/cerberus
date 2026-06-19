@@ -99,8 +99,8 @@ draft PRs before requiring hosted secrets, sends the hosted API POST with a
 Rust HTTP client, polls the hosted review, appends `review-id` and `verdict` to
 the configured GitHub output file, writes verdict JSON under `RUNNER_TEMP` when
 available, and exits according to the hosted dispatch decision. `action.yml`
-still invokes `dispatch.sh`; replacing that entrypoint is a separate
-consumer-compatibility slice.
+now invokes this Rust command through Cargo from the checked-out action path.
+`dispatch.sh` remains only as a rollback surface until a later deletion slice.
 
 ## Request Flow
 
@@ -111,7 +111,7 @@ pull_request event
 action.yml
     │
     ▼
-dispatch.sh
+cerberus-cli github-action-dispatch
     │
     ├── POST /api/reviews
     ├── poll GET /api/reviews/:id
@@ -136,18 +136,22 @@ cerberus-elixir/
 ### Root Action
 
 - `action.yml`
-- `dispatch.sh`
 - `templates/consumer-workflow-reusable.yml`
 - `bin/cerberus.js`
 
 Responsibilities:
 
+- launch the Rust dispatcher from the checked-out action workspace
 - validate basic PR context
 - dispatch to the API
 - poll until completion
 - expose workflow outputs
-- remain the compatibility path until Rust-backed request construction,
-  hosted dispatch, polling, and output behavior all have consumer parity
+- keep the public input/output contract stable
+
+Rollback surface:
+
+- `dispatch.sh` is retained only until the retirement inventory records a
+  deletion/archive commit after Rust entrypoint parity.
 
 ### Rust Adapter SDK
 
