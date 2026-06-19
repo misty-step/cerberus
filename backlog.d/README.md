@@ -27,6 +27,7 @@ Current sequence:
 19. `019-eval-report-reviewer-config-candidate.md`
 20. `020-packet-backed-review-config.md`
 21. `021-github-action-event-request-adapter.md`
+22. `022-current-model-catalog-drift-refresh.md`
 
 Planning rules:
 
@@ -67,3 +68,5 @@ Planning rules:
   before caller integrations depend on measured configs.
 - Move GitHub Action event preflight and request construction into a Rust
   adapter before replacing shell POST/poll behavior.
+- Keep drift-prone model catalog facts refreshed as dated checked evidence
+  before spending provider eval budget or changing reviewer defaults.

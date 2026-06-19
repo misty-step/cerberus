@@ -5,12 +5,12 @@
       "context_length": 1048576,
       "pricing": {
         "prompt": "0.0000012",
-        "completion": "0.0000032",
+        "completion": "0.0000041",
         "input_cache_read": "0.0000002"
       },
       "top_provider": {
-        "context_length": 202752,
-        "max_completion_tokens": 65536,
+        "context_length": 1048576,
+        "max_completion_tokens": 131072,
         "is_moderated": false
       },
       "supported_parameters": [

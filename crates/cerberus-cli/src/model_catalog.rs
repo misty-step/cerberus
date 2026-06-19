@@ -83,6 +83,26 @@ impl OpenRouterCatalog {
         let supported_parameters =
             string_array(row, &previous_model.model_id, "supported_parameters")?;
 
+        let previous = if model_facts_changed(
+            previous_model,
+            context_length,
+            max_completion_tokens,
+            input_usd_per_m,
+            output_usd_per_m,
+            cache_read_usd_per_m,
+        ) {
+            Some(ModelCatalogSnapshot {
+                observed_at: previous_model.catalog_observed_at.clone(),
+                context_length: previous_model.context_length,
+                max_completion_tokens: previous_model.max_completion_tokens,
+                input_usd_per_m: previous_model.input_usd_per_m,
+                output_usd_per_m: previous_model.output_usd_per_m,
+                cache_read_usd_per_m: previous_model.cache_read_usd_per_m,
+            })
+        } else {
+            previous_model.previous.clone()
+        };
+
         let refreshed = ModelCandidate {
             schema_version: MODEL_CANDIDATE_VERSION.to_string(),
             model_id: previous_model.model_id.clone(),
@@ -95,18 +115,26 @@ impl OpenRouterCatalog {
             supported_parameters,
             catalog_source: catalog_source.to_string(),
             catalog_observed_at: observed_at.to_string(),
-            previous: Some(ModelCatalogSnapshot {
-                observed_at: previous_model.catalog_observed_at.clone(),
-                context_length: previous_model.context_length,
-                max_completion_tokens: previous_model.max_completion_tokens,
-                input_usd_per_m: previous_model.input_usd_per_m,
-                output_usd_per_m: previous_model.output_usd_per_m,
-                cache_read_usd_per_m: previous_model.cache_read_usd_per_m,
-            }),
+            previous,
         };
         refreshed.validate()?;
         Ok(refreshed)
     }
+}
+
+fn model_facts_changed(
+    previous_model: &ModelCandidate,
+    context_length: u64,
+    max_completion_tokens: u64,
+    input_usd_per_m: f64,
+    output_usd_per_m: f64,
+    cache_read_usd_per_m: Option<f64>,
+) -> bool {
+    previous_model.context_length != context_length
+        || previous_model.max_completion_tokens != max_completion_tokens
+        || previous_model.input_usd_per_m != input_usd_per_m
+        || previous_model.output_usd_per_m != output_usd_per_m
+        || previous_model.cache_read_usd_per_m != cache_read_usd_per_m
 }
 
 fn u64_field(value: &Value, model_id: &str, field: &'static str) -> Result<u64> {
@@ -131,7 +159,7 @@ fn usd_per_m(value: &Value, model_id: &str, field: &'static str) -> Result<f64> 
             "catalog model {model_id:?} pricing field {field:?} must be a non-negative finite number"
         );
     }
-    Ok(per_token * 1_000_000.0)
+    Ok(round_usd_per_m(per_token * 1_000_000.0))
 }
 
 fn optional_usd_per_m(value: &Value, model_id: &str, field: &'static str) -> Result<Option<f64>> {
@@ -139,6 +167,10 @@ fn optional_usd_per_m(value: &Value, model_id: &str, field: &'static str) -> Res
         return Ok(None);
     }
     usd_per_m(value, model_id, field).map(Some)
+}
+
+fn round_usd_per_m(value: f64) -> f64 {
+    (value * 1_000_000_000.0).round() / 1_000_000_000.0
 }
 
 fn string_array(value: &Value, model_id: &str, field: &'static str) -> Result<Vec<String>> {
@@ -174,15 +206,16 @@ mod tests {
             .iter()
             .find(|model| model.model_id == "z-ai/glm-5.2")
             .expect("glm model exists");
-        assert_eq!(checked_glm.max_completion_tokens, 65_536);
-        assert_eq!(checked_glm.output_usd_per_m, 3.2);
+        assert_eq!(checked_glm.max_completion_tokens, 131_072);
+        assert_eq!(checked_glm.output_usd_per_m, 4.1);
+        assert_eq!(checked_glm.cache_read_usd_per_m, Some(0.2));
         assert_eq!(
             checked_glm
                 .previous
                 .as_ref()
                 .expect("previous snapshot")
                 .max_completion_tokens,
-            16_384
+            65_536
         );
         assert_eq!(
             checked_glm
@@ -190,26 +223,70 @@ mod tests {
                 .as_ref()
                 .expect("previous snapshot")
                 .output_usd_per_m,
-            4.2
+            3.2
+        );
+
+        let mut stale_matrix = matrix.clone();
+        let stale_glm = stale_matrix
+            .models
+            .iter_mut()
+            .find(|model| model.model_id == "z-ai/glm-5.2")
+            .expect("stale glm model exists");
+        stale_glm.context_length = 1_048_576;
+        stale_glm.max_completion_tokens = 65_536;
+        stale_glm.input_usd_per_m = 1.2;
+        stale_glm.output_usd_per_m = 3.2;
+        stale_glm.cache_read_usd_per_m = Some(0.2);
+        stale_glm.catalog_observed_at = "2026-06-18T18:20:00Z".to_string();
+        stale_glm.previous = None;
+
+        let refreshed_from_stale = refresh_openrouter_matrix(
+            &stale_matrix,
+            CATALOG,
+            "fixtures/evals/openrouter-models-catalog-minimal.json",
+            "2026-06-19-live",
+        )
+        .expect("stale catalog refresh succeeds");
+        let refreshed_stale_glm = refreshed_from_stale
+            .models
+            .iter()
+            .find(|model| model.model_id == "z-ai/glm-5.2")
+            .expect("refreshed stale glm model exists");
+        assert_eq!(refreshed_stale_glm.max_completion_tokens, 131_072);
+        assert_eq!(
+            refreshed_stale_glm
+                .previous
+                .as_ref()
+                .expect("previous snapshot")
+                .max_completion_tokens,
+            65_536
+        );
+        assert_eq!(
+            refreshed_stale_glm
+                .previous
+                .as_ref()
+                .expect("previous snapshot")
+                .output_usd_per_m,
+            3.2
         );
 
         let refreshed = refresh_openrouter_matrix(
             &matrix,
             CATALOG,
             "fixtures/evals/openrouter-models-catalog-minimal.json",
-            "2026-06-18-live",
+            "2026-06-19-live",
         )
         .expect("catalog refresh succeeds");
 
         refreshed.validate().expect("refreshed matrix validates");
-        assert_eq!(refreshed.observed_at, "2026-06-18-live");
+        assert_eq!(refreshed.observed_at, "2026-06-19-live");
         assert_eq!(refreshed.models.len(), matrix.models.len());
         let kimi = refreshed
             .models
             .iter()
             .find(|model| model.model_id == "moonshotai/kimi-k2.7-code")
             .expect("kimi model exists");
-        assert_eq!(kimi.catalog_observed_at, "2026-06-18-live");
+        assert_eq!(kimi.catalog_observed_at, "2026-06-19-live");
         assert_eq!(kimi.context_length, 262_144);
         assert_eq!(kimi.max_completion_tokens, 16_384);
         assert_eq!(kimi.input_usd_per_m, 0.74);
@@ -223,7 +300,7 @@ mod tests {
                 .as_ref()
                 .expect("previous snapshot")
                 .observed_at,
-            "2026-06-18T18:20:00Z"
+            "2026-06-18"
         );
 
         let glm = refreshed
@@ -231,14 +308,22 @@ mod tests {
             .iter()
             .find(|model| model.model_id == "z-ai/glm-5.2")
             .expect("glm model exists");
-        assert_eq!(glm.max_completion_tokens, 65_536);
-        assert!((glm.output_usd_per_m - 3.2).abs() < 0.000_001);
+        assert_eq!(glm.max_completion_tokens, 131_072);
+        assert!((glm.output_usd_per_m - 4.1).abs() < 0.000_001);
+        assert_eq!(glm.cache_read_usd_per_m, Some(0.2));
         assert_eq!(
             glm.previous
                 .as_ref()
                 .expect("previous snapshot")
                 .max_completion_tokens,
             65_536
+        );
+        assert_eq!(
+            glm.previous
+                .as_ref()
+                .expect("previous snapshot")
+                .output_usd_per_m,
+            3.2
         );
     }
 
@@ -256,7 +341,7 @@ mod tests {
     #[test]
     fn model_catalog_errors_when_required_pricing_is_missing() {
         let matrix: HarnessModelMatrix = serde_json::from_str(MATRIX).expect("matrix parses");
-        let broken = CATALOG.replace("\"completion\": \"0.0000032\",", "");
+        let broken = CATALOG.replace("\"completion\": \"0.0000041\",", "");
 
         let error = refresh_openrouter_matrix(&matrix, &broken, "fixture", "2026-06-18")
             .expect_err("missing pricing is rejected");

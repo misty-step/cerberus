@@ -69,7 +69,8 @@ Out of scope:
 
 ## Research Snapshot
 
-Snapshot date: 2026-06-18.
+Initial snapshot date: 2026-06-18.
+Latest refresh date: 2026-06-19.
 
 - Firecrawl search was attempted first, but the account returned HTTP 402. The
   fallback evidence is direct OpenRouter API retrieval plus official-source web
@@ -80,8 +81,8 @@ Snapshot date: 2026-06-18.
   - `opencode` 1.2.6
   - `omp` 16.0.9
 - OpenRouter API current facts:
-  - `z-ai/glm-5.2`: context 1,048,576; top-provider context 202,752;
-    max completion 65,536; input $1.20/M; output $3.20/M; cache read $0.20/M.
+  - `z-ai/glm-5.2`: context 1,048,576; top-provider context 1,048,576;
+    max completion 131,072; input $1.20/M; output $4.10/M; cache read $0.20/M.
   - `moonshotai/kimi-k2.7-code`: context 262,144; max completion 16,384;
     input $0.74/M; output $3.50/M; cache read $0.15/M.
   - `deepseek/deepseek-v4-pro`: context 1,048,576; max completion 384,000;
@@ -150,3 +151,13 @@ Offline eval result:
 - 0 failed cells
 - 27 stale-model findings
 - GLM 5.2 catalog deltas for max completion and output price
+
+Second local refresh, 2026-06-19:
+
+- Backlog 022 refreshed the same checked catalog against the live OpenRouter
+  API after GLM 5.2 drifted again.
+- Updated GLM 5.2 from max completion `65,536` to `131,072`, top-provider
+  context `202,752` to `1,048,576`, and output `$3.20/M` to `$4.10/M`.
+- Preserved the 2026-06-18 GLM 5.2 values as the matrix's previous snapshot.
+- Added rounding for derived USD-per-million values so cache read `$0.20/M`
+  remains stable in generated JSON.

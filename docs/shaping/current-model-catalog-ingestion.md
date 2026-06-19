@@ -1,6 +1,6 @@
 # Current Model Catalog Ingestion
 
-Snapshot date: 2026-06-18.
+Snapshot date: 2026-06-19.
 
 Backlog 008 adds the evidence bridge between model research and the harness
 evaluation matrix. Model facts should enter Cerberus through a cached raw
@@ -14,7 +14,7 @@ cargo run --locked -p cerberus-cli -- refresh-model-catalog \
   --catalog-source fixtures/evals/openrouter-models-catalog-minimal.json \
   --out tmp/evals/catalog/harness-model-matrix.json \
   --raw-out tmp/evals/catalog/openrouter-models.raw.json \
-  --observed-at 2026-06-18
+  --observed-at 2026-06-19T05:46:00Z
 ```
 
 `--catalog-source` accepts a local file or an `http://` / `https://` URL. URL
@@ -37,10 +37,10 @@ The command:
 It fails if a requested model is absent or required fields such as prompt price,
 completion price, context length, or max completion tokens are unavailable.
 
-Backlog 014 refreshed the tiny catalog against the live OpenRouter API later on
-2026-06-18. The current checked fixture records GLM 5.2 output price `$3.20/M`
-and max completion `65,536`, with the prior `$4.20/M` / `16,384` values kept in
-the matrix's previous snapshot.
+Backlog 022 refreshed the tiny catalog against the live OpenRouter API on
+2026-06-19. The current checked fixture records GLM 5.2 output price `$4.10/M`
+and max completion `131,072`, with the 2026-06-18 `$3.20/M` / `65,536` values
+kept in the matrix's previous snapshot.
 
 ## Follow-On Proof
 

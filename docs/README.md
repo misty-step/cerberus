@@ -31,6 +31,8 @@ Current docs:
   `docs/shaping/020-packet-backed-review-config-plan.html`
 - GitHub Action event request adapter plan:
   `docs/shaping/021-github-action-event-request-adapter-plan.html`
+- Current model catalog drift refresh plan:
+  `docs/shaping/022-current-model-catalog-drift-refresh-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

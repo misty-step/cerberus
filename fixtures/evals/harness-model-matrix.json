@@ -1,7 +1,7 @@
 {
   "schema_version": "harness-model-matrix.v1",
-  "matrix_id": "2026-06-18-openrouter-smoke",
-  "observed_at": "2026-06-18",
+  "matrix_id": "2026-06-19-openrouter-smoke",
+  "observed_at": "2026-06-19T05:46:00Z",
   "harnesses": [
     {
       "schema_version": "harness-profile.v1",
@@ -9,7 +9,7 @@
       "command": "pi",
       "version": "0.78.1",
       "path": "/Users/phaedrus/.npm-global/bin/pi",
-      "notes": "Local Pi CLI probed with --version on 2026-06-18."
+      "notes": "Local Pi CLI probed with --version on 2026-06-19."
     },
     {
       "schema_version": "harness-profile.v1",
@@ -17,7 +17,7 @@
       "command": "goose",
       "version": "1.12.1",
       "path": "/Users/phaedrus/.local/bin/goose",
-      "notes": "Local Goose CLI probed with --version on 2026-06-18."
+      "notes": "Local Goose CLI probed with --version on 2026-06-19."
     },
     {
       "schema_version": "harness-profile.v1",
@@ -25,7 +25,7 @@
       "command": "opencode",
       "version": "1.2.6",
       "path": "/Users/phaedrus/.opencode/bin/opencode",
-      "notes": "Local OpenCode CLI probed with --version on 2026-06-18."
+      "notes": "Local OpenCode CLI probed with --version on 2026-06-19."
     },
     {
       "schema_version": "harness-profile.v1",
@@ -33,7 +33,7 @@
       "command": "omp",
       "version": "16.0.9",
       "path": "/Users/phaedrus/.bun/bin/omp",
-      "notes": "Local OMP CLI probed with --version on 2026-06-18."
+      "notes": "Local OMP CLI probed with --version on 2026-06-19."
     }
   ],
   "models": [
@@ -42,9 +42,9 @@
       "model_id": "z-ai/glm-5.2",
       "provider": "OpenRouter",
       "context_length": 1048576,
-      "max_completion_tokens": 65536,
+      "max_completion_tokens": 131072,
       "input_usd_per_m": 1.2,
-      "output_usd_per_m": 3.2,
+      "output_usd_per_m": 4.1,
       "cache_read_usd_per_m": 0.2,
       "supported_parameters": [
         "frequency_penalty",
@@ -68,13 +68,13 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "catalog_observed_at": "2026-06-19T05:46:00Z",
       "previous": {
-        "observed_at": "2026-06-18",
+        "observed_at": "2026-06-18T18:20:00Z",
         "context_length": 1048576,
-        "max_completion_tokens": 16384,
+        "max_completion_tokens": 65536,
         "input_usd_per_m": 1.2,
-        "output_usd_per_m": 4.2,
+        "output_usd_per_m": 3.2,
         "cache_read_usd_per_m": 0.2
       }
     },
@@ -109,7 +109,7 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "catalog_observed_at": "2026-06-19T05:46:00Z",
       "previous": {
         "observed_at": "2026-06-18",
         "context_length": 262144,
@@ -150,7 +150,7 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "catalog_observed_at": "2026-06-19T05:46:00Z",
       "previous": {
         "observed_at": "2026-06-18",
         "context_length": 1048576,
@@ -191,7 +191,7 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-18T18:20:00Z",
+      "catalog_observed_at": "2026-06-19T05:46:00Z",
       "previous": {
         "observed_at": "2026-06-18",
         "context_length": 1048576,

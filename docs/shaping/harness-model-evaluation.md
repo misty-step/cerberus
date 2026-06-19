@@ -31,7 +31,7 @@ engine's defaults without a dated evaluation loop.
 
 ## Current Local Evidence
 
-Commands run on 2026-06-18:
+Commands run on 2026-06-19:
 
 ```sh
 command -v pi goose opencode omp
@@ -93,11 +93,11 @@ Primary-source model facts:
 | `deepseek/deepseek-v4-pro` / `deepseek-v4-flash` | `https://api-docs.deepseek.com/news/news260424` and OpenRouter API | DeepSeek's V4 preview says V4-Pro and V4-Flash are API-available, support 1M context, integrate with agents including OpenCode, and distinguish Pro from Flash by capability/cost profile. |
 | SWE-bench | `https://www.swebench.com/index.html` | SWE-bench Verified is useful as an external prior, but it measures patch-resolution systems and does not replace Cerberus's reviewer-artifact eval. |
 
-OpenRouter API snapshot, 2026-06-18:
+OpenRouter API snapshot, 2026-06-19:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Supported params of interest |
 |---|---:|---:|---:|---:|---:|---|
-| `z-ai/glm-5.2` | 1,048,576 | 65,536 | 1.20 | 3.20 | 0.20 | tools, tool_choice, structured_outputs, reasoning, response_format |
+| `z-ai/glm-5.2` | 1,048,576 | 131,072 | 1.20 | 4.10 | 0.20 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | tools, tool_choice, structured_outputs, reasoning, response_format |
@@ -153,13 +153,13 @@ Backlog 006 now has a Rust-side offline smoke runner:
   schema-valid matrix before the eval run.
 - `fixtures/evals/reviewer-harness-smoke.json` covers clean/no-finding,
   seeded finding, prompt-injection text, and degraded timeout cases.
-- `fixtures/evals/harness-model-matrix.json` captures the 2026-06-18 local
+- `fixtures/evals/harness-model-matrix.json` captures the 2026-06-19 local
   harness versions and OpenRouter model facts used by this run.
 
-Backlog 014 refreshed this checked matrix later on 2026-06-18 after live
-OpenRouter API and local harness probes showed drift: OMP moved to `16.0.9`, and
-GLM 5.2's current OpenRouter row reports max completion `65,536` and output
-price `$3.20/M` while preserving the earlier `16,384` / `$4.20/M` matrix values
+Backlog 022 refreshed this checked matrix on 2026-06-19 after live OpenRouter
+API probes showed GLM 5.2 drift again: max completion moved from `65,536` to
+`131,072`, top-provider context moved from `202,752` to `1,048,576`, and output
+price moved from `$3.20/M` to `$4.10/M`. Those 2026-06-18 facts remain preserved
 as the previous snapshot.
 
 Backlog 018 adds `cerberus-cli eval-harness --execution-mode live-peer` with
