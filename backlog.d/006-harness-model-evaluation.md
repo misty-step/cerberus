@@ -88,28 +88,28 @@ Out of scope:
 
 ## Current Source Snapshot
 
-Current source observation: 2026-06-19T13:56:14Z.
+Current source observation: 2026-06-19T19:32:40Z.
 
 The checked machine-readable source of truth is
 `fixtures/evals/harness-model-matrix.json`. The direct OpenRouter refresh in
-`tmp/evals/provider-full-suite-rerun-preflight-2026-06-19T135614Z/` produced a generated
-matrix semantically equal to the checked matrix after normalizing only
-observation timestamps. Previous 2026-06-18 catalog values remain preserved in
-the checked `previous` fields where they explain drift.
+`tmp/evals/current-source-refresh-2026-06-19/2026-06-19T193240Z/` produced a
+generated matrix semantically equal to the checked matrix after normalizing only
+observation timestamps. Previous checked catalog values remain preserved in the
+checked `previous` fields where they explain drift.
 
 Local harnesses available:
 
 - `pi` 0.78.1 at `/Users/phaedrus/.npm-global/bin/pi`
 - `goose` 1.12.1 at `/Users/phaedrus/.local/bin/goose`
 - `opencode` 1.2.6 at `/Users/phaedrus/.opencode/bin/opencode`
-- `omp` 16.0.9 at `/Users/phaedrus/.bun/bin/omp` after backlog 014 refresh
+- `omp` 16.1.2 at `/Users/phaedrus/.bun/bin/omp`
 
 Current model facts from `https://openrouter.ai/api/v1/models`:
 
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Notes |
 |---|---:|---:|---:|---:|---:|---|
 | `z-ai/glm-5.2` | 1,048,576 | 131,072 | 1.20 | 4.10 | 0.20 | OpenRouter's current row and Z.ai docs support the 1M long-horizon coding rationale; the previous 65,536 / $3.20 values are historical drift evidence, not current source truth. |
-| `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | Kimi docs say K2.7 Code improves long-horizon coding over K2.6 and keeps a 256K context window. |
+| `moonshotai/kimi-k2.7-code` | 262,144 | 262,144 | 0.68 | 3.41 | 0.144 | Kimi docs say K2.7 Code improves long-horizon coding over K2.6 and keeps a 256K context window; the prior 16,384 / $0.74 / $3.50 / $0.15 values are preserved under `previous`. |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | DeepSeek's 2026-04-24 V4 preview states V4-Pro and V4-Flash are API-available and support 1M context. |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | Candidate for cheap smoke and simple reviewer lanes; OpenRouter's top-provider context is lower than the model context, so live runs must capture truncation/serving limits. |
 
@@ -669,6 +669,58 @@ Eval output hygiene receipt, 2026-06-19:
   - `cargo run --locked -q -p cerberus-cli -- eval-harness --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --harness goose --model z-ai/glm-5.2 --task clean-no-finding --out tmp/evals/eval-output-hygiene-2026-06-19/offline-eval`
   - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/eval-output-hygiene-2026-06-19/offline-eval/report.json`
 - This is evidence hygiene only. It does not spend provider budget, rank
+  harness/model pairs, promote defaults, or close the remaining full
+  provider-backed six-task rerun.
+
+Current source refresh receipt, 2026-06-19T19:32:40Z:
+
+- Added rendered source-refresh plan:
+  `docs/shaping/006-current-source-refresh-plan.html`.
+- No-spend evidence packet:
+  `tmp/evals/current-source-refresh-2026-06-19/2026-06-19T193240Z/`.
+- Direct OpenRouter refresh from `https://openrouter.ai/api/v1/models` found
+  current Kimi K2.7 Code drift: max completion moved from `16,384` to
+  `262,144`, input price from `$0.74/M` to `$0.68/M`, output price from
+  `$3.50/M` to `$3.41/M`, and cache read from `$0.15/M` to `$0.144/M`.
+  The prior checked values are preserved under Kimi's `previous` field.
+- Local harness probes found OMP drift from `16.0.9` to `16.1.2`; Pi
+  `0.78.1`, Goose `1.12.1`, and OpenCode `1.2.6` remained unchanged.
+- Updated `fixtures/evals/harness-model-matrix.json` and
+  `fixtures/evals/openrouter-models-catalog-minimal.json` with the current
+  checked facts. A post-update URL refresh generated a schema-valid matrix and
+  an empty normalized diff against the checked matrix:
+  `post-update.normalized.diff`
+  (`sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+- Evidence hashes:
+  - raw OpenRouter catalog:
+    `openrouter-models.post-update-url.raw.json`
+    (`sha256:add3b03095f74fdfe97810f03a1182430a0280fcc26f21905531cdec675d2252`)
+  - candidate extract:
+    `openrouter-candidates.json`
+    (`sha256:39e0e0a0394275fbe2af74667ace70596f0f663c69b4f64961a657291fc71a0d`)
+  - local harness versions:
+    `harness-versions.txt`
+    (`sha256:7ecb63e14d7ce7b8b0d5a35d97098a732d095c9e3df39d29bad5e5b332413f60`)
+  - generated matrix:
+    `harness-model-matrix.post-update-url.json`
+    (`sha256:7dd7a5e80e7087968a54b3c4e3c7eabe4dd7c03e8e4e8949e3db3bc95c71f3ae`)
+  - offline eval report:
+    `offline-eval/report.json`
+    (`sha256:75fb7073c4e2251426af6e6f6a684ee71c3c245c9780dd2be87c57dab87c4dfe`)
+  - no-ack readiness:
+    `readiness-no-ack.json`
+    (`sha256:2f3e85714ba72e20759f804973e5a768a9cbb1a4bebfc88249edce042b9e120d`)
+  - budget estimate:
+    `budget-estimate.json`
+    (`sha256:764816833d6cbed92217a721a5061dd16f8b41b9392fe51a5d75864f38a3c657`)
+- No-spend QA result: offline eval still writes 96 valid artifacts, 80 warn
+  cells, 16 degraded cells, and 0 failed cells. Readiness with provider budget
+  acknowledgement unset reports 96 total cells, 0 runnable cells, 0 missing-env
+  cells, and 96 budget-blocked cells. The refreshed budget estimate reports 96
+  estimateable cells, `$1.976160000000001` total, and
+  `$0.040400000000000005` max single-cell cost under the documented 20,000
+  prompt / 4,000 completion token assumption with 1 retry.
+- This is current-source refresh only. It does not spend provider budget, rank
   harness/model pairs, promote defaults, or close the remaining full
   provider-backed six-task rerun.
 

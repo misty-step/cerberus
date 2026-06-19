@@ -1,7 +1,7 @@
 {
   "schema_version": "harness-model-matrix.v1",
   "matrix_id": "2026-06-19-openrouter-smoke",
-  "observed_at": "2026-06-19T05:46:00Z",
+  "observed_at": "2026-06-19T193240Z",
   "harnesses": [
     {
       "schema_version": "harness-profile.v1",
@@ -31,9 +31,9 @@
       "schema_version": "harness-profile.v1",
       "harness_id": "omp",
       "command": "omp",
-      "version": "16.0.9",
+      "version": "16.1.2",
       "path": "/Users/phaedrus/.bun/bin/omp",
-      "notes": "Local OMP CLI probed with --version on 2026-06-19."
+      "notes": "Local OMP CLI probed with --version on 2026-06-19; local version drifted from 16.0.9 to 16.1.2 before the provider full-suite rerun."
     }
   ],
   "models": [
@@ -68,7 +68,7 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-19T05:46:00Z",
+      "catalog_observed_at": "2026-06-19T193240Z",
       "previous": {
         "observed_at": "2026-06-18T18:20:00Z",
         "context_length": 1048576,
@@ -83,10 +83,10 @@
       "model_id": "moonshotai/kimi-k2.7-code",
       "provider": "OpenRouter",
       "context_length": 262144,
-      "max_completion_tokens": 16384,
-      "input_usd_per_m": 0.74,
-      "output_usd_per_m": 3.5,
-      "cache_read_usd_per_m": 0.15,
+      "max_completion_tokens": 262144,
+      "input_usd_per_m": 0.68,
+      "output_usd_per_m": 3.41,
+      "cache_read_usd_per_m": 0.144,
       "supported_parameters": [
         "frequency_penalty",
         "include_reasoning",
@@ -109,9 +109,9 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-19T05:46:00Z",
+      "catalog_observed_at": "2026-06-19T193240Z",
       "previous": {
-        "observed_at": "2026-06-18",
+        "observed_at": "2026-06-19T05:46:00Z",
         "context_length": 262144,
         "max_completion_tokens": 16384,
         "input_usd_per_m": 0.74,
@@ -150,7 +150,7 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-19T05:46:00Z",
+      "catalog_observed_at": "2026-06-19T193240Z",
       "previous": {
         "observed_at": "2026-06-18",
         "context_length": 1048576,
@@ -191,7 +191,7 @@
         "top_p"
       ],
       "catalog_source": "https://openrouter.ai/api/v1/models",
-      "catalog_observed_at": "2026-06-19T05:46:00Z",
+      "catalog_observed_at": "2026-06-19T193240Z",
       "previous": {
         "observed_at": "2026-06-18",
         "context_length": 1048576,

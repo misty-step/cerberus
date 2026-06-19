@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>006 Current Source Refresh</title>
+  <style>
+    body { margin: 0; font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17231d; background: #f7f4ed; }
+    main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 56px; }
+    header { border-top: 6px solid #25382f; padding-top: 22px; display: grid; grid-template-columns: 1.2fr .8fr; gap: 28px; }
+    h1 { margin: 0 0 12px; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
+    h2 { margin: 0 0 8px; font-size: 15px; text-transform: uppercase; letter-spacing: .08em; }
+    p { margin: 0 0 12px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .94em; }
+    .panel { background: #fffdf8; border: 1px solid #cbd5ce; padding: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 26px; }
+    .wide { grid-column: span 2; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 6px 0; }
+    .ok { color: #14623a; font-weight: 700; }
+    .stop { color: #8b2d16; font-weight: 700; }
+    @media (max-width: 860px) { header, .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <section>
+      <h1>Refresh Current Harness and Model Source Truth</h1>
+      <p>Target outcome: the checked eval matrix reflects the current OpenRouter candidate rows and local harness versions before any provider-backed rerun.</p>
+      <p>Chosen design: use the existing Rust catalog refresh path and harness probes; update only source-truth data and receipts. Do not run live provider evals or rank models.</p>
+    </section>
+    <aside class="panel">
+      <h2>Quality System</h2>
+      <p><span class="ok">Proof:</span> live OpenRouter raw snapshot, generated matrix validation, checked fixture diff, no-spend readiness, budget estimate, and fresh critic.</p>
+      <p><span class="stop">Stop:</span> if refresh loses prior drift evidence, a provider cell becomes runnable without budget acknowledgement, or docs imply model quality.</p>
+    </aside>
+  </header>
+
+  <section class="grid">
+    <article class="panel">
+      <h2>Model Drift</h2>
+      <p><code>refresh-model-catalog</code> must update changed candidate facts and preserve the prior checked values under <code>previous</code>.</p>
+    </article>
+    <article class="panel">
+      <h2>Harness Drift</h2>
+      <p>Local probes update checked harness facts when installed CLI versions drift, currently including <code>omp</code>.</p>
+    </article>
+    <article class="panel">
+      <h2>Budget Gate</h2>
+      <p><code>CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK</code> is absent, so this slice keeps all live-provider cells budget-blocked.</p>
+    </article>
+    <article class="panel wide">
+      <h2>Verification System</h2>
+      <ul>
+        <li><strong>Claim:</strong> checked model and harness facts are current enough to launch the next budget-approved eval.</li>
+        <li><strong>Falsifier:</strong> generated matrix differs from checked fixtures after the planned refresh, prior drift evidence is erased, or readiness runs providers.</li>
+        <li><strong>Driver:</strong> OpenRouter API refresh, local CLI version probes, <code>eval-readiness</code>, and <code>eval-budget</code>.</li>
+        <li><strong>Grader:</strong> schema validation, focused catalog tests, JSON assertions, and diff review.</li>
+        <li><strong>Evidence:</strong> <code>tmp/evals/current-source-refresh-2026-06-19/</code>.</li>
+      </ul>
+    </article>
+    <article class="panel">
+      <h2>Residual</h2>
+      <p>The real quality comparison still requires explicit provider budget acknowledgement and the full six-task live matrix.</p>
+    </article>
+  </section>
+</main>
+</body>
+</html>

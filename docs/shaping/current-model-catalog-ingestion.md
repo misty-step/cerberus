@@ -14,7 +14,7 @@ cargo run --locked -p cerberus-cli -- refresh-model-catalog \
   --catalog-source fixtures/evals/openrouter-models-catalog-minimal.json \
   --out tmp/evals/catalog/harness-model-matrix.json \
   --raw-out tmp/evals/catalog/openrouter-models.raw.json \
-  --observed-at 2026-06-19T05:46:00Z
+  --observed-at 2026-06-19T193240Z
 ```
 
 `--catalog-source` accepts a local file or an `http://` / `https://` URL. URL
@@ -40,7 +40,10 @@ completion price, context length, or max completion tokens are unavailable.
 Backlog 022 refreshed the tiny catalog against the live OpenRouter API on
 2026-06-19. The current checked fixture records GLM 5.2 output price `$4.10/M`
 and max completion `131,072`, with the 2026-06-18 `$3.20/M` / `65,536` values
-kept in the matrix's previous snapshot.
+kept in the matrix's previous snapshot. It also records Kimi K2.7 Code at
+`262,144` max completion, `$0.68/M` input, `$3.41/M` output, and `$0.144/M`
+cache read, with the earlier `2026-06-19T05:46:00Z` checked values preserved
+under `previous`.
 
 ## Follow-On Proof
 

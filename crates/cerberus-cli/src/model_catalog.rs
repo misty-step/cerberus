@@ -288,10 +288,10 @@ mod tests {
             .expect("kimi model exists");
         assert_eq!(kimi.catalog_observed_at, "2026-06-19-live");
         assert_eq!(kimi.context_length, 262_144);
-        assert_eq!(kimi.max_completion_tokens, 16_384);
-        assert_eq!(kimi.input_usd_per_m, 0.74);
-        assert_eq!(kimi.output_usd_per_m, 3.5);
-        assert_eq!(kimi.cache_read_usd_per_m, Some(0.15));
+        assert_eq!(kimi.max_completion_tokens, 262_144);
+        assert_eq!(kimi.input_usd_per_m, 0.68);
+        assert_eq!(kimi.output_usd_per_m, 3.41);
+        assert_eq!(kimi.cache_read_usd_per_m, Some(0.144));
         assert!(kimi
             .supported_parameters
             .contains(&"structured_outputs".to_string()));
@@ -300,7 +300,35 @@ mod tests {
                 .as_ref()
                 .expect("previous snapshot")
                 .observed_at,
-            "2026-06-18"
+            "2026-06-19T05:46:00Z"
+        );
+        assert_eq!(
+            kimi.previous
+                .as_ref()
+                .expect("previous snapshot")
+                .max_completion_tokens,
+            16_384
+        );
+        assert_eq!(
+            kimi.previous
+                .as_ref()
+                .expect("previous snapshot")
+                .input_usd_per_m,
+            0.74
+        );
+        assert_eq!(
+            kimi.previous
+                .as_ref()
+                .expect("previous snapshot")
+                .output_usd_per_m,
+            3.5
+        );
+        assert_eq!(
+            kimi.previous
+                .as_ref()
+                .expect("previous snapshot")
+                .cache_read_usd_per_m,
+            Some(0.15)
         );
 
         let glm = refreshed

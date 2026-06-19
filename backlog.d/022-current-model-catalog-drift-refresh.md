@@ -56,20 +56,23 @@ Local harness probes on 2026-06-19:
 - `pi` 0.78.1
 - `goose` 1.12.1
 - `opencode` 1.2.6
-- `omp` 16.0.9
+- `omp` 16.1.2
 
-OpenRouter API rows observed at `2026-06-19T05:46:00Z`:
+OpenRouter API rows observed at `2026-06-19T19:32:40Z`:
 
 | Model id | Context | Top-provider context | Max completion | Input $/M | Output $/M | Cache read $/M |
 |---|---:|---:|---:|---:|---:|---:|
 | `z-ai/glm-5.2` | 1,048,576 | 1,048,576 | 131,072 | 1.20 | 4.10 | 0.20 |
-| `moonshotai/kimi-k2.7-code` | 262,144 | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 |
+| `moonshotai/kimi-k2.7-code` | 262,144 | 262,144 | 262,144 | 0.68 | 3.41 | 0.144 |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 1,000,000 | 65,536 | 0.09 | 0.18 | 0.02 |
 
 Compared to the checked 2026-06-18 matrix, GLM 5.2 changed from max completion
 `65,536` to `131,072`, top-provider context `202,752` to `1,048,576`, and
-output price `$3.20/M` to `$4.10/M`.
+output price `$3.20/M` to `$4.10/M`. Compared to the checked
+`2026-06-19T05:46:00Z` matrix, Kimi K2.7 Code changed from max completion
+`16,384` to `262,144`, input `$0.74/M` to `$0.68/M`, output `$3.50/M` to
+`$3.41/M`, and cache read `$0.15/M` to `$0.144/M`.
 
 ## Evidence
 
@@ -124,3 +127,27 @@ No-op freshness check, 2026-06-19T11:36:40Z:
 - No checked fixture rewrite was needed; the remaining backlog 006 gate is
   provider budget acknowledgement plus a full six-task live rerun, not catalog
   drift.
+
+Current source refresh, 2026-06-19T19:32:40Z:
+
+- Added plan: `docs/shaping/006-current-source-refresh-plan.html`.
+- Source: `https://openrouter.ai/api/v1/models`.
+- Evidence packet:
+  `tmp/evals/current-source-refresh-2026-06-19/2026-06-19T193240Z/`.
+- Refreshed `fixtures/evals/harness-model-matrix.json` and
+  `fixtures/evals/openrouter-models-catalog-minimal.json` for the Kimi K2.7
+  Code catalog drift above while preserving the prior checked Kimi values under
+  `previous`.
+- Updated checked OMP harness version from `16.0.9` to `16.1.2`.
+- Post-update URL refresh validated and produced an empty normalized diff:
+  `post-update.normalized.diff`
+  (`sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+- Focused test:
+  `cargo test --workspace model_catalog`.
+- No-spend QA: offline eval report stayed at 96 valid artifacts, 80 warn
+  cells, 16 degraded cells, and 0 failed cells; readiness without provider
+  budget acknowledgement stayed at 96 budget-blocked cells; refreshed budget
+  estimate is `$1.976160000000001` total with the documented token/retry
+  assumptions.
+- No provider evals, model rankings, reviewer-default changes, or legacy
+  default changes were made.

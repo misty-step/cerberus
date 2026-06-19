@@ -67,6 +67,8 @@ Current docs:
   `docs/shaping/006-eval-subset-metadata-plan.html`
 - Eval output hygiene plan:
   `docs/shaping/006-eval-output-hygiene-plan.html`
+- Current source refresh plan:
+  `docs/shaping/006-current-source-refresh-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

@@ -55,7 +55,7 @@ Local harnesses:
 | Pi | 0.78.1 | `/Users/phaedrus/.npm-global/bin/pi` | Minimal, extensible baseline; likely the cleanest way to test Cerberus-owned prompt/context discipline. |
 | Goose | 1.12.1 | `/Users/phaedrus/.local/bin/goose` | Rich local agent with MCP/subagent surface; must be tested for prompt isolation and artifact discipline. |
 | OpenCode | 1.2.6 | `/Users/phaedrus/.opencode/bin/opencode` | Strong provider/config support; repo already has `opencode.json`, so it is a practical candidate for local review runs. |
-| OMP | 16.0.9 | `/Users/phaedrus/.bun/bin/omp` | Heavier Pi-derived harness with LSP/DAP/subagents; promising but needs strict control so harness power does not mask model weakness. |
+| OMP | 16.1.2 | `/Users/phaedrus/.bun/bin/omp` | Heavier Pi-derived harness with LSP/DAP/subagents; promising but needs strict control so harness power does not mask model weakness. |
 
 Local model drift:
 
@@ -98,7 +98,7 @@ OpenRouter API snapshot, 2026-06-19:
 | Model id | Context | Max completion | Input $/M | Output $/M | Cache read $/M | Supported params of interest |
 |---|---:|---:|---:|---:|---:|---|
 | `z-ai/glm-5.2` | 1,048,576 | 131,072 | 1.20 | 4.10 | 0.20 | tools, tool_choice, structured_outputs, reasoning, response_format |
-| `moonshotai/kimi-k2.7-code` | 262,144 | 16,384 | 0.74 | 3.50 | 0.15 | tools, tool_choice, structured_outputs, reasoning, response_format |
+| `moonshotai/kimi-k2.7-code` | 262,144 | 262,144 | 0.68 | 3.41 | 0.144 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-pro` | 1,048,576 | 384,000 | 0.435 | 0.87 | 0.003625 | tools, tool_choice, structured_outputs, reasoning, response_format |
 | `deepseek/deepseek-v4-flash` | 1,048,576 | 65,536 | 0.09 | 0.18 | 0.02 | tools, tool_choice, structured_outputs, reasoning, response_format |
 
@@ -368,6 +368,26 @@ budget estimate still reports 96 estimateable cells and
 leaving that metadata only on explicitly filtered rerun artifacts. This remains
 no-spend proof only; the live quality comparison is still the budget-approved
 provider rerun.
+
+A current-source refresh at `2026-06-19T19:32:40Z` updated the checked source
+truth again. OpenRouter now lists Kimi K2.7 Code with 262,144 max completion,
+`$0.68/M` input, `$3.41/M` output, and `$0.144/M` cache read; the prior
+`16,384` / `$0.74/M` / `$3.50/M` / `$0.15/M` checked values are preserved under
+Kimi's `previous` field. Local OMP now probes as `16.1.2`. The packet at
+`tmp/evals/current-source-refresh-2026-06-19/2026-06-19T193240Z/` includes the
+raw OpenRouter catalog
+(`sha256:add3b03095f74fdfe97810f03a1182430a0280fcc26f21905531cdec675d2252`),
+stable candidate extract
+(`sha256:39e0e0a0394275fbe2af74667ace70596f0f663c69b4f64961a657291fc71a0d`),
+local harness probes
+(`sha256:7ecb63e14d7ce7b8b0d5a35d97098a732d095c9e3df39d29bad5e5b332413f60`),
+and a post-update generated matrix whose normalized diff against the checked
+matrix is empty
+(`sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+Offline eval remains 96 valid artifacts with 0 failed cells, no-ack readiness
+keeps all 96 cells budget-blocked, and the refreshed budget estimate drops to
+`$1.976160000000001`. This still does not spend provider budget, compare
+harness/model quality, or promote defaults.
 
 ## Alternatives Considered
 
