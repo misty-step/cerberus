@@ -1,7 +1,7 @@
 # Harness and Model Evaluation Shape
 
 Date: 2026-06-19
-Status: local live-peer fixture plus provider readiness and budget preflights implemented
+Status: provider-backed live smoke captured; default promotion blocked
 
 ## Goal
 
@@ -204,12 +204,54 @@ missing `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK`; the budget estimate remains
 `$0.3356` total with the documented 20,000 prompt / 4,000 completion token
 assumption and one retry.
 
-The current smoke result is intentionally not a live model bake-off. Cells run
-in `offline_contract` mode and must validate as `warn` or structured
-degraded/unavailable outcomes, not as production-ready `pass` outcomes. This
-proves the evaluation contract, report validation, stale-model drift reporting,
-and degraded/unavailable cell handling. Paid harness/model execution remains a
-later adapter step before any production defaults change.
+Provider-backed live smoke ran on 2026-06-19 with explicit budget
+acknowledgement:
+
+```sh
+PATH="$PWD/target/debug:$PATH" \
+CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1 \
+cargo run --locked -q -p cerberus-cli -- eval-harness \
+  --execution-mode live-peer \
+  --peer-profiles fixtures/harnesses/peer-command-profiles.json \
+  --suite fixtures/evals/reviewer-harness-live-peer-smoke.json \
+  --matrix fixtures/evals/harness-model-matrix.json \
+  --out tmp/evals/provider-live-2026-06-19-active
+
+cargo run --locked -q -p cerberus-cli -- validate \
+  tmp/evals/provider-live-2026-06-19-active/report.json
+```
+
+The validated report at
+`tmp/evals/provider-live-2026-06-19-active/report.json`
+(`sha256:44d341b51413460530d046b5d51511d04612225ce1dad17e4da436115c39c9f4`)
+contains 16 cells: 3 valid artifacts, 13 unavailable cells, 0 degraded cells,
+0 failed cells, 27 stale-model findings, and average score `0.1875`.
+
+Passing provider-backed live smoke cells:
+
+| Harness | Model | Score | Latency | Estimated cost | Result |
+|---|---|---:|---:|---:|---|
+| `goose` | `z-ai/glm-5.2` | 1.0 | 25,019 ms | `$0.001242` | Valid `ReviewerArtifact.v1` |
+| `goose` | `deepseek/deepseek-v4-pro` | 1.0 | 40,430 ms | `$0.0032` | Valid `ReviewerArtifact.v1` |
+| `goose` | `deepseek/deepseek-v4-flash` | 1.0 | 74,610 ms | `$0.0012` | Valid `ReviewerArtifact.v1` |
+
+Unavailable or malformed provider rows:
+
+- `pi` failed across all four models because local extensions hit stale context
+  errors or stdout exceeded the peer-runner cap.
+- `goose` + `moonshotai/kimi-k2.7-code` produced malformed artifact JSON
+  missing `files_with_findings`.
+- `opencode` failed across all four models because the current peer profile
+  passes the reviewer prompt in a shape OpenCode interprets as a file path.
+- `omp` failed across all four models because output either exceeded the cap or
+  repeated artifact markers hundreds of times.
+
+The current live result is a one-task profile smoke, not a production model
+ranking. It proves that the checked Goose profile can produce valid
+provider-backed Cerberus reviewer artifacts for three candidate models in the
+checked smoke. It does not prove seeded finding quality, prompt-injection
+resistance, long-context behavior, degraded behavior, or schema-hostile output
+handling, so production defaults stay unchanged.
 
 ## Alternatives Considered
 
@@ -277,8 +319,8 @@ retry policy are approved.
 - Falsifier: a model can be promoted without a schema-valid artifact, transcript,
   cost/latency record, and held-out finding-quality grade.
 - Driver: `cerberus-cli eval-readiness`, then `cerberus-cli eval-budget`,
-  before provider runs; `cerberus-cli eval-harness` over a checked-in suite and
-  matrix after approval.
+  before provider runs; `cerberus-cli eval-harness --execution-mode live-peer`
+  over checked-in suites and matrices after approval.
 - Grader: JSON schema validation, deterministic fixture assertions, rubric
   grades for seeded findings, false-positive thresholds, and budget limits.
 - Evidence packet: readiness report, budget estimate report,
@@ -286,7 +328,8 @@ retry policy are approved.
   snapshot, and rendered summary.
 - Cadence: local smoke before config changes; full matrix before model
   promotion; periodic refresh when provider catalogs drift.
-- Gaps / waiver: no production model default changes in this shaping pass.
+- Gaps / waiver: no production model default changes until failed harness rows
+  are hardened and a fuller provider-backed suite passes.
 
 ## Stop Conditions
 

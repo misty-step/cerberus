@@ -1,6 +1,6 @@
 # 006 - Harness and Model Evaluation Matrix
 
-Status: ready-for-provider-budget-ack
+Status: provider-live-smoke-evidence-captured
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -167,9 +167,10 @@ Relevant Cerberus drift:
    before a live provider run.
 8. Done: add a no-spend eval budget estimate so the provider-backed matrix has
    an explicit cost envelope before budget acknowledgement.
-9. Remaining: run budget-approved provider-backed peer evals rather than the
-   local fixture reviewer.
-10. Done: convert fully passing live report winners into a sandbox-only
+9. Done: run the first budget-approved provider-backed peer eval smoke rather
+   than the local fixture reviewer; keep default promotion blocked until failed
+   harness rows are hardened and the full task suite passes.
+10. Done: convert full-suite live report winners into a sandbox-only
    `ReviewerConfigPacket.v1` candidate with embedded `ReviewConfig.v1`; keep
    production defaults unchanged until the report and cost envelope are
    reviewed.
@@ -177,6 +178,10 @@ Relevant Cerberus drift:
    flow by letting Rust review commands run validated packets directly through
    backlog 020's `--config-packet` bridge. Production defaults remain
    unchanged.
+12. Remaining: harden provider-backed peer harness profiles for unavailable
+   `pi`, `opencode`, `omp`, and malformed Kimi rows, then rerun the matrix over
+   seeded-bug, prompt-injection, long-context, degraded, and schema-hostile
+   tasks before any default promotion.
 
 ## Implementation Receipt
 
@@ -312,6 +317,41 @@ No-spend provider refresh receipt, 2026-06-19T09:55:18Z:
   budget-approved provider-backed peer eval. This receipt updates launch
   evidence; it still does not spend provider budget, rank harness/model pairs,
   promote reviewer defaults, or prove provider-backed review quality.
+
+Provider-backed live smoke receipt, 2026-06-19:
+
+- Budget-approved provider command:
+  `PATH="$PWD/target/debug:$PATH" CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1 cargo run --locked -q -p cerberus-cli -- eval-harness --execution-mode live-peer --peer-profiles fixtures/harnesses/peer-command-profiles.json --suite fixtures/evals/reviewer-harness-live-peer-smoke.json --matrix fixtures/evals/harness-model-matrix.json --out tmp/evals/provider-live-2026-06-19-active`.
+- Report validates at
+  `tmp/evals/provider-live-2026-06-19-active/report.json`
+  (`sha256:44d341b51413460530d046b5d51511d04612225ce1dad17e4da436115c39c9f4`):
+  16 total cells, 3 valid artifacts, 13 unavailable cells, 0 degraded cells,
+  0 failed cells, 27 stale-model findings, and average score `0.1875`.
+- Passing live smoke cells:
+  - `goose` + `z-ai/glm-5.2`: valid `ReviewerArtifact.v1`, score `1.0`,
+    25,019 ms, estimated cost `$0.001242`.
+  - `goose` + `deepseek/deepseek-v4-pro`: valid `ReviewerArtifact.v1`, score
+    `1.0`, 40,430 ms, estimated cost `$0.0032`.
+  - `goose` + `deepseek/deepseek-v4-flash`: valid `ReviewerArtifact.v1`,
+    score `1.0`, 74,610 ms, estimated cost `$0.0012`.
+- Unavailable or malformed rows:
+  - `pi` was unavailable across all four models from local extension context
+    staleness or stdout overflow.
+  - `goose` + `moonshotai/kimi-k2.7-code` produced a transcript whose JSON was
+    not `ReviewerArtifact.v1` because the artifact was missing
+    `files_with_findings`.
+  - `opencode` was unavailable across all four models because the current
+    command profile treated the reviewer prompt as a file path.
+  - `omp` was unavailable across all four models from stdout overflow or
+    repeated artifact markers.
+- Exact validation command:
+  `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/provider-live-2026-06-19-active/report.json`.
+- Interpretation: this is enough to make the backlog direction concrete. Goose
+  is currently the only provider-backed harness surface that can produce valid
+  Cerberus reviewer artifacts in the checked live smoke. It is not enough to
+  promote any default model, because the smoke suite contains only the clean
+  `live-peer-pass` task and does not grade seeded findings, prompt injection,
+  long context, degraded behavior, or schema-hostile output.
 
 ## Notes
 
