@@ -52,16 +52,19 @@
         "bin/cerberus.js",
         "templates"
       ],
-      "current_responsibility": "Writes the consumer workflow template for the current API-dispatch action.",
+      "current_responsibility": "Writes the consumer workflow template for the current API-dispatch action and configures CERBERUS_API_KEY through gh when using the Node compatibility wrapper.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "cerberus-cli init or equivalent Rust scaffolder command.",
+      "rust_replacement": "cerberus-cli init-workflow owns deterministic workflow-file scaffolding; the live secret setup path remains in the Node compatibility wrapper until a separate parity slice ports or explicitly preserves it.",
       "parity_evidence": [
         "node --check bin/cerberus.js",
-        "future Rust fixture: generated workflow matches templates/consumer-workflow-reusable.yml"
+        "cargo test -p cerberus-cli init_workflow",
+        "cargo run --locked -p cerberus-cli -- init-workflow --repo-root tmp/init-workflow-2026-06-19/repo --template templates/consumer-workflow-reusable.yml --report-out tmp/init-workflow-2026-06-19/report-created.json",
+        "diff -u templates/consumer-workflow-reusable.yml tmp/init-workflow-2026-06-19/repo/.github/workflows/cerberus.yml",
+        "future Rust or explicit-keep fixture: API-key prompt and gh secret set compatibility"
       ],
-      "rollback_path": "Retain bin/cerberus.js and templates until generated workflow parity is fixture-backed.",
-      "next_action": "Move scaffolding behavior behind a Rust CLI fixture, then deprecate the Node entrypoint."
+      "rollback_path": "Retain bin/cerberus.js and templates; use the Node wrapper if the Rust workflow-file path regresses before secret setup is ported or explicitly kept.",
+      "next_action": "Port or explicitly preserve live secret setup, then deprecate the Node entrypoint only after checked workflow and secret behavior both have rollback evidence."
     },
     {
       "surface_id": "elixir-http-api",

@@ -138,6 +138,7 @@ cerberus-elixir/
 - `action.yml`
 - `templates/consumer-workflow-reusable.yml`
 - `bin/cerberus.js`
+- `cerberus-cli init-workflow`
 
 Responsibilities:
 
@@ -147,6 +148,8 @@ Responsibilities:
 - poll until completion
 - expose workflow outputs
 - keep the public input/output contract stable
+- scaffold the consumer workflow through Rust for deterministic file parity,
+  while the Node wrapper still handles live GitHub secret setup compatibility
 
 Rollback surface:
 

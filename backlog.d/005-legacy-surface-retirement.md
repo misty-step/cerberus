@@ -82,3 +82,15 @@ First local retirement delivery, 2026-06-18:
   at the retirement inventory.
 - Did not delete legacy code; all runtime surfaces remain until parity evidence
   and rollback metadata are recorded.
+
+Second local retirement delivery, 2026-06-19:
+
+- Added `cerberus-cli init-workflow` as the Rust-owned workflow-file scaffolder
+  path for `templates/consumer-workflow-reusable.yml`.
+- Added fixture tests for create, up-to-date, preserve-different, and report
+  JSON behavior.
+- Updated README, architecture docs, and the legacy surface inventory to record
+  that Node remains pending for interactive API-key capture and live
+  `gh secret set` compatibility.
+- Did not delete `bin/cerberus.js`; `node-scaffolder` remains pending until the
+  secret-setup half is ported or explicitly kept.

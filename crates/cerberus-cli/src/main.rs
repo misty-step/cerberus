@@ -34,10 +34,12 @@ use std::{
 };
 
 mod eval_harness;
+mod init_workflow;
 mod local_review;
 mod model_catalog;
 mod provider_budget;
 use eval_harness::{eval_budget, eval_harness, eval_readiness};
+use init_workflow::init_workflow;
 use local_review::{local_review_request_from_diff, LocalReviewArgs};
 use model_catalog::refresh_openrouter_matrix;
 
@@ -52,6 +54,7 @@ fn main() -> Result<()> {
         "validate" => validate(args.collect()),
         "validate-retirement" => validate_retirement(args.collect()),
         "validate-reviewer-config" => validate_reviewer_config(args.collect()),
+        "init-workflow" => init_workflow(args.collect()),
         "review" => review_command(args.collect()),
         "review-local" => review_local(args.collect()),
         "github-action-request" => github_action_request(args.collect()),
@@ -1281,6 +1284,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli github-action-dispatch [--github-output <path>] [--decision-out <decision.json>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json>\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli eval-readiness --suite <eval-suite.json> --matrix <matrix.json> --peer-profiles <PeerHarnessCommandProfiles.v3.json> --out <EvalReadinessReport.v1.json>\n  cerberus-cli eval-budget --suite <eval-suite.json> --matrix <matrix.json> --readiness <EvalReadinessReport.v1.json> --prompt-tokens <n> --completion-tokens <n> [--retry-count <n>] --out <EvalBudgetEstimateReport.v1.json>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli init-workflow [--repo-root <path>] [--template <workflow.yml>] [--report-out <report.json>]\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli github-action-dispatch [--github-output <path>] [--decision-out <decision.json>]\n  cerberus-cli hosted-api-dispatch-fixture --transcript <hosted-api-transcript.json> --out <decision.json>\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli eval-readiness --suite <eval-suite.json> --matrix <matrix.json> --peer-profiles <PeerHarnessCommandProfiles.v3.json> --out <EvalReadinessReport.v1.json>\n  cerberus-cli eval-budget --suite <eval-suite.json> --matrix <matrix.json> --readiness <EvalReadinessReport.v1.json> --prompt-tokens <n> --completion-tokens <n> [--retry-count <n>] --out <EvalBudgetEstimateReport.v1.json>\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }
