@@ -1,6 +1,6 @@
 # 004 - Daedalus Reviewer Config Promotion
 
-Status: cerberus-ready-daedalus-export-pending
+Status: done
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -106,3 +106,30 @@ Cross-repo Daedalus export boundary, 2026-06-19:
   --fixture fixtures/review-request/clean.json --config-packet
   fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json --out
   tmp/reviewer-config/packet-review`.
+
+Daedalus exporter closeout, 2026-06-19:
+
+- Daedalus branch `cerberus/004-reviewer-config-handoff` commit `8161fab`
+  adds `daedalus export-cerberus` and the checked packet
+  `/Users/phaedrus/Development/daedalus/deliveries/pr-review/cerberus-reviewer-config.json`.
+- The real exported packet is
+  `daedalus-pr-review-4a73f1fd213aa1a5-seed4-qwen3-7-plus-checklist-sandbox`;
+  it preserves the Daedalus measured composition hash, benchmark identity,
+  score distribution, cost envelope, harness/model metadata, prompt/config
+  hashes, rollback metadata, G2 waiver, and G3/G4/G5 pending state.
+- Cerberus validation proof:
+  `cargo run --locked -q -p cerberus-cli -- validate-reviewer-config /Users/phaedrus/Development/daedalus/deliveries/pr-review/cerberus-reviewer-config.json`
+  returned `ok`.
+- Cerberus import proof:
+  `cargo run --locked -q -p cerberus-cli -- import-reviewer-config /Users/phaedrus/Development/daedalus/deliveries/pr-review/cerberus-reviewer-config.json --dry-run --out tmp/reviewer-config/daedalus-export-004-closeout/import-report.json`
+  accepted dry-run comparison, refused production import, and recorded:
+  `packet is sandbox-only; dry-run comparison only` plus
+  `promotion gate status is sandbox_only, not approved`.
+- Packet-backed review proof:
+  `cargo run --locked -q -p cerberus-cli -- review --fixture fixtures/review-request/clean.json --config-packet /Users/phaedrus/Development/daedalus/deliveries/pr-review/cerberus-reviewer-config.json --out tmp/reviewer-config/daedalus-export-004-closeout/review`
+  wrote a schema-valid `review-run-artifact.v1` with verdict `PASS` and
+  reviewer `pr_review`.
+- This closes the Cerberus-side Daedalus reviewer-config promotion epic as a
+  sandbox-only import and execution path. It still does not promote production
+  reviewer defaults, approve G3/G4/G5, run Daedalus experiments inside
+  Cerberus, or grant Daedalus production posting authority.
