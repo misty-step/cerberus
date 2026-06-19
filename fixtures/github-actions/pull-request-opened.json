@@ -1,0 +1,23 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 459,
+    "title": "GitHub-shaped PR fixture",
+    "body": "A GitHub Actions pull_request payload that should build a ReviewRequest.v1.",
+    "draft": false,
+    "base": {
+      "ref": "master",
+      "sha": "base123",
+      "repo": {
+        "full_name": "misty-step/cerberus"
+      }
+    },
+    "head": {
+      "ref": "shape/rust-review-engine-backlog",
+      "sha": "abc123def4567890",
+      "repo": {
+        "full_name": "misty-step/cerberus"
+      }
+    }
+  }
+}

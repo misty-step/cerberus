@@ -1,0 +1,23 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 459,
+    "title": "Fork PR fixture",
+    "body": "A forked pull_request payload must skip before secrets or diff parsing.",
+    "draft": false,
+    "base": {
+      "ref": "master",
+      "sha": "base123",
+      "repo": {
+        "full_name": "misty-step/cerberus"
+      }
+    },
+    "head": {
+      "ref": "contrib-branch",
+      "sha": "fork123def4567890",
+      "repo": {
+        "full_name": "external/contrib"
+      }
+    }
+  }
+}

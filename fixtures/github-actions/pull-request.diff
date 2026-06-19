@@ -1,0 +1,13 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,2 @@
+ # Cerberus
+-Legacy review action.
++Rust review action adapter.
+diff --git a/docs/action.md b/docs/action.md
+new file mode 100644
+--- /dev/null
++++ b/docs/action.md
+@@ -0,0 +1 @@
++GitHub Actions request acquisition fixture.

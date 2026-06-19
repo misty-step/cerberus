@@ -76,6 +76,13 @@ fixture review and local replay can use `--config-packet` to execute the
 embedded `ReviewConfig.v1` from a validated `ReviewerConfigPacket.v1`; that is a
 sandbox execution source, not default promotion.
 
+`cerberus-cli github-action-request` is the first Rust GitHub Action adapter
+slice. It reads a checked `pull_request` event payload and unified diff,
+returns fork/draft skip decisions before diff file IO, treats missing fork head
+repo metadata as a skip, and writes `ReviewRequest.v1` for same-repo PRs. It
+does not call GitHub, call the hosted Cerberus API, poll for verdicts, write
+GitHub Actions outputs, or replace `dispatch.sh`.
+
 ## Request Flow
 
 ```text
@@ -120,6 +127,8 @@ Responsibilities:
 - dispatch to the API
 - poll until completion
 - expose workflow outputs
+- remain the compatibility path until Rust-backed request construction,
+  hosted dispatch, polling, and output behavior all have fixture parity
 
 ### Rust Adapter SDK
 
@@ -128,6 +137,8 @@ Lives in `crates/cerberus-adapter/`.
 Responsibilities:
 
 - build and validate caller-shaped `ReviewRequest.v1` values
+- build GitHub Actions `pull_request` event fixtures into `ReviewRequest.v1`
+  without network, token, or hosted API behavior
 - prove the local fixture contract shape for Bitterblossom and Olympus without
   cross-caller references
 - project `ReviewRunArtifact.v1` into caller-owned receipt/posting shapes
@@ -143,6 +154,7 @@ Non-responsibilities:
 - Olympus Argus activation gates, stale-head suppression, marker dedupe, caps,
   or GitHub posting
 - live acquisition from either caller repository
+- hosted API POST/poll or GitHub Actions output writes
 - production review execution through the ThinkTank CLI
 - reviewer artifact acceptance, aggregation, or degradation semantics
 

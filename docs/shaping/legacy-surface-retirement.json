@@ -26,10 +26,15 @@
       "rust_replacement": "A Rust GitHub Action adapter backed by cerberus-cli and the ReviewRequest.v1 contract.",
       "parity_evidence": [
         "shellcheck dispatch.sh",
-        "future Rust fixture: fork PR skip, draft skip, timeout, poll failure, fail-on-verdict"
+        "cargo test -p cerberus-adapter github_action",
+        "cargo run --locked -p cerberus-cli -- github-action-request --event fixtures/github-actions/pull-request-opened.json --diff-file fixtures/github-actions/pull-request.diff --out tmp/github-action-request/review-request.json --run-id gha-run-021",
+        "cargo run --locked -p cerberus-cli -- validate tmp/github-action-request/review-request.json",
+        "cargo run --locked -p cerberus-cli -- github-action-request --event fixtures/github-actions/pull-request-fork.json --diff-file /no/such/diff.patch --out tmp/github-action-request/fork-no-diff-review-request.json --run-id gha-run-021",
+        "cargo run --locked -p cerberus-cli -- github-action-request --event fixtures/github-actions/pull-request-missing-head-repo.json --diff-file /no/such/diff.patch --out tmp/github-action-request/missing-head-repo-review-request.json --run-id gha-run-021",
+        "future Rust fixture: hosted API POST, timeout, poll failure, fail-on-verdict"
       ],
       "rollback_path": "Keep dispatch.sh as the fallback action client until the Rust adapter is released.",
-      "next_action": "Add a Rust dispatch fixture suite before replacing shell polling."
+      "next_action": "Port hosted API POST/poll, timeout, fail-on-verdict, and GitHub output behavior after the event-to-request fixture path."
     },
     {
       "surface_id": "node-scaffolder",

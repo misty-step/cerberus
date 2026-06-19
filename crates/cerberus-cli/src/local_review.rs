@@ -1,13 +1,10 @@
 use anyhow::{bail, Context, Result};
+use cerberus_adapter::changed_files_from_git_diff;
 use cerberus_schema::{
-    Caller, Change, ChangedFile, FileStatus, ReviewContext, ReviewPolicy, ReviewRequest,
-    ReviewSource, REVIEW_REQUEST_VERSION,
+    Caller, Change, ReviewContext, ReviewPolicy, ReviewRequest, ReviewSource,
+    REVIEW_REQUEST_VERSION,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalReviewArgs {
@@ -137,100 +134,6 @@ pub fn local_review_request_from_diff(args: &LocalReviewArgs) -> Result<ReviewRe
     Ok(request)
 }
 
-fn changed_files_from_git_diff(diff: &str) -> Result<Vec<ChangedFile>> {
-    if diff.trim().is_empty() {
-        bail!("local diff is empty");
-    }
-
-    let mut files = Vec::new();
-    let mut current = None;
-    for line in diff.lines() {
-        if let Some(path) = parse_diff_git_path(line)? {
-            finish_file(&mut files, current.take())?;
-            current = Some(FileAccumulator::new(path));
-            continue;
-        }
-
-        let Some(file) = current.as_mut() else {
-            if line.trim().is_empty() {
-                continue;
-            }
-            bail!("local diff must start with a diff --git header");
-        };
-
-        if line.starts_with("new file mode ") {
-            file.status = FileStatus::Added;
-        } else if line.starts_with("deleted file mode ") {
-            file.status = FileStatus::Deleted;
-        } else if let Some(path) = line.strip_prefix("rename to ") {
-            file.path = non_empty_path(path, "rename to")?;
-            file.status = FileStatus::Renamed;
-        } else if let Some(path) = line.strip_prefix("copy to ") {
-            file.path = non_empty_path(path, "copy to")?;
-            file.status = FileStatus::Copied;
-        } else if line.starts_with('+') && !line.starts_with("+++") {
-            file.additions += 1;
-        } else if line.starts_with('-') && !line.starts_with("---") {
-            file.deletions += 1;
-        }
-    }
-    finish_file(&mut files, current)?;
-
-    if files.is_empty() {
-        bail!("local diff did not contain any changed files");
-    }
-    let mut seen = BTreeSet::new();
-    for file in &files {
-        if !seen.insert(file.path.as_str()) {
-            bail!("local diff contains duplicate file path {:?}", file.path);
-        }
-    }
-    Ok(files)
-}
-
-fn parse_diff_git_path(line: &str) -> Result<Option<String>> {
-    let Some(rest) = line.strip_prefix("diff --git ") else {
-        return Ok(None);
-    };
-    let mut parts = rest.split_whitespace();
-    let _old = parts
-        .next()
-        .context("diff --git header is missing old path")?;
-    let new = parts
-        .next()
-        .context("diff --git header is missing new path")?;
-    if parts.next().is_some() {
-        bail!("diff --git header contains unsupported whitespace in paths");
-    }
-    let Some(path) = new.strip_prefix("b/") else {
-        bail!("diff --git new path must start with b/");
-    };
-    Ok(Some(non_empty_path(path, "diff --git")?))
-}
-
-fn non_empty_path(path: &str, field: &'static str) -> Result<String> {
-    if path.trim().is_empty() {
-        bail!("{field} path must not be empty");
-    }
-    Ok(path.to_string())
-}
-
-fn finish_file(files: &mut Vec<ChangedFile>, file: Option<FileAccumulator>) -> Result<()> {
-    let Some(file) = file else {
-        return Ok(());
-    };
-    if file.path.trim().is_empty() {
-        bail!("changed file path must not be empty");
-    }
-    files.push(ChangedFile {
-        path: file.path,
-        status: file.status,
-        additions: file.additions,
-        deletions: file.deletions,
-    });
-    Ok(())
-}
-
 fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<String> {
     args.get(index + 1)
         .filter(|value| !value.starts_with("--"))
@@ -238,68 +141,9 @@ fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<S
         .with_context(|| format!("{flag} requires a value"))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FileAccumulator {
-    path: String,
-    status: FileStatus,
-    additions: u64,
-    deletions: u64,
-}
-
-impl FileAccumulator {
-    fn new(path: String) -> Self {
-        Self {
-            path,
-            status: FileStatus::Modified,
-            additions: 0,
-            deletions: 0,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn local_review_parses_modified_added_deleted_and_renamed_files() {
-        let files = changed_files_from_git_diff(
-            "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1,2 @@\n-old\n+new\n+line\n\
-diff --git a/src/new.rs b/src/new.rs\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.rs\n@@ -0,0 +1 @@\n+new\n\
-diff --git a/src/old.rs b/src/old.rs\ndeleted file mode 100644\n--- a/src/old.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n\
-diff --git a/src/before.rs b/src/after.rs\nsimilarity index 100%\nrename from src/before.rs\nrename to src/after.rs\n",
-        )
-        .expect("diff parses");
-
-        assert_eq!(files.len(), 4);
-        assert_eq!(files[0].path, "src/lib.rs");
-        assert_eq!(files[0].status, FileStatus::Modified);
-        assert_eq!(files[0].additions, 2);
-        assert_eq!(files[0].deletions, 1);
-        assert_eq!(files[1].status, FileStatus::Added);
-        assert_eq!(files[2].status, FileStatus::Deleted);
-        assert_eq!(files[3].path, "src/after.rs");
-        assert_eq!(files[3].status, FileStatus::Renamed);
-    }
-
-    #[test]
-    fn local_review_rejects_malformed_and_duplicate_diffs() {
-        assert!(changed_files_from_git_diff("").is_err());
-        assert!(changed_files_from_git_diff("+line without header\n").is_err());
-        assert!(
-            changed_files_from_git_diff("diff --git a/src/lib.rs b/src/lib.rs extra\n")
-                .expect_err("unsupported whitespace rejects")
-                .to_string()
-                .contains("unsupported whitespace")
-        );
-        assert!(changed_files_from_git_diff(
-            "diff --git a/src/lib.rs b/src/lib.rs\n+one\n\
-diff --git a/src/lib.rs b/src/lib.rs\n+two\n",
-        )
-        .expect_err("duplicate files reject")
-        .to_string()
-        .contains("duplicate file path"));
-    }
 
     #[test]
     fn local_review_builds_valid_request() {

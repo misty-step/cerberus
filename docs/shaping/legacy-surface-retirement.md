@@ -18,7 +18,7 @@ cargo run --locked -p cerberus-cli -- validate docs/shaping/legacy-surface-retir
 | Surface | Decision | Parity | Replacement or Keep Reason | Next Action |
 |---|---|---|---|---|
 | `root-github-action` | keep compatibility | compatibility only | Existing consumers call `misty-step/cerberus` through `action.yml`. | Keep aligned with dispatch until a Rust action adapter proves the same behavior. |
-| `dispatch-shell-client` | port to Rust | pending | Rust GitHub Action adapter backed by `cerberus-cli` and `ReviewRequest.v1`. | Add Rust fixtures for fork skip, draft skip, timeout, poll failure, and fail-on-verdict. |
+| `dispatch-shell-client` | port to Rust | pending | Rust GitHub Action adapter backed by `cerberus-cli` and `ReviewRequest.v1`; backlog 021 covers event preflight/request construction only. | Add Rust fixtures for hosted API POST, timeout, poll failure, and fail-on-verdict before replacing shell dispatch. |
 | `node-scaffolder` | port to Rust | pending | `cerberus-cli init` or equivalent Rust scaffolder. | Fixture generated workflow parity before deprecating Node. |
 | `elixir-http-api` | port to Rust | pending | Rust API adapter accepting source-agnostic review requests while preserving public compatibility. | Capture API request/response fixtures and map them to `ReviewRequest.v1`. |
 | `elixir-review-execution` | port to Rust | pending | `cerberus-core` reviewer execution and harness runtime. | Port routing, budget-approved provider-backed peer evals, and hosted/API review fixtures. |

@@ -26,6 +26,7 @@ Current sequence:
 18. `018-live-peer-harness-evaluation-mode.md`
 19. `019-eval-report-reviewer-config-candidate.md`
 20. `020-packet-backed-review-config.md`
+21. `021-github-action-event-request-adapter.md`
 
 Planning rules:
 
@@ -64,3 +65,5 @@ Planning rules:
   before any reviewer defaults or Daedalus promotion packets are hand-authored.
 - Let Rust review commands consume validated reviewer config packets directly
   before caller integrations depend on measured configs.
+- Move GitHub Action event preflight and request construction into a Rust
+  adapter before replacing shell POST/poll behavior.

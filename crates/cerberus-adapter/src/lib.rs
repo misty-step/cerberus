@@ -7,9 +7,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod command_harness;
+mod git_diff;
+mod github_action;
 mod thinktank_migration;
 pub use command_harness::{
     BoundedCommand, BoundedCommandOutput, CommandHarness, CommandHarnessInput,
+};
+pub use git_diff::changed_files_from_git_diff;
+pub use github_action::{
+    github_action_review_decision_from_event, github_action_skip_decision_from_event,
+    GithubActionReviewDecision, GithubActionSkipReason,
 };
 pub use thinktank_migration::{
     import_thinktank_historical_run, ThinkTankHistoricalRun, ThinkTankMigrationOutput,
@@ -26,6 +33,10 @@ pub enum AdapterError {
     },
     #[error("caller fixture references forbidden sibling term {term:?}")]
     ForbiddenSiblingReference { term: &'static str },
+    #[error("failed to parse GitHub pull_request event: {0}")]
+    GithubActionEvent(#[source] serde_json::Error),
+    #[error("invalid git diff: {reason}")]
+    InvalidGitDiff { reason: String },
     #[error("artifact has no reviewed head sha for caller projection")]
     MissingReviewedHeadSha,
     #[error("{field} mismatch: expected {expected:?}, got {actual:?}")]

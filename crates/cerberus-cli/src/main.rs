@@ -1,4 +1,8 @@
 use anyhow::{bail, Context, Result};
+use cerberus_adapter::{
+    github_action_review_decision_from_event, github_action_skip_decision_from_event,
+    GithubActionReviewDecision,
+};
 use cerberus_core::{
     default_config, render_inline_comment_candidates, render_markdown, review,
     reviewer_config_candidate_from_eval_report, reviewer_config_import_dry_run,
@@ -43,6 +47,7 @@ fn main() -> Result<()> {
         "validate-reviewer-config" => validate_reviewer_config(args.collect()),
         "review" => review_command(args.collect()),
         "review-local" => review_local(args.collect()),
+        "github-action-request" => github_action_request(args.collect()),
         "eval-harness" => eval_harness(args.collect()),
         "propose-reviewer-config" => propose_reviewer_config(args.collect()),
         "refresh-model-catalog" => refresh_model_catalog(args.collect()),
@@ -234,6 +239,78 @@ fn review_local(args: Vec<String>) -> Result<()> {
 
     println!("{}", artifact_path.display());
     Ok(())
+}
+
+fn github_action_request(args: Vec<String>) -> Result<()> {
+    let mut event = None;
+    let mut diff_file = None;
+    let mut out = None;
+    let mut run_id = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--event" => {
+                event = Some(required_arg(&args, index, "--event")?);
+                index += 2;
+            }
+            "--diff-file" => {
+                diff_file = Some(required_arg(&args, index, "--diff-file")?);
+                index += 2;
+            }
+            "--out" => {
+                out = Some(required_arg(&args, index, "--out")?);
+                index += 2;
+            }
+            "--run-id" => {
+                run_id = Some(required_arg(&args, index, "--run-id")?);
+                index += 2;
+            }
+            other => bail!("unknown github-action-request argument {other:?}"),
+        }
+    }
+
+    let event_path = PathBuf::from(event.context("github-action-request requires --event <path>")?);
+    let diff_path =
+        PathBuf::from(diff_file.context("github-action-request requires --diff-file <path>")?);
+    let out_path = PathBuf::from(out.context("github-action-request requires --out <path>")?);
+    let run_id = run_id.unwrap_or_else(default_github_action_run_id);
+    let event_json = fs::read_to_string(&event_path)
+        .with_context(|| format!("failed to read GitHub event {}", event_path.display()))?;
+
+    if let Some(decision) = github_action_skip_decision_from_event(&event_json)? {
+        remove_stale_file(&out_path)?;
+        let json = serde_json::to_string_pretty(&decision)?;
+        println!("{json}");
+        return Ok(());
+    }
+
+    let diff = fs::read_to_string(&diff_path)
+        .with_context(|| format!("failed to read GitHub diff {}", diff_path.display()))?;
+
+    match github_action_review_decision_from_event(&event_json, &diff, run_id)? {
+        GithubActionReviewDecision::Review { request } => {
+            write_json(&out_path, &request)?;
+            println!("{}", out_path.display());
+        }
+        decision @ GithubActionReviewDecision::Skip { .. } => {
+            remove_stale_file(&out_path)?;
+            let json = serde_json::to_string_pretty(&decision)?;
+            println!("{json}");
+        }
+    }
+
+    Ok(())
+}
+
+fn default_github_action_run_id() -> String {
+    match (env::var("GITHUB_RUN_ID"), env::var("GITHUB_RUN_ATTEMPT")) {
+        (Ok(run_id), Ok(attempt)) if !run_id.trim().is_empty() && !attempt.trim().is_empty() => {
+            format!("{run_id}-{attempt}")
+        }
+        (Ok(run_id), _) if !run_id.trim().is_empty() => run_id,
+        _ => "github-actions-local".to_string(),
+    }
 }
 
 fn import_reviewer_config(args: Vec<String>) -> Result<()> {
@@ -791,6 +868,6 @@ fn write_raw(path: &PathBuf, raw: &str) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
+        "usage:\n  cerberus-cli validate <schema.json>...\n  cerberus-cli validate-retirement <legacy-surface-inventory.json>...\n  cerberus-cli validate-reviewer-config <packet.json>...\n  cerberus-cli import-reviewer-config <packet.json> --dry-run [--baseline <review-config.json>] [--fixture <review-request.json>] [--out <report.json>]\n  cerberus-cli propose-reviewer-config --report <HarnessModelEvaluationReport.v1.json> --matrix <HarnessModelMatrix.v1.json> --suite <EvalTaskSuite.v1.json> --evidence-dir <eval-output-dir> --out <ReviewerConfigPacket.v1.json>\n  cerberus-cli review --fixture <review-request.json> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>]\n  cerberus-cli review-local --diff-file <diff> --out <dir> [--config <review-config.json> | --config-packet <ReviewerConfigPacket.v1.json>] [--repo-path <path>] [--request-id <id>] [--title <title>]\n  cerberus-cli github-action-request --event <pull_request_event.json> --diff-file <diff> --out <review-request.json> [--run-id <id>]\n  cerberus-cli eval-harness --suite <eval-suite.json> --matrix <matrix.json> --out <dir> [--execution-mode offline-contract|live-peer] [--peer-profiles <PeerHarnessCommandProfiles.v3.json>]\n  cerberus-cli refresh-model-catalog --matrix <matrix.json> --catalog-source <path-or-url> --out <matrix.json> --raw-out <raw.json> [--observed-at <stamp>]\n  cerberus-cli render <review-run-artifact.json>\n  cerberus-cli render-comments <review-run-artifact.json>"
     );
 }
