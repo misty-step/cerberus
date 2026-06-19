@@ -144,6 +144,8 @@ Relevant Cerberus drift:
   `docs/shaping/006-eval-source-truth-consolidation-plan.html`
 - Provider full-suite rerun gate plan:
   `docs/shaping/006-provider-full-suite-rerun-gate-plan.html`
+- Eval output hygiene plan:
+  `docs/shaping/006-eval-output-hygiene-plan.html`
 - Goose docs:
   `https://goose-docs.ai/`
 - OpenCode + OpenRouter docs:
@@ -197,6 +199,9 @@ Relevant Cerberus drift:
 14. Done: add explicit selection metadata to selected eval, readiness, and
    budget reports so staged report artifacts are self-describing before durable
    automation consumes them.
+15. Done: make reused `eval-harness` output directories self-contained by
+   clearing stale generated report, transcript, input, artifact, and plan paths
+   before writing the current evidence packet.
 
 ## Implementation Receipt
 
@@ -623,6 +628,47 @@ Eval subset metadata receipt, 2026-06-19:
   returns `goose`, `z-ai/glm-5.2`, and `clean-no-finding` for eval,
   readiness, and budget outputs.
 - This is provenance hardening only. It does not spend provider budget, rank
+  harness/model pairs, promote defaults, or close the remaining full
+  provider-backed six-task rerun.
+
+Eval output hygiene receipt, 2026-06-19:
+
+- Added rendered hygiene plan:
+  `docs/shaping/006-eval-output-hygiene-plan.html`.
+- `cerberus-cli eval-harness` now clears only its known generated paths inside
+  the requested output directory before a run: `report.json`, `transcripts/`,
+  `inputs/`, `artifacts/`, and `plans/`. Symlinks are removed as paths, not
+  traversed.
+- Added a focused CLI regression test proving a selected rerun into a seeded
+  stale output directory removes old generated evidence while preserving the
+  current selected transcript and schema-valid report. On Unix, the test also
+  seeds `plans` as a symlink to a directory outside the eval output directory
+  and proves the link is removed while the target survives.
+- No-spend proof lives under
+  `tmp/evals/eval-output-hygiene-2026-06-19/`:
+  `offline-eval/report.json`
+  (`sha256:76d1f995c893aef2368ddde6733a366f35211f2a2462030a671ae6941ad6f82c`),
+  `offline-eval/transcripts/goose__z-ai_glm-5_2__clean-no-finding.txt`
+  (`sha256:70a1fd8cb952ec3c7b2cbcd43d71f09e802b3715505344ed40d9e25c60e6866c`),
+  `outside-symlink-target/do-not-delete.json`
+  (`sha256:45c92aa1fcc8266b4b266a073e354c4e6d16e22c78fc272b3d0c47a25164993b`),
+  `report-summary.json`
+  (`sha256:58a4ade444296822939e64f5c868813597b8c82b79830ad9d29eb9f5556b9a9a`),
+  and `file-list.txt`
+  (`sha256:ff82b25686ed09904204f741c94bed6196e717af3ec78cf433d7d38fae67cf79`).
+- QA seeded stale `transcripts/stale-cell.txt`, `inputs/stale-cell.json`,
+  `artifacts/stale-cell.json`, `plans` as a symlink to
+  `outside-symlink-target/`, and `report.json`, then reran selected offline
+  eval for `goose` + `z-ai/glm-5.2` + `clean-no-finding`. The validated report
+  has 1 selected warn cell, score `1.0`; `offline-eval/` contains only the
+  current report and transcript after the rerun; the `plans` symlink is gone;
+  and the outside symlink target sentinel still exists.
+- Exact no-spend commands:
+  - `cargo test -p cerberus-cli eval_harness_clears_stale_generated_output_paths -- --nocapture`
+  - `cargo test -p cerberus-cli eval_harness`
+  - `cargo run --locked -q -p cerberus-cli -- eval-harness --suite fixtures/evals/reviewer-harness-smoke.json --matrix fixtures/evals/harness-model-matrix.json --harness goose --model z-ai/glm-5.2 --task clean-no-finding --out tmp/evals/eval-output-hygiene-2026-06-19/offline-eval`
+  - `cargo run --locked -q -p cerberus-cli -- validate tmp/evals/eval-output-hygiene-2026-06-19/offline-eval/report.json`
+- This is evidence hygiene only. It does not spend provider budget, rank
   harness/model pairs, promote defaults, or close the remaining full
   provider-backed six-task rerun.
 

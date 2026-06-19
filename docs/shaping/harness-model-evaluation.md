@@ -428,6 +428,14 @@ explicit token and retry assumptions before an operator acknowledges provider
 spend. Paid external model cells may be marked manual/nightly until budget and
 retry policy are approved.
 
+`eval-harness` output directories are treated as one evidence packet per run.
+Before writing the current report, the command clears its known generated paths
+inside the requested output directory: `report.json`, `transcripts/`, `inputs/`,
+`artifacts/`, and `plans/`. This keeps selected reruns from carrying stale
+files produced by earlier broader runs. It does not remove the need to validate
+the current report, and it does not turn selected reruns into full-suite
+provider quality evidence.
+
 ## Verification System
 
 - Claim: Cerberus can evaluate harness/model pairs for reviewer artifact quality

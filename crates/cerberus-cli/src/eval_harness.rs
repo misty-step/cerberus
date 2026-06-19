@@ -304,6 +304,7 @@ pub fn eval_harness(args: Vec<String>) -> Result<()> {
 
     fs::create_dir_all(&args.out_dir)
         .with_context(|| format!("failed to create output dir {}", args.out_dir.display()))?;
+    clear_eval_output_dir(&args.out_dir)?;
     let selection = report_selection(&args.selection, &suite, &matrix);
     let mut output = match args.execution_mode {
         EvalHarnessMode::OfflineContract => {
@@ -1040,6 +1041,31 @@ fn remove_stale_eval_file(path: &Path) -> Result<()> {
     }
 }
 
+fn clear_eval_output_dir(out_dir: &Path) -> Result<()> {
+    for relative_path in ["report.json", "transcripts", "inputs", "artifacts", "plans"] {
+        remove_stale_eval_path(&out_dir.join(relative_path))?;
+    }
+    Ok(())
+}
+
+fn remove_stale_eval_path(path: &Path) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to inspect stale eval path {}", path.display()));
+        }
+    };
+
+    let result = if metadata.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+    result.with_context(|| format!("failed to remove stale eval path {}", path.display()))
+}
+
 fn eval_cell_path(
     directory: &str,
     harness: &HarnessProfile,
@@ -1152,6 +1178,81 @@ mod tests {
         assert_eq!(cell.model_id, "z-ai/glm-5.2");
         assert_eq!(cell.task_id, "clean-no-finding");
         assert!(out.join(&cell.transcript_path).exists());
+    }
+
+    #[test]
+    fn eval_harness_clears_stale_generated_output_paths() {
+        let out = temp_dir("harness-stale-output");
+        let matrix_path = matrix_with_absolute_drift_paths(&out);
+        #[cfg(unix)]
+        let stale_paths = vec![
+            out.join("transcripts/stale-cell.txt"),
+            out.join("inputs/stale-cell.json"),
+            out.join("artifacts/stale-cell.json"),
+        ];
+        #[cfg(not(unix))]
+        let stale_paths = vec![
+            out.join("transcripts/stale-cell.txt"),
+            out.join("inputs/stale-cell.json"),
+            out.join("artifacts/stale-cell.json"),
+            out.join("plans/stale-cell.json"),
+        ];
+        #[cfg(unix)]
+        let symlink_target = {
+            let target = temp_dir("harness-stale-output-symlink-target");
+            fs::write(target.join("do-not-delete.json"), "outside evidence")
+                .expect("write symlink target sentinel");
+            std::os::unix::fs::symlink(&target, out.join("plans"))
+                .expect("create stale generated symlink");
+            target
+        };
+        for path in &stale_paths {
+            ensure_parent_dir(path).expect("stale parent");
+            fs::write(path, "stale evidence").expect("write stale generated file");
+        }
+        fs::write(out.join("report.json"), "stale report").expect("write stale report");
+
+        eval_harness(vec![
+            "--suite".to_string(),
+            repo_path("fixtures/evals/reviewer-harness-smoke.json")
+                .display()
+                .to_string(),
+            "--matrix".to_string(),
+            matrix_path.display().to_string(),
+            "--harness".to_string(),
+            "goose".to_string(),
+            "--model".to_string(),
+            "z-ai/glm-5.2".to_string(),
+            "--task".to_string(),
+            "clean-no-finding".to_string(),
+            "--out".to_string(),
+            out.display().to_string(),
+        ])
+        .expect("selected eval succeeds");
+
+        for path in &stale_paths {
+            assert!(
+                !path.exists(),
+                "stale generated eval path should be removed: {}",
+                path.display()
+            );
+        }
+        #[cfg(unix)]
+        {
+            assert!(
+                fs::symlink_metadata(out.join("plans")).is_err(),
+                "stale generated symlink should be removed"
+            );
+            assert_eq!(
+                fs::read_to_string(symlink_target.join("do-not-delete.json"))
+                    .expect("read symlink target sentinel"),
+                "outside evidence"
+            );
+        }
+        let report: HarnessModelEvaluationReport = read_json(&out.join("report.json"));
+        report.validate().expect("report validates");
+        assert_eq!(report.summary.total_cells, 1);
+        assert!(out.join(&report.cells[0].transcript_path).exists());
     }
 
     #[test]
