@@ -1,6 +1,6 @@
 # 004 - Daedalus Reviewer Config Promotion
 
-Status: implemented-local-fixture
+Status: cerberus-ready-daedalus-export-pending
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -56,11 +56,11 @@ Out of scope:
 
 ## Child Work
 
-1. Define `ReviewerConfigPacket.v1`.
-2. Add validation and dry-run import commands.
-3. Add baseline comparison fixtures.
-4. Coordinate Daedalus export shape.
-5. Document promotion, rollback, and rejection rules.
+- [x] Define `ReviewerConfigPacket.v1`.
+- [x] Add validation and dry-run import commands.
+- [x] Add baseline comparison fixtures.
+- [x] Coordinate Daedalus export shape.
+- [x] Document promotion, rollback, and rejection rules.
 
 ## Notes
 
@@ -84,3 +84,25 @@ Packet-backed review execution bridge, 2026-06-19:
   validated `ReviewerConfigPacket.v1` directly through `--config-packet`.
 - This closes the manual `.config` extraction gap for sandbox review runs. It
   still does not approve or install reviewer defaults.
+
+Cross-repo Daedalus export boundary, 2026-06-19:
+
+- Added `docs/shaping/004-daedalus-cross-repo-export-closeout-plan.html` to
+  separate the Cerberus import contract from Daedalus' generic control-plane
+  `launch-pack` TOML packets.
+- Updated Daedalus `DESIGN.md` on branch
+  `cerberus/004-reviewer-config-handoff` at commit `38a7e67` to name Cerberus
+  as a downstream reviewer-config consumer that requires
+  `ReviewerConfigPacket.v1` JSON, not a generic plane import packet.
+- Added Daedalus `backlog.d/046-export-cerberus-reviewer-config-packet.md` as
+  the owned implementation ticket for the missing exporter and Cerberus
+  validation loop.
+- Current state: Cerberus can validate, dry-run import, and sandbox-run the
+  checked Daedalus-style fixture packet. That fixture is not claimed as output
+  from a Daedalus exporter. Daedalus still must implement the exporter before
+  this becomes an end-to-end Daedalus -> Cerberus promotion path; no reviewer
+  defaults or production posting authority are approved.
+- Verified the sandbox run with `cargo run --locked -p cerberus-cli -- review
+  --fixture fixtures/review-request/clean.json --config-packet
+  fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json --out
+  tmp/reviewer-config/packet-review`.

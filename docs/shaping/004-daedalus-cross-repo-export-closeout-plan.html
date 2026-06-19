@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-ae-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Daedalus Cross-Repo Export Closeout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Geist+Mono:wght@100..900&amp;display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/misty-step/aesthetic@v2.5.1/aesthetic.css">
+  <style>
+    :root { --ae-accent: #5d5340; --ae-accent-dark: #dec58f; }
+    .wide .ae-bar, .wide .ae-stage { width: min(94rem, 100% - 4rem); }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(23em, 0.82fr); gap: 3em; align-items: end; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--ae-line); }
+    .cell { min-width: 0; background: var(--ae-surface); padding: 1.2em 1.35em; }
+    .wash { background: var(--ae-wash); }
+    .phase { display: grid; grid-template-columns: 8em minmax(0, 1fr) minmax(15em, 0.65fr); gap: 1.3em; border-top: 1px solid var(--ae-line); padding-top: 1em; margin-top: 1em; }
+    .phase:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+    .small { font-size: 0.9em; }
+    @media (max-width: 980px) {
+      .wide .ae-bar, .wide .ae-stage { width: min(100% - 2rem, 94rem); }
+      .hero, .grid-3, .phase { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="ae-screen wide">
+  <header class="ae-bar">
+    <a class="ae-name" href="../../backlog.d/004-daedalus-reviewer-config-promotion.md">BACKLOG 004</a>
+    <p class="ae-chrome">cross-repo export boundary</p>
+  </header>
+  <main class="ae-stage ae-stage-scroll">
+    <article class="ae-view">
+      <section class="hero">
+        <div>
+          <p class="ae-chrome">DAEDALUS EXPORT / CERBERUS IMPORT</p>
+          <h1 class="ae-strong">Make the remaining handoff gap explicit: generic launch packets are not Cerberus reviewer config packets.</h1>
+          <p class="ae-lede">Cerberus can validate, dry-run import, and sandbox-run `ReviewerConfigPacket.v1`. This slice records the Daedalus-side export boundary so future Daedalus work emits that JSON contract instead of a generic control-plane TOML packet.</p>
+        </div>
+        <aside class="ae-panel">
+          <h2 class="ae-h">TARGET OUTCOME</h2>
+          <p>Daedalus docs and backlog name Cerberus as a downstream runtime and specify the required `ReviewerConfigPacket.v1` exporter. Cerberus backlog 004 records the cross-repo coordination and the remaining implementation boundary.</p>
+          <h2 class="ae-h">CHOSEN DESIGN</h2>
+          <p>Do not add a half-translator. Add the Daedalus backlog contract and docs now; keep Cerberus import validation as the executable oracle.</p>
+          <h2 class="ae-h">STOP IF</h2>
+          <p>The change implies production default mutation, self-approval of G3/G4/G5, or uses Daedalus' generic `launch-pack --plane` TOML as if it satisfied Cerberus' JSON schema.</p>
+        </aside>
+      </section>
+
+      <section class="grid-3" style="margin-top: 2em">
+        <article class="cell">
+          <h2 class="ae-h">CERBERUS HAS</h2>
+          <p>`ReviewerConfigPacket.v1`, validation, dry-run import, sandbox review execution through `--config-packet`, and fixture-backed rejection of production import.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">DAEDALUS HAS</h2>
+          <p>Measured deliveries, G2/G3/G4/G5 gates, generic control-plane launch packets, and run evidence for pr-review candidates.</p>
+        </article>
+        <article class="cell wash">
+          <h2 class="ae-h">MISSING LINK</h2>
+          <p>A Daedalus exporter that emits Cerberus' JSON packet, validates against Cerberus, and remains sandbox-only until human gates approve promotion.</p>
+        </article>
+      </section>
+
+      <section style="margin-top: 2em">
+        <h2 class="ae-h">EXECUTION</h2>
+        <div class="phase">
+          <p class="ae-chrome">01</p>
+          <div><h3>Daedalus docs</h3><p>Add Cerberus to the downstream runtime contract and state that its importer requires `ReviewerConfigPacket.v1` JSON, not generic launch-pack TOML.</p></div>
+          <p class="ae-dim">Avoids schema confusion.</p>
+        </div>
+        <div class="phase">
+          <p class="ae-chrome">02</p>
+          <div><h3>Daedalus backlog</h3><p>Add a shaped ticket for the exporter, including Cerberus validation commands and G3/G4/G5 red lines.</p></div>
+          <p class="ae-dim">Leaves implementation work owned by Daedalus.</p>
+        </div>
+        <div class="phase">
+          <p class="ae-chrome">03</p>
+          <div><h3>Cerberus receipt</h3><p>Record what is complete, what remains external, and which commands prove the current import path.</p></div>
+          <p class="ae-dim">Prevents overstating production promotion.</p>
+        </div>
+      </section>
+
+      <section style="margin-top: 2em">
+        <h2 class="ae-h">ORACLE</h2>
+        <pre class="ae-code small"><code># Daedalus docs/backlog proof
+rg -n "Cerberus|ReviewerConfigPacket|reviewer config" DESIGN.md backlog.d/046-export-cerberus-reviewer-config-packet.md
+bin/gate
+
+# Cerberus importer proof
+cargo run --locked -p cerberus-cli -- validate-reviewer-config fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json
+cargo run --locked -p cerberus-cli -- import-reviewer-config fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json --dry-run --out tmp/reviewer-config/daedalus-sandbox-import-report.json
+diff -u fixtures/reviewer-config-packets/daedalus-sandbox-import-report.json tmp/reviewer-config/daedalus-sandbox-import-report.json
+cargo run --locked -p cerberus-cli -- review --fixture fixtures/review-request/clean.json --config-packet fixtures/reviewer-config-packets/daedalus-sandbox-reviewer-config.json --out tmp/reviewer-config/packet-review
+cargo test --workspace reviewer_config</code></pre>
+      </section>
+    </article>
+  </main>
+</div>
+</body>
+</html>
