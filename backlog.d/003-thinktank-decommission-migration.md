@@ -1,6 +1,6 @@
 # 003 - ThinkTank Decommission Migration
 
-Status: implemented-local-fixture
+Status: implemented-cross-repo-docs
 Priority: P1
 Type: epic
 Created: 2026-06-18
@@ -65,11 +65,11 @@ Out of scope:
 
 ## Child Work
 
-1. Freeze one representative ThinkTank review run as migration input.
-2. Write the artifact mapping table.
-3. Add a one-way importer test for historical runs.
-4. Port or reject each ThinkTank review surface explicitly.
-5. Update ThinkTank docs/backlog after Cerberus can stand alone.
+- [x] Freeze one representative ThinkTank review run as migration input.
+- [x] Write the artifact mapping table.
+- [x] Add a one-way importer test for historical runs.
+- [x] Port or reject each ThinkTank review surface explicitly.
+- [x] Update ThinkTank docs/backlog after Cerberus can stand alone.
 
 ## Notes
 
@@ -91,3 +91,32 @@ First local migration delivery, 2026-06-18:
   imported request, config, and artifact without invoking ThinkTank.
 - Added a Rust guard keeping ThinkTank runtime references scoped to the
   compatibility importer.
+
+Cross-repo documentation closeout, 2026-06-19:
+
+- Added `docs/shaping/003-thinktank-cross-repo-doc-closeout-plan.html` as the
+  plan and acceptance packet for the final docs/backlog migration slice.
+- Updated ThinkTank `README.md` and `backlog.d/README.md` on branch
+  `cerberus/003-decommission-docs` at commit `205914b` to state that ThinkTank
+  review backlog work strengthens local bench/evidence and replay surfaces, not
+  production Cerberus review execution.
+- Reconfirmed the boundary in Cerberus: production review contracts are
+  `ReviewRequest.v1`, `ReviewConfig.v1`, and `ReviewRunArtifact.v1`; ThinkTank
+  remains donor material through frozen or exported artifacts only.
+- Verified ThinkTank with `./scripts/with-colima.sh dagger call check`
+  returning 13 passed / 0 failed on architecture, backlog, coveralls, dialyzer,
+  e2e-smoke, elixir-quality, escript, gitleaks, harness-agents, models,
+  security, shell, and yaml.
+- Verified Cerberus with `cargo test --workspace thinktank_migration`,
+  `cargo run --locked -p cerberus-cli -- validate
+  fixtures/thinktank/review-pr-289/review-run-artifact.json`,
+  `cargo test --workspace`, `cargo fmt --all -- --check`, legacy Elixir
+  `mix test` / `mix format --check-formatted`, `node --check
+  bin/cerberus.js`, shellcheck over actual checked-in shell scripts, and
+  `git diff --check`.
+- Audited runtime references with `rg -n "thinktank" crates/` and a broader
+  runtime-invocation search over `crates`, `.github`, `action.yml`, `bin`,
+  `defaults`, and `pi`; hits were limited to the compatibility importer,
+  fixtures, and adapter exports.
+- Fresh-context critic returned no blocking gaps; residual risk is future drift
+  if a later change bypasses the importer guard or docs boundary.
