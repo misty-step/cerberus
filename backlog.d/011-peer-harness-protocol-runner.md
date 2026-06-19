@@ -8,7 +8,7 @@ Created: 2026-06-18
 ## Goal
 
 Implement the Rust `cerberus-peer-harness` protocol runner that the
-`PeerHarnessCommandProfiles.v2` fixture points at.
+`PeerHarnessCommandProfiles.v3` fixture points at.
 
 This runner proves the `CommandHarness` file protocol for Pi, Goose, OpenCode,
 and OMP without making live model calls. It validates the selected profile,

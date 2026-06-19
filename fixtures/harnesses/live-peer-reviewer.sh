@@ -11,6 +11,18 @@ case "$mode" in
   stdin-success)
     prompt="$(cat)"
     ;;
+  file-success)
+    prompt_path="${1:?file-success requires prompt file path}"
+    prompt="$(cat "$prompt_path")"
+    prompt_mode="$(
+      stat -f '%Lp' "$prompt_path" 2>/dev/null ||
+        stat -c '%a' "$prompt_path" 2>/dev/null
+    )"
+    if [ "$prompt_mode" != "600" ] && [ "$prompt_mode" != "0600" ]; then
+      printf '%s\n' "prompt file mode is not private: $prompt_mode" >&2
+      exit 66
+    fi
+    ;;
   malformed)
     printf '%s\n' 'not a Cerberus artifact'
     exit 0
@@ -42,6 +54,11 @@ require_prompt 'ReviewerArtifact.v1' 'artifact contract'
 require_prompt 'peer-runner-reviewer' 'reviewer id'
 require_prompt 'request_id:' 'request id field'
 require_prompt 'diff --git a/src/lib.rs b/src/lib.rs' 'diff body'
+
+if [ "${prompt_path:-}" ]; then
+  printf 'PROMPT_FILE=%s\n' "$prompt_path"
+  printf 'PROMPT_FILE_MODE=%s\n' "$prompt_mode"
+fi
 
 cat <<'TRANSCRIPT'
 Fixture live peer transcript.

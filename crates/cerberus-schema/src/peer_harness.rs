@@ -2,8 +2,8 @@ use crate::SchemaError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const PEER_HARNESS_COMMAND_PROFILES_VERSION: &str = "peer-harness-command-profiles.v2";
-pub const PEER_HARNESS_EXECUTION_PLAN_VERSION: &str = "peer-harness-execution-plan.v2";
+pub const PEER_HARNESS_COMMAND_PROFILES_VERSION: &str = "peer-harness-command-profiles.v3";
+pub const PEER_HARNESS_EXECUTION_PLAN_VERSION: &str = "peer-harness-execution-plan.v3";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PeerHarnessCommandProfiles {
@@ -101,6 +101,19 @@ impl PeerHarnessExecutionPlan {
                         field: "resolved_args",
                     });
                 }
+            }
+            PeerHarnessPromptMode::PromptFile => {
+                if placeholder_count(&self.resolved_args, "{prompt}") > 0 {
+                    return Err(SchemaError::Inconsistent {
+                        field: "resolved_args",
+                    });
+                }
+                expect_exact_placeholder_count(
+                    "resolved_args",
+                    &self.resolved_args,
+                    "{prompt_file}",
+                    1,
+                )?;
             }
         }
         self.transcript_markers.validate()?;
@@ -218,6 +231,19 @@ impl PeerHarnessInvocation {
                 }
                 Ok(())
             }
+            PeerHarnessPromptMode::PromptFile => {
+                if placeholder_count(&self.args_template, "{prompt}") > 0 {
+                    return Err(SchemaError::Inconsistent {
+                        field: "peer.args_template",
+                    });
+                }
+                expect_exact_placeholder_count(
+                    "peer.args_template",
+                    &self.args_template,
+                    "{prompt_file}",
+                    1,
+                )
+            }
         }
     }
 }
@@ -233,6 +259,7 @@ pub enum PeerHarnessOutputContract {
 pub enum PeerHarnessPromptMode {
     ArgvMessage,
     StdinText,
+    PromptFile,
     WrapperRenderedPrompt,
 }
 
@@ -509,10 +536,16 @@ mod tests {
     fn peer_harness_command_profiles_require_one_prompt_placeholder_for_argv_mode() {
         let mut profiles: PeerHarnessCommandProfiles =
             serde_json::from_str(PEER_PROFILES).expect("fixture parses");
+        profiles.profiles[0].peer.prompt_mode = PeerHarnessPromptMode::ArgvMessage;
+        profiles.profiles[0].peer.args_template = vec!["{prompt}".to_string()];
         profiles.profiles[0]
             .peer
             .args_template
             .retain(|value| value != "{prompt}");
+        profiles.profiles[0]
+            .peer
+            .args_template
+            .push("--no-prompt-placeholder".to_string());
 
         assert!(matches!(
             profiles.validate(),
@@ -545,6 +578,47 @@ mod tests {
             .peer
             .args_template
             .push("--message={prompt}".to_string());
+
+        assert!(matches!(
+            profiles.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "peer.args_template"
+            })
+        ));
+    }
+
+    #[test]
+    fn peer_harness_command_profiles_require_prompt_file_placeholder_for_file_mode() {
+        let mut profiles: PeerHarnessCommandProfiles =
+            serde_json::from_str(PEER_PROFILES).expect("fixture parses");
+        profiles.profiles[0].peer.prompt_mode = PeerHarnessPromptMode::PromptFile;
+
+        profiles.validate().expect("fixture uses prompt file");
+
+        profiles.profiles[0]
+            .peer
+            .args_template
+            .retain(|arg| !arg.contains("{prompt_file}"));
+        profiles.profiles[0]
+            .peer
+            .args_template
+            .push("--no-prompt-file-placeholder".to_string());
+
+        assert!(matches!(
+            profiles.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "peer.args_template"
+            })
+        ));
+
+        profiles.profiles[0]
+            .peer
+            .args_template
+            .push("{prompt_file}".to_string());
+        profiles.profiles[0]
+            .peer
+            .args_template
+            .push("{prompt}".to_string());
 
         assert!(matches!(
             profiles.validate(),
@@ -588,6 +662,37 @@ mod tests {
 
         plan.resolved_args.push("{prompt}".to_string());
         plan.resolved_args.push("{prompt}".to_string());
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "resolved_args"
+            })
+        ));
+    }
+
+    #[test]
+    fn peer_harness_execution_plan_requires_prompt_file_placeholder_for_file_mode() {
+        let mut plan = valid_execution_plan();
+        plan.prompt_mode = PeerHarnessPromptMode::PromptFile;
+        plan.resolved_args.retain(|arg| arg != "{prompt}");
+        plan.resolved_args.push("@{prompt_file}".to_string());
+
+        plan.validate().expect("prompt file plan validates");
+
+        plan.resolved_args.clear();
+        plan.resolved_args.push("{prompt}".to_string());
+
+        assert!(matches!(
+            plan.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "resolved_args"
+            })
+        ));
+
+        plan.resolved_args.clear();
+        plan.resolved_args.push("{prompt_file}".to_string());
+        plan.resolved_args.push("{prompt_file}".to_string());
 
         assert!(matches!(
             plan.validate(),

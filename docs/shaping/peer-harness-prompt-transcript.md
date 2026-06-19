@@ -1,6 +1,6 @@
 # Peer Harness Prompt and Transcript Fixtures
 
-Snapshot date: 2026-06-18.
+Snapshot date: 2026-06-19.
 
 Backlog 012 adds deterministic prompt rendering and exact transcript fixture
 parsing to `cerberus-peer-harness`. This is still not live model execution.
@@ -48,7 +48,8 @@ finding. The default no-transcript runner path remains degraded `SKIP`.
 
 ## Live Boundary
 
-Backlog 016 adds fixture-backed live command invocation. Pi, Goose, OpenCode,
-OMP, OpenRouter, and other provider-backed profiles remain budget-gated by
-`CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1` and require non-argv prompt
-transport before live provider execution.
+Backlog 016 adds fixture-backed live command invocation. Backlog 017 adds
+private prompt-file transport. Pi, Goose, OpenCode, OMP, OpenRouter, and other
+provider-backed profiles remain budget-gated by
+`CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1` and still require explicit
+harness/model evaluation before promotion.

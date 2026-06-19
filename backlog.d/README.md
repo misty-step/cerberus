@@ -22,6 +22,7 @@ Current sequence:
 14. `014-current-harness-model-catalog-refresh.md`
 15. `015-peer-harness-execution-plan.md`
 16. `016-peer-harness-live-invocation.md`
+17. `017-peer-harness-prompt-file-transport.md`
 
 Planning rules:
 
@@ -51,6 +52,6 @@ Planning rules:
   live eval budget or promoting reviewer defaults.
 - Write an inspectable execution plan before live peer harness invocation,
   provider spend, or harness/model promotion.
-- Prove live peer command invocation with a fixture profile, then safe
-  non-argv prompt transport, before budget-approved provider evals or default
+- Prove live peer command invocation with a fixture profile, then private
+  prompt-file transport, before budget-approved provider evals or default
   reviewer promotion.

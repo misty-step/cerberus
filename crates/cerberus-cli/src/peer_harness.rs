@@ -8,9 +8,18 @@ use cerberus_schema::{
 };
 use std::{
     env, fs,
+    fs::{File, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
+    time::{SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+
+static NEXT_PROMPT_FILE_ID: AtomicU64 = AtomicU64::new(0);
 
 const PROFILES_ENV: &str = "CERBERUS_PEER_HARNESS_PROFILES";
 const LIVE_ENV: &str = "CERBERUS_PEER_HARNESS_LIVE";
@@ -179,7 +188,7 @@ impl RunnerArgs {
 }
 
 fn usage() -> &'static str {
-    "usage: cerberus-peer-harness --harness <id> --input <CommandHarnessInput.json> --output <ReviewerArtifact.v1.json> [--profiles <PeerHarnessCommandProfiles.v2.json>] [--prompt-output <path>] [--transcript <path>] [--transcript-output <path>] [--execution-plan-output <path>]"
+    "usage: cerberus-peer-harness --harness <id> --input <CommandHarnessInput.json> --output <ReviewerArtifact.v1.json> [--profiles <PeerHarnessCommandProfiles.v3.json>] [--prompt-output <path>] [--transcript <path>] [--transcript-output <path>] [--execution-plan-output <path>]"
 }
 
 fn required_value(args: &[String], index: usize, flag: &'static str) -> Result<String> {
@@ -310,6 +319,18 @@ fn execution_plan(
         .cloned()
         .partition(|name| env::var_os(name.as_str()).is_some());
 
+    let prompt_transport_note = match profile.peer.prompt_mode {
+        PeerHarnessPromptMode::ArgvMessage | PeerHarnessPromptMode::WrapperRenderedPrompt => {
+            "rendered prompt text is intentionally represented by the {prompt} placeholder"
+        }
+        PeerHarnessPromptMode::StdinText => {
+            "rendered prompt text is sent through stdin and omitted from resolved_args"
+        }
+        PeerHarnessPromptMode::PromptFile => {
+            "rendered prompt text is written to a private file represented by the {prompt_file} placeholder"
+        }
+    };
+
     PeerHarnessExecutionPlan {
         schema_version: PEER_HARNESS_EXECUTION_PLAN_VERSION.to_string(),
         harness_id: profile.harness_id.clone(),
@@ -329,10 +350,7 @@ fn execution_plan(
             end: ARTIFACT_END_MARKER.to_string(),
         },
         unsupported: profile.unsupported.clone(),
-        notes: Some(
-            "Exact peer command plan; rendered prompt text is intentionally represented by the {prompt} placeholder."
-                .to_string(),
-        ),
+        notes: Some(format!("Exact peer command plan; {prompt_transport_note}.")),
     }
 }
 
@@ -359,9 +377,15 @@ fn live_peer_artifact(
     ensure_provider_budget_ack(profile, provider_budget_acknowledged)?;
     ensure_live_prompt_transport(profile)?;
     ensure_required_env(profile)?;
-    let output = live_peer_command(profile, input, prompt)
-        .run()
-        .context("live peer command failed")?;
+    let prompt_file = PromptFile::create_for(profile, prompt)?;
+    let output = live_peer_command(
+        profile,
+        input,
+        prompt,
+        prompt_file.as_ref().map(PromptFile::path),
+    )
+    .run()
+    .context("live peer command failed")?;
     if let Some(path) = transcript_output_path {
         fs::write(path, &output.stdout)
             .with_context(|| format!("failed to write live peer transcript {}", path.display()))?;
@@ -419,6 +443,7 @@ fn live_peer_command(
     profile: &PeerHarnessCommandProfile,
     input: &CommandHarnessInput,
     prompt: &str,
+    prompt_file_path: Option<&Path>,
 ) -> BoundedCommand {
     let model = model_for_template(&profile.peer.args_template, &input.reviewer.model);
     let resolved_model_args = profile
@@ -436,7 +461,117 @@ fn live_peer_command(
         PeerHarnessPromptMode::StdinText => command
             .args(resolved_model_args)
             .stdin_text(prompt.to_string()),
+        PeerHarnessPromptMode::PromptFile => {
+            let prompt_file_path = prompt_file_path
+                .expect("prompt file mode creates a private prompt file")
+                .display()
+                .to_string();
+            command.args(
+                resolved_model_args.map(|arg| arg.replace("{prompt_file}", &prompt_file_path)),
+            )
+        }
     }
+}
+
+#[derive(Debug)]
+struct PromptFile {
+    root: PathBuf,
+    path: PathBuf,
+}
+
+impl Drop for PromptFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+impl PromptFile {
+    fn create_for(profile: &PeerHarnessCommandProfile, prompt: &str) -> Result<Option<Self>> {
+        if profile.peer.prompt_mode != PeerHarnessPromptMode::PromptFile {
+            return Ok(None);
+        }
+
+        let root = env::temp_dir().join(format!(
+            "cerberus-peer-prompt-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        create_private_dir(&root)
+            .with_context(|| format!("failed to create prompt temp dir {}", root.display()))?;
+        if let Err(error) = set_private_dir_permissions(&root) {
+            let _ = fs::remove_dir_all(&root);
+            return Err(error)
+                .with_context(|| format!("failed to restrict prompt temp dir {}", root.display()));
+        }
+        let path = root.join("prompt.txt");
+        if let Err(error) = write_private_prompt_file(&path, prompt) {
+            let _ = fs::remove_dir_all(&root);
+            return Err(error)
+                .with_context(|| format!("failed to write prompt file {}", path.display()));
+        }
+
+        Ok(Some(Self { root, path }))
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn write_private_prompt_file(path: &Path, prompt: &str) -> std::io::Result<()> {
+    let mut file = create_private_file(path)?;
+    file.write_all(prompt.as_bytes())
+}
+
+fn create_private_file(path: &Path) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        options.mode(0o600);
+    }
+    let file = options.open(path)?;
+    set_private_file_permissions(path)?;
+    Ok(file)
+}
+
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        return builder.create(path);
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(path)
+    }
+}
+
+fn set_private_dir_permissions(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn set_private_file_permissions(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+fn unique_suffix() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let sequence = NEXT_PROMPT_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    format!("{nanos}-{sequence}")
 }
 
 fn render_prompt(profile: &PeerHarnessCommandProfile, input: &CommandHarnessInput) -> String {
@@ -681,10 +816,14 @@ mod tests {
         assert_eq!(
             plan.resolved_args
                 .iter()
-                .filter(|arg| arg.contains("{prompt}"))
+                .filter(|arg| arg.contains("{prompt_file}"))
                 .count(),
             1
         );
+        assert!(!plan
+            .resolved_args
+            .iter()
+            .any(|arg| arg.contains("{prompt}")));
         assert!(!plan
             .resolved_args
             .iter()
@@ -808,6 +947,50 @@ mod tests {
     }
 
     #[test]
+    fn peer_harness_live_supports_prompt_file_mode_and_removes_prompt_file() {
+        let paths = TestPaths::new();
+        write_input(&paths.input);
+        write_live_profile(
+            &paths.profiles,
+            "fixture-live-file",
+            "file-success",
+            PeerHarnessPromptMode::PromptFile,
+            2_000,
+            false,
+        );
+
+        run_inner(
+            vec![
+                "--harness".to_string(),
+                "fixture-live-file".to_string(),
+                "--input".to_string(),
+                paths.input.display().to_string(),
+                "--output".to_string(),
+                paths.output.display().to_string(),
+                "--profiles".to_string(),
+                paths.profiles.display().to_string(),
+                "--transcript-output".to_string(),
+                paths.transcript.display().to_string(),
+            ],
+            true,
+            false,
+        )
+        .expect("prompt file live peer writes artifact");
+
+        let artifact = read_artifact(&paths.output);
+        assert_eq!(artifact.status, ReviewerStatus::Completed);
+        assert_eq!(artifact.verdict, Verdict::Pass);
+        let transcript = fs::read_to_string(&paths.transcript).expect("transcript is written");
+        let prompt_path = transcript
+            .lines()
+            .find_map(|line| line.strip_prefix("PROMPT_FILE="))
+            .expect("transcript reports prompt file path");
+        assert!(!prompt_path.contains("diff --git"));
+        assert!(!Path::new(prompt_path).exists());
+        assert!(transcript.contains("PROMPT_FILE_MODE=600"));
+    }
+
+    #[test]
     fn peer_harness_live_rejects_malformed_peer_transcript() {
         let paths = TestPaths::new();
         write_input(&paths.input);
@@ -910,14 +1093,14 @@ mod tests {
     }
 
     #[test]
-    fn peer_harness_live_rejects_provider_argv_prompt_transport_even_with_budget_ack() {
+    fn peer_harness_live_provider_prompt_file_reaches_env_gate_with_budget_ack() {
         let paths = TestPaths::new();
         write_input(&paths.input);
         write_live_profile(
             &paths.profiles,
             "fixture-live-provider",
-            "argv-success",
-            PeerHarnessPromptMode::ArgvMessage,
+            "file-success",
+            PeerHarnessPromptMode::PromptFile,
             2_000,
             true,
         );
@@ -936,9 +1119,12 @@ mod tests {
             true,
             true,
         )
-        .expect_err("provider-backed argv prompt transport is refused");
+        .expect_err("provider-backed prompt file profile reaches env gate");
 
-        assert!(error.to_string().contains("argv prompt transport"));
+        assert!(error
+            .to_string()
+            .contains("CERBERUS_TEST_MISSING_PROVIDER_KEY"));
+        assert!(!error.to_string().contains("argv prompt transport"));
         assert!(!paths.output.exists());
     }
 
@@ -1278,6 +1464,13 @@ mod tests {
                     mode.to_string(),
                 ]
             }
+            PeerHarnessPromptMode::PromptFile => {
+                vec![
+                    fixture_live_script().display().to_string(),
+                    mode.to_string(),
+                    "{prompt_file}".to_string(),
+                ]
+            }
         };
         let profiles = PeerHarnessCommandProfiles {
             schema_version: cerberus_schema::PEER_HARNESS_COMMAND_PROFILES_VERSION.to_string(),
@@ -1287,7 +1480,11 @@ mod tests {
                 command: "cerberus-peer-harness".to_string(),
                 args: vec!["--harness".to_string(), harness_id.to_string()],
                 timeout_ms,
-                env_required: vec![],
+                env_required: if requires_provider_budget_ack {
+                    vec!["CERBERUS_TEST_MISSING_PROVIDER_KEY".to_string()]
+                } else {
+                    vec![]
+                },
                 requires_provider_budget_ack,
                 output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
                 peer: cerberus_schema::PeerHarnessInvocation {

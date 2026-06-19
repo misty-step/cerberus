@@ -46,7 +46,7 @@ local fixture behavior stable; live Pi, Goose, OpenCode, OMP, Sprites, or
 provider adapters attach behind this boundary.
 
 Peer harness command profiles are validated data before they are live execution.
-`PeerHarnessCommandProfiles.v2` records the future protocol runner command and
+`PeerHarnessCommandProfiles.v3` records the future protocol runner command and
 the underlying peer CLI template; raw peer CLIs do not define the Cerberus
 input/output contract.
 
@@ -56,8 +56,8 @@ degraded `SKIP` artifact with exact request coverage. It can also render a
 deterministic prompt and parse exact marked local transcript fixtures into
 reviewer artifacts. Fixture-backed live peer invocation now runs behind
 `CERBERUS_PEER_HARNESS_LIVE=1`; provider-backed Pi/Goose/OpenCode/OMP profiles
-remain blocked until both provider-budget acknowledgement and non-argv prompt
-transport are in place.
+now use private prompt-file transport and remain blocked until provider-budget
+acknowledgement and required credentials are present.
 
 `cerberus-cli review-local` is the Rust local diff replay path. It reads a
 git-style diff file, builds a `ReviewRequest.v1` with `LocalDiff` source, runs
@@ -214,6 +214,8 @@ Responsibilities:
 - validate parsed artifacts against the core reviewer/request acceptance rule
 - fail closed before provider-backed execution unless the profile budget
   acknowledgement is explicit and prompt transport avoids argv
+- write private prompt files for `prompt_file` profiles and delete them after
+  live peer execution
 
 Non-responsibilities:
 

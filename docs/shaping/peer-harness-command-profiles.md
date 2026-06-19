@@ -1,10 +1,11 @@
 # Peer Harness Command Profiles
 
-Snapshot date: 2026-06-18.
+Snapshot date: 2026-06-19.
 
-Backlog 010 adds `PeerHarnessCommandProfiles.v2`, a schema for connecting
-peer harnesses to the Rust command-adapter path without pretending raw CLIs
-already implement the Cerberus input/output protocol.
+Backlog 010 introduced peer command profiles for connecting peer harnesses to
+the Rust command-adapter path without pretending raw CLIs already implement the
+Cerberus input/output protocol. The current packet is
+`PeerHarnessCommandProfiles.v3`.
 
 ## Boundary
 
@@ -30,18 +31,19 @@ adapter land.
 
 `fixtures/harnesses/peer-command-profiles.json` records four profiles:
 
-- Pi: `pi --print --no-session --mode json --model openrouter/{model} {prompt}`
-- Goose: `goose run --no-session --quiet --provider openrouter --model {model} --text {prompt}`
-- OpenCode: `opencode run --format json --model openrouter/{model} --agent reviewer {prompt}`
-- OMP: `omp --print --no-session --mode json --model openrouter/{model} --no-pty {prompt}`
+- Pi: `pi --print --no-session --mode json --model openrouter/{model} @{prompt_file}`
+- Goose: `goose run --no-session --quiet --provider openrouter --model {model} --instructions {prompt_file}`
+- OpenCode: `opencode run --format json --model openrouter/{model} --agent reviewer --file {prompt_file} "Follow the attached Cerberus reviewer prompt exactly."`
+- OMP: `omp --print --no-session --mode json --model openrouter/{model} --no-pty @{prompt_file}`
 
 The profile fixture is validation data, not a live model run. Backlog 011 adds
 the protocol runner named in the fixture, Backlog 012 adds deterministic prompt
 rendering plus exact local transcript fixture parsing, Backlog 015 adds
 execution plans, and Backlog 016 adds fixture-backed live command execution.
-The OpenRouter-backed profiles remain provider-budget gated and are not live
-executable while they use argv prompt transport; provider evals need stdin or a
-private prompt-file wrapper first.
+The OpenRouter-backed profiles remain provider-budget gated. Backlog 017 moves
+the checked-in provider templates to private prompt-file transport, but provider
+evals still need explicit budget acknowledgement, credentials, and measured
+harness/model scoring before any reviewer-default promotion.
 
 ## Verification
 
@@ -57,5 +59,5 @@ Offline runner verification lives in
 lives in `docs/shaping/peer-harness-prompt-transcript.md`. Live acceptance
 for the local fixture profile lives in
 `docs/shaping/peer-harness-live-invocation.md`. Budget-approved Pi, Goose,
-OpenCode, and OMP provider runs with safe prompt transport remain future eval
-work.
+OpenCode, and OMP provider runs remain future eval work even though the
+checked-in templates now avoid rendered-prompt argv transport.

@@ -110,7 +110,7 @@
         "cd cerberus-elixir && mix test test/cerberus/engine_test.exs test/cerberus/pipeline_test.exs test/mix/tasks/cerberus_review_test.exs"
       ],
       "rollback_path": "Keep Elixir execution modules until Rust can replay the same local and API review fixtures.",
-      "next_action": "Port routing, safe provider prompt transport, budget-approved provider-backed peer evals, and hosted/API review fixtures before retiring Elixir execution."
+      "next_action": "Port routing, budget-approved provider-backed peer evals, and hosted/API review fixtures before retiring Elixir execution."
     },
     {
       "surface_id": "elixir-verdict-store",

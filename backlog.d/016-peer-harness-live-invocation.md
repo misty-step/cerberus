@@ -53,9 +53,10 @@ cargo run --locked -p cerberus-cli -- validate \
 and receive a completed `ReviewerArtifact.v1` parsed from the captured live
 transcript.
 
-Default OpenRouter-backed peer profiles must still refuse live execution unless
-the operator sets the explicit provider-budget acknowledgement and the profile
-uses non-argv prompt transport.
+At Backlog 016 close, default OpenRouter-backed peer profiles refused live
+execution unless the operator set explicit provider-budget acknowledgement and
+the profile avoided rendered-prompt argv transport. Backlog 017 later moves the
+checked-in provider templates to private prompt-file transport.
 
 ## Scope
 
@@ -102,7 +103,8 @@ Out of scope:
 - Regression coverage rejects blocked stdin writes that bypass timeout, invalid
   UTF-8 stdout transcripts, malformed live transcripts, provider profiles
   without budget acknowledgement, and provider profiles using argv prompt
-  transport even when budget is acknowledged.
+  transport even when budget is acknowledged. Backlog 017 moves the checked-in
+  provider profiles to private prompt-file transport.
 
 ## Result
 
@@ -115,8 +117,8 @@ validates the artifact against the request.
 The bounded command primitive lives in `cerberus-adapter` and owns process
 groups, timeout, descendant termination, side-threaded stdin, bounded strict
 UTF-8 stdout capture, and bounded lossy stderr diagnostics. Provider-backed
-profiles remain gated by `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1` and
-non-argv prompt transport.
+profiles remain gated by `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1`;
+Backlog 017 adds private prompt-file transport before any provider-budget evals.
 
 This slice still does not spend provider budget, rank harness/model quality,
 or prove hosted/API review parity.

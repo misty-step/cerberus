@@ -1,6 +1,6 @@
 {
-  "schema_version": "peer-harness-command-profiles.v2",
-  "observed_at": "2026-06-18",
+  "schema_version": "peer-harness-command-profiles.v3",
+  "observed_at": "2026-06-19",
   "profiles": [
     {
       "harness_id": "fixture-live",
@@ -29,6 +29,34 @@
         "unbounded live output files"
       ],
       "notes": "Fixture live profile for local QA and tests."
+    },
+    {
+      "harness_id": "fixture-live-file",
+      "command": "cerberus-peer-harness",
+      "args": [
+        "--harness",
+        "fixture-live-file"
+      ],
+      "timeout_ms": 2000,
+      "env_required": [],
+      "requires_provider_budget_ack": false,
+      "output_contract": "reviewer_artifact_file",
+      "peer": {
+        "command": "sh",
+        "args_template": [
+          "fixtures/harnesses/live-peer-reviewer.sh",
+          "file-success",
+          "{prompt_file}"
+        ],
+        "prompt_mode": "prompt_file",
+        "notes": "Fixture-only peer command for exercising private prompt-file transport without a provider call."
+      },
+      "unsupported": [
+        "provider-backed execution",
+        "daemonized children outside the process group",
+        "unbounded live output files"
+      ],
+      "notes": "Fixture prompt-file profile for local QA and tests."
     }
   ]
 }

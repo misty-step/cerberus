@@ -17,7 +17,7 @@ the peer harness launch shapes and converts a validated profile into a
 
 ## Oracle
 
-Cerberus accepts a `PeerHarnessCommandProfiles.v2` packet that:
+Cerberus accepts a `PeerHarnessCommandProfiles.v3` packet that:
 
 - validates one profile per harness id
 - records the CommandHarness protocol runner command and static args
@@ -64,13 +64,15 @@ Out of scope:
 
 First local delivery, 2026-06-18:
 
-- Added `PeerHarnessCommandProfiles.v2` schema and validation.
+- Added initial `PeerHarnessCommandProfiles.v2` schema and validation.
 - Added a checked-in Pi, Goose, OpenCode, and OMP profile fixture.
 - Enforced the wrapper/peer boundary: v2 profiles must use
   `cerberus-peer-harness --harness <harness_id>` as the protocol runner and
   must not execute the raw peer CLI directly.
 - Enforced argv prompt handoff: argv/template peer profiles must contain
   exactly one standalone `{prompt}` argument.
+- Backlog 017 later bumps the current profile packet to v3 for private
+  prompt-file transport.
 - Added adapter conversion from validated profile data to `CommandHarness`.
 - Added CLI validation support and docs for the profile boundary.
 - Verified with:

@@ -46,7 +46,7 @@ cargo run --locked -p cerberus-cli -- validate \
   tmp/peer-runner-execution-plan.json
 ```
 
-and receive a schema-valid `PeerHarnessExecutionPlan.v2` while the default
+and receive a schema-valid `PeerHarnessExecutionPlan.v3` while the default
 runner output remains the degraded offline `ReviewerArtifact.v1`.
 
 `CERBERUS_PEER_HARNESS_LIVE=1` may write the same plan but must still fail
@@ -56,7 +56,7 @@ closed before invoking any peer harness or provider.
 
 In scope:
 
-- `PeerHarnessExecutionPlan.v2` schema and validation.
+- `PeerHarnessExecutionPlan.v3` schema and validation.
 - `cerberus-peer-harness --execution-plan-output <path>`.
 - Environment availability/missing-env reporting without writing secret values.
 - Resolved peer args where `{model}` is replaced and `{prompt}` remains a
@@ -89,7 +89,7 @@ Out of scope:
 
 ## Result
 
-`PeerHarnessExecutionPlan.v2` is now schema-validated and emitted by
+`PeerHarnessExecutionPlan.v3` is now schema-validated and emitted by
 `cerberus-peer-harness --execution-plan-output`. The plan records the exact peer
 command, resolved args, prompt/output contract, timeout, environment variable
 names and availability, transcript markers, unsupported boundaries, and whether
