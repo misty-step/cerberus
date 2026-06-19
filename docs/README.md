@@ -55,6 +55,8 @@ Current docs:
   `docs/shaping/006-eval-source-truth-consolidation-plan.html`
 - Eval subset selection plan:
   `docs/shaping/006-eval-subset-selection-plan.html`
+- Eval subset metadata plan:
+  `docs/shaping/006-eval-subset-metadata-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

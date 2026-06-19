@@ -11,9 +11,9 @@ use cerberus_core::{
 };
 use cerberus_schema::{
     EvalCellStatus, EvalExecutionMode, EvalReadinessCell, EvalReadinessReport,
-    EvalReadinessSummary, EvalTask, EvalTaskSuite, HarnessModelEvaluationCell, HarnessModelMatrix,
-    HarnessProfile, ModelCandidate, PeerHarnessCommandProfile, PeerHarnessCommandProfiles,
-    ReviewerArtifact, StaleModelFinding,
+    EvalReadinessSummary, EvalReportSelection, EvalTask, EvalTaskSuite, HarnessModelEvaluationCell,
+    HarnessModelMatrix, HarnessProfile, ModelCandidate, PeerHarnessCommandProfile,
+    PeerHarnessCommandProfiles, ReviewerArtifact, StaleModelFinding,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -304,7 +304,8 @@ pub fn eval_harness(args: Vec<String>) -> Result<()> {
 
     fs::create_dir_all(&args.out_dir)
         .with_context(|| format!("failed to create output dir {}", args.out_dir.display()))?;
-    let output = match args.execution_mode {
+    let selection = report_selection(&args.selection, &suite, &matrix);
+    let mut output = match args.execution_mode {
         EvalHarnessMode::OfflineContract => {
             evaluate_harness_model_matrix(&suite, &matrix, &probes, stale_model_findings)?
         }
@@ -319,6 +320,8 @@ pub fn eval_harness(args: Vec<String>) -> Result<()> {
             &args.out_dir,
         )?,
     };
+    output.report.selection = selection;
+    output.report.validate()?;
 
     let mut transcript_paths = BTreeSet::new();
     for (relative_path, transcript) in &output.transcripts {
@@ -354,7 +357,7 @@ pub fn eval_readiness(args: Vec<String>) -> Result<()> {
     let peer_runner_probes =
         probe_peer_harness_runners(&suite, &matrix, &peer_profiles, &args.peer_profiles_path);
     let available_env = visible_required_env(&peer_profiles);
-    let report = harness_model_readiness_report(
+    let mut report = harness_model_readiness_report(
         &suite,
         &matrix,
         &probes,
@@ -363,6 +366,8 @@ pub fn eval_readiness(args: Vec<String>) -> Result<()> {
         &available_env,
         provider_budget_acknowledged(),
     )?;
+    report.selection = report_selection(&args.selection, &suite, &matrix);
+    report.validate()?;
 
     write_json(&args.out_path, &report)?;
     println!("{}", args.out_path.display());
@@ -376,7 +381,7 @@ pub fn eval_budget(args: Vec<String>) -> Result<()> {
     let (suite, matrix) = select_eval_inputs(suite, matrix, &args.selection)?;
     let readiness = read_eval_readiness_report(&args.readiness_path)?;
     let readiness = select_eval_readiness(readiness, &suite, &matrix, &args.selection)?;
-    let report = eval_budget_estimate_report(
+    let mut report = eval_budget_estimate_report(
         &suite,
         &matrix,
         &readiness,
@@ -384,6 +389,8 @@ pub fn eval_budget(args: Vec<String>) -> Result<()> {
         args.completion_tokens,
         args.retry_count,
     )?;
+    report.selection = report_selection(&args.selection, &suite, &matrix);
+    report.validate()?;
 
     write_json(&args.out_path, &report)?;
     println!("{}", args.out_path.display());
@@ -469,6 +476,33 @@ fn validate_selected_ids<'a>(
     Ok(())
 }
 
+fn report_selection(
+    selection: &EvalSelection,
+    suite: &EvalTaskSuite,
+    matrix: &HarnessModelMatrix,
+) -> Option<EvalReportSelection> {
+    if selection.is_empty() {
+        return None;
+    }
+    Some(EvalReportSelection {
+        harness_ids: matrix
+            .harnesses
+            .iter()
+            .map(|harness| harness.harness_id.clone())
+            .collect(),
+        model_ids: matrix
+            .models
+            .iter()
+            .map(|model| model.model_id.clone())
+            .collect(),
+        task_ids: suite
+            .tasks
+            .iter()
+            .map(|task| task.task_id.clone())
+            .collect(),
+    })
+}
+
 fn select_eval_readiness(
     mut readiness: EvalReadinessReport,
     suite: &EvalTaskSuite,
@@ -507,6 +541,7 @@ fn select_eval_readiness(
         bail!("readiness report does not cover selected eval cell {missing:?}");
     }
     readiness.summary = readiness_summary(&readiness.cells);
+    readiness.selection = report_selection(selection, suite, matrix);
     readiness.validate()?;
     Ok(readiness)
 }
@@ -1040,6 +1075,7 @@ mod tests {
     use super::*;
     use cerberus_core::harness_model_readiness_report;
     use cerberus_schema::{EvalBudgetEstimateReport, HarnessModelEvaluationReport};
+    use serde_json::Value;
 
     fn repo_path(relative: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1106,12 +1142,81 @@ mod tests {
 
         let report: HarnessModelEvaluationReport = read_json(&out.join("report.json"));
         report.validate().expect("report validates");
+        let selection = report.selection.as_ref().expect("selected report metadata");
+        assert_eq!(selection.harness_ids, vec!["goose"]);
+        assert_eq!(selection.model_ids, vec!["z-ai/glm-5.2"]);
+        assert_eq!(selection.task_ids, vec!["clean-no-finding"]);
         assert_eq!(report.summary.total_cells, 1);
         let cell = &report.cells[0];
         assert_eq!(cell.harness_id, "goose");
         assert_eq!(cell.model_id, "z-ai/glm-5.2");
         assert_eq!(cell.task_id, "clean-no-finding");
         assert!(out.join(&cell.transcript_path).exists());
+    }
+
+    #[test]
+    fn eval_harness_omits_selection_without_selectors() {
+        let out = temp_dir("harness-full");
+        let matrix_path = matrix_with_absolute_drift_paths(&out);
+
+        eval_harness(vec![
+            "--suite".to_string(),
+            repo_path("fixtures/evals/reviewer-harness-smoke.json")
+                .display()
+                .to_string(),
+            "--matrix".to_string(),
+            matrix_path.display().to_string(),
+            "--out".to_string(),
+            out.display().to_string(),
+        ])
+        .expect("full eval succeeds");
+
+        let report: HarnessModelEvaluationReport = read_json(&out.join("report.json"));
+        report.validate().expect("report validates");
+        assert!(report.selection.is_none());
+        let raw: Value = read_json(&out.join("report.json"));
+        assert!(raw.get("selection").is_none());
+    }
+
+    #[test]
+    fn eval_readiness_filters_to_selected_cells_with_metadata() {
+        let out = temp_dir("readiness").join("readiness.json");
+
+        eval_readiness(vec![
+            "--suite".to_string(),
+            repo_path("fixtures/evals/reviewer-harness-smoke.json")
+                .display()
+                .to_string(),
+            "--matrix".to_string(),
+            repo_path("fixtures/evals/harness-model-matrix.json")
+                .display()
+                .to_string(),
+            "--peer-profiles".to_string(),
+            repo_path("fixtures/harnesses/peer-command-profiles.json")
+                .display()
+                .to_string(),
+            "--harness".to_string(),
+            "goose".to_string(),
+            "--model".to_string(),
+            "z-ai/glm-5.2".to_string(),
+            "--task".to_string(),
+            "clean-no-finding".to_string(),
+            "--out".to_string(),
+            out.display().to_string(),
+        ])
+        .expect("selected readiness succeeds");
+
+        let report: EvalReadinessReport = read_json(&out);
+        report.validate().expect("readiness report validates");
+        let selection = report.selection.as_ref().expect("selected report metadata");
+        assert_eq!(selection.harness_ids, vec!["goose"]);
+        assert_eq!(selection.model_ids, vec!["z-ai/glm-5.2"]);
+        assert_eq!(selection.task_ids, vec!["clean-no-finding"]);
+        assert_eq!(report.summary.total_cells, 1);
+        let cell = &report.cells[0];
+        assert_eq!(cell.harness_id, "goose");
+        assert_eq!(cell.model_id, "z-ai/glm-5.2");
+        assert_eq!(cell.task_id, "clean-no-finding");
     }
 
     #[test]
@@ -1183,6 +1288,10 @@ mod tests {
 
         let report: EvalBudgetEstimateReport = read_json(&out);
         report.validate().expect("budget report validates");
+        let selection = report.selection.as_ref().expect("selected report metadata");
+        assert_eq!(selection.harness_ids, vec!["goose"]);
+        assert_eq!(selection.model_ids, vec!["z-ai/glm-5.2"]);
+        assert_eq!(selection.task_ids, vec!["clean-no-finding"]);
         assert_eq!(report.summary.total_cells, 1);
         assert_eq!(report.summary.estimateable_cells, 1);
         let cell = &report.cells[0];

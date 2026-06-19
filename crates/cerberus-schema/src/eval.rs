@@ -255,6 +255,8 @@ pub struct HarnessModelEvaluationReport {
     pub generated_at: String,
     pub suite_id: String,
     pub matrix_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<EvalReportSelection>,
     pub summary: HarnessModelEvaluationSummary,
     pub cells: Vec<HarnessModelEvaluationCell>,
     #[serde(default)]
@@ -298,7 +300,62 @@ impl HarnessModelEvaluationReport {
         for delta in &self.catalog_deltas {
             delta.validate()?;
         }
+        if let Some(selection) = &self.selection {
+            selection.validate_for_cells(self.cells.iter().map(|cell| {
+                (
+                    cell.harness_id.as_str(),
+                    cell.model_id.as_str(),
+                    cell.task_id.as_str(),
+                )
+            }))?;
+        }
         self.summary.validate_for_cells(&self.cells)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EvalReportSelection {
+    pub harness_ids: Vec<String>,
+    pub model_ids: Vec<String>,
+    pub task_ids: Vec<String>,
+}
+
+impl EvalReportSelection {
+    pub fn validate_for_cells<'a>(
+        &self,
+        cells: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+    ) -> Result<(), SchemaError> {
+        validate_required_unique_non_empty("selection.harness_ids", &self.harness_ids)?;
+        validate_required_unique_non_empty("selection.model_ids", &self.model_ids)?;
+        validate_required_unique_non_empty("selection.task_ids", &self.task_ids)?;
+
+        let mut expected = BTreeSet::new();
+        for harness_id in &self.harness_ids {
+            for model_id in &self.model_ids {
+                for task_id in &self.task_ids {
+                    expected.insert((harness_id.clone(), model_id.clone(), task_id.clone()));
+                }
+            }
+        }
+
+        let mut observed = BTreeSet::new();
+        for (harness_id, model_id, task_id) in cells {
+            if !observed.insert((
+                harness_id.to_string(),
+                model_id.to_string(),
+                task_id.to_string(),
+            )) {
+                return Err(SchemaError::Inconsistent {
+                    field: "selection.cells",
+                });
+            }
+        }
+        if observed != expected {
+            return Err(SchemaError::Inconsistent {
+                field: "selection.cells",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -309,6 +366,8 @@ pub struct EvalReadinessReport {
     pub generated_at: String,
     pub suite_id: String,
     pub matrix_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<EvalReportSelection>,
     #[serde(default)]
     pub peer_profiles_observed_at: Option<String>,
     pub summary: EvalReadinessSummary,
@@ -340,6 +399,15 @@ impl EvalReadinessReport {
                     field: "cells.cell_id",
                 });
             }
+        }
+        if let Some(selection) = &self.selection {
+            selection.validate_for_cells(self.cells.iter().map(|cell| {
+                (
+                    cell.harness_id.as_str(),
+                    cell.model_id.as_str(),
+                    cell.task_id.as_str(),
+                )
+            }))?;
         }
         self.summary.validate_for_cells(&self.cells)
     }
@@ -498,6 +566,8 @@ pub struct EvalBudgetEstimateReport {
     pub generated_at: String,
     pub suite_id: String,
     pub matrix_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<EvalReportSelection>,
     pub readiness_report_id: String,
     pub prompt_tokens_per_cell: u64,
     pub completion_tokens_per_cell: u64,
@@ -551,6 +621,15 @@ impl EvalBudgetEstimateReport {
                     field: "budget_cell.retry_count",
                 });
             }
+        }
+        if let Some(selection) = &self.selection {
+            selection.validate_for_cells(self.cells.iter().map(|cell| {
+                (
+                    cell.harness_id.as_str(),
+                    cell.model_id.as_str(),
+                    cell.task_id.as_str(),
+                )
+            }))?;
         }
         self.summary.validate_for_cells(&self.cells)
     }
@@ -939,6 +1018,16 @@ fn validate_unique_non_empty(field: &'static str, values: &[String]) -> Result<(
     Ok(())
 }
 
+fn validate_required_unique_non_empty(
+    field: &'static str,
+    values: &[String],
+) -> Result<(), SchemaError> {
+    if values.is_empty() {
+        return Err(SchemaError::Missing { field });
+    }
+    validate_unique_non_empty(field, values)
+}
+
 fn expect_positive_u64(field: &'static str, actual: u64) -> Result<(), SchemaError> {
     if actual == 0 {
         return Err(SchemaError::OutOfRange {
@@ -1086,6 +1175,7 @@ mod tests {
             generated_at: "2026-06-18".to_string(),
             suite_id: "suite".to_string(),
             matrix_id: "matrix".to_string(),
+            selection: None,
             summary: HarnessModelEvaluationSummary {
                 total_cells: 2,
                 valid_artifacts: 0,
@@ -1101,6 +1191,41 @@ mod tests {
         };
 
         assert!(report.validate().is_err());
+    }
+
+    #[test]
+    fn harness_model_eval_report_rejects_selection_missing_cell() {
+        let report = HarnessModelEvaluationReport {
+            schema_version: HARNESS_MODEL_EVALUATION_REPORT_VERSION.to_string(),
+            report_id: "report".to_string(),
+            generated_at: "2026-06-18".to_string(),
+            suite_id: "suite".to_string(),
+            matrix_id: "matrix".to_string(),
+            selection: Some(EvalReportSelection {
+                harness_ids: vec!["pi".to_string()],
+                model_ids: vec!["fake/model".to_string()],
+                task_ids: vec!["task".to_string(), "missing-task".to_string()],
+            }),
+            summary: HarnessModelEvaluationSummary {
+                total_cells: 1,
+                valid_artifacts: 0,
+                warn_cells: 0,
+                unavailable_cells: 1,
+                degraded_cells: 0,
+                failed_cells: 0,
+                average_score: 0.0,
+            },
+            cells: vec![cell("one", 0.0)],
+            stale_model_findings: vec![],
+            catalog_deltas: vec![],
+        };
+
+        assert!(matches!(
+            report.validate(),
+            Err(SchemaError::Inconsistent {
+                field: "selection.cells"
+            })
+        ));
     }
 
     #[test]
@@ -1180,6 +1305,7 @@ mod tests {
             generated_at: "2026-06-19".to_string(),
             suite_id: "suite".to_string(),
             matrix_id: "matrix".to_string(),
+            selection: None,
             peer_profiles_observed_at: Some("2026-06-19".to_string()),
             summary: EvalReadinessSummary {
                 total_cells: 1,
@@ -1221,6 +1347,7 @@ mod tests {
             generated_at: "2026-06-19".to_string(),
             suite_id: "suite".to_string(),
             matrix_id: "matrix".to_string(),
+            selection: None,
             readiness_report_id: "readiness".to_string(),
             prompt_tokens_per_cell: 10_000,
             completion_tokens_per_cell: 2_000,

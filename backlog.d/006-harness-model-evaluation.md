@@ -192,6 +192,9 @@ Relevant Cerberus drift:
 13. Done: add harness/model/task subset selectors for eval, readiness, and
    budget commands so hardened cells can be staged without a new planner or
    provider spend.
+14. Done: add explicit selection metadata to selected eval, readiness, and
+   budget reports so staged report artifacts are self-describing before durable
+   automation consumes them.
 
 ## Implementation Receipt
 
@@ -539,9 +542,39 @@ Eval subset selection receipt, 2026-06-19:
   documented 20,000 prompt / 4,000 completion token assumption with 1 retry.
 - This is rerun-control hardening only. It does not spend provider budget, rank
   harness/model pairs, promote defaults, or close the remaining full
-  provider-backed six-task rerun. Selected reports currently rely on output
-  path plus cell list for subset identity; add explicit subset metadata before
-  feeding selected reports to durable stores or automation.
+  provider-backed six-task rerun.
+
+Eval subset metadata receipt, 2026-06-19:
+
+- Added rendered metadata plan:
+  `docs/shaping/006-eval-subset-metadata-plan.html`.
+- Added optional `selection` metadata to `HarnessModelEvaluationReport.v1`,
+  `EvalReadinessReport.v1`, and `EvalBudgetEstimateReport.v1`. Full reports
+  omit the field; selected reports list the concrete harness, model, and task
+  ids represented by the report cells.
+- Schema validation now rejects selection metadata whose cartesian
+  harness/model/task set does not exactly match report cells.
+- `cerberus-cli eval-harness`, `eval-readiness`, and `eval-budget` attach
+  selection metadata after applying the existing selectors and re-validate
+  before writing JSON.
+- Added focused schema and CLI tests proving inconsistent metadata rejection,
+  selected eval/readiness/budget metadata, and omitted `selection` JSON for
+  full unselected eval reports.
+- No-spend proof lives under `tmp/evals/subset-metadata-2026-06-19/`:
+  `offline-eval/report.json`
+  (`sha256:76d1f995c893aef2368ddde6733a366f35211f2a2462030a671ae6941ad6f82c`),
+  `offline-eval/transcripts/goose__z-ai_glm-5_2__clean-no-finding.txt`
+  (`sha256:70a1fd8cb952ec3c7b2cbcd43d71f09e802b3715505344ed40d9e25c60e6866c`),
+  `readiness-goose-glm-clean.json`
+  (`sha256:e8326847f4a8a5a8732fb9d002773678b4b21ca27bd5b100e07e7e8a7c5c392d`),
+  and `budget-goose-glm-clean.json`
+  (`sha256:a4df6a23ab2617788122b5486bd30ae78e024ed75cef1cf36c28904153e883f0`).
+- Exact QA command validated all three reports and confirmed `jq '.selection'`
+  returns `goose`, `z-ai/glm-5.2`, and `clean-no-finding` for eval,
+  readiness, and budget outputs.
+- This is provenance hardening only. It does not spend provider budget, rank
+  harness/model pairs, promote defaults, or close the remaining full
+  provider-backed six-task rerun.
 
 ## Notes
 

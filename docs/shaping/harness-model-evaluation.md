@@ -201,10 +201,11 @@ additive and filter the loaded suite/matrix before the existing eval logic runs;
 omitting selectors preserves the full matrix. `eval-budget` may read a full
 readiness report and estimate only the selected cells, as long as that readiness
 report covers the selected harness/model/task set. This is for staged reruns and
-cost review only. A selected report is not full-suite provider quality evidence
-and cannot justify default promotion by itself. Selected reports currently rely
-on their output path and cell list for subset identity; add explicit subset
-metadata before storing them as durable automation artifacts.
+cost review only. Selected reports now carry an optional `selection` object
+with the concrete harness, model, and task ids represented by their cells, and
+schema validation rejects metadata that does not match the full selected
+cartesian cell set. A selected report is still not full-suite provider quality
+evidence and cannot justify default promotion by itself.
 
 No-spend refresh at `2026-06-19T09:55:18Z` captured a fresh OpenRouter API
 snapshot and local harness version transcript under
