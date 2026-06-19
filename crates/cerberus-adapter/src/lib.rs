@@ -24,12 +24,13 @@ pub use github_action::{
 };
 pub use hosted_api::{
     hosted_api_ingress_fixture_report, hosted_api_review_request_from_body,
-    hosted_api_review_request_from_dispatch_request, run_hosted_api_dispatch,
-    run_hosted_api_dispatch_fixture, HostedApiDispatchConfig, HostedApiDispatchDecision,
-    HostedApiDispatchOutcome, HostedApiDispatchRequest, HostedApiDispatchSettings,
-    HostedApiDispatchTranscript, HostedApiDispatchTransport, HostedApiHttpResponse,
-    HostedApiIngressFixtureReport, HostedApiPullRequestContext,
-    HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION,
+    hosted_api_review_request_from_dispatch_request, hosted_api_service_fixture_report,
+    run_hosted_api_dispatch, run_hosted_api_dispatch_fixture, HostedApiCreateOutcome,
+    HostedApiDispatchConfig, HostedApiDispatchDecision, HostedApiDispatchOutcome,
+    HostedApiDispatchRequest, HostedApiDispatchSettings, HostedApiDispatchTranscript,
+    HostedApiDispatchTransport, HostedApiHttpResponse, HostedApiIngressFixtureReport,
+    HostedApiPullRequestContext, HostedApiServiceFixtureReport, HostedApiServiceStoreFixture,
+    HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION, HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION,
 };
 pub use thinktank_migration::{
     import_thinktank_historical_run, ThinkTankHistoricalRun, ThinkTankMigrationOutput,

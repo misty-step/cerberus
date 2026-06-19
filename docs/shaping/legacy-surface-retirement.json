@@ -90,7 +90,7 @@
       "current_responsibility": "Hosted review API, runtime supervision, API-mode contract docs, and migration instructions.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation and offline ReviewRequest.v1 acquisition from explicit PR context plus diff are fixture-backed; GET status replay, API auth/server wiring, storage, and deployment remain pending.",
+      "rust_replacement": "Rust hosted API compatibility adapter. POST /api/reviews ingress validation, offline ReviewRequest.v1 acquisition from explicit PR context plus diff, and service response fixtures for auth, health, queued creation, status reads, not-found responses, and store error mapping are fixture-backed; HTTP server wiring, real queue/store lifecycle, deployment smoke, and live GitHub acquisition remain pending.",
       "parity_evidence": [
         "cd cerberus-elixir && mix test test/cerberus/api_test.exs",
         "cargo test -p cerberus-adapter hosted_api_ingress",
@@ -98,16 +98,25 @@
         "cargo test -p cerberus-cli --test hosted_api_ingress",
         "cargo test -p cerberus-adapter hosted_api_request",
         "cargo test -p cerberus-cli --test hosted_api_request",
+        "cargo test -p cerberus-adapter hosted_api_service",
+        "cargo test -p cerberus-cli --test hosted_api_service",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-valid.json --out tmp/hosted-api-ingress-2026-06-19/valid.json --review-id 77",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-invalid-token.json --out tmp/hosted-api-ingress-2026-06-19/invalid-token.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-whitespace-token.json --out tmp/hosted-api-ingress-2026-06-19/whitespace-token.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-ingress-fixture --body fixtures/hosted-api/create-review-missing-repo.json --out tmp/hosted-api-ingress-2026-06-19/missing-repo.json",
         "cargo run --locked -q -p cerberus-cli -- hosted-api-request-fixture --body fixtures/hosted-api/create-review-valid.json --pr-context fixtures/hosted-api/pull-request-context.json --diff-file fixtures/github-actions/pull-request.diff --out tmp/hosted-api-request-2026-06-19/review-request.json --run-id hosted-api-run-005",
         "cargo run --locked -p cerberus-cli -- validate tmp/hosted-api-request-2026-06-19/review-request.json",
-        "future Rust fixture: GET /api/reviews/:id compatibility, API auth, store error mapping, and deployment"
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/health --api-key fixture-api-key --out tmp/hosted-api-service-2026-06-19/health.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/reviews/77 --api-key fixture-api-key --out tmp/hosted-api-service-2026-06-19/missing-auth.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/reviews/77 --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --store fixtures/hosted-api/service-store.json --out tmp/hosted-api-service-2026-06-19/queued.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/reviews/88 --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --store fixtures/hosted-api/service-store.json --out tmp/hosted-api-service-2026-06-19/completed.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method POST --path /api/reviews --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --body fixtures/hosted-api/create-review-valid.json --store fixtures/hosted-api/service-store.json --out tmp/hosted-api-service-2026-06-19/post-queued.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method POST --path /api/reviews --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --body fixtures/hosted-api/create-review-valid.json --store fixtures/hosted-api/service-store-error.json --out tmp/hosted-api-service-2026-06-19/post-store-error.json",
+        "cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/reviews/77 --api-key fixture-api-key --authorization 'Bearer fixture-api-key' --store fixtures/hosted-api/service-store-unavailable.json --out tmp/hosted-api-service-2026-06-19/read-unavailable.json",
+        "future Rust fixture: HTTP server wiring, real queue/store lifecycle, deployment smoke, and live GitHub acquisition"
       ],
       "rollback_path": "Keep cerberus-elixir API serving compatibility traffic until Rust API adapter is deployed and verified.",
-      "next_action": "Implement Rust API service/status fixtures for auth, queue/status responses, store error mapping, and deployment smoke."
+      "next_action": "Wire a Rust HTTP service around the fixture-backed hosted API contract, then add deployment smoke before cutting over from Elixir."
     },
     {
       "surface_id": "elixir-review-execution",

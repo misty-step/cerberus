@@ -227,3 +227,26 @@ Ninth local retirement delivery, 2026-06-19:
   acquisition evidence while keeping `elixir-http-api` pending until Rust
   covers API auth/server wiring, GET status replay, store error mapping, and
   deployment smoke.
+
+Tenth local retirement delivery, 2026-06-19:
+
+- Added `cerberus-cli hosted-api-service-fixture --method ... --path ...` as
+  the Rust-side service response fixture for the legacy hosted API contract.
+- Kept the fixture offline and narrow: it renders health, auth rejection,
+  queued POST creation, validation errors, GET status reads, not-found
+  responses, and store error/unavailable bodies from explicit inputs without
+  opening a socket, running a queue, cloning SQLite, calling GitHub, deploying,
+  or executing reviewers.
+- Added `HostedApiServiceStoreFixture` with checked fixtures for queued and
+  completed reviews plus store-error and store-unavailable cases.
+- Added adapter and CLI tests proving health bypasses auth, non-health routes
+  require matching bearer auth, POST creation writes only safe dispatch pointer
+  data, request tokens/API keys do not serialize, GET status returns the stored
+  legacy run shape, and missing/non-integer IDs return `not_found`.
+- Added dated QA evidence under
+  `tmp/hosted-api-service-2026-06-19/` for health, missing auth, queued and
+  completed status, queued POST, POST store error, and read-unavailable store.
+- Updated API docs, architecture docs, docs index, and the retirement inventory
+  to record service/status/auth/store-error fixture evidence while keeping
+  `elixir-http-api` pending until Rust HTTP server wiring, real queue/store
+  lifecycle, live GitHub acquisition, and deployment smoke exist.

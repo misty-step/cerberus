@@ -96,6 +96,13 @@ into a validated `ReviewRequest.v1`, failing closed when the PR context head
 SHA differs from the POST body. It is still offline: no GitHub network call,
 HTTP server, queue, store, deploy, or reviewer execution happens here.
 
+`cerberus-cli hosted-api-service-fixture` is the Rust hosted API service
+compatibility fixture. It renders auth, health, queued creation, status read,
+not-found, and store-error HTTP status/body reports from explicit route, body,
+authorization, and fixture-store inputs. It is still not a server: no socket,
+queue worker, SQLite compatibility, deployment, live GitHub acquisition, or
+reviewer execution happens here.
+
 `cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
 adapter slice. It consumes checked hosted API POST and poll transcripts, then
 writes the simulated action decision: outcome, exit code, review-id, verdict,

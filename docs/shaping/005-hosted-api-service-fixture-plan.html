@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>005 Hosted API Service Fixture Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171512;
+      --muted: #5e5a52;
+      --paper: #f5f0e7;
+      --panel: #fffaf1;
+      --line: #d8cab6;
+      --accent: #245b53;
+      --bad: #7a2f20;
+      --code: #2c2924;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 48px; }
+    header { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 24px; }
+    h1, h2 { margin: 0; line-height: 1.12; letter-spacing: 0; }
+    h1 { font-size: 38px; max-width: 920px; }
+    h2 { font-size: 18px; margin: 28px 0 10px; text-transform: uppercase; }
+    p { margin: 8px 0; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--code); }
+    pre { margin: 10px 0 0; overflow-x: auto; padding: 12px; border: 1px solid var(--line); background: #fffdf7; }
+    .deck { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .panel { border: 1px solid var(--line); background: var(--panel); padding: 14px; }
+    .panel strong { display: block; margin-bottom: 4px; }
+    .muted { color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 10px; }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; background: #eee2d1; }
+    tr:last-child td { border-bottom: 0; }
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 4px 0; }
+    .callout { border-left: 5px solid var(--accent); background: #edf6f2; padding: 12px 14px; margin: 16px 0; }
+    .bad { color: var(--bad); font-weight: 700; }
+    @media (max-width: 840px) {
+      main { padding: 22px 16px 36px; }
+      h1 { font-size: 30px; }
+      .deck { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="muted">Backlog 005 / hosted API service fixture / 2026-06-19</p>
+      <h1>Freeze the hosted API response contract before replacing the server</h1>
+      <p>POST ingress and request acquisition are covered. This slice proves the observable service responses for auth, health, queued creation, status reads, and store failures without starting a Rust server.</p>
+    </header>
+
+    <section class="deck" aria-label="work contract">
+      <div class="panel">
+        <strong>Target Outcome</strong>
+        <p><code>cerberus-cli hosted-api-service-fixture</code> renders Elixir-compatible HTTP status/body reports from explicit route, auth, request body, and store fixture inputs.</p>
+      </div>
+      <div class="panel">
+        <strong>Design Choice</strong>
+        <p>Keep compatibility rules in <code>cerberus-adapter</code>. The CLI only reads files and writes a report. No web framework, queue, SQLite clone, or deployment surface.</p>
+      </div>
+      <div class="panel">
+        <strong>Proof Surface</strong>
+        <p>Adapter tests, CLI fixture tests, live fixture outputs, token-leak grep, inventory validation, repo gates, and fresh public API critic.</p>
+      </div>
+    </section>
+
+    <div class="callout">
+      <strong>Stop condition:</strong>
+      done when health bypasses auth, non-health routes require the bearer token, POST store outcomes map to legacy bodies, GET status returns stored run JSON or <code>not_found</code>, and no token material appears in reports. HTTP server wiring and deployment remain pending.
+    </div>
+
+    <h2>Verification System</h2>
+    <table>
+      <tbody>
+        <tr><th>Claim</th><td>Rust can render the hosted API's observable service contract from fixture inputs.</td></tr>
+        <tr><th>Falsifier</th><td>Auth is bypassed for non-health routes, status bodies differ from legacy store shape, store failures map incorrectly, or fixture output leaks bearer/API token material.</td></tr>
+        <tr><th>Driver</th><td><code>cerberus-cli hosted-api-service-fixture --method ... --path ... --store ... --out ...</code></td></tr>
+        <tr><th>Grader</th><td>Exact HTTP status/body assertions, token absence checks, and retirement inventory validation.</td></tr>
+        <tr><th>Evidence Packet</th><td><code>tmp/hosted-api-service-2026-06-19/</code></td></tr>
+        <tr><th>Cadence</th><td>After implementation, after blocker fixes, and before commit.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Delete-First Check</h2>
+    <ul>
+      <li><strong>Requirement questioned:</strong> replacing the web server now would add runtime surface before the response contract is fully frozen.</li>
+      <li><strong>Deleted or simplified:</strong> no HTTP listener, no async queue, no SQLite compatibility layer, no deploy script.</li>
+      <li><strong>Only then automated:</strong> one CLI fixture because the same response contract feeds dispatch polling, server replacement, and retirement evidence.</li>
+    </ul>
+
+    <h2>Acceptance</h2>
+    <table>
+      <thead>
+        <tr><th>Case</th><th>Expected Result</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>GET /api/health</code> without auth</td><td><code>200 {"status":"ok"}</code></td></tr>
+        <tr><td>Non-health route without matching bearer auth</td><td><code>401 {"error":"missing_or_invalid_auth"}</code></td></tr>
+        <tr><td>Valid <code>POST /api/reviews</code> with create success</td><td><code>202 {"review_id":n,"status":"queued"}</code>, safe dispatch pointer only.</td></tr>
+        <tr><td>Valid post with store error or unavailable store</td><td><code>500 {"error":"store_error"}</code> or <code>500 {"error":"store_unavailable"}</code>.</td></tr>
+        <tr><td><code>GET /api/reviews/:id</code></td><td>Stored run JSON for known integer IDs, <code>404 {"error":"not_found"}</code> for missing or non-integer IDs.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Commands</h2>
+    <pre><code>cargo test -p cerberus-adapter hosted_api_service
+cargo test -p cerberus-cli --test hosted_api_service
+cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/health --api-key fixture-api-key --store fixtures/hosted-api/service-store.json --out tmp/hosted-api-service-2026-06-19/health.json
+cargo run --locked -q -p cerberus-cli -- hosted-api-service-fixture --method GET --path /api/reviews/77 --api-key fixture-api-key --authorization "Bearer fixture-api-key" --store fixtures/hosted-api/service-store.json --out tmp/hosted-api-service-2026-06-19/queued.json
+grep -R "fixture-api-key\|fixture-request-token" tmp/hosted-api-service-2026-06-19 && exit 1 || true</code></pre>
+
+    <h2>Review Focus</h2>
+    <ul>
+      <li><span class="bad">Public surface:</span> is this a coherent compatibility fixture, or is it pretending to be a server?</li>
+      <li><span class="bad">Workflow:</span> can a future server implementer use the reports without chat-only knowledge?</li>
+      <li><span class="bad">Operations:</span> do remaining server/deploy gaps stay visible instead of being marked done?</li>
+    </ul>
+  </main>
+</body>
+</html>

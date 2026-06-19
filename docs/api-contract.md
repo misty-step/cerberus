@@ -104,6 +104,45 @@ match the POST `head_sha`, parses changed files from the raw diff, and writes a
 schema-valid `ReviewRequest.v1`. It still does not perform live GitHub network
 IO, run the reviewer engine, persist status, or expose an HTTP server.
 
+#### Rust Service Fixture
+
+`cerberus-cli hosted-api-service-fixture` freezes the observable server-side
+compatibility contract for auth, health, review creation responses, status
+reads, and store failures without starting an HTTP server:
+
+```bash
+cargo run --locked -q -p cerberus-cli -- \
+  hosted-api-service-fixture \
+  --method GET \
+  --path /api/reviews/77 \
+  --api-key fixture-api-key \
+  --authorization "Bearer fixture-api-key" \
+  --store fixtures/hosted-api/service-store.json \
+  --out tmp/hosted-api-service-2026-06-19/queued.json
+```
+
+The command writes a report with `schema_version`, `method`, `path`,
+`http_status`, and `body`. It never serializes the configured API key, bearer
+header, or request-scoped `github_token`. For valid `POST /api/reviews`
+creation, the report may include a safe `dispatch_request` pointer with only
+`github_token_present`.
+
+Covered fixture behavior:
+
+- `GET /api/health` bypasses auth and returns `200 {"status":"ok"}`.
+- Non-health routes require `Authorization: Bearer <CERBERUS_API_KEY>` and
+  return `401 {"error":"missing_or_invalid_auth"}` on missing or wrong auth.
+- Valid `POST /api/reviews` returns the fixture store's queued
+  `202 {"review_id":n,"status":"queued"}` response, while validation failures
+  keep the legacy `422` body.
+- Fixture store creation failures map to `500 {"error":"store_error"}` or
+  `500 {"error":"store_unavailable"}`.
+- `GET /api/reviews/:id` returns stored run JSON for known integer IDs and
+  `404 {"error":"not_found"}` for missing or non-integer IDs.
+
+This is still not a hosted Rust API service. HTTP listener wiring, a real queue
+or store, deployment smoke, and live GitHub acquisition remain pending.
+
 ### `GET /api/reviews/:id`
 
 Returns the current status and, when complete, the aggregated verdict.

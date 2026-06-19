@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
 
 pub const HOSTED_API_INGRESS_FIXTURE_REPORT_VERSION: &str = "hosted-api-ingress-fixture-report.v1";
+pub const HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION: &str = "hosted-api-service-fixture-report.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostedApiDispatchRequest {
@@ -27,6 +28,54 @@ pub struct HostedApiIngressFixtureReport {
     pub body: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispatch_request: Option<HostedApiDispatchRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HostedApiServiceFixtureReport {
+    pub schema_version: String,
+    pub method: String,
+    pub path: String,
+    pub http_status: u16,
+    pub body: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_request: Option<HostedApiDispatchRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HostedApiServiceStoreFixture {
+    #[serde(default = "default_next_review_id")]
+    pub next_review_id: u64,
+    #[serde(default)]
+    pub create_outcome: HostedApiCreateOutcome,
+    #[serde(default)]
+    pub read_unavailable: bool,
+    #[serde(default)]
+    pub reviews: BTreeMap<String, Value>,
+}
+
+impl Default for HostedApiServiceStoreFixture {
+    fn default() -> Self {
+        Self {
+            next_review_id: default_next_review_id(),
+            create_outcome: HostedApiCreateOutcome::Created,
+            read_unavailable: false,
+            reviews: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HostedApiCreateOutcome {
+    Created,
+    StoreError,
+    StoreUnavailable,
+}
+
+impl Default for HostedApiCreateOutcome {
+    fn default() -> Self {
+        Self::Created
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -162,6 +211,106 @@ pub fn hosted_api_ingress_fixture_report(
             body: json!({ "error": reason }),
             dispatch_request: None,
         },
+    }
+}
+
+pub fn hosted_api_service_fixture_report(
+    method: &str,
+    path: &str,
+    authorization: Option<&str>,
+    api_key: &str,
+    body: Option<&Value>,
+    store: &HostedApiServiceStoreFixture,
+) -> HostedApiServiceFixtureReport {
+    let method = method.trim().to_ascii_uppercase();
+    let path = normalize_route_path(path);
+
+    if method == "GET" && path == "/api/health" {
+        return service_report(method, path, 200, json!({ "status": "ok" }), None);
+    }
+
+    if !authorized(authorization, api_key) {
+        return service_report(
+            method,
+            path,
+            401,
+            json!({ "error": "missing_or_invalid_auth" }),
+            None,
+        );
+    }
+
+    match method.as_str() {
+        "POST" if path == "/api/reviews" => hosted_api_service_post(method, path, body, store),
+        "GET" => hosted_api_service_get(method, path, store),
+        _ => service_report(method, path, 404, json!({ "error": "not_found" }), None),
+    }
+}
+
+fn hosted_api_service_post(
+    method: String,
+    path: String,
+    body: Option<&Value>,
+    store: &HostedApiServiceStoreFixture,
+) -> HostedApiServiceFixtureReport {
+    let empty = json!({});
+    let body = body.unwrap_or(&empty);
+    let submission = match parse_hosted_api_review_submission(body) {
+        Ok(submission) => submission,
+        Err(reason) => {
+            return service_report(method, path, 422, json!({ "error": reason }), None);
+        }
+    };
+
+    match store.create_outcome {
+        HostedApiCreateOutcome::Created => service_report(
+            method,
+            path,
+            202,
+            json!({
+                "review_id": store.next_review_id,
+                "status": "queued"
+            }),
+            Some(submission.into_dispatch_request()),
+        ),
+        HostedApiCreateOutcome::StoreError => {
+            service_report(method, path, 500, json!({ "error": "store_error" }), None)
+        }
+        HostedApiCreateOutcome::StoreUnavailable => service_report(
+            method,
+            path,
+            500,
+            json!({ "error": "store_unavailable" }),
+            None,
+        ),
+    }
+}
+
+fn hosted_api_service_get(
+    method: String,
+    path: String,
+    store: &HostedApiServiceStoreFixture,
+) -> HostedApiServiceFixtureReport {
+    let Some(id) = path
+        .strip_prefix("/api/reviews/")
+        .filter(|id| !id.is_empty() && !id.contains('/'))
+    else {
+        return service_report(method, path, 404, json!({ "error": "not_found" }), None);
+    };
+    if id.parse::<u64>().is_err() {
+        return service_report(method, path, 404, json!({ "error": "not_found" }), None);
+    }
+    if store.read_unavailable {
+        return service_report(
+            method,
+            path,
+            500,
+            json!({ "error": "store_unavailable" }),
+            None,
+        );
+    }
+    match store.reviews.get(id) {
+        Some(run) => service_report(method, path, 200, run.clone(), None),
+        None => service_report(method, path, 404, json!({ "error": "not_found" }), None),
     }
 }
 
@@ -519,6 +668,10 @@ fn default_fail_on_verdict() -> bool {
     true
 }
 
+fn default_next_review_id() -> u64 {
+    1
+}
+
 fn validate_config(config: &HostedApiDispatchConfig) -> Result<(), AdapterError> {
     non_empty("api_base_url", &config.api_base_url)?;
     non_empty("api_key", &config.api_key)?;
@@ -552,6 +705,42 @@ fn invalid(reason: impl Into<String>) -> Result<(), AdapterError> {
 fn hosted_api_request_invalid(reason: impl Into<String>) -> AdapterError {
     AdapterError::HostedApiRequestAcquisition {
         reason: reason.into(),
+    }
+}
+
+fn authorized(authorization: Option<&str>, api_key: &str) -> bool {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return false;
+    }
+    authorization
+        .and_then(|header| header.strip_prefix("Bearer "))
+        .is_some_and(|token| token == api_key)
+}
+
+fn normalize_route_path(path: &str) -> String {
+    let path = path.trim();
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
+}
+
+fn service_report(
+    method: String,
+    path: String,
+    http_status: u16,
+    body: Value,
+    dispatch_request: Option<HostedApiDispatchRequest>,
+) -> HostedApiServiceFixtureReport {
+    HostedApiServiceFixtureReport {
+        schema_version: HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION.to_string(),
+        method,
+        path,
+        http_status,
+        body,
+        dispatch_request,
     }
 }
 
@@ -884,6 +1073,183 @@ mod tests {
         assert!(error
             .to_string()
             .contains("must start with a diff --git header"));
+    }
+
+    #[test]
+    fn hosted_api_service_health_bypasses_auth() {
+        let report = hosted_api_service_fixture_report(
+            "GET",
+            "/api/health",
+            None,
+            "fixture-api-key",
+            None,
+            &service_store(HostedApiCreateOutcome::Created),
+        );
+
+        assert_eq!(
+            report.schema_version,
+            HOSTED_API_SERVICE_FIXTURE_REPORT_VERSION
+        );
+        assert_eq!(report.http_status, 200);
+        assert_eq!(report.body, json!({ "status": "ok" }));
+        assert!(report.dispatch_request.is_none());
+    }
+
+    #[test]
+    fn hosted_api_service_requires_auth_for_non_health_routes() {
+        for authorization in [None, Some("Bearer wrong-key")] {
+            let report = hosted_api_service_fixture_report(
+                "GET",
+                "/api/reviews/77",
+                authorization,
+                "fixture-api-key",
+                None,
+                &service_store(HostedApiCreateOutcome::Created),
+            );
+
+            assert_eq!(report.http_status, 401);
+            assert_eq!(report.body, json!({ "error": "missing_or_invalid_auth" }));
+        }
+    }
+
+    #[test]
+    fn hosted_api_service_post_creates_queued_review_without_token_leak() {
+        let report = hosted_api_service_fixture_report(
+            "POST",
+            "/api/reviews",
+            Some("Bearer fixture-api-key"),
+            "fixture-api-key",
+            Some(&json!({
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "model": "fake/model",
+                "github_token": "fixture-request-token",
+                "extra_field": "ignored"
+            })),
+            &service_store(HostedApiCreateOutcome::Created),
+        );
+
+        assert_eq!(report.http_status, 202);
+        assert_eq!(report.body, json!({ "review_id": 77, "status": "queued" }));
+        let dispatch = report.dispatch_request.as_ref().expect("dispatch request");
+        assert_eq!(dispatch.repo, "misty-step/cerberus");
+        assert_eq!(dispatch.pr_number, 459);
+        assert_eq!(dispatch.head_sha, "abc123def456");
+        assert_eq!(dispatch.model, "fake/model");
+        assert!(dispatch.github_token_present);
+
+        let serialized = serde_json::to_string(&report).expect("report serializes");
+        assert!(!serialized.contains("fixture-api-key"));
+        assert!(!serialized.contains("fixture-request-token"));
+        assert!(!serialized.contains("extra_field"));
+    }
+
+    #[test]
+    fn hosted_api_service_post_preserves_validation_and_store_errors() {
+        let missing_repo = hosted_api_service_fixture_report(
+            "POST",
+            "/api/reviews",
+            Some("Bearer fixture-api-key"),
+            "fixture-api-key",
+            Some(&json!({ "pr_number": 459, "head_sha": "abc123def456" })),
+            &service_store(HostedApiCreateOutcome::Created),
+        );
+        assert_eq!(missing_repo.http_status, 422);
+        assert_eq!(
+            missing_repo.body,
+            json!({ "error": "missing required field: repo" })
+        );
+
+        for (outcome, expected_error) in [
+            (HostedApiCreateOutcome::StoreError, "store_error"),
+            (
+                HostedApiCreateOutcome::StoreUnavailable,
+                "store_unavailable",
+            ),
+        ] {
+            let report = hosted_api_service_fixture_report(
+                "POST",
+                "/api/reviews",
+                Some("Bearer fixture-api-key"),
+                "fixture-api-key",
+                Some(&json!({
+                    "repo": "misty-step/cerberus",
+                    "pr_number": 459,
+                    "head_sha": "abc123def456"
+                })),
+                &service_store(outcome),
+            );
+
+            assert_eq!(report.http_status, 500);
+            assert_eq!(report.body, json!({ "error": expected_error }));
+            assert!(report.dispatch_request.is_none());
+        }
+    }
+
+    #[test]
+    fn hosted_api_service_get_status_reads_fixture_store() {
+        let report = hosted_api_service_fixture_report(
+            "GET",
+            "/api/reviews/77",
+            Some("Bearer fixture-api-key"),
+            "fixture-api-key",
+            None,
+            &service_store(HostedApiCreateOutcome::Created),
+        );
+
+        assert_eq!(report.http_status, 200);
+        assert_eq!(report.body["review_id"], 77);
+        assert_eq!(report.body["status"], "queued");
+        assert_eq!(report.body["repo"], "misty-step/cerberus");
+        assert_eq!(report.body["pr_number"], 459);
+        assert_eq!(report.body["aggregated_verdict"], Value::Null);
+
+        let completed = hosted_api_service_fixture_report(
+            "GET",
+            "/api/reviews/88",
+            Some("Bearer fixture-api-key"),
+            "fixture-api-key",
+            None,
+            &service_store(HostedApiCreateOutcome::Created),
+        );
+        assert_eq!(completed.http_status, 200);
+        assert_eq!(completed.body["status"], "completed");
+        assert_eq!(completed.body["aggregated_verdict"]["verdict"], "PASS");
+    }
+
+    #[test]
+    fn hosted_api_service_get_status_maps_unavailable_store() {
+        let mut store = service_store(HostedApiCreateOutcome::Created);
+        store.read_unavailable = true;
+        let report = hosted_api_service_fixture_report(
+            "GET",
+            "/api/reviews/77",
+            Some("Bearer fixture-api-key"),
+            "fixture-api-key",
+            None,
+            &store,
+        );
+
+        assert_eq!(report.http_status, 500);
+        assert_eq!(report.body, json!({ "error": "store_unavailable" }));
+    }
+
+    #[test]
+    fn hosted_api_service_get_status_not_found_cases() {
+        for path in ["/api/reviews/99999", "/api/reviews/abc", "/api/nonexistent"] {
+            let report = hosted_api_service_fixture_report(
+                "GET",
+                path,
+                Some("Bearer fixture-api-key"),
+                "fixture-api-key",
+                None,
+                &service_store(HostedApiCreateOutcome::Created),
+            );
+
+            assert_eq!(report.http_status, 404);
+            assert_eq!(report.body, json!({ "error": "not_found" }));
+        }
     }
 
     #[test]
@@ -1423,6 +1789,42 @@ mod tests {
             base_ref: "master".to_string(),
             head_sha: head_sha.to_string(),
             body: Some("A hosted API PR context that should build a ReviewRequest.v1.".to_string()),
+        }
+    }
+
+    fn service_store(create_outcome: HostedApiCreateOutcome) -> HostedApiServiceStoreFixture {
+        let mut reviews = BTreeMap::new();
+        reviews.insert(
+            "77".to_string(),
+            json!({
+                "review_id": 77,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "queued",
+                "aggregated_verdict": null,
+                "completed_at": null,
+                "inserted_at": "2026-06-19T00:00:00Z"
+            }),
+        );
+        reviews.insert(
+            "88".to_string(),
+            json!({
+                "review_id": 88,
+                "repo": "misty-step/cerberus",
+                "pr_number": 459,
+                "head_sha": "abc123def456",
+                "status": "completed",
+                "aggregated_verdict": { "verdict": "PASS" },
+                "completed_at": "2026-06-19T00:01:00Z",
+                "inserted_at": "2026-06-19T00:00:00Z"
+            }),
+        );
+        HostedApiServiceStoreFixture {
+            next_review_id: 77,
+            create_outcome,
+            read_unavailable: false,
+            reviews,
         }
     }
 
