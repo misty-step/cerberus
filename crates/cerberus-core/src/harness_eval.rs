@@ -2043,6 +2043,7 @@ mod tests {
                 timeout_ms: 300_000,
                 env_required: vec!["OPENROUTER_API_KEY".to_string()],
                 requires_provider_budget_ack,
+                capabilities: Default::default(),
                 output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
                 peer: cerberus_schema::PeerHarnessInvocation {
                     command: "pi".to_string(),

@@ -45,6 +45,8 @@ Current docs:
   `docs/shaping/005-hosted-api-stateful-store-smoke-plan.html`
 - Hosted API worker lifecycle plan:
   `docs/shaping/005-hosted-api-worker-lifecycle-plan.html`
+- Peer harness read capabilities plan:
+  `docs/shaping/005-peer-harness-read-capabilities-plan.html`
 - Rust action entrypoint plan:
   `docs/shaping/025-rust-action-entrypoint-plan.html`
 - Archive shell dispatcher plan:

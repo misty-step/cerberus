@@ -862,6 +862,7 @@ mod tests {
             timeout_ms: 2_000,
             env_required: vec![],
             requires_provider_budget_ack: false,
+            capabilities: Default::default(),
             output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
             peer: cerberus_schema::PeerHarnessInvocation {
                 command: "fixture-peer".to_string(),

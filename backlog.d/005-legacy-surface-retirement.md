@@ -337,3 +337,41 @@ Thirteenth local retirement delivery, 2026-06-19:
   to record local worker completion while keeping `elixir-http-api` pending
   until production queue/store lifecycle, live GitHub acquisition,
   provider-backed reviewer execution, and deployment smoke exist.
+
+Fourteenth local retirement delivery, 2026-06-19:
+
+- Added typed `PeerHarnessCapabilities` to peer command profiles and execution
+  plans so local repository reads and GitHub reads are explicit adapter
+  authority boundaries before any peer harness is launched.
+- Updated Pi, Goose, OpenCode, OMP, and fixture peer profiles to declare
+  `local_repo_read: false` and `github_read: false`; the runner now copies
+  those declarations into `PeerHarnessExecutionPlan.v3`.
+- Updated rendered peer prompts to show the declared capabilities and forbid
+  claims for any named source whose read capability is false.
+- Added schema and runner coverage for fixture capabilities, generated plan
+  capabilities, and prompt boundary text:
+  `cargo test -p cerberus-schema peer_harness_command_profiles_declare_no_read_capabilities`,
+  `cargo test -p cerberus-schema peer_harness_execution_plan_declares_read_capabilities`,
+  `cargo test -p cerberus-cli peer_harness_runner_writes_execution_plan_without_live_provider_call`,
+  `cargo test -p cerberus-cli peer_harness_runner_execution_plan_copies_mixed_read_capabilities`,
+  `cargo test -p cerberus-cli peer_harness_runner_prompt_limits_mixed_read_capabilities`,
+  and
+  `cargo test -p cerberus-cli peer_harness_runner_writes_prompt_and_parses_transcript_artifact`.
+- Added dated no-spend QA evidence under
+  `tmp/peer-harness-read-capabilities-2026-06-19/`:
+  `pi-plan.json`
+  (`sha256:988cfa53a1801714be3ee3dde85a7bb619d50b1bf41b4fc3cd387c41fe95dbfa`),
+  `pi-prompt.txt`
+  (`sha256:0dec533fa70e101be45dc62b7b7283d3972fdc844afb35d13fa417de4ec4b909`),
+  `pi-artifact.json`
+  (`sha256:9bf536877ad8d6aa1b01b4e52c524632ca9e86d4420d0548fcef74a0aa77b902`),
+  `pi-plan-summary.json`
+  (`sha256:cc25564b9524ab292b6dd83ba115b5eff99daa1ea2887f8c03cff4cd15ed0f3f`),
+  and `prompt-capability-lines.txt`
+  (`sha256:99734317cac56c50644bad0ce5b4baac5c9e33f4269ab57f999569598a24899c`).
+- Token-shaped secret grep over the QA packet found no `sk-`, `ghp_`, `ghs_`,
+  `fixture-api-key`, or `fixture-request-token` material. The execution plan
+  intentionally records required environment variable names, not values.
+- Kept `elixir-review-tools` pending: this is a profile and prompt contract
+  boundary for Cerberus-granted tool authority, not runtime sandboxing or an
+  implementation of Rust local repo or GitHub read tools.

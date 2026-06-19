@@ -216,13 +216,24 @@
       "current_responsibility": "Legacy GitHub read tools, local repository read tools, and OpenRouter client surface.",
       "retirement_decision": "port_to_rust",
       "parity_status": "pending",
-      "rust_replacement": "Rust harness/provider adapters with explicit external boundaries.",
+      "rust_replacement": "Rust harness/provider adapters with explicit external boundaries. Current peer harness profiles and execution plans declare local repository and GitHub read authority as typed capabilities; Pi, Goose, OpenCode, OMP, and fixture profiles declare no Cerberus-granted local repository or GitHub read authority. This is a profile and prompt contract, not a runtime sandbox.",
       "parity_evidence": [
         "cd cerberus-elixir && mix test test/cerberus/github_test.exs test/cerberus/tools test/cerberus/local_repo_read_handler_test.exs",
+        "cargo test --workspace peer_harness_command_profiles",
+        "cargo test -p cerberus-schema peer_harness_execution_plan_declares_read_capabilities",
+        "cargo test -p cerberus-cli peer_harness_runner_writes_execution_plan_without_live_provider_call",
+        "cargo test -p cerberus-cli peer_harness_runner_execution_plan_copies_mixed_read_capabilities",
+        "cargo test -p cerberus-cli peer_harness_runner_prompt_limits_mixed_read_capabilities",
+        "cargo test -p cerberus-cli peer_harness_runner_writes_prompt_and_parses_transcript_artifact",
+        "cargo run --locked -q -p cerberus-cli -- validate fixtures/harnesses/peer-command-profiles.json fixtures/harnesses/live-peer-command-profiles.json",
+        "cargo run --locked -q -p cerberus-cli --bin cerberus-peer-harness -- --harness pi --input fixtures/harnesses/peer-runner-input.json --output tmp/peer-harness-read-capabilities-2026-06-19/pi-artifact.json --prompt-output tmp/peer-harness-read-capabilities-2026-06-19/pi-prompt.txt --execution-plan-output tmp/peer-harness-read-capabilities-2026-06-19/pi-plan.json",
+        "cargo run --locked -q -p cerberus-cli -- validate tmp/peer-harness-read-capabilities-2026-06-19/pi-plan.json tmp/peer-harness-read-capabilities-2026-06-19/pi-artifact.json",
+        "tmp/peer-harness-read-capabilities-2026-06-19/pi-plan.json sha256:988cfa53a1801714be3ee3dde85a7bb619d50b1bf41b4fc3cd387c41fe95dbfa",
+        "tmp/peer-harness-read-capabilities-2026-06-19/pi-prompt.txt sha256:0dec533fa70e101be45dc62b7b7283d3972fdc844afb35d13fa417de4ec4b909",
         "future Rust fixture: provider tool sandbox and repository read boundaries"
       ],
       "rollback_path": "Keep Elixir tool modules until Rust adapters prove local and GitHub read safety.",
-      "next_action": "Model GitHub/local read tools as harness adapter capabilities instead of core semantics."
+      "next_action": "Implement actual Rust GitHub/local read adapters only when a measured harness profile requires those capabilities."
     },
     {
       "surface_id": "legacy-defaults-and-personas",

@@ -337,6 +337,7 @@ fn execution_plan(
         timeout_ms: profile.timeout_ms,
         env_required: profile.env_required.clone(),
         requires_provider_budget_ack: profile.requires_provider_budget_ack,
+        capabilities: profile.capabilities.clone(),
         env_available,
         env_missing,
         provider_budget_acknowledged,
@@ -628,6 +629,10 @@ Peer harness:
 - peer_command: {peer_command}
 - output_contract: reviewer_artifact_file
 
+Capabilities:
+- local_repo_read: {local_repo_read}
+- github_read: {github_read}
+
 Request:
 - request_id: {request_id}
 - title: {title}
@@ -640,6 +645,9 @@ Changed files:
 {files}
 
 Rules:
+- Use only the supplied request, acceptance, changed files, and diff unless a named capability below explicitly authorizes that source.
+- local_repo_read authorizes only local repository inspection; do not claim local repository inspection when local_repo_read is false.
+- github_read authorizes only GitHub inspection; do not claim GitHub inspection when github_read is false.
 - reviewer_id, perspective, and model must match the reviewer above.
 - coverage.files_reviewed must list exactly the changed files above.
 - coverage.files_with_findings must always be present; use [] when there are no findings.
@@ -684,6 +692,8 @@ Diff:
         model = input.reviewer.model,
         harness_id = profile.harness_id,
         peer_command = profile.peer.command,
+        local_repo_read = profile.capabilities.local_repo_read,
+        github_read = profile.capabilities.github_read,
         request_id = input.request.request_id,
         title = input.request.change.title,
         description = description,
@@ -884,6 +894,8 @@ mod tests {
             plan.provider_budget_acknowledged,
             provider_budget_acknowledged()
         );
+        assert!(!plan.capabilities.local_repo_read);
+        assert!(!plan.capabilities.github_read);
         assert_eq!(resolved_env_names(&plan), required_env_names(&plan));
         assert!(!plan.live_mode_requested);
 
@@ -1211,6 +1223,11 @@ mod tests {
         assert!(prompt.contains("\"files_reviewed\": [\"src/lib.rs\"]"));
         assert!(prompt.contains("\"files_with_findings\": []"));
         assert!(prompt.contains("\"degraded_reason\": null"));
+        assert!(prompt.contains("- local_repo_read: false"));
+        assert!(prompt.contains("- github_read: false"));
+        assert!(prompt
+            .contains("do not claim local repository inspection when local_repo_read is false"));
+        assert!(prompt.contains("do not claim GitHub inspection when github_read is false"));
 
         let artifact = read_artifact(&paths.output);
         assert_eq!(artifact.status, ReviewerStatus::Completed);
@@ -1231,6 +1248,40 @@ mod tests {
             .expect("core accepts parsed transcript artifact");
         assert!(!run.degraded);
         assert_eq!(run.verdict, Verdict::Warn);
+    }
+
+    #[test]
+    fn peer_harness_runner_prompt_limits_mixed_read_capabilities() {
+        let profiles = read_profiles(&profiles_path()).expect("profiles parse");
+        let mut profile = select_profile(&profiles, "pi")
+            .expect("pi profile exists")
+            .clone();
+        profile.capabilities.local_repo_read = true;
+        profile.capabilities.github_read = false;
+
+        let prompt = render_prompt(&profile, &input());
+
+        assert!(prompt.contains("- local_repo_read: true"));
+        assert!(prompt.contains("- github_read: false"));
+        assert!(prompt.contains("local_repo_read authorizes only local repository inspection"));
+        assert!(prompt.contains("github_read authorizes only GitHub inspection"));
+        assert!(prompt.contains("do not claim GitHub inspection when github_read is false"));
+    }
+
+    #[test]
+    fn peer_harness_runner_execution_plan_copies_mixed_read_capabilities() {
+        let profiles = read_profiles(&profiles_path()).expect("profiles parse");
+        let mut profile = select_profile(&profiles, "pi")
+            .expect("pi profile exists")
+            .clone();
+        profile.capabilities.local_repo_read = true;
+        profile.capabilities.github_read = false;
+
+        let plan = execution_plan(&profile, &input(), false, false);
+
+        assert!(plan.capabilities.local_repo_read);
+        assert!(!plan.capabilities.github_read);
+        plan.validate().expect("mixed capability plan validates");
     }
 
     #[test]
@@ -1560,6 +1611,7 @@ mod tests {
                     vec![]
                 },
                 requires_provider_budget_ack,
+                capabilities: Default::default(),
                 output_contract: cerberus_schema::PeerHarnessOutputContract::ReviewerArtifactFile,
                 peer: cerberus_schema::PeerHarnessInvocation {
                     command: "sh".to_string(),

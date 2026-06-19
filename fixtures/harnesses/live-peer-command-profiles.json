@@ -12,6 +12,10 @@
       "timeout_ms": 2000,
       "env_required": [],
       "requires_provider_budget_ack": false,
+      "capabilities": {
+        "local_repo_read": false,
+        "github_read": false
+      },
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "sh",
@@ -40,6 +44,10 @@
       "timeout_ms": 2000,
       "env_required": [],
       "requires_provider_budget_ack": false,
+      "capabilities": {
+        "local_repo_read": false,
+        "github_read": false
+      },
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "sh",

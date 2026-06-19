@@ -12,8 +12,14 @@ peer harness. The prompt includes:
 
 - reviewer id, perspective, and model
 - selected peer harness id and command
+- declared local repository and GitHub read capabilities
 - request id, title, description, acceptance notes, changed files, and diff
 - the `ReviewerArtifact.v1` output contract and validation rules
+
+Each read capability is scoped independently. A true `local_repo_read` value
+authorizes only local repository inspection, and a true `github_read` value
+authorizes only GitHub inspection. When either capability is false, the prompt
+tells the peer reviewer not to claim inspection of that source.
 
 Prompt rendering is deterministic and fixture-backed. Prompt optimization and
 model-specific variants are later eval work.

@@ -23,9 +23,17 @@ profile fixture therefore records two layers:
   runner should call after it renders a review prompt
 - `requires_provider_budget_ack`: whether live execution must require
   `CERBERUS_PEER_HARNESS_PROVIDER_BUDGET_ACK=1`
+- `capabilities`: explicit read authority boundaries for local repository and
+  GitHub reads
 
 This keeps `cerberus-core` source-agnostic and keeps subprocess semantics in
 adapter land.
+
+The current Pi, Goose, OpenCode, OMP, and fixture profiles are prompt-contained
+reviewers. They receive the request diff and metadata that Cerberus provides;
+they do not have Cerberus-granted local repository reads or GitHub reads. Future
+read tools must be modeled as adapter capabilities before a profile can claim
+them.
 
 ## Fixture
 

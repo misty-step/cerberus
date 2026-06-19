@@ -37,6 +37,14 @@ impl PeerHarnessCommandProfiles {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PeerHarnessCapabilities {
+    #[serde(default)]
+    pub local_repo_read: bool,
+    #[serde(default)]
+    pub github_read: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PeerHarnessExecutionPlan {
     pub schema_version: String,
@@ -50,6 +58,8 @@ pub struct PeerHarnessExecutionPlan {
     #[serde(default)]
     pub env_required: Vec<String>,
     pub requires_provider_budget_ack: bool,
+    #[serde(default)]
+    pub capabilities: PeerHarnessCapabilities,
     #[serde(default)]
     pub env_available: Vec<String>,
     #[serde(default)]
@@ -157,6 +167,8 @@ pub struct PeerHarnessCommandProfile {
     #[serde(default)]
     pub env_required: Vec<String>,
     pub requires_provider_budget_ack: bool,
+    #[serde(default)]
+    pub capabilities: PeerHarnessCapabilities,
     pub output_contract: PeerHarnessOutputContract,
     pub peer: PeerHarnessInvocation,
     #[serde(default)]
@@ -444,6 +456,17 @@ mod tests {
     }
 
     #[test]
+    fn peer_harness_command_profiles_declare_no_read_capabilities() {
+        let profiles: PeerHarnessCommandProfiles =
+            serde_json::from_str(PEER_PROFILES).expect("fixture parses");
+
+        for profile in profiles.profiles {
+            assert!(!profile.capabilities.local_repo_read);
+            assert!(!profile.capabilities.github_read);
+        }
+    }
+
+    #[test]
     fn opencode_profile_terminates_file_arguments_before_message() {
         let profiles: PeerHarnessCommandProfiles =
             serde_json::from_str(PEER_PROFILES).expect("fixture parses");
@@ -720,6 +743,15 @@ mod tests {
     }
 
     #[test]
+    fn peer_harness_execution_plan_declares_read_capabilities() {
+        let plan = valid_execution_plan();
+
+        assert!(!plan.capabilities.local_repo_read);
+        assert!(!plan.capabilities.github_read);
+        plan.validate().expect("execution plan validates");
+    }
+
+    #[test]
     fn peer_harness_execution_plan_rejects_unresolved_model_placeholder() {
         let mut plan = valid_execution_plan();
         plan.resolved_args[4] = "openrouter/{model}".to_string();
@@ -828,6 +860,7 @@ mod tests {
             timeout_ms: 300_000,
             env_required: vec!["OPENROUTER_API_KEY".to_string()],
             requires_provider_budget_ack: true,
+            capabilities: PeerHarnessCapabilities::default(),
             env_available: vec![],
             env_missing: vec!["OPENROUTER_API_KEY".to_string()],
             provider_budget_acknowledged: false,

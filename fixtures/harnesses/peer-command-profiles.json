@@ -14,6 +14,10 @@
         "OPENROUTER_API_KEY"
       ],
       "requires_provider_budget_ack": true,
+      "capabilities": {
+        "local_repo_read": false,
+        "github_read": false
+      },
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "pi",
@@ -51,6 +55,10 @@
         "OPENROUTER_API_KEY"
       ],
       "requires_provider_budget_ack": true,
+      "capabilities": {
+        "local_repo_read": false,
+        "github_read": false
+      },
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "goose",
@@ -87,6 +95,10 @@
         "OPENROUTER_API_KEY"
       ],
       "requires_provider_budget_ack": true,
+      "capabilities": {
+        "local_repo_read": false,
+        "github_read": false
+      },
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "opencode",
@@ -125,6 +137,10 @@
         "OPENROUTER_API_KEY"
       ],
       "requires_provider_budget_ack": true,
+      "capabilities": {
+        "local_repo_read": false,
+        "github_read": false
+      },
       "output_contract": "reviewer_artifact_file",
       "peer": {
         "command": "omp",

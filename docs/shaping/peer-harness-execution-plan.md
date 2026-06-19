@@ -16,12 +16,24 @@ The plan records:
   active prompt mode: `{prompt}`, `{prompt_file}`, or stdin omission
 - prompt mode and output contract
 - timeout and unsupported containment boundaries
+- declared local repository and GitHub read capabilities
 - required environment variable names, split into available and missing names
 - whether provider-budget acknowledgement is required and currently present
 - transcript begin/end markers
 - whether live mode was requested
 
 The artifact never records secret values and does not embed the rendered prompt.
+Current checked profiles declare `local_repo_read: false` and
+`github_read: false`, so the plan is explicit that peer reviewers must work
+from the supplied request context instead of claiming out-of-band repository or
+GitHub inspection.
+
+The read-capability QA receipt for 2026-06-19 is under
+`tmp/peer-harness-read-capabilities-2026-06-19/`. Its Pi plan records both
+capabilities as false
+(`pi-plan.json`, `sha256:988cfa53a1801714be3ee3dde85a7bb619d50b1bf41b4fc3cd387c41fe95dbfa`)
+and the rendered prompt carries the matching instruction
+(`pi-prompt.txt`, `sha256:0dec533fa70e101be45dc62b7b7283d3972fdc844afb35d13fa417de4ec4b909`).
 
 ## Live Mode Boundary
 
