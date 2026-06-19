@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Restart MVP Plan</title>
+  <style>
+    :root {
+      --bg: #f7f5ef;
+      --ink: #171717;
+      --muted: #666;
+      --line: #d8d3c7;
+      --panel: #fffdf7;
+      --accent: #1f5f4a;
+      --warn: #7c3f00;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+    main {
+      width: min(1180px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(40px, 6vw, 76px); line-height: 0.95; letter-spacing: 0; }
+    h2 { font-size: 18px; text-transform: uppercase; letter-spacing: 0.06em; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.95em; }
+    .hero {
+      min-height: 56vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+      gap: 40px;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 32px;
+    }
+    .lede { font-size: 20px; color: #333; max-width: 760px; }
+    .panel, .cell {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 20px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .wide { grid-column: 1 / -1; }
+    .muted { color: var(--muted); }
+    .accent { color: var(--accent); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-top: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+    ul { padding-left: 20px; }
+    @media (max-width: 840px) {
+      main { width: min(100% - 24px, 1180px); }
+      .hero, .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div>
+        <p class="accent">CERBERUS RESTART MVP</p>
+        <h1>Deliver one master reviewer with context-adaptive artifacts.</h1>
+        <p class="lede">Build the smallest Rust application that accepts source-agnostic review requests, gives a single Cerberus master the available context through OpenCode or OMP, validates the returned artifact, and renders review output. No predefined subagents. No eval product.</p>
+      </div>
+      <aside class="panel">
+        <h2>Chosen Design</h2>
+        <p><strong>Rust owns:</strong> contracts, capabilities, harness execution, validation, receipts, rendering.</p>
+        <p><strong>OpenCode/OMP own:</strong> reviewer judgment, dynamic subagent creation, synthesis.</p>
+        <p><strong>Default:</strong> OpenCode for production-oriented execution; OMP as local fallback.</p>
+        <p><strong>Stop line:</strong> do not implement static reviewer roles or an evaluation matrix.</p>
+      </aside>
+    </section>
+
+    <section class="grid">
+      <article class="cell">
+        <h2>Standards</h2>
+        <p>Deep public seam: <code>ReviewRequest.v1 -> ReviewArtifact.v1</code>. Runtime context must be truthful. Product path is OpenCode; OMP remains supported; fixture path exists only for deterministic verification.</p>
+      </article>
+      <article class="cell">
+        <h2>Acceptance</h2>
+        <p><code>./scripts/verify.sh</code> passes and leaves artifact, Markdown review, and execution plan evidence under <code>target/cerberus/</code>.</p>
+      </article>
+      <article class="cell">
+        <h2>Proof</h2>
+        <p>Structural Rust tests, CLI smoke with fixture harness, substrate execution-plan inspection, and fresh-context critic against diff plus spec.</p>
+      </article>
+      <article class="cell">
+        <h2>Current State</h2>
+        <p>The Cerberus checkout is intentionally empty after reset. This plan and <code>spec.md</code> are the new source of truth.</p>
+      </article>
+      <article class="cell">
+        <h2>Change Shape</h2>
+        <p>Add a simple Rust CLI/library, request/artifact schemas, OpenCode and OMP harness boundaries, fixture harness, renderer, tests, and verification script.</p>
+      </article>
+      <article class="cell">
+        <h2>Stop If</h2>
+        <p>Stop if implementation requires static subagent roles, direct provider orchestration, hosted runtime, GitHub-only coupling, or eval ownership to pass MVP.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="cell wide">
+        <h2>Verification System</h2>
+        <table>
+          <tbody>
+            <tr><th>Claim</th><td>Cerberus can turn a review request into a validated, renderable artifact while recording available context truthfully.</td></tr>
+            <tr><th>Falsifier</th><td>Bad request/artifact digests pass, invalid marker output is accepted, inline comments point outside changed files, or ambient secrets enter child env.</td></tr>
+            <tr><th>Driver</th><td><code>./scripts/verify.sh</code></td></tr>
+            <tr><th>Grader</th><td>Rust tests, CLI exit code, generated artifact validation, Markdown output inspection, and execution plan assertions.</td></tr>
+            <tr><th>Evidence</th><td><code>target/cerberus/artifact.json</code>, <code>target/cerberus/review.md</code>, <code>target/cerberus/execution_plan.json</code></td></tr>
+            <tr><th>Cadence</th><td>Before closeout and after any harness, schema, or renderer change.</td></tr>
+          </tbody>
+        </table>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="cell">
+        <h2>Execution</h2>
+        <ol>
+          <li>Write spec and plan.</li>
+          <li>Scaffold Rust CLI/library.</li>
+          <li>Implement schemas and validation tests.</li>
+          <li>Implement fixture, OpenCode, and OMP harness boundaries.</li>
+          <li>Implement renderer and verification script.</li>
+          <li>Run fresh critic, fix blockers, commit clean.</li>
+        </ol>
+      </article>
+      <article class="cell">
+        <h2>Critic Focus</h2>
+        <ul>
+          <li>Does Rust accidentally decide reviewer topology?</li>
+          <li>Can artifacts overstate unavailable context?</li>
+          <li>Can invalid agent prose pass as durable review output?</li>
+          <li>Is the CLI usable without chat-only setup?</li>
+        </ul>
+      </article>
+      <article class="cell">
+        <h2>Deferred</h2>
+        <ul>
+          <li>GitHub posting adapters.</li>
+          <li>Rootless container profile.</li>
+          <li>Remote runtime probes.</li>
+          <li>Daedalus config import.</li>
+          <li>Model/harness eval matrix.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
