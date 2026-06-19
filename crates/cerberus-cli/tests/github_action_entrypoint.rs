@@ -34,6 +34,16 @@ fn action_entrypoint_invokes_rust_dispatcher() {
 }
 
 #[test]
+fn legacy_shell_dispatcher_is_archived() {
+    let root = workspace_root();
+
+    assert!(
+        !root.join("dispatch.sh").exists(),
+        "dispatch.sh should stay archived after the Rust action entrypoint has parity"
+    );
+}
+
+#[test]
 fn action_entrypoint_preserves_consumer_env_and_outputs() {
     let action = action_yml();
 
@@ -58,12 +68,16 @@ fn action_entrypoint_preserves_consumer_env_and_outputs() {
 }
 
 fn action_yml() -> String {
+    fs::read_to_string(workspace_root().join("action.yml")).expect("action.yml")
+}
+
+fn workspace_root() -> PathBuf {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|path| path.parent())
         .expect("workspace root")
         .to_path_buf();
-    fs::read_to_string(root.join("action.yml")).expect("action.yml")
+    root
 }
 
 fn assert_contains(haystack: &str, needle: &str) {

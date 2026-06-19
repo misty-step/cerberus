@@ -1032,6 +1032,9 @@ fn validate_retirement_paths(inventory: &LegacySurfaceInventory, root: &Path) ->
         for path in &surface.paths {
             let path = root.join(path);
             if !path.exists() {
+                if surface.deletion_or_archive_commit.is_some() {
+                    continue;
+                }
                 bail!(
                     "legacy surface {} references missing path {}",
                     surface.surface_id,
@@ -1041,6 +1044,65 @@ fn validate_retirement_paths(inventory: &LegacySurfaceInventory, root: &Path) ->
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cerberus_schema::{
+        LegacyParityStatus, LegacyRetirementDecision, LegacySurface,
+        LEGACY_SURFACE_INVENTORY_VERSION,
+    };
+
+    #[test]
+    fn retirement_path_validation_rejects_missing_live_surface_paths() {
+        let inventory = retirement_inventory(None);
+        let root = missing_validation_root();
+
+        let err = validate_retirement_paths(&inventory, &root).expect_err("missing path rejected");
+
+        assert!(
+            err.to_string()
+                .contains("legacy surface archived-shell references missing path"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn retirement_path_validation_accepts_missing_archived_surface_paths() {
+        let inventory = retirement_inventory(Some("abc1234"));
+        let root = missing_validation_root();
+
+        validate_retirement_paths(&inventory, &root).expect("archived missing path allowed");
+    }
+
+    fn missing_validation_root() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "cerberus-missing-retirement-validation-root-{}",
+            std::process::id()
+        ))
+    }
+
+    fn retirement_inventory(deletion_or_archive_commit: Option<&str>) -> LegacySurfaceInventory {
+        LegacySurfaceInventory {
+            schema_version: LEGACY_SURFACE_INVENTORY_VERSION.to_string(),
+            snapshot_date: "2026-06-19".to_string(),
+            purpose: "Test inventory.".to_string(),
+            surfaces: vec![LegacySurface {
+                surface_id: "archived-shell".to_string(),
+                paths: vec!["dispatch.sh".to_string()],
+                current_responsibility: "Archived shell dispatcher.".to_string(),
+                retirement_decision: LegacyRetirementDecision::PortToRust,
+                parity_status: LegacyParityStatus::CoveredByRustFixture,
+                rust_replacement: Some("cerberus-cli github-action-dispatch".to_string()),
+                keep_reason: None,
+                parity_evidence: vec!["cargo test -p cerberus-cli".to_string()],
+                deletion_or_archive_commit: deletion_or_archive_commit.map(str::to_string),
+                rollback_path: "Restore dispatch.sh from Git history.".to_string(),
+                next_action: "None.".to_string(),
+            }],
+        }
+    }
 }
 
 fn probe_harness(profile: &HarnessProfile) -> HarnessProbe {

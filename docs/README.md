@@ -39,6 +39,8 @@ Current docs:
   `docs/shaping/024-hosted-api-http-dispatch-plan.html`
 - Rust action entrypoint plan:
   `docs/shaping/025-rust-action-entrypoint-plan.html`
+- Archive shell dispatcher plan:
+  `docs/shaping/026-archive-shell-dispatcher-plan.html`
 - Rust local review replay: `docs/shaping/rust-local-review-replay.md`
 - Current harness/model catalog refresh:
   `docs/shaping/014-current-harness-model-catalog-refresh-plan.html`

@@ -81,26 +81,26 @@ slice. It reads a checked `pull_request` event payload and unified diff,
 returns fork/draft skip decisions before diff file IO, treats missing fork head
 repo metadata as a skip, and writes `ReviewRequest.v1` for same-repo PRs. It
 does not call GitHub, call the hosted Cerberus API, poll for verdicts, write
-GitHub Actions outputs, or replace `dispatch.sh`.
+GitHub Actions outputs, or own the full action runtime.
 
 `cerberus-cli hosted-api-dispatch-fixture` is the second Rust GitHub Action
 adapter slice. It consumes checked hosted API POST and poll transcripts, then
 writes the simulated action decision: outcome, exit code, review-id, verdict,
 GitHub output map, elapsed poll budget, and optional verdict JSON. It is a pure
 state machine for fixture parity; it does not make network calls, write the
-real `$GITHUB_OUTPUT` file, or replace `dispatch.sh`. Its elapsed seconds follow
-the shell client's sleep-before-poll accounting. It intentionally hardens one
-legacy edge case by treating an accepted dispatch response without `review_id`
-as a failed dispatch instead of polling an empty review URL.
+real `$GITHUB_OUTPUT` file, or own the full action runtime. Its elapsed seconds
+follow the legacy shell client's sleep-before-poll accounting. It intentionally
+hardens one legacy edge case by treating an accepted dispatch response without
+`review_id` as a failed dispatch instead of polling an empty review URL.
 
-`cerberus-cli github-action-dispatch` is the third Rust GitHub Action adapter
-slice. It reads the same environment contract as `dispatch.sh`, skips fork and
-draft PRs before requiring hosted secrets, sends the hosted API POST with a
-Rust HTTP client, polls the hosted review, appends `review-id` and `verdict` to
-the configured GitHub output file, writes verdict JSON under `RUNNER_TEMP` when
-available, and exits according to the hosted dispatch decision. `action.yml`
-now invokes this Rust command through Cargo from the checked-out action path.
-`dispatch.sh` remains only as a rollback surface until a later deletion slice.
+`cerberus-cli github-action-dispatch` is the active Rust GitHub Action adapter
+slice. It reads the action environment contract, skips fork and draft PRs before
+requiring hosted secrets, sends the hosted API POST with a Rust HTTP client,
+polls the hosted review, appends `review-id` and `verdict` to the configured
+GitHub output file, writes verdict JSON under `RUNNER_TEMP` when available, and
+exits according to the hosted dispatch decision. `action.yml` invokes this Rust
+command through Cargo from the checked-out action path. The former root
+`dispatch.sh` rollback file was archived after Rust entrypoint parity.
 
 ## Request Flow
 
@@ -150,8 +150,9 @@ Responsibilities:
 
 Rollback surface:
 
-- `dispatch.sh` is retained only until the retirement inventory records a
-  deletion/archive commit after Rust entrypoint parity.
+- Restore the archived shell dispatcher from Git history only if Rust action
+  dispatch parity regresses and the retirement inventory rollback path is
+  followed.
 
 ### Rust Adapter SDK
 

@@ -6,7 +6,7 @@ compatibility engine.
 The primary client in this repository is the root GitHub Action:
 
 - `action.yml`
-- `dispatch.sh`
+- `cerberus-cli github-action-dispatch`
 
 ## Base URL
 
@@ -77,7 +77,7 @@ Simple liveness probe:
 
 ## Polling Pattern
 
-`dispatch.sh` implements the canonical client loop:
+`cerberus-cli github-action-dispatch` implements the canonical client loop:
 
 1. Validate fork / draft / missing-input preconditions.
 2. `POST /api/reviews`.

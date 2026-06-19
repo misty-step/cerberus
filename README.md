@@ -90,7 +90,6 @@ the workspace crates and is tracked by the backlog.
 ## Repository Layout
 
 - `action.yml`: thin GitHub Action client that launches the Rust dispatcher
-- `dispatch.sh`: legacy rollback dispatcher retained until deletion parity
 - `crates/`: Rust schemas, core review artifact engine, adapters, and CLI
 - `cerberus-elixir/`: legacy Elixir API server and compatibility review engine
 - `defaults/`: model and product data consumed by the engine
@@ -104,7 +103,10 @@ the workspace crates and is tracked by the backlog.
 cargo test -p cerberus-cli --test github_action_entrypoint
 cargo test -p cerberus-cli --test github_action_dispatch
 node --check bin/cerberus.js
-shellcheck dispatch.sh
+shellcheck cerberus-elixir/deploy-sprite.sh \
+  cerberus-elixir/test/release_contract.sh \
+  fixtures/harnesses/command-reviewer.sh \
+  fixtures/harnesses/live-peer-reviewer.sh
 cd cerberus-elixir && mix test
 cd cerberus-elixir && mix format --check-formatted
 ```
