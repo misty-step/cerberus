@@ -444,6 +444,46 @@ mod tests {
     }
 
     #[test]
+    fn opencode_profile_terminates_file_arguments_before_message() {
+        let profiles: PeerHarnessCommandProfiles =
+            serde_json::from_str(PEER_PROFILES).expect("fixture parses");
+        let profile = profiles
+            .profiles
+            .iter()
+            .find(|profile| profile.harness_id == "opencode")
+            .expect("opencode profile exists");
+
+        let file_index = profile
+            .peer
+            .args_template
+            .iter()
+            .position(|arg| arg == "--file")
+            .expect("opencode uses --file attachments");
+        let prompt_file_index = profile
+            .peer
+            .args_template
+            .iter()
+            .position(|arg| arg == "{prompt_file}")
+            .expect("opencode passes the private prompt file");
+        let separator_index = profile
+            .peer
+            .args_template
+            .iter()
+            .position(|arg| arg == "--")
+            .expect("opencode terminates the --file array");
+        let message_index = profile
+            .peer
+            .args_template
+            .iter()
+            .position(|arg| arg == "Follow the attached Cerberus reviewer prompt exactly.")
+            .expect("opencode carries the static reviewer instruction");
+
+        assert!(file_index < prompt_file_index);
+        assert!(prompt_file_index < separator_index);
+        assert!(separator_index < message_index);
+    }
+
+    #[test]
     fn peer_harness_command_profiles_reject_duplicate_harness_ids() {
         let mut profiles: PeerHarnessCommandProfiles =
             serde_json::from_str(PEER_PROFILES).expect("fixture parses");

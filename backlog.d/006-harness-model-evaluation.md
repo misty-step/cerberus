@@ -353,6 +353,24 @@ Provider-backed live smoke receipt, 2026-06-19:
   `live-peer-pass` task and does not grade seeded findings, prompt injection,
   long context, degraded behavior, or schema-hostile output.
 
+OpenCode profile hardening follow-up, 2026-06-19:
+
+- Updated `fixtures/harnesses/peer-command-profiles.json` so the OpenCode
+  command uses `--file {prompt_file} -- "Follow the attached Cerberus reviewer
+  prompt exactly."`
+- Added a regression test that locks the OpenCode argument order, preventing
+  the static reviewer instruction from being consumed as another file
+  attachment.
+- No-spend proof lives under `tmp/opencode-profile-hardening-2026-06-19/`:
+  `opencode-plan.json`
+  (`sha256:d551d4d2cf9c6280ce31b7956be949cd805776f726ef45dba25eb8c86d73c15a`)
+  and `opencode-separator-probe.txt`
+  (`sha256:c5c2da713873520d3c9d3923f8e24a9590031d2de0d386b7f4eb9290ec0cea1b`).
+- This addresses the OpenCode invocation failure shape from the first
+  provider-backed live smoke. OpenCode still needs a budget-approved live rerun
+  before it can be compared against Goose or used for any reviewer-default
+  promotion.
+
 ## Notes
 
 This should start after backlog 001 creates the Rust schema/fixture path. It can

@@ -33,7 +33,7 @@ adapter land.
 
 - Pi: `pi --print --no-session --mode json --model openrouter/{model} @{prompt_file}`
 - Goose: `goose run --no-session --quiet --provider openrouter --model {model} --instructions {prompt_file}`
-- OpenCode: `opencode run --format json --model openrouter/{model} --agent reviewer --file {prompt_file} "Follow the attached Cerberus reviewer prompt exactly."`
+- OpenCode: `opencode run --format json --model openrouter/{model} --agent reviewer --file {prompt_file} -- "Follow the attached Cerberus reviewer prompt exactly."`
 - OMP: `omp --print --no-session --mode json --model openrouter/{model} --no-pty @{prompt_file}`
 
 The profile fixture is validation data, not a live model run. Backlog 011 adds
@@ -44,6 +44,16 @@ The OpenRouter-backed profiles remain provider-budget gated. Backlog 017 moves
 the checked-in provider templates to private prompt-file transport, but provider
 evals still need explicit budget acknowledgement, credentials, and measured
 harness/model scoring before any reviewer-default promotion.
+
+After the first provider-backed live smoke on 2026-06-19, the OpenCode profile
+was hardened with the `--` separator shown above. Without it, OpenCode's
+array-valued `--file` flag consumes the static reviewer instruction as another
+file path and fails before model execution. The no-spend receipt at
+`tmp/opencode-profile-hardening-2026-06-19/opencode-plan.json`
+(`sha256:d551d4d2cf9c6280ce31b7956be949cd805776f726ef45dba25eb8c86d73c15a`)
+shows the corrected resolved args; `opencode-separator-probe.txt`
+(`sha256:c5c2da713873520d3c9d3923f8e24a9590031d2de0d386b7f4eb9290ec0cea1b`)
+reaches the intentionally invalid model lookup instead of the old file error.
 
 ## Verification
 

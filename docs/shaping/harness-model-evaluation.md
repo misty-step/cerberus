@@ -253,6 +253,18 @@ checked smoke. It does not prove seeded finding quality, prompt-injection
 resistance, long-context behavior, degraded behavior, or schema-hostile output
 handling, so production defaults stay unchanged.
 
+OpenCode profile hardening after that smoke added `--` between
+`--file {prompt_file}` and the static reviewer instruction in
+`fixtures/harnesses/peer-command-profiles.json`. That fixes the argument
+boundary that produced `File not found: Follow the attached Cerberus reviewer
+prompt exactly.` No-spend proof lives under
+`tmp/opencode-profile-hardening-2026-06-19/`:
+`opencode-plan.json`
+(`sha256:d551d4d2cf9c6280ce31b7956be949cd805776f726ef45dba25eb8c86d73c15a`)
+and `opencode-separator-probe.txt`
+(`sha256:c5c2da713873520d3c9d3923f8e24a9590031d2de0d386b7f4eb9290ec0cea1b`).
+It does not replace a budget-approved rerun of the OpenCode provider cells.
+
 ## Alternatives Considered
 
 ### Public Leaderboards Only

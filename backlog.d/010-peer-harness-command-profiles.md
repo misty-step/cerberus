@@ -86,3 +86,28 @@ First local delivery, 2026-06-18:
   - `node --check bin/cerberus.js`
   - `cd cerberus-elixir && mix format --check-formatted`
   - `cd cerberus-elixir && mix test`
+
+OpenCode profile hardening, 2026-06-19:
+
+- The first provider-backed live smoke in backlog 006 showed every OpenCode
+  row failing before model execution because the static reviewer instruction was
+  parsed as an additional `--file` attachment:
+  `File not found: Follow the attached Cerberus reviewer prompt exactly.`
+- Updated the checked OpenCode profile to insert `--` after
+  `--file {prompt_file}`, terminating OpenCode's file array before the
+  positional reviewer message.
+- Added schema fixture regression coverage so the OpenCode profile must keep
+  `--file`, `{prompt_file}`, `--`, and the static message in that order.
+- No-spend evidence packet:
+  `tmp/opencode-profile-hardening-2026-06-19/`.
+  - Execution plan:
+    `opencode-plan.json`
+    (`sha256:d551d4d2cf9c6280ce31b7956be949cd805776f726ef45dba25eb8c86d73c15a`)
+    shows `--file`, `{prompt_file}`, `--`, then the reviewer message.
+  - OpenCode separator probe:
+    `opencode-separator-probe.txt`
+    (`sha256:c5c2da713873520d3c9d3923f8e24a9590031d2de0d386b7f4eb9290ec0cea1b`)
+    reaches the intentionally invalid model lookup and does not report
+    `File not found: Follow the attached Cerberus reviewer prompt exactly.`
+- This hardens the invocation profile only. It does not rerun paid provider
+  cells, rank OpenCode quality, or promote reviewer defaults.

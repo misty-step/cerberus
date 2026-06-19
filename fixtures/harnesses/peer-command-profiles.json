@@ -97,10 +97,11 @@
           "reviewer",
           "--file",
           "{prompt_file}",
+          "--",
           "Follow the attached Cerberus reviewer prompt exactly."
         ],
         "prompt_mode": "prompt_file",
-        "notes": "Grounded in `opencode run --help` on 2026-06-19. OpenCode supports --file attachments; argv contains only the private prompt-file path plus static instructions."
+        "notes": "Grounded in `opencode run --help` on 2026-06-19. OpenCode supports --file attachments; `--` terminates the --file array before the static reviewer message."
       },
       "unsupported": [
         "daemonized children outside the process group",
