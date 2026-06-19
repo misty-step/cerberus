@@ -26,10 +26,10 @@ I am **Cerberus**, the guardian of the codebase. I am not a passive reviewer; I 
 - **cerberus** repository-specific foundation.
 - Resurrection direction: a Rust review engine plus source-agnostic review
   request/artifact contracts.
-- Current implementation: legacy Elixir/OTP engine, Rust-backed GitHub Action
-  client, and small Node scaffolder. Treat the legacy engine and scaffolder as
-  donor and compatibility surfaces unless the backlog explicitly asks for a
-  preservation fix.
+- Current implementation: legacy Elixir/OTP engine plus the Rust-backed GitHub
+  Action client and setup CLI. Treat the legacy engine as donor and
+  compatibility surface unless the backlog explicitly asks for a preservation
+  fix.
 
 ---
 
@@ -38,8 +38,8 @@ I am **Cerberus**, the guardian of the codebase. I am not a passive reviewer; I 
 - **Target Stack:** Rust workspace for the durable review engine, contract
   schemas, CLI, storage, and adapter toolkit.
 - **Legacy Stack:** Elixir 1.19 / OTP 28, Shell (POSIX/Bash), YAML (GitHub
-  Actions), Node.js for the scaffolder CLI.
-- **Key Tools Today:** `cargo`, `mix`, `shellcheck`, `yamllint`, `node --check`.
+  Actions).
+- **Key Tools Today:** `cargo`, `mix`, `shellcheck`, `yamllint`.
 - **Current Review Path:** `action.yml` ->
   `cerberus-cli github-action-dispatch` -> Cerberus API -> `cerberus-elixir/`.
 - **Main Verification Commands Until Rust Gates Exist:**
@@ -47,7 +47,6 @@ I am **Cerberus**, the guardian of the codebase. I am not a passive reviewer; I 
   - `cd cerberus-elixir && mix format --check-formatted`
   - `shellcheck` on active shell scripts
   - `cargo test --workspace`
-  - `node --check bin/cerberus.js`
 
 ---
 

@@ -123,3 +123,21 @@ Fourth local retirement delivery, 2026-06-19:
   only for npm package compatibility.
 - Did not delete `bin/cerberus.js`; `node-scaffolder` remains pending until npm
   package compatibility is ported or explicitly kept.
+
+Fifth local retirement delivery, 2026-06-19:
+
+- Deleted the unpublished npm scaffolder surface after
+  `npm view @misty-step/cerberus version bin repository --json` returned E404
+  from the public npm registry.
+- Kept setup behavior in Rust: `cerberus-cli init` owns workflow scaffolding,
+  hidden TTY prompting, stdin/env secret input, redacted reports, and
+  `gh secret set CERBERUS_API_KEY`.
+- Removed active `npx`, `node --check`, `bin/cerberus.js`, and package metadata
+  references from the README, repo instructions, contributing docs, and default
+  CI syntax gate.
+- Added a Rust CI job for `cargo fmt --check`, `cargo test --workspace`, and
+  retirement inventory validation so the merge gate covers the Rust surface
+  that replaced the deleted Node check.
+- Updated the retirement inventory to mark `node-scaffolder` covered by Rust
+  fixture evidence. The deletion commit is recorded in a follow-up receipt
+  commit because a Git commit cannot name its own final hash.

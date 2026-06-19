@@ -137,7 +137,6 @@ cerberus-elixir/
 
 - `action.yml`
 - `templates/consumer-workflow-reusable.yml`
-- `bin/cerberus.js`
 - `cerberus-cli init`
 - `cerberus-cli init-workflow`
 
@@ -150,14 +149,15 @@ Responsibilities:
 - expose workflow outputs
 - keep the public input/output contract stable
 - scaffold the consumer workflow, prompt for `CERBERUS_API_KEY` on interactive
-  Unix TTYs, and set the repository secret through Rust, while the Node wrapper
-  still preserves npm package compatibility
+  Unix TTYs, and set the repository secret through Rust
 
 Rollback surface:
 
 - Restore the archived shell dispatcher from Git history only if Rust action
   dispatch parity regresses and the retirement inventory rollback path is
   followed.
+- Restore the archived npm scaffolder files from Git history only if a real npm
+  package compatibility requirement appears.
 
 ### Rust Adapter SDK
 

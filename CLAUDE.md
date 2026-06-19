@@ -39,13 +39,11 @@ cerberus-elixir/
 - `defaults/config.yml` - product/model defaults consumed by the engine
 - `pi/agents/*.md` - reviewer personas
 - `templates/consumer-workflow-reusable.yml` - recommended consumer workflow
-- `bin/cerberus.js` - npm compatibility scaffolder CLI
 
 ## Local Commands
 
 ```bash
 cargo test --workspace
-node --check bin/cerberus.js
 shellcheck cerberus-elixir/deploy-sprite.sh \
   cerberus-elixir/test/release_contract.sh \
   fixtures/harnesses/command-reviewer.sh \

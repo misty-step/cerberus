@@ -4,7 +4,6 @@
 
 ```bash
 cargo test --workspace
-node --check bin/cerberus.js
 shellcheck cerberus-elixir/deploy-sprite.sh \
   cerberus-elixir/test/release_contract.sh \
   fixtures/harnesses/command-reviewer.sh \

@@ -15,18 +15,26 @@ jobs:
         run: |
           find . -type f -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          package-manager-cache: false
-
-      - name: Check CLI syntax
-        run: npm test
-
       - name: Yamllint
         run: |
           pip install yamllint -q
           yamllint action.yml .github/workflows/*.yml templates/*.yml
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Rust formatting
+        run: cargo fmt --check
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+      - name: Validate retirement inventory
+        run: |
+          cargo run --locked -p cerberus-cli -- validate-retirement docs/shaping/legacy-surface-retirement.json
+          cargo run --locked -p cerberus-cli -- validate docs/shaping/legacy-surface-retirement.json
 
   elixir:
     runs-on: ubuntu-latest
@@ -92,16 +100,17 @@ jobs:
   # Aggregator for branch protection. Add new required jobs to needs: + condition below.
   merge-gate:
     name: merge-gate
-    needs: [lint, elixir]
+    needs: [lint, rust, elixir]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: All checks passed
         run: |
           if [[ "${{ needs.lint.result }}" == "success" && \
+                "${{ needs.rust.result }}" == "success" && \
                 "${{ needs.elixir.result }}" == "success" ]]; then
             echo "merge-gate green"
           else
-            echo "merge-gate red (lint=${{ needs.lint.result }}, elixir=${{ needs.elixir.result }})"
+            echo "merge-gate red (lint=${{ needs.lint.result }}, rust=${{ needs.rust.result }}, elixir=${{ needs.elixir.result }})"
             exit 1
           fi

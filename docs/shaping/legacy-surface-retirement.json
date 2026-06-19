@@ -50,14 +50,14 @@
       "surface_id": "node-scaffolder",
       "paths": [
         "bin/cerberus.js",
-        "templates"
+        "package.json"
       ],
-      "current_responsibility": "Writes the consumer workflow template for the current API-dispatch action, configures CERBERUS_API_KEY through gh, and provides npm compatibility through the Node wrapper.",
+      "current_responsibility": "Retired unpublished npm scaffolder package. Current setup behavior lives in the Rust CLI.",
       "retirement_decision": "port_to_rust",
-      "parity_status": "pending",
-      "rust_replacement": "cerberus-cli init owns deterministic workflow-file scaffolding, hidden Unix TTY prompt, and gh secret setup; the Node wrapper remains only for npm package compatibility until a separate parity slice ports or explicitly preserves it.",
+      "parity_status": "covered_by_rust_fixture",
+      "rust_replacement": "cerberus-cli init owns deterministic workflow-file scaffolding, hidden Unix TTY prompt, stdin/env secret input, and gh secret setup.",
       "parity_evidence": [
-        "node --check bin/cerberus.js",
+        "npm view @misty-step/cerberus version bin repository --json returned E404 from https://registry.npmjs.org/@misty-step%2fcerberus on 2026-06-19",
         "cargo test -p cerberus-cli init_workflow",
         "printf '%s' test-secret-value | env CERBERUS_API_KEY=parent-secret-value PATH=\"$PWD/tmp/init-secret-setup-2026-06-19/bin:$PATH\" cargo run --locked -p cerberus-cli -- init --repo-root tmp/init-secret-setup-2026-06-19/repo --template templates/consumer-workflow-reusable.yml --api-key-stdin --report-out tmp/init-secret-setup-2026-06-19/report.json",
         "grep -qx 'secret set CERBERUS_API_KEY' tmp/init-secret-setup-2026-06-19/repo/gh-args-line.txt",
@@ -72,11 +72,11 @@
         "python3 - <<'PY' ... PTY cancel QA writes tmp/hidden-prompt-2026-06-19/cancel-transcript.txt, observes No API key entered, and confirms stty reports echo restored",
         "env -u CERBERUS_API_KEY PATH=\"$PWD/tmp/hidden-prompt-2026-06-19/bin:$PATH\" cargo run --locked -p cerberus-cli -- init --repo-root tmp/hidden-prompt-2026-06-19/no-key-repo --template templates/consumer-workflow-reusable.yml --report-out tmp/hidden-prompt-2026-06-19/no-key-report.json </dev/null (expected non-zero before workflow write)",
         "cargo run --locked -p cerberus-cli -- init-workflow --repo-root tmp/init-workflow-2026-06-19/repo --template templates/consumer-workflow-reusable.yml --report-out tmp/init-workflow-2026-06-19/report-created.json",
-        "diff -u templates/consumer-workflow-reusable.yml tmp/init-workflow-2026-06-19/repo/.github/workflows/cerberus.yml",
-        "future Rust or explicit-keep fixture: npm package compatibility"
+        "diff -u templates/consumer-workflow-reusable.yml tmp/init-workflow-2026-06-19/repo/.github/workflows/cerberus.yml"
       ],
-      "rollback_path": "Retain bin/cerberus.js and templates; use the Node wrapper if the Rust source-checkout init path regresses before npm package behavior is ported or explicitly kept.",
-      "next_action": "Port or explicitly preserve npm package setup, then deprecate the Node entrypoint only after checked workflow, secret, package, and prompt behavior all have rollback evidence."
+      "deletion_or_archive_commit": "pending-node-scaffolder-deletion-commit",
+      "rollback_path": "Restore bin/cerberus.js and package.json from the deletion commit parent only if a real npm package compatibility requirement appears; otherwise use cerberus-cli init.",
+      "next_action": "Keep Rust init covered; add a native package distribution later only if a real consumer requires it."
     },
     {
       "surface_id": "elixir-http-api",

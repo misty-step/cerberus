@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-ae-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus 005 Retire Node Scaffolder Plan</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/misty-step/aesthetic@v2.5.1/aesthetic.css">
+  <style>
+    .plan { width: min(92rem, 100% - 4rem); margin: 0 auto; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(22rem, 0.75fr); gap: 2.5rem; align-items: end; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--ae-line); margin-top: 2rem; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cell { background: var(--ae-surface); padding: 1.15rem 1.25rem; min-width: 0; }
+    .wash { background: var(--ae-wash); }
+    .phase { display: grid; grid-template-columns: 8rem minmax(0, 1fr) minmax(18rem, 0.7fr); gap: 1.25rem; padding: 1rem 0; border-top: 1px solid var(--ae-line); }
+    .phase:first-child { border-top: 0; }
+    @media (max-width: 900px) { .plan { width: min(100% - 2rem, 92rem); } .hero, .grid, .grid-2, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="ae-screen">
+    <article class="ae-stage plan">
+      <section class="hero">
+        <div>
+          <p class="ae-chrome">BACKLOG 005 / RUST-ONLY SETUP SURFACE</p>
+          <h1 class="ae-strong">Retire the unpublished Node scaffolder instead of carrying a second setup engine.</h1>
+          <p class="ae-lede">Rust now owns workflow scaffolding, hidden TTY prompting, stdin/env secret input, and <code>gh secret set</code>. The checked npm package is unpublished, so keeping <code>bin/cerberus.js</code> would preserve duplicate behavior without a live consumer contract.</p>
+        </div>
+        <aside class="ae-panel">
+          <h2 class="ae-h">Chosen Design</h2>
+          <p>Delete <code>bin/cerberus.js</code> and <code>package.json</code>. Remove active docs and CI references to <code>npx</code> and <code>node --check</code>. Keep historical walkthroughs as archive material unless they are active verification docs.</p>
+          <h2 class="ae-h">Quality System</h2>
+          <p>Risk tier: substantive compatibility deletion. Proof: npm registry 404, active-doc grep, Rust setup QA, retirement inventory validation, CI workflow syntax, aggregate gates, and fresh critic.</p>
+        </aside>
+      </section>
+
+      <section class="grid">
+        <article class="cell">
+          <h2 class="ae-h">Standards</h2>
+          <p>One setup implementation. Rust owns current operator behavior. No active gate depends on a deleted compatibility shim.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Acceptance</h2>
+          <p>The repository has no active npm package or Node scaffolder surface, while documented setup still works through <code>cerberus-cli init</code>.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Verify</h2>
+          <p><code>cargo test -p cerberus-cli init_workflow</code>, fake-<code>gh</code> CLI QA, workflow YAML parsing, retirement validation, and grep for active Node references.</p>
+        </article>
+        <article class="cell wash">
+          <h2 class="ae-h">Stop If</h2>
+          <p>The npm package is published, active docs still recommend <code>npx</code>, CI still runs <code>npm test</code>, or Rust setup QA regresses.</p>
+        </article>
+      </section>
+
+      <section class="grid grid-2">
+        <article class="cell">
+          <h2 class="ae-h">Verification System</h2>
+          <p><strong>Claim:</strong> Cerberus setup no longer needs the Node scaffolder.</p>
+          <p><strong>Falsifier:</strong> a published npm package exists, an active workflow gate or doc still references the deleted files, or Rust <code>init</code> fails the workflow/secret setup path.</p>
+          <p><strong>Driver:</strong> npm registry probe, active-doc grep, Rust unit tests, fake-<code>gh</code> setup QA, YAML lint, and retirement inventory validation.</p>
+          <p><strong>Grader:</strong> package is 404, grep has no active references outside historical docs/receipts, Rust QA proves workflow and secret behavior, and gates pass.</p>
+        </article>
+        <article class="cell">
+          <h2 class="ae-h">Delete-First</h2>
+          <p><strong>Requirement questioned:</strong> npm compatibility for an unpublished package.</p>
+          <p><strong>Deleted or simplified:</strong> remove Node setup implementation and npm metadata instead of building a native npm distribution now.</p>
+          <p><strong>Only then automated:</strong> add native package distribution later only if a real consumer or release channel requires it.</p>
+        </article>
+      </section>
+
+      <section class="ae-panel" style="margin-top: 2rem">
+        <h2 class="ae-h">Execution</h2>
+        <div class="phase">
+          <strong class="ae-accent">1 evidence</strong>
+          <p>Record the npm 404 and inspect all active references to <code>bin/cerberus.js</code>, <code>package.json</code>, <code>npx</code>, and <code>node --check</code>.</p>
+          <p class="ae-dim">Historical walkthroughs can remain if they are clearly archival.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">2 delete</strong>
+          <p>Delete Node package files and remove active CI/docs/gate references.</p>
+          <p class="ae-dim">Do not touch Promptfoo eval workflows; they use Node as an external eval tool, not as Cerberus scaffolder runtime.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">3 prove</strong>
+          <p>Run Rust setup tests and CLI QA with fake <code>gh</code>, then validate the retirement inventory and workflow YAML.</p>
+          <p class="ae-dim">The live setup surface is the Rust CLI.</p>
+        </div>
+        <div class="phase">
+          <strong class="ae-accent">4 review</strong>
+          <p>Fresh critic attacks compatibility deletion, active docs, gate coverage, and Rust-only direction.</p>
+          <p class="ae-dim">Fix blockers before commit.</p>
+        </div>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

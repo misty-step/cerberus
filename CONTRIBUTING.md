@@ -11,7 +11,6 @@ If you change the consumer contract, update the docs and templates in the same l
 
 ```bash
 cargo test --workspace
-node --check bin/cerberus.js
 shellcheck cerberus-elixir/deploy-sprite.sh \
   cerberus-elixir/test/release_contract.sh \
   fixtures/harnesses/command-reviewer.sh \
@@ -39,7 +38,6 @@ Touched files usually include:
 - `action.yml`
 - `crates/cerberus-cli/src/main.rs`
 - `templates/consumer-workflow-reusable.yml`
-- `bin/cerberus.js`
 - `README.md`
 
 Verify with:
@@ -47,7 +45,6 @@ Verify with:
 ```bash
 cargo test -p cerberus-cli --test github_action_entrypoint
 cargo test -p cerberus-cli --test github_action_dispatch
-node --check bin/cerberus.js
 ```
 
 ### Elixir Engine

@@ -23,8 +23,8 @@
       <section class="hero">
         <div>
           <p class="ae-chrome">BACKLOG 005 / NODE PROMPT RETIREMENT</p>
-          <h1 class="ae-strong">Move source-checkout API-key prompting into Rust while npm setup remains Node-owned.</h1>
-          <p class="ae-lede">The previous slice moved noninteractive source-checkout setup into <code>cerberus-cli init</code>. This slice closes the Rust prompt parity gap: on an interactive Unix TTY, Rust prompts without echo, then sends the key to <code>gh secret set</code> through stdin. The <code>npx @misty-step/cerberus init</code> package path remains Node-owned until a later npm parity decision.</p>
+          <h1 class="ae-strong">Move source-checkout API-key prompting into Rust before npm wrapper retirement.</h1>
+          <p class="ae-lede">The previous slice moved noninteractive source-checkout setup into <code>cerberus-cli init</code>. This slice closed the Rust prompt parity gap: on an interactive Unix TTY, Rust prompts without echo, then sends the key to <code>gh secret set</code> through stdin. A later slice retired the unpublished npm wrapper; see <code>005-retire-node-scaffolder-plan.html</code>.</p>
         </div>
         <aside class="ae-panel">
           <h2 class="ae-h">Chosen Design</h2>
@@ -85,7 +85,7 @@
         <div class="phase">
           <strong class="ae-accent">3 document</strong>
           <p>Update README, QA, architecture, and retirement inventory so Rust is credited with source-checkout hidden prompt behavior.</p>
-          <p class="ae-dim">Node remains npm setup/package compatibility until the npm entrypoint strategy is decided.</p>
+          <p class="ae-dim">A later slice retired the unpublished npm setup wrapper after registry evidence showed no live package.</p>
         </div>
         <div class="phase">
           <strong class="ae-accent">4 review</strong>

@@ -51,16 +51,9 @@ Required repository configuration:
 
 - Secret: `CERBERUS_API_KEY`
 
-The scaffolder CLI writes the same template:
-
-```bash
-npx @misty-step/cerberus init
-```
-
-When working from this source checkout, the Rust CLI can create or verify the
-workflow and configure the repository secret through `gh`. If
-`CERBERUS_API_KEY` is unset and stdin is an interactive Unix TTY, `init`
-prompts with hidden input:
+From this source checkout, the Rust CLI can create or verify the workflow and
+configure the repository secret through `gh`. If `CERBERUS_API_KEY` is unset
+and stdin is an interactive Unix TTY, `init` prompts with hidden input:
 
 ```bash
 cargo run --locked -p cerberus-cli -- init --repo-root .
@@ -114,7 +107,6 @@ the workspace crates and is tracked by the backlog.
 - `defaults/`: model and product data consumed by the engine
 - `pi/agents/`: reviewer personas
 - `templates/`: consumer workflow templates
-- `bin/cerberus.js`: compatibility npm scaffolder wrapper
 - `cerberus-cli init`: Rust source-checkout scaffolder, hidden prompt, and GitHub secret setup
 - `cerberus-cli init-workflow`: Rust workflow-file-only scaffolder path
 
@@ -124,7 +116,6 @@ the workspace crates and is tracked by the backlog.
 cargo test -p cerberus-cli init_workflow
 cargo test -p cerberus-cli --test github_action_entrypoint
 cargo test -p cerberus-cli --test github_action_dispatch
-node --check bin/cerberus.js
 shellcheck cerberus-elixir/deploy-sprite.sh \
   cerberus-elixir/test/release_contract.sh \
   fixtures/harnesses/command-reviewer.sh \
