@@ -107,3 +107,20 @@ and keeps the 2026-06-18 GLM 5.2 values under `previous`. The catalog refresh
 path is idempotent for unchanged model facts and rounds derived USD-per-million
 values to avoid noisy JSON drift. No live provider evals or reviewer defaults
 changed.
+
+No-op freshness check, 2026-06-19T11:36:40Z:
+
+- Direct refresh from `https://openrouter.ai/api/v1/models` wrote
+  `tmp/evals/catalog-refresh-2026-06-19-current/harness-model-matrix.url-generated.json`
+  and validated it successfully.
+- The generated matrix was semantically equal to
+  `fixtures/evals/harness-model-matrix.json` after normalizing only
+  `observed_at` and `catalog_observed_at`.
+- Raw OpenRouter evidence:
+  `tmp/evals/catalog-refresh-2026-06-19-current/openrouter-models.url.raw.json`
+  (`sha256:d1a67c59601069540f5e4c87a5f436f9ae0666e2b2f061e44f9a632771dac009`).
+- Generated matrix:
+  `sha256:71eb883b260c268808fca790d532379ad7decb1f0104b540bf9153c2fcad6325`.
+- No checked fixture rewrite was needed; the remaining backlog 006 gate is
+  provider budget acknowledgement plus a full six-task live rerun, not catalog
+  drift.

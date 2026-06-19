@@ -436,6 +436,39 @@ Eval suite coverage hardening follow-up, 2026-06-19:
   ranking, and default promotion still require a budget-approved live rerun
   over the full six-task suite.
 
+Provider full-suite rerun gate refresh, 2026-06-19T11:36:40Z:
+
+- Added `docs/shaping/006-provider-full-suite-rerun-gate-plan.html`.
+- Re-probed local harnesses; checked versions still match the matrix:
+  `pi` 0.78.1, `goose` 1.12.1, `opencode` 1.2.6, and `omp` 16.0.9.
+- Direct OpenRouter refresh from `https://openrouter.ai/api/v1/models`
+  produced a schema-valid generated matrix semantically equal to the checked
+  matrix after normalizing only `observed_at` and `catalog_observed_at`.
+  Generated matrix:
+  `tmp/evals/catalog-refresh-2026-06-19-current/harness-model-matrix.url-generated.json`
+  (`sha256:71eb883b260c268808fca790d532379ad7decb1f0104b540bf9153c2fcad6325`).
+  Raw catalog:
+  `tmp/evals/catalog-refresh-2026-06-19-current/openrouter-models.url.raw.json`
+  (`sha256:d1a67c59601069540f5e4c87a5f436f9ae0666e2b2f061e44f9a632771dac009`).
+- Firecrawl URL-scoped verifier `019edfab-acda-7522-adf0-eadc9e00759d`
+  completed across the official/source pages with no drift concerns for the
+  expected harness/model evaluation shape. The official-source spot check found
+  no change to the evaluation premise: Goose still documents desktop/CLI/API,
+  MCP extensions, broad provider
+  support, and subagents; OpenCode still documents OpenRouter/provider routing;
+  Pi still documents minimal terminal-harness scope plus print/JSON/RPC modes;
+  OMP still documents Pi-fork, LSP/DAP, subagent, and coding-review surfaces;
+  GLM 5.2, Kimi K2.7 Code, and DeepSeek V4 docs still support the checked
+  long-context and agentic-coding rationale.
+- No provider budget acknowledgement was present. Fresh readiness and budget
+  reports remained unchanged: 96 total cells, 0 runnable cells, 96
+  budget-blocked cells, 96 estimateable cells, and `$2.013600000000001`
+  estimated total under the documented 20,000 prompt / 4,000 completion token
+  assumption with 1 retry.
+- This is a freshness and gate receipt only. The full provider-backed six-task
+  rerun is still the next acceptance step before ranking, comparison, or
+  reviewer-default promotion.
+
 ## Notes
 
 This should start after backlog 001 creates the Rust schema/fixture path. It can

@@ -305,6 +305,31 @@ documented 20,000 prompt / 4,000 completion token assumption and one retry
 This still does not spend provider budget or prove live model quality; it makes
 the next budget-approved provider rerun cover the full task contract.
 
+A no-spend gate refresh at `2026-06-19T11:36:40Z` confirmed the checked matrix
+is still current enough for that rerun. Local harness probes still match the
+matrix (`pi` 0.78.1, `goose` 1.12.1, `opencode` 1.2.6, `omp` 16.0.9). A direct
+`refresh-model-catalog` run against `https://openrouter.ai/api/v1/models`
+produced a schema-valid generated matrix that matched
+`fixtures/evals/harness-model-matrix.json` after normalizing only observation
+timestamps
+(`sha256:71eb883b260c268808fca790d532379ad7decb1f0104b540bf9153c2fcad6325`),
+with raw OpenRouter evidence captured at
+`tmp/evals/catalog-refresh-2026-06-19-current/openrouter-models.url.raw.json`
+(`sha256:d1a67c59601069540f5e4c87a5f436f9ae0666e2b2f061e44f9a632771dac009`).
+Firecrawl URL-scoped verifier `019edfab-acda-7522-adf0-eadc9e00759d`
+completed across the official/source pages with no drift concerns for the
+expected harness/model evaluation shape. Goose documents local desktop/CLI/API,
+MCP extensions, broad provider support, and subagents; OpenCode documents
+OpenRouter/provider routing; Pi documents a minimal terminal harness with
+print/JSON/RPC modes; OMP documents a Pi-derived coding harness with LSP/DAP
+and subagent surfaces; GLM 5.2, Kimi K2.7 Code, and DeepSeek V4 still document
+the long-context and agentic-coding capabilities that justify keeping them in
+the matrix. Fresh readiness and budget reports still show 96 total cells, 0
+runnable cells, 96 budget-blocked cells, 96 estimateable cells, and
+`$2.013600000000001` estimated total. This keeps the next step narrow: spend
+budget only when the operator explicitly approves the full six-task live
+provider rerun.
+
 ## Alternatives Considered
 
 ### Public Leaderboards Only
