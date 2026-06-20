@@ -151,11 +151,10 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         bail!("pull request #{} produced an empty diff", options.number);
     }
     let head_sha = require_pr_head_sha(options.number, &pr)?;
-    let repo = options.repo.clone().or_else(|| {
-        pr.head_repository
-            .as_ref()
-            .map(|repo| repo.name_with_owner.clone())
-    });
+    let repo = options
+        .repo
+        .clone()
+        .or_else(|| detect_repo_slug(Path::new(".")).ok());
     let request_id = options
         .common
         .request_id
@@ -328,7 +327,7 @@ fn parse_name_status_line(line: &str) -> Result<ChangedFile> {
         .ok_or_else(|| anyhow!("empty status in name-status line {line:?}"))?;
     match code {
         'A' => changed_file(parts.get(1), FileStatus::Added, None),
-        'M' => changed_file(parts.get(1), FileStatus::Modified, None),
+        'M' | 'T' => changed_file(parts.get(1), FileStatus::Modified, None),
         'D' => changed_file(parts.get(1), FileStatus::Removed, None),
         'R' => changed_file(parts.get(2), FileStatus::Renamed, parts.get(1).copied()),
         'C' => changed_file(parts.get(2), FileStatus::Copied, parts.get(1).copied()),
@@ -362,12 +361,29 @@ fn parse_numstat(raw: &str) -> BTreeMap<String, (Option<u32>, Option<u32>)> {
             if parts.len() < 3 {
                 return None;
             }
-            let path = parts.last()?.to_string();
+            let path = parse_numstat_path(parts.last()?);
             let additions = parts[0].parse::<u32>().ok();
             let deletions = parts[1].parse::<u32>().ok();
             Some((path, (additions, deletions)))
         })
         .collect()
+}
+
+fn parse_numstat_path(path: &str) -> String {
+    if let (Some(open), Some(close)) = (path.find('{'), path.rfind('}')) {
+        if open < close {
+            let prefix = &path[..open];
+            let middle = &path[open + 1..close];
+            let suffix = &path[close + 1..];
+            if let Some((_, new_path)) = middle.split_once(" => ") {
+                return format!("{prefix}{new_path}{suffix}");
+            }
+        }
+    }
+    if let Some((_, new_path)) = path.split_once(" => ") {
+        return new_path.to_string();
+    }
+    path.to_string()
 }
 
 fn apply_numstat(files: &mut [ChangedFile], stats: &BTreeMap<String, (Option<u32>, Option<u32>)>) {
@@ -398,7 +414,7 @@ fn short_sha(value: &str) -> String {
 
 fn gh_pr_view(number: u64, repo: Option<&str>) -> Result<GhPullRequest> {
     let number = number.to_string();
-    let fields = "number,title,body,url,baseRefName,headRefName,headRefOid,files,headRepository";
+    let fields = "number,title,body,url,baseRefName,headRefName,headRefOid,files";
     let mut args = vec!["pr", "view", number.as_str(), "--json", fields];
     if let Some(repo) = repo {
         args.extend(["-R", repo]);
@@ -430,14 +446,6 @@ struct GhPullRequest {
     head_ref_oid: Option<String>,
     #[serde(default)]
     files: Vec<GhPrFile>,
-    #[serde(rename = "headRepository")]
-    head_repository: Option<GhRepository>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GhRepository {
-    #[serde(rename = "nameWithOwner")]
-    name_with_owner: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -508,19 +516,28 @@ mod tests {
             head_ref_name: Some("branch".to_string()),
             head_ref_oid,
             files: Vec::new(),
-            head_repository: None,
         }
     }
 
     #[test]
-    fn parses_name_status_with_rename() {
-        let files = parse_name_status("M\tsrc/lib.rs\nR100\told.rs\tnew.rs\n").unwrap();
-        assert_eq!(files.len(), 2);
+    fn parses_name_status_with_rename_and_type_change() {
+        let files =
+            parse_name_status("M\tsrc/lib.rs\nR100\told.rs\tnew.rs\nT\tscript.sh\n").unwrap();
+        assert_eq!(files.len(), 3);
         assert_eq!(files[0].status, FileStatus::Modified);
         assert_eq!(files[0].path, "src/lib.rs");
         assert_eq!(files[1].status, FileStatus::Renamed);
         assert_eq!(files[1].old_path.as_deref(), Some("old.rs"));
         assert_eq!(files[1].path, "new.rs");
+        assert_eq!(files[2].status, FileStatus::Modified);
+        assert_eq!(files[2].path, "script.sh");
+    }
+
+    #[test]
+    fn parses_numstat_rename_paths_to_new_path() {
+        let stats = parse_numstat("2\t1\tsrc/{old.rs => new.rs}\n3\t0\told.txt => new.txt\n");
+        assert_eq!(stats.get("src/new.rs"), Some(&(Some(2), Some(1))));
+        assert_eq!(stats.get("new.txt"), Some(&(Some(3), Some(0))));
     }
 
     #[test]

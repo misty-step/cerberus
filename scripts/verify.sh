@@ -12,7 +12,7 @@ grep -q '\[default: opencode\]' target/cerberus-review-help.txt
 grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.txt
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
-grep -q 'pr' target/cerberus-request-help.txt
+grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
 
 rm -rf target/cerberus
 mkdir -p target/cerberus

@@ -102,7 +102,7 @@ Verification system:
 
 - `sha256:61c175ddccb843175819f972f2b3399bb09ccbb0bade5af8d4849091c153b13a spec.md`
 - `sha256:a037ad81a79f6d9040c9cbdf4459c452d2f4b70334aa3933914c58d228a7f285 docs/adr/0002-opencode-as-default-review-substrate.md`
-- `sha256:0c77b067096de3564b7ff5f861824fff4c2e5c86026790b7e9fcac2881618dd1 /Users/phaedrus/.codex/attachments/2f60e9ed-7aba-45eb-8a31-96eaeda536e7/pasted-text.txt`
+- `sha256:0c77b067096de3564b7ff5f861824fff4c2e5c86026790b7e9fcac2881618dd1` - attached substrate research report considered during shaping.
 
 ## HTML Plan
 

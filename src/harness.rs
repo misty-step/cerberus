@@ -963,6 +963,22 @@ mod tests {
     }
 
     #[test]
+    fn opencode_artifact_scan_falls_back_to_transcript_without_text_events() {
+        let stdout = b"{\"type\":\"start\"}\n{\"type\":\"end\"}\n";
+        let transcript = format!(
+            "{begin}\n{artifact}\n{end}",
+            begin = ARTIFACT_BEGIN,
+            artifact = minimal_artifact_json(),
+            end = ARTIFACT_END
+        );
+
+        let text = artifact_text_for_substrate(CommandSubstrate::Opencode, stdout, &transcript);
+
+        assert_eq!(text, transcript);
+        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
+    }
+
+    #[test]
     fn opencode_artifact_survives_large_stdout_tail_capture() {
         let artifact = minimal_artifact_json();
         let event = serde_json::json!({

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use cerberus::harness::{ExecutionPlan, HarnessKind, ReviewHarness};
 use cerberus::request::{
     build_git_range_request, build_pull_request, GitRangeRequestOptions, PullRequestOptions,
@@ -150,7 +150,7 @@ fn request(args: RequestArgs) -> Result<()> {
                     request_id: args.request_id,
                     instructions: args.instructions,
                     allowed_env: args.allowed_env,
-                    timeout_ms: args.timeout_seconds * 1000,
+                    timeout_ms: timeout_ms(args.timeout_seconds)?,
                 },
             })?;
             (request, out)
@@ -165,7 +165,7 @@ fn request(args: RequestArgs) -> Result<()> {
                     request_id: args.request_id,
                     instructions: args.instructions,
                     allowed_env: args.allowed_env,
-                    timeout_ms: args.timeout_seconds * 1000,
+                    timeout_ms: timeout_ms(args.timeout_seconds)?,
                 },
             })?;
             (request, out)
@@ -173,6 +173,12 @@ fn request(args: RequestArgs) -> Result<()> {
     };
     validate_request(&request)?;
     write_json(&out, &request)
+}
+
+fn timeout_ms(timeout_seconds: u64) -> Result<u64> {
+    timeout_seconds
+        .checked_mul(1000)
+        .ok_or_else(|| anyhow!("timeout seconds {timeout_seconds} overflows milliseconds"))
 }
 
 fn review(args: ReviewArgs) -> Result<()> {
