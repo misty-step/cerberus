@@ -14,6 +14,7 @@ use crate::digest::request_digest;
 use crate::prompt::{build_master_prompt, ARTIFACT_BEGIN, ARTIFACT_END};
 use crate::schema::{
     ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact, ReviewRequest,
+    REVIEW_ARTIFACT_SCHEMA,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -500,7 +501,8 @@ fn unix_timestamp_string() -> String {
 
 pub fn extract_marked_artifact(transcript: &str) -> Result<ReviewArtifact> {
     let marked_json = extract_json_between_markers(transcript, ARTIFACT_BEGIN, ARTIFACT_END)
-        .or_else(|| extract_xml_wrapped_artifact_json(transcript));
+        .or_else(|| extract_xml_wrapped_artifact_json(transcript))
+        .or_else(|| extract_unmarked_artifact_json(transcript));
     let Some(json) = marked_json else {
         let begin_count = transcript.matches(ARTIFACT_BEGIN).count();
         let end_count = transcript.matches(ARTIFACT_END).count();
@@ -532,11 +534,34 @@ fn extract_xml_wrapped_artifact_json(transcript: &str) -> Option<String> {
         "</CERBERUS_REVIEW_ARTIFACT_V1>",
     )?;
     let parsed = serde_json::from_str::<ReviewArtifact>(&candidate).ok()?;
-    if parsed.schema_version == crate::schema::REVIEW_ARTIFACT_SCHEMA {
+    if parsed.schema_version == REVIEW_ARTIFACT_SCHEMA {
         Some(candidate)
     } else {
         None
     }
+}
+
+fn extract_unmarked_artifact_json(transcript: &str) -> Option<String> {
+    let schema_index = transcript.find(REVIEW_ARTIFACT_SCHEMA)?;
+    let mut starts: Vec<usize> = transcript[..schema_index]
+        .match_indices('{')
+        .map(|(index, _)| index)
+        .collect();
+    starts.reverse();
+    for start in starts {
+        let slice = &transcript[start..];
+        let mut deserializer = serde_json::Deserializer::from_str(slice);
+        let Ok(value) = Value::deserialize(&mut deserializer) else {
+            continue;
+        };
+        let Ok(parsed) = serde_json::from_value::<ReviewArtifact>(value.clone()) else {
+            continue;
+        };
+        if parsed.schema_version == REVIEW_ARTIFACT_SCHEMA {
+            return Some(value.to_string());
+        }
+    }
+    None
 }
 
 fn strip_markdown_json_fence(raw: &str) -> &str {
@@ -607,6 +632,18 @@ mod tests {
     fn extracts_artifact_from_opencode_xml_wrapper_variant() {
         let transcript = format!(
             "```json\n<CERBERUS_REVIEW_ARTIFACT_V1>\n{json}\n</CERBERUS_REVIEW_ARTIFACT_V1>\n```",
+            json = minimal_artifact_json()
+        );
+        assert_eq!(
+            extract_marked_artifact(&transcript).unwrap().request_id,
+            "req-1"
+        );
+    }
+
+    #[test]
+    fn extracts_unmarked_review_artifact_json_from_prose() {
+        let transcript = format!(
+            "Here is the review.\n```json\n{json}\n```\nDone.",
             json = minimal_artifact_json()
         );
         assert_eq!(
