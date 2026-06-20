@@ -15,7 +15,8 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 template="$repo_root/fixtures/harness/valid-review.txt"
 
-prompt=""
+original_args="$*"
+request_file=""
 workdir=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,10 +32,10 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --file)
-      prompt="${2:-}"
+      request_file="${2:-}"
       shift 2
       ;;
-    --model|--attach)
+    --model|--attach|--agent)
       shift 2
       ;;
     *)
@@ -43,20 +44,31 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-test -n "$prompt"
-test -s "$prompt"
+test -n "$request_file"
+test -s "$request_file"
 test -n "$workdir"
-test -f "$workdir/request.json"
-test -f "$workdir/change.diff"
-test ! -f "$workdir/Cargo.toml"
 
-request_digest="$(sed -n 's/^Request digest: //p' "$prompt" | head -1)"
+request_digest="$(printf '%s\n' "$original_args" | sed -n 's/.*Request digest: \(sha256:[a-f0-9]*\).*/\1/p' | head -1)"
 test -n "$request_digest"
+request_id="$(sed -n 's/.*"request_id": "\([^"]*\)".*/\1/p' "$request_file" | head -1)"
+test -n "$request_id"
 
-capabilities='{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
+if [[ -f "$workdir/request.json" ]]; then
+  test -f "$workdir/change.diff"
+  test ! -f "$workdir/Cargo.toml"
+  capabilities='{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
+else
+  test -e "$workdir/.git"
+  test -f "$workdir/src/ratio.rs"
+  grep -F "\"path\": \"$workdir\"" "$request_file" >/dev/null || {
+    echo "request workspace path was not rewritten to the disposable worktree" >&2
+    exit 67
+  }
+  capabilities='{"diff":true,"repo_head":true,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
+fi
 
 sed \
-  -e "s/{{request_id}}/fixture-diff-only-001/g" \
+  -e "s/{{request_id}}/$request_id/g" \
   -e "s#{{request_digest}}#$request_digest#g" \
   -e "s#{{context_capabilities}}#$capabilities#g" \
   -e "s/{{artifact_id}}/artifact-fake-opencode/g" \

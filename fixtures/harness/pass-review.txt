@@ -1,0 +1,53 @@
+review transcript
+
+-----BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
+{
+  "schema_version": "cerberus.review_artifact.v1",
+  "artifact_id": "{{artifact_id}}",
+  "request_id": "{{request_id}}",
+  "request_digest": "{{request_digest}}",
+  "lifecycle_state": "completed",
+  "verdict": "PASS",
+  "context_capabilities": {{context_capabilities}},
+  "summary": {
+    "title": "Fixture review completed",
+    "body": "The deterministic fixture produced no findings.",
+    "analysis": "This fixture validates request acquisition, artifact validation, and rendering without making file-specific claims.",
+    "residual_risk": [
+      "No model judgment was exercised by this fixture."
+    ]
+  },
+  "findings": [],
+  "comments": [],
+  "suggested_fixes": [],
+  "citations": [],
+  "receipts": [
+    {
+      "id": "receipt-master",
+      "role": "master",
+      "harness": "fixture",
+      "model": "fixture",
+      "status": "completed",
+      "started_at": "{{now}}",
+      "finished_at": "{{now}}",
+      "duration_ms": 1,
+      "transcript_uri": "fixture://pass-review",
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "run": {
+    "engine_version": "cerberus-fixture",
+    "config_digest": "sha256:fixture",
+    "started_at": "{{now}}",
+    "finished_at": "{{now}}",
+    "duration_ms": 1,
+    "cost_usd": null,
+    "coverage": {
+      "files_reviewed": [],
+      "files_with_findings": []
+    }
+  },
+  "errors": []
+}
+-----END CERBERUS_REVIEW_ARTIFACT_V1-----

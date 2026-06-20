@@ -32,6 +32,11 @@ rendered Markdown.
 ## CLI
 
 ```sh
+cerberus request git-range --base origin/master --head HEAD \
+  --out target/cerberus/request.json
+
+cerberus request pr --number 123 --out target/cerberus/request.json
+
 cerberus review --request fixtures/requests/diff-only.json \
   --harness fixture \
   --fixture-output fixtures/harness/valid-review.txt \
@@ -44,4 +49,5 @@ cerberus render --artifact target/cerberus/artifact.json \
 ```
 
 The fixture harness is for deterministic verification. The production path is
-the OpenCode harness; OMP is a local fallback.
+the OpenCode harness using the `build` agent profile by default against a
+disposable review worktree; OMP is a local fallback.

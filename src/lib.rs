@@ -2,6 +2,7 @@ pub mod digest;
 pub mod harness;
 pub mod prompt;
 pub mod render;
+pub mod request;
 pub mod schema;
 pub mod validation;
 
