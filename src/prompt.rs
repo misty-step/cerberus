@@ -80,13 +80,12 @@ Mission:
 - External research is allowed only if the request policy permits it. External claims require citations.
 - Blocking findings must cite concrete anchors.
 - PASS requires enough inspected evidence for the available context. If repo_head is true but direct checkout inspection fails or is skipped, use completed_degraded or WARN and record why.
-- Produce exactly one artifact block and no second artifact block.
-- Return only valid JSON inside the markers. No Markdown fences inside the artifact block.
+- Produce exactly one raw JSON artifact and nothing else.
+- The first output character must be `{{` and the last output character must be `}}`.
+- Do not wrap the artifact in Markdown fences or marker text.
 
-Artifact block:
-{begin}
+Required ReviewArtifact.v1 JSON shape:
 {artifact_template}
-{end}
 
 Artifact requirements:
 - Copy request_id, request_digest, and context_capabilities exactly from this prompt.
@@ -106,8 +105,6 @@ ContextCapabilities:
 ReviewRequest:
 {request_json}
 "#,
-        begin = ARTIFACT_BEGIN,
-        end = ARTIFACT_END,
         artifact_template = artifact_template,
         request_digest = request_digest,
         capabilities_json = capabilities_json,

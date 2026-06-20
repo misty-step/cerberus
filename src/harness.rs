@@ -188,7 +188,7 @@ impl ReviewHarness {
             CommandSubstrate::Opencode => {
                 let mut args = vec![
                     "run".to_string(),
-                    "Read the attached Cerberus master prompt and follow it exactly.".to_string(),
+                    "Read the attached Cerberus master prompt and return the required raw JSON review artifact only.".to_string(),
                     "--format".to_string(),
                     "json".to_string(),
                     "--dir".to_string(),
@@ -832,7 +832,7 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["--format", "json"]));
         assert!(args
             .iter()
-            .any(|arg| arg == "Read the attached Cerberus master prompt and follow it exactly."));
+            .any(|arg| arg == "Read the attached Cerberus master prompt and return the required raw JSON review artifact only."));
         assert!(args.windows(2).any(|pair| pair == ["--dir", "/work/repo"]));
         assert!(args
             .windows(2)
