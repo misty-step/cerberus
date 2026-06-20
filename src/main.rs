@@ -207,6 +207,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         omp_binary,
         model,
         timeout,
+        failure_transcript: transcript.clone(),
     };
     let run = review_harness.run(&request, &cwd)?;
     validate_artifact_for_request(&run.artifact, &request)?;

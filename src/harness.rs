@@ -34,6 +34,7 @@ pub struct ReviewHarness {
     pub omp_binary: String,
     pub model: Option<String>,
     pub timeout: Duration,
+    pub failure_transcript: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -182,8 +183,17 @@ impl ReviewHarness {
             String::from_utf8_lossy(&output.stderr)
         );
         let artifact_text = artifact_text_for_substrate(substrate, &output.stdout, &transcript);
-        let artifact = extract_marked_artifact(&artifact_text)?;
-        validate_process_status_matches_artifact(&output.status, &artifact)?;
+        let artifact = match extract_marked_artifact(&artifact_text) {
+            Ok(artifact) => artifact,
+            Err(err) => {
+                write_failure_transcript(self.failure_transcript.as_deref(), &transcript)?;
+                return Err(err);
+            }
+        };
+        if let Err(err) = validate_process_status_matches_artifact(&output.status, &artifact) {
+            write_failure_transcript(self.failure_transcript.as_deref(), &transcript)?;
+            return Err(err);
+        }
         Ok(HarnessRun {
             artifact,
             transcript,
@@ -602,6 +612,17 @@ fn apply_fixture_template(
     Ok(rendered)
 }
 
+fn write_failure_transcript(path: Option<&Path>, transcript: &str) -> Result<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::write(path, transcript)
+        .with_context(|| format!("write failure transcript {}", path.display()))
+}
+
 fn unix_timestamp_string() -> String {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -886,6 +907,7 @@ mod tests {
             omp_binary: "omp".to_string(),
             model: Some("openai/gpt-5.5".to_string()),
             timeout: Duration::from_secs(1),
+            failure_transcript: None,
         };
         let request = serde_json::from_value::<ReviewRequest>(serde_json::json!({
             "schema_version": "cerberus.review_request.v1",
