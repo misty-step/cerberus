@@ -219,8 +219,6 @@ impl ReviewHarness {
                     "--dir".to_string(),
                     input.cwd.display().to_string(),
                     "--file".to_string(),
-                    input.prompt_path.display().to_string(),
-                    "--file".to_string(),
                     input.request_path.display().to_string(),
                 ];
                 if let Some(model) = &self.model {
@@ -239,7 +237,7 @@ impl ReviewHarness {
                     self.opencode_binary.clone(),
                     args,
                     "opencode",
-                    "private prompt and request file attachments plus argv instructions",
+                    "private request file attachment plus argv instructions",
                 ))
             }
             CommandSubstrate::Omp => {
@@ -940,16 +938,13 @@ mod tests {
         assert_eq!(plan_harness, "opencode");
         assert_eq!(
             transport,
-            "private prompt and request file attachments plus argv instructions"
+            "private request file attachment plus argv instructions"
         );
         assert!(args.windows(2).any(|pair| pair == ["--format", "json"]));
         assert!(args
             .iter()
             .any(|arg| arg.contains("Request digest: sha256:")));
         assert!(args.windows(2).any(|pair| pair == ["--dir", "/work/repo"]));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--file", "/tmp/cerberus-test/master-prompt.md"]));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--file", "/tmp/cerberus-test/review-request.json"]));

@@ -174,7 +174,7 @@ OpenCode invocation should start from this posture:
 
 ```text
 opencode run --format json --dir <ephemeral-workspace-or-packet> \
-  --file <prompt-file> --file <request-file> --agent build
+  --file <request-file> --agent build
 ```
 
 If attaching to a managed OpenCode server, the harness may add
