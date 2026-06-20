@@ -153,9 +153,12 @@ impl ReviewHarness {
             },
         )?;
 
+        let trusted_search_path = trusted_executable_search_path();
+        let executable = resolve_executable_in(&binary, &trusted_search_path)?;
+
         let plan = ExecutionPlan {
             harness: plan_harness.to_string(),
-            command: binary.clone(),
+            command: executable.display().to_string(),
             args: redact_prompt_path(&args),
             cwd: workspace.path().display().to_string(),
             timeout_ms: self.timeout.as_millis() as u64,
@@ -166,9 +169,7 @@ impl ReviewHarness {
             workspace_mode: workspace.mode().to_string(),
         };
 
-        let trusted_search_path = trusted_executable_search_path();
         let start = Instant::now();
-        let executable = resolve_executable_in(&binary, &trusted_search_path)?;
         let mut command = Command::new(&executable);
         command
             .args(&args)
@@ -540,9 +541,15 @@ fn join_search_path(paths: &[PathBuf]) -> String {
                 .iter()
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
-                .join(":")
+                .join(PATH_LIST_SEPARATOR)
         })
 }
+
+#[cfg(windows)]
+const PATH_LIST_SEPARATOR: &str = ";";
+
+#[cfg(not(windows))]
+const PATH_LIST_SEPARATOR: &str = ":";
 
 fn resolve_executable_in(binary: &str, search_paths: &[PathBuf]) -> Result<PathBuf> {
     let path = Path::new(binary);

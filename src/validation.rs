@@ -410,7 +410,11 @@ mod tests {
             suggested_fixes: Vec::new(),
         });
 
-        assert!(validate_artifact_for_request(&artifact, &request).is_err());
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownFindingReference { scope, finding_id })
+                if scope == "comment c-1" && finding_id == "missing-finding"
+        ));
     }
 
     #[test]
@@ -421,7 +425,13 @@ mod tests {
             .findings
             .push(anchored_finding_with_fix("f-1", "missing-fix"));
 
-        assert!(validate_artifact_for_request(&artifact, &request).is_err());
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownSuggestedFixReference {
+                scope,
+                suggested_fix_id,
+            }) if scope == "finding f-1" && suggested_fix_id == "missing-fix"
+        ));
     }
 
     #[test]
@@ -439,7 +449,13 @@ mod tests {
             suggested_fixes: vec!["missing-fix".to_string()],
         });
 
-        assert!(validate_artifact_for_request(&artifact, &request).is_err());
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownSuggestedFixReference {
+                scope,
+                suggested_fix_id,
+            }) if scope == "comment c-1" && suggested_fix_id == "missing-fix"
+        ));
     }
 
     #[test]
@@ -450,7 +466,11 @@ mod tests {
             .suggested_fixes
             .push(suggested_fix("fix-1", Some("missing-finding".to_string())));
 
-        assert!(validate_artifact_for_request(&artifact, &request).is_err());
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownFindingReference { scope, finding_id })
+                if scope == "suggested fix fix-1" && finding_id == "missing-finding"
+        ));
     }
 
     #[test]
@@ -459,7 +479,10 @@ mod tests {
         let mut artifact = artifact_for(&request);
         artifact.suggested_fixes.push(suggested_fix("fix-1", None));
 
-        assert!(validate_artifact_for_request(&artifact, &request).is_err());
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::OrphanSuggestedFix(id)) if id == "fix-1"
+        ));
     }
 
     fn inline_anchor() -> Anchor {
