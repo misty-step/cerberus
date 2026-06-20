@@ -150,21 +150,22 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
     if diff.trim().is_empty() {
         bail!("pull request #{} produced an empty diff", options.number);
     }
-    let head_sha = require_pr_head_sha(options.number, &pr)?;
-    let repo = options
-        .repo
-        .clone()
-        .or_else(|| detect_repo_slug(Path::new(".")).ok());
-    let request_id = options
-        .common
-        .request_id
-        .clone()
-        .unwrap_or_else(|| format!("github-pr-{}-{}", options.number, short_sha(&head_sha)));
     let head_workspace = options
         .head_workspace
         .as_ref()
         .map(|path| absolute_path(path))
         .transpose()?;
+    let head_sha = require_pr_head_sha(options.number, &pr)?;
+    let repo_detection_path = head_workspace.as_deref().unwrap_or_else(|| Path::new("."));
+    let repo = options
+        .repo
+        .clone()
+        .or_else(|| detect_repo_slug(repo_detection_path).ok());
+    let request_id = options
+        .common
+        .request_id
+        .clone()
+        .unwrap_or_else(|| format!("github-pr-{}-{}", options.number, short_sha(&head_sha)));
     if let Some(path) = &head_workspace {
         validate_head_workspace(path, &head_sha)?;
     }
