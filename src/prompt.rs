@@ -70,6 +70,8 @@ pub fn build_master_prompt(
 
 Mission:
 - Review only from the context actually available.
+- If repo_head is true, inspect the repository checkout directly before judging. At minimum, read changed files plus relevant nearby tests/callers/configs when they exist.
+- If repo_head is false, stay diff-only and do not imply repository inspection.
 - You may dynamically launch subagents if the selected substrate supports doing so and it improves the review.
 - Do not rely on predefined reviewer personas. Design any lane at runtime from the diff and context.
 - If you launch a lane, give it explicit objective, scope, allowed context, system prompt, and output shape.
@@ -77,6 +79,7 @@ Mission:
 - Do not make architectural, runtime, security, or dependency claims without concrete evidence.
 - External research is allowed only if the request policy permits it. External claims require citations.
 - Blocking findings must cite concrete anchors.
+- PASS requires enough inspected evidence for the available context. If repo_head is true but direct checkout inspection fails or is skipped, use completed_degraded or WARN and record why.
 - Produce exactly one artifact block and no second artifact block.
 - Return only valid JSON inside the markers. No Markdown fences inside the artifact block.
 
