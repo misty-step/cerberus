@@ -4,6 +4,7 @@
   "body": "Adds a guard for zero denominators.",
   "url": "https://github.com/example/fixture/pull/7",
   "baseRefName": "main",
+  "baseRefOid": "fedcba9876543210",
   "headRefName": "fix/ratio-zero",
   "headRefOid": "0123456789abcdef",
   "files": [

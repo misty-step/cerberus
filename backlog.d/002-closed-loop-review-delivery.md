@@ -1,6 +1,6 @@
 # Deliver closed-loop PR review output
 
-Priority: P0 | Status: pending | Estimate: XL
+Priority: P0 | Status: shipped | Estimate: XL
 
 ## Goal
 
@@ -55,3 +55,5 @@ can generate artifacts, but normal operators still need manual glue to turn a
 review artifact into GitHub feedback. GitHub docs distinguish PR review
 comments and Checks annotations, with Checks annotations capped per request, so
 posting needs a deliberate projection layer instead of a Markdown dump.
+
+**Shipped:** `5441666` (`Deliver 002 closed-loop PR review`).

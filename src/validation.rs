@@ -55,6 +55,10 @@ pub enum ValidationError {
     UrlCitationMissingObservedAt(String),
     #[error("external research requires citations for finding {0}")]
     ExternalResearchMissingCitation(String),
+    #[error("local runtime targets require policy.allow_local_runtime")]
+    LocalRuntimeRequiresPolicy,
+    #[error("base workspace requires head workspace")]
+    BaseWorkspaceRequiresHead,
 }
 
 pub fn validate_request(request: &ReviewRequest) -> Result<(), ValidationError> {
@@ -85,6 +89,12 @@ pub fn validate_request(request: &ReviewRequest) -> Result<(), ValidationError> 
                 actual: actual.clone(),
             });
         }
+    }
+    if !request.context.local_runtime.is_empty() && !request.policy.allow_local_runtime {
+        return Err(ValidationError::LocalRuntimeRequiresPolicy);
+    }
+    if request.context.workspaces.base.is_some() && request.context.workspaces.head.is_none() {
+        return Err(ValidationError::BaseWorkspaceRequiresHead);
     }
     Ok(())
 }
@@ -331,6 +341,62 @@ mod tests {
         let request = request();
         validate_request(&request).unwrap();
         validate_artifact_for_request(&artifact_for(&request), &request).unwrap();
+    }
+
+    #[test]
+    fn rejects_local_runtime_without_policy() {
+        let mut request = request();
+        request.context.local_runtime.push(RuntimeTarget {
+            kind: "command".to_string(),
+            command: "true".to_string(),
+            args: Vec::new(),
+            cwd: None,
+        });
+
+        assert!(matches!(
+            validate_request(&request),
+            Err(ValidationError::LocalRuntimeRequiresPolicy)
+        ));
+    }
+
+    #[test]
+    fn rejects_base_workspace_without_head_workspace() {
+        let mut request = request();
+        request.context.workspaces.base = Some(WorkspaceRef {
+            kind: WorkspaceKind::Checkout,
+            path: "/tmp/base".to_string(),
+            ref_name: Some("main".to_string()),
+            sha: Some("abc123".to_string()),
+        });
+
+        assert!(matches!(
+            validate_request(&request),
+            Err(ValidationError::BaseWorkspaceRequiresHead)
+        ));
+    }
+
+    #[test]
+    fn rejects_overstated_base_capability() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact.context_capabilities.repo_base = true;
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::ContextCapabilityMismatch)
+        ));
+    }
+
+    #[test]
+    fn rejects_overstated_runtime_capability() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact.context_capabilities.local_runtime = true;
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::ContextCapabilityMismatch)
+        ));
     }
 
     #[test]

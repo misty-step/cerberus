@@ -8,14 +8,17 @@ use serde_json::json;
 
 use crate::digest::sha256_digest;
 use crate::schema::{
-    Change, ChangedFile, Diff, FileStatus, RequestContext, ReviewPolicy, ReviewRequest, Source,
-    SourceKind, WorkspaceContext, WorkspaceKind, WorkspaceRef, REVIEW_REQUEST_SCHEMA,
+    Change, ChangedFile, Diff, FileStatus, RequestContext, ReviewPolicy, ReviewRequest,
+    RuntimeTarget, Source, SourceKind, WorkspaceContext, WorkspaceKind, WorkspaceRef,
+    REVIEW_REQUEST_SCHEMA,
 };
 
 #[derive(Debug, Clone)]
 pub struct RequestOptions {
     pub request_id: Option<String>,
     pub instructions: Vec<String>,
+    pub local_runtime: Vec<RuntimeTarget>,
+    pub allow_local_runtime: bool,
     pub allowed_env: Vec<String>,
     pub timeout_ms: u64,
 }
@@ -25,6 +28,7 @@ pub struct GitRangeRequestOptions {
     pub repo_path: PathBuf,
     pub base: String,
     pub head: String,
+    pub base_workspace: Option<PathBuf>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub repo: Option<String>,
@@ -37,6 +41,7 @@ pub struct PullRequestOptions {
     pub repo: Option<String>,
     pub gh_binary: String,
     pub head_workspace: Option<PathBuf>,
+    pub base_workspace: Option<PathBuf>,
     pub common: RequestOptions,
 }
 
@@ -74,8 +79,19 @@ pub fn build_git_range_request(options: &GitRangeRequestOptions) -> Result<Revie
     let mut files = parse_name_status(&name_status)?;
     apply_numstat(&mut files, &parse_numstat(&numstat));
 
+    let base_sha = git_output(&repo_path, &["rev-parse", &options.base])
+        .with_context(|| format!("resolve base ref {}", options.base))?;
     let head_sha = git_output(&repo_path, &["rev-parse", &options.head])
         .with_context(|| format!("resolve head ref {}", options.head))?;
+    let base_workspace = options
+        .base_workspace
+        .as_ref()
+        .map(|path| absolute_path(path))
+        .transpose()?;
+    if let Some(path) = &base_workspace {
+        validate_workspace("base", path, &base_sha)?;
+    }
+    let base_source = base_workspace.as_deref().unwrap_or(repo_path.as_path());
     let repo = options
         .repo
         .clone()
@@ -123,7 +139,7 @@ pub fn build_git_range_request(options: &GitRangeRequestOptions) -> Result<Revie
         },
         context: RequestContext {
             summary: Some(
-                "Generated from a local git range with head checkout access.".to_string(),
+                "Generated from a local git range with head and base checkout access.".to_string(),
             ),
             acceptance: Vec::new(),
             instructions: options.common.instructions.clone(),
@@ -135,9 +151,14 @@ pub fn build_git_range_request(options: &GitRangeRequestOptions) -> Result<Revie
                     ref_name: Some(options.head.clone()),
                     sha: Some(head_sha),
                 }),
-                base: None,
+                base: Some(WorkspaceRef {
+                    kind: WorkspaceKind::Checkout,
+                    path: base_source.display().to_string(),
+                    ref_name: Some(options.base.clone()),
+                    sha: Some(base_sha),
+                }),
             },
-            local_runtime: Vec::new(),
+            local_runtime: options.common.local_runtime.clone(),
             remote_runtime: Vec::new(),
             metadata: json!({}),
         },
@@ -164,7 +185,20 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         .as_ref()
         .map(|path| absolute_path(path))
         .transpose()?;
+    let base_workspace = options
+        .base_workspace
+        .as_ref()
+        .map(|path| absolute_path(path))
+        .transpose()?;
+    if base_workspace.is_some() && head_workspace.is_none() {
+        bail!("--base-workspace requires --head-workspace for PR requests");
+    }
     let head_sha = require_pr_head_sha(options.number, &pr)?;
+    let base_sha = if base_workspace.is_some() {
+        Some(require_pr_base_sha(options.number, &pr)?)
+    } else {
+        None
+    };
     let repo_detection_path = head_workspace.as_deref().unwrap_or_else(|| Path::new("."));
     let repo = options
         .repo
@@ -176,7 +210,10 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         .clone()
         .unwrap_or_else(|| format!("github-pr-{}-{}", options.number, short_sha(&head_sha)));
     if let Some(path) = &head_workspace {
-        validate_head_workspace(path, &head_sha)?;
+        validate_workspace("head", path, &head_sha)?;
+    }
+    if let (Some(path), Some(base_sha)) = (&base_workspace, &base_sha) {
+        validate_workspace("base", path, base_sha)?;
     }
 
     Ok(ReviewRequest {
@@ -195,7 +232,7 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         change: Change {
             title: pr.title,
             description: pr.body,
-            base_ref: pr.base_ref_name,
+            base_ref: pr.base_ref_name.clone(),
             head_ref: pr.head_ref_name.clone(),
             head_sha: Some(head_sha.clone()),
             diff: Diff {
@@ -220,9 +257,14 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
                     ref_name: pr.head_ref_name,
                     sha: Some(head_sha),
                 }),
-                base: None,
+                base: base_workspace.map(|path| WorkspaceRef {
+                    kind: WorkspaceKind::Checkout,
+                    path: path.display().to_string(),
+                    ref_name: pr.base_ref_name,
+                    sha: base_sha,
+                }),
             },
-            local_runtime: Vec::new(),
+            local_runtime: options.common.local_runtime.clone(),
             remote_runtime: Vec::new(),
             metadata: json!({}),
         },
@@ -242,6 +284,7 @@ pub fn fetch_pull_request_head_sha(
 fn policy_from_options(options: &RequestOptions) -> ReviewPolicy {
     ReviewPolicy {
         timeout_ms: options.timeout_ms,
+        allow_local_runtime: options.allow_local_runtime,
         allowed_env: options.allowed_env.clone(),
         ..ReviewPolicy::default()
     }
@@ -285,21 +328,29 @@ fn require_pr_head_sha(number: u64, pr: &GhPullRequest) -> Result<String> {
         .ok_or_else(|| anyhow!("pull request #{number} is missing headRefOid"))
 }
 
-fn validate_head_workspace(path: &Path, expected_sha: &str) -> Result<()> {
+fn require_pr_base_sha(number: u64, pr: &GhPullRequest) -> Result<String> {
+    pr.base_ref_oid
+        .as_ref()
+        .filter(|sha| !sha.trim().is_empty())
+        .cloned()
+        .ok_or_else(|| anyhow!("pull request #{number} is missing baseRefOid"))
+}
+
+fn validate_workspace(label: &str, path: &Path, expected_sha: &str) -> Result<()> {
     let dirty = git_output(path, &["status", "--porcelain", "--untracked-files=no"])
-        .with_context(|| format!("inspect head workspace {}", path.display()))?;
+        .with_context(|| format!("inspect {label} workspace {}", path.display()))?;
     if !dirty.trim().is_empty() {
         bail!(
-            "head workspace {} has uncommitted tracked changes; commit, stash, or omit --head-workspace",
+            "{label} workspace {} has uncommitted tracked changes; commit, stash, or omit --{label}-workspace",
             path.display()
         );
     }
 
     let actual = git_output(path, &["rev-parse", "HEAD"])
-        .with_context(|| format!("resolve head workspace {}", path.display()))?;
+        .with_context(|| format!("resolve {label} workspace {}", path.display()))?;
     if actual != expected_sha {
         bail!(
-            "head workspace {} is at {actual}, but PR head is {expected_sha}",
+            "{label} workspace {} is at {actual}, but expected sha is {expected_sha}",
             path.display()
         );
     }
@@ -433,7 +484,7 @@ fn short_sha(value: &str) -> String {
 
 fn gh_pr_view(number: u64, repo: Option<&str>, gh_binary: &str) -> Result<GhPullRequest> {
     let number = number.to_string();
-    let fields = "number,title,body,url,baseRefName,headRefName,headRefOid,files";
+    let fields = "number,title,body,url,baseRefName,baseRefOid,headRefName,headRefOid,files";
     let mut args = vec!["pr", "view", number.as_str(), "--json", fields];
     if let Some(repo) = repo {
         args.extend(["-R", repo]);
@@ -459,6 +510,8 @@ struct GhPullRequest {
     url: Option<String>,
     #[serde(rename = "baseRefName")]
     base_ref_name: Option<String>,
+    #[serde(rename = "baseRefOid")]
+    base_ref_oid: Option<String>,
     #[serde(rename = "headRefName")]
     head_ref_name: Option<String>,
     #[serde(rename = "headRefOid")]
@@ -532,6 +585,7 @@ mod tests {
             body: None,
             url: None,
             base_ref_name: Some("master".to_string()),
+            base_ref_oid: Some("def456".to_string()),
             head_ref_name: Some("branch".to_string()),
             head_ref_oid,
             files: Vec::new(),
@@ -575,7 +629,7 @@ mod tests {
     fn validates_clean_matching_head_workspace() {
         let repo = init_repo();
         let head = commit_file(repo.path(), "one\n", "one");
-        validate_head_workspace(repo.path(), &head).unwrap();
+        validate_workspace("head", repo.path(), &head).unwrap();
     }
 
     #[test]
@@ -583,8 +637,8 @@ mod tests {
         let repo = init_repo();
         let old = commit_file(repo.path(), "one\n", "one");
         let _new = commit_file(repo.path(), "two\n", "two");
-        let err = validate_head_workspace(repo.path(), &old).unwrap_err();
-        assert!(err.to_string().contains("but PR head is"));
+        let err = validate_workspace("head", repo.path(), &old).unwrap_err();
+        assert!(err.to_string().contains("expected sha is"));
     }
 
     #[test]
@@ -592,7 +646,7 @@ mod tests {
         let repo = init_repo();
         let head = commit_file(repo.path(), "one\n", "one");
         fs::write(repo.path().join("file.txt"), "dirty\n").unwrap();
-        let err = validate_head_workspace(repo.path(), &head).unwrap_err();
+        let err = validate_workspace("head", repo.path(), &head).unwrap_err();
         assert!(err.to_string().contains("uncommitted tracked changes"));
     }
 
@@ -610,5 +664,14 @@ mod tests {
             require_pr_head_sha(7, &gh_pr(Some("abc123".to_string()))).unwrap(),
             "abc123"
         );
+    }
+
+    #[test]
+    fn requires_non_empty_github_pr_base_oid_when_requested() {
+        let mut pr = gh_pr(Some("abc123".to_string()));
+        assert_eq!(require_pr_base_sha(7, &pr).unwrap(), "def456");
+        pr.base_ref_oid = Some("".to_string());
+        let err = require_pr_base_sha(7, &pr).unwrap_err();
+        assert!(err.to_string().contains("missing baseRefOid"));
     }
 }

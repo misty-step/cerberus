@@ -25,16 +25,23 @@ See [spec.md](spec.md) for the locked MVP contract.
 
 The verification script formats, lints, tests, checks the default harness
 surface, runs deterministic fixture reviews, smokes both the OpenCode and OMP
-harness paths through local fake binaries, and exercises `review-pr` through a
-fake `gh` adapter. Evidence is written to `target/cerberus/`, including
-execution plans, transcripts, artifacts, rendered Markdown, post plans, post
-results, and fake GitHub API transcripts.
+harness paths through local fake binaries, exercises base+head context and
+local runtime probes, and runs `review-pr` through a fake `gh` adapter.
+Evidence is written to `target/cerberus/`, including execution plans,
+transcripts, artifacts, rendered Markdown, post plans, post results, context
+tier receipts, and fake GitHub API transcripts.
 
 ## CLI
 
 ```sh
 cerberus request git-range --base origin/master --head HEAD \
   --out target/cerberus/request.json
+
+cerberus request git-range --base origin/master --head HEAD \
+  --local-runtime-command env \
+  --allow-local-runtime \
+  --allow-env CERBERUS_RUNTIME_FLAG \
+  --out target/cerberus/runtime-request.json
 
 cerberus request pr --number 123 --out target/cerberus/request.json
 
@@ -60,9 +67,17 @@ cerberus review-pr --number 123 --repo owner/name \
   --post
 ```
 
+Git range requests include disposable base and head worktree capability from
+the supplied refs. PR requests may include `--head-workspace` and
+`--base-workspace` when the caller has safe local checkouts at the PR head and
+base SHAs. Local runtime probes run only when both `--local-runtime-command`
+and `--allow-local-runtime` are present; probe env is restricted to
+`--allow-env` plus a trusted `PATH`, and transcripts are captured in the review
+transcript.
+
 The fixture harness is for deterministic verification. The production path is
-the OpenCode harness using the `build` agent profile by default against a
-disposable review worktree; OMP is a local fallback.
+the OpenCode harness using the `build` agent profile by default against
+disposable review worktrees; OMP is a local fallback.
 
 `review-pr` is orchestration over acquisition, review, rendering, and GitHub
 projection. It writes `request.json`, `artifact.json`, `review.md`,

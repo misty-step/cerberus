@@ -56,7 +56,6 @@ test -n "$request_id"
 if [[ -f "$workdir/request.json" ]]; then
   test -f "$workdir/change.diff"
   test ! -f "$workdir/Cargo.toml"
-  capabilities='{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
 else
   test -e "$workdir/.git"
   test -f "$workdir/src/ratio.rs"
@@ -64,8 +63,61 @@ else
     echo "request workspace path was not rewritten to the disposable worktree" >&2
     exit 67
   }
-  capabilities='{"diff":true,"repo_head":true,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
 fi
+
+capabilities="$(python3 - "$request_file" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    request = json.load(fh)
+
+context = request.get("context") or {}
+policy = request.get("policy") or {}
+workspaces = context.get("workspaces") or {}
+
+base = workspaces.get("base")
+if base:
+    base_path = base.get("path") or ""
+    if not os.path.exists(os.path.join(base_path, ".git")):
+        raise SystemExit(f"base workspace is not available: {base_path}")
+
+if context.get("local_runtime"):
+    artifacts = context.get("artifacts") or []
+    transcripts = [
+        artifact.get("uri")
+        for artifact in artifacts
+        if artifact.get("kind") == "local_runtime_transcript"
+    ]
+    if not transcripts:
+        raise SystemExit("local runtime request is missing transcript artifact")
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if not config_home:
+        raise SystemExit("XDG_CONFIG_HOME is missing")
+    with open(os.path.join(config_home, "opencode", "opencode.json"), encoding="utf-8") as fh:
+        config = json.load(fh)
+    allowed = (config.get("permission") or {}).get("external_directory") or {}
+    for transcript in transcripts:
+        with open(transcript, encoding="utf-8") as fh:
+            body = fh.read()
+        if "kind: local_runtime_command" not in body:
+            raise SystemExit(f"runtime transcript is unreadable or malformed: {transcript}")
+        parent = os.path.dirname(transcript)
+        if allowed.get(parent) != "allow" or allowed.get(f"{parent}/**") != "allow":
+            raise SystemExit(f"runtime transcript directory is not allowed: {parent}")
+
+payload = {
+    "diff": bool(((request.get("change") or {}).get("diff") or {}).get("body", "").strip()),
+    "repo_head": bool(workspaces.get("head")),
+    "repo_base": bool(base),
+    "local_runtime": bool(context.get("local_runtime")) and bool(policy.get("allow_local_runtime")),
+    "remote_runtime": bool(context.get("remote_runtime")),
+    "external_research": policy.get("external_research", "forbid"),
+}
+print(json.dumps(payload, separators=(",", ":")))
+PY
+)"
 
 sed \
   -e "s/{{request_id}}/$request_id/g" \

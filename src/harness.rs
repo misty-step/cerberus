@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::digest::request_digest;
+use crate::digest::{request_digest, sha256_digest};
 use crate::prompt::{build_master_prompt, build_opencode_message, ARTIFACT_BEGIN, ARTIFACT_END};
 use crate::schema::{
-    ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact, ReviewRequest,
-    REVIEW_ARTIFACT_SCHEMA,
+    ContextArtifact, ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact,
+    ReviewRequest, RuntimeTarget, REVIEW_ARTIFACT_SCHEMA,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -50,6 +50,7 @@ pub struct ExecutionPlan {
     pub prompt_transport: String,
     pub private_material_in_argv: bool,
     pub workspace_mode: String,
+    pub runtime_transcripts: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,19 +78,37 @@ impl ReviewHarness {
             .with_context(|| format!("read fixture output {}", fixture_path.display()))?;
         let request_digest = request_digest(request)?;
         let capabilities = ContextCapabilities::from_request(request);
-        let transcript = apply_fixture_template(&raw, request, &request_digest, &capabilities)?;
+        let temp = tempfile::Builder::new()
+            .prefix("cerberus-fixture-")
+            .tempdir()
+            .context("create private fixture tempdir")?;
+        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+        let mut child_request = request_with_workspace_paths(request, &workspace);
+        let runtime_receipts =
+            run_local_runtime_probes(&mut child_request, &workspace, temp.path(), self.timeout)?;
+        let fixture_transcript =
+            apply_fixture_template(&raw, request, &request_digest, &capabilities)?;
+        let transcript = format!(
+            "{}{}",
+            runtime_probe_transcript(&runtime_receipts),
+            fixture_transcript
+        );
         let artifact = extract_marked_artifact(&transcript)?;
         let plan = ExecutionPlan {
             harness: "fixture".to_string(),
             command: fixture_path.display().to_string(),
             args: Vec::new(),
-            cwd: cwd.display().to_string(),
+            cwd: workspace.path().display().to_string(),
             timeout_ms: self.timeout.as_millis() as u64,
             env_allowlist: request.policy.allowed_env.clone(),
             context_capabilities: capabilities,
             prompt_transport: "fixture template".to_string(),
             private_material_in_argv: false,
-            workspace_mode: "fixture".to_string(),
+            workspace_mode: workspace.mode().to_string(),
+            runtime_transcripts: runtime_receipts
+                .iter()
+                .map(|receipt| receipt.artifact.uri.clone())
+                .collect(),
         };
         Ok(HarnessRun {
             artifact,
@@ -114,7 +133,6 @@ impl ReviewHarness {
     ) -> Result<HarnessRun> {
         let request_digest = request_digest(request)?;
         let capabilities = ContextCapabilities::from_request(request);
-        let prompt = build_master_prompt(request, &capabilities, &request_digest)?;
         let temp = tempfile::Builder::new()
             .prefix("cerberus-")
             .tempdir()
@@ -128,17 +146,23 @@ impl ReviewHarness {
                 .with_context(|| format!("create child state dir {}", child_state_dir.display()))?;
             set_private_directory_permissions(child_state_dir)?;
         }
+        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+        let mut child_request = request_with_workspace_paths(request, &workspace);
+        let runtime_receipts =
+            run_local_runtime_probes(&mut child_request, &workspace, temp.path(), self.timeout)?;
+        let prompt = build_master_prompt(&child_request, &capabilities, &request_digest)?;
         let prompt_path = temp.path().join("master-prompt.md");
         fs::write(&prompt_path, prompt).context("write master prompt")?;
         set_private_permissions(&prompt_path)?;
-        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
         let request_path = temp.path().join("review-request.json");
-        let child_request = request_with_workspace_path(request, workspace.path());
         fs::write(&request_path, serde_json::to_vec_pretty(&child_request)?)
             .context("write review request")?;
         set_private_permissions(&request_path)?;
         if matches!(substrate, CommandSubstrate::Opencode) {
-            write_opencode_config(&child_config, workspace.path())?;
+            write_opencode_config(
+                &child_config,
+                &opencode_allowed_paths(&workspace, &runtime_receipts),
+            )?;
         }
 
         let (binary, args, plan_harness, prompt_transport) = self.command_for_substrate(
@@ -167,6 +191,10 @@ impl ReviewHarness {
             prompt_transport: prompt_transport.to_string(),
             private_material_in_argv: false,
             workspace_mode: workspace.mode().to_string(),
+            runtime_transcripts: runtime_receipts
+                .iter()
+                .map(|receipt| receipt.artifact.uri.clone())
+                .collect(),
         };
 
         let start = Instant::now();
@@ -190,7 +218,8 @@ impl ReviewHarness {
             .with_context(|| format!("run {plan_harness} harness"))?;
         let elapsed_ms = start.elapsed().as_millis();
         let transcript = format!(
-            "exit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}",
+            "{}exit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}",
+            runtime_probe_transcript(&runtime_receipts),
             output.status,
             elapsed_ms,
             String::from_utf8_lossy(&output.stdout),
@@ -276,28 +305,39 @@ impl ReviewHarness {
     }
 }
 
-fn request_with_workspace_path(request: &ReviewRequest, workspace_path: &Path) -> ReviewRequest {
+fn request_with_workspace_paths(
+    request: &ReviewRequest,
+    workspace: &RunWorkspace,
+) -> ReviewRequest {
     let mut child_request = request.clone();
     if let Some(head) = &mut child_request.context.workspaces.head {
-        head.path = workspace_path.display().to_string();
+        head.path = workspace.path().display().to_string();
+    }
+    if let (Some(base), Some(base_path)) = (
+        &mut child_request.context.workspaces.base,
+        workspace.base_path(),
+    ) {
+        base.path = base_path.display().to_string();
     }
     child_request
 }
 
-fn write_opencode_config(config_home: &Path, workspace_path: &Path) -> Result<()> {
+fn write_opencode_config(config_home: &Path, workspace_paths: &[PathBuf]) -> Result<()> {
     let config_dir = config_home.join("opencode");
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("create OpenCode config dir {}", config_dir.display()))?;
     set_private_directory_permissions(&config_dir)?;
-    let workspace = workspace_path.display().to_string();
-    let workspace_children = format!("{workspace}/**");
+    let mut external_directory = serde_json::Map::new();
+    for workspace_path in workspace_paths {
+        let workspace = workspace_path.display().to_string();
+        let workspace_children = format!("{workspace}/**");
+        external_directory.insert(workspace, Value::String("allow".to_string()));
+        external_directory.insert(workspace_children, Value::String("allow".to_string()));
+    }
     let config = serde_json::json!({
         "$schema": "https://opencode.ai/config.json",
         "permission": {
-            "external_directory": {
-                workspace.as_str(): "allow",
-                workspace_children.as_str(): "allow"
-            },
+            "external_directory": external_directory,
             "edit": {
                 "*": "deny"
             }
@@ -309,11 +349,29 @@ fn write_opencode_config(config_home: &Path, workspace_path: &Path) -> Result<()
     set_private_permissions(&config_path)
 }
 
+fn opencode_allowed_paths(
+    workspace: &RunWorkspace,
+    runtime_receipts: &[RuntimeProbeReceipt],
+) -> Vec<PathBuf> {
+    let mut paths = workspace.allowed_paths();
+    for receipt in runtime_receipts {
+        let transcript_path = Path::new(&receipt.artifact.uri);
+        if let Some(parent) = transcript_path.parent() {
+            let parent = parent.to_path_buf();
+            if !paths.iter().any(|path| path == &parent) {
+                paths.push(parent);
+            }
+        }
+    }
+    paths
+}
+
 #[derive(Debug)]
 struct RunWorkspace {
     path: PathBuf,
+    base_path: Option<PathBuf>,
     mode: String,
-    cleanup: Option<WorktreeCleanup>,
+    cleanup: Vec<WorktreeCleanup>,
 }
 
 #[derive(Debug)]
@@ -325,11 +383,37 @@ struct WorktreeCleanup {
 impl RunWorkspace {
     fn prepare(request: &ReviewRequest, fallback_cwd: &Path, temp_root: &Path) -> Result<Self> {
         if let Some(head) = &request.context.workspaces.head {
-            return Self::prepare_repo_head_workspace(
+            let base = request
+                .context
+                .workspaces
+                .base
+                .as_ref()
+                .map(|base| {
+                    Self::prepare_worktree(
+                        Path::new(&base.path),
+                        base.sha.as_deref(),
+                        temp_root,
+                        "repo-base",
+                        "repo_base",
+                    )
+                })
+                .transpose()?;
+            let head = Self::prepare_worktree(
                 Path::new(&head.path),
                 head.sha.as_deref(),
                 temp_root,
-            );
+                "repo-head",
+                "repo_head",
+            )?;
+            let mode = if base.is_some() {
+                "repo_base_head_worktrees"
+            } else {
+                "repo_head_worktree"
+            };
+            return Ok(Self::from_prepared(head, base, mode));
+        }
+        if request.context.workspaces.base.is_some() {
+            return Err(anyhow!("repo_base workspace requires repo_head workspace"));
         }
         let packet = temp_root.join("packet");
         fs::create_dir_all(&packet).context("create diff-only packet workspace")?;
@@ -342,32 +426,29 @@ impl RunWorkspace {
         set_private_permissions(&diff_path)?;
 
         if request.change.diff.body.trim().is_empty() {
-            Ok(Self {
-                path: fallback_cwd.to_path_buf(),
-                mode: "fallback_empty_diff".to_string(),
-                cleanup: None,
-            })
+            Ok(Self::with_packet_or_fallback(
+                fallback_cwd.to_path_buf(),
+                "fallback_empty_diff",
+            ))
         } else {
-            Ok(Self {
-                path: packet,
-                mode: "diff_packet".to_string(),
-                cleanup: None,
-            })
+            Ok(Self::with_packet_or_fallback(packet, "diff_packet"))
         }
     }
 
-    fn prepare_repo_head_workspace(
+    fn prepare_worktree(
         source: &Path,
         sha: Option<&str>,
         temp_root: &Path,
-    ) -> Result<Self> {
+        name: &str,
+        label: &str,
+    ) -> Result<PreparedWorktree> {
         let sha = sha.ok_or_else(|| {
             anyhow!(
-                "repo_head workspace {} requires a sha for disposable review checkout",
+                "{label} workspace {} requires a sha for disposable review checkout",
                 source.display()
             )
         })?;
-        let worktree = temp_root.join("repo-head");
+        let worktree = temp_root.join(name);
         let output = Command::new("git")
             .arg("-C")
             .arg(source)
@@ -377,29 +458,65 @@ impl RunWorkspace {
             .output()
             .with_context(|| {
                 format!(
-                    "create disposable review worktree from {}",
+                    "create disposable {label} review worktree from {}",
                     source.display()
                 )
             })?;
         if !output.status.success() {
             return Err(anyhow!(
-                "create disposable review worktree from {} failed: {}",
+                "create disposable {label} review worktree from {} failed: {}",
                 source.display(),
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
-        Ok(Self {
+        Ok(PreparedWorktree {
             path: worktree.clone(),
-            mode: "repo_head_worktree".to_string(),
-            cleanup: Some(WorktreeCleanup {
+            cleanup: WorktreeCleanup {
                 source: source.to_path_buf(),
                 path: worktree,
-            }),
+            },
         })
+    }
+
+    fn from_prepared(head: PreparedWorktree, base: Option<PreparedWorktree>, mode: &str) -> Self {
+        let mut cleanup = vec![head.cleanup];
+        let base_path = base.as_ref().map(|base| base.path.clone());
+        if let Some(base) = base {
+            cleanup.push(base.cleanup);
+        }
+        Self {
+            path: head.path,
+            base_path,
+            mode: mode.to_string(),
+            cleanup,
+        }
+    }
+
+    fn with_packet_or_fallback(path: PathBuf, mode: &str) -> Self {
+        Self {
+            path,
+            base_path: None,
+            mode: mode.to_string(),
+            cleanup: Vec::new(),
+        }
     }
 
     fn path(&self) -> &Path {
         &self.path
+    }
+
+    fn base_path(&self) -> Option<&Path> {
+        self.base_path.as_deref()
+    }
+
+    fn allowed_paths(&self) -> Vec<PathBuf> {
+        let mut paths = vec![self.path.clone()];
+        if let Some(base_path) = &self.base_path {
+            if base_path != &self.path {
+                paths.push(base_path.clone());
+            }
+        }
+        paths
     }
 
     fn mode(&self) -> &str {
@@ -409,7 +526,7 @@ impl RunWorkspace {
 
 impl Drop for RunWorkspace {
     fn drop(&mut self) {
-        if let Some(cleanup) = &self.cleanup {
+        for cleanup in &self.cleanup {
             let _ = Command::new("git")
                 .arg("-C")
                 .arg(&cleanup.source)
@@ -418,6 +535,166 @@ impl Drop for RunWorkspace {
                 .output();
         }
     }
+}
+
+#[derive(Debug)]
+struct PreparedWorktree {
+    path: PathBuf,
+    cleanup: WorktreeCleanup,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeProbeReceipt {
+    artifact: ContextArtifact,
+    transcript: String,
+}
+
+fn run_local_runtime_probes(
+    request: &mut ReviewRequest,
+    workspace: &RunWorkspace,
+    temp_root: &Path,
+    timeout: Duration,
+) -> Result<Vec<RuntimeProbeReceipt>> {
+    if request.context.local_runtime.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !request.policy.allow_local_runtime {
+        return Err(anyhow!(
+            "local runtime targets require policy.allow_local_runtime"
+        ));
+    }
+
+    let targets = request.context.local_runtime.clone();
+    let allowed_env = request.policy.allowed_env.clone();
+    let probe_dir = temp_root.join("runtime-probes");
+    fs::create_dir_all(&probe_dir)
+        .with_context(|| format!("create runtime probe dir {}", probe_dir.display()))?;
+    set_private_directory_permissions(&probe_dir)?;
+    let search_path = trusted_executable_search_path();
+    let mut artifacts = Vec::new();
+    for (index, target) in targets.iter().enumerate() {
+        let artifact = run_local_runtime_probe(
+            index,
+            target,
+            workspace,
+            &probe_dir,
+            &allowed_env,
+            &search_path,
+            timeout,
+        )?;
+        artifacts.push(artifact);
+    }
+    request
+        .context
+        .artifacts
+        .extend(artifacts.iter().map(|receipt| receipt.artifact.clone()));
+    Ok(artifacts)
+}
+
+fn run_local_runtime_probe(
+    index: usize,
+    target: &RuntimeTarget,
+    workspace: &RunWorkspace,
+    probe_dir: &Path,
+    allowed_env: &[String],
+    search_path: &[PathBuf],
+    timeout: Duration,
+) -> Result<RuntimeProbeReceipt> {
+    if target.kind != "command" {
+        return Err(anyhow!(
+            "unsupported local runtime target kind {:?}; expected command",
+            target.kind
+        ));
+    }
+    let executable = resolve_executable_in(&target.command, search_path)?;
+    let cwd = runtime_probe_cwd(target, workspace.path())?;
+    let start = Instant::now();
+    let mut command = Command::new(&executable);
+    command
+        .args(&target.args)
+        .current_dir(&cwd)
+        .stdin(Stdio::null())
+        .env_clear();
+    for (key, value) in allowed_child_env(allowed_env) {
+        command.env(key, value);
+    }
+    command.env("PATH", join_search_path(search_path));
+    configure_process_group(&mut command);
+
+    let output = run_with_timeout(command, timeout).with_context(|| {
+        format!(
+            "run local runtime target {} {}",
+            target.command,
+            target.args.join(" ")
+        )
+    })?;
+    let elapsed_ms = start.elapsed().as_millis();
+    let transcript = format!(
+        "kind: local_runtime_command\ncommand: {}\nargs: {:?}\ncwd: {}\nexit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}",
+        executable.display(),
+        target.args,
+        cwd.display(),
+        output.status,
+        elapsed_ms,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let transcript_path = probe_dir.join(format!("local-runtime-{index}.txt"));
+    fs::write(&transcript_path, transcript.as_bytes())
+        .with_context(|| format!("write runtime transcript {}", transcript_path.display()))?;
+    set_private_permissions(&transcript_path)?;
+    let artifact = ContextArtifact {
+        kind: "local_runtime_transcript".to_string(),
+        uri: transcript_path.display().to_string(),
+        digest: Some(sha256_digest(transcript.as_bytes())),
+    };
+    Ok(RuntimeProbeReceipt {
+        artifact,
+        transcript,
+    })
+}
+
+fn runtime_probe_cwd(target: &RuntimeTarget, workspace_path: &Path) -> Result<PathBuf> {
+    let Some(raw_cwd) = target.cwd.as_deref() else {
+        return Ok(workspace_path.to_path_buf());
+    };
+    let relative = Path::new(raw_cwd);
+    if relative.is_absolute() {
+        return Err(anyhow!(
+            "local runtime cwd must be relative to the disposable review workspace: {raw_cwd}"
+        ));
+    }
+    if relative
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(anyhow!(
+            "local runtime cwd cannot escape the disposable review workspace: {raw_cwd}"
+        ));
+    }
+    let cwd = workspace_path.join(relative);
+    if !cwd.is_dir() {
+        return Err(anyhow!(
+            "local runtime cwd does not exist inside review workspace: {}",
+            cwd.display()
+        ));
+    }
+    Ok(cwd)
+}
+
+fn runtime_probe_transcript(receipts: &[RuntimeProbeReceipt]) -> String {
+    if receipts.is_empty() {
+        return String::new();
+    }
+    let mut output = String::from("[local_runtime]\n");
+    for (index, receipt) in receipts.iter().enumerate() {
+        output.push_str(&format!(
+            "--- local-runtime-{index}: {} ---\n{}\n",
+            receipt.artifact.uri, receipt.transcript
+        ));
+    }
+    output.push('\n');
+    output
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -939,7 +1216,7 @@ mod tests {
         let workspace = temp.path().join("repo-head");
         fs::create_dir(&workspace).unwrap();
 
-        write_opencode_config(temp.path(), &workspace).unwrap();
+        write_opencode_config(temp.path(), std::slice::from_ref(&workspace)).unwrap();
 
         let config_path = temp.path().join("opencode/opencode.json");
         let config: Value =
@@ -961,6 +1238,31 @@ mod tests {
                 .and_then(Value::as_str),
             Some("allow")
         );
+    }
+
+    #[test]
+    fn opencode_allowed_paths_include_runtime_probe_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = RunWorkspace {
+            path: temp.path().join("repo-head"),
+            base_path: None,
+            mode: "repo_head_worktree".to_string(),
+            cleanup: Vec::new(),
+        };
+        let probe_dir = temp.path().join("runtime-probes");
+        let receipts = vec![RuntimeProbeReceipt {
+            artifact: ContextArtifact {
+                kind: "local_runtime_transcript".to_string(),
+                uri: probe_dir.join("local-runtime-0.txt").display().to_string(),
+                digest: None,
+            },
+            transcript: "kind: local_runtime_command".to_string(),
+        }];
+
+        let paths = opencode_allowed_paths(&workspace, &receipts);
+
+        assert!(paths.contains(&workspace.path));
+        assert!(paths.contains(&probe_dir));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Harden execution and evidence admission before automatic review
 
-Priority: P0 | Status: ready | Estimate: L
+Priority: P0 | Status: shipped | Estimate: L
 
 ## Goal
 
@@ -54,3 +54,5 @@ semantically inconsistent review artifacts.
 sanitization and `src/validation.rs` does not yet cross-check all comment/fix
 IDs. This is the best next pickup because it protects every later posting or
 automation path.
+
+**Shipped:** `e2737af` (`Deliver 001 execution evidence hardening`).

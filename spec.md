@@ -45,7 +45,8 @@ Context tiers:
   may compare behavior, deleted invariants, moved logic, changed contracts,
   and stale assumptions.
 - `local_runtime`: a local build, test, CLI, API, browser, or container path
-  is available. Cerberus may use runtime evidence when policy allows it.
+  is available. Cerberus may use runtime evidence only when request policy
+  explicitly allows it and the harness captures transcripts.
 - `remote_runtime`: a preview, dev, or staging endpoint is available. Cerberus
   may probe it only within explicit URL, credential, rate, and cleanup
   boundaries.
@@ -302,6 +303,8 @@ Falsifiers:
 - external-research-backed findings lack citations;
 - the child command receives prompt/diff content via argv;
 - an ambient secret variable reaches the child env without policy approval.
+- a diff-only artifact claims `repo_base` or `local_runtime`;
+- a local runtime command runs without `policy.allow_local_runtime`.
 
 Driver:
 
@@ -309,9 +312,10 @@ Driver:
 ./scripts/verify.sh
 ```
 
-The verification script runs formatting, linting, unit tests, and a CLI smoke
-review using fixture request/output data. The smoke run writes an artifact and
-Markdown review under `target/cerberus/`.
+The verification script runs formatting, linting, unit tests, context-tier
+fixture checks, and CLI smoke reviews using fixture request/output data. Smoke
+runs write artifacts, transcripts, execution plans, and rendered Markdown under
+`target/cerberus/`.
 
 Evidence packet:
 
@@ -320,6 +324,7 @@ Evidence packet:
 - `target/cerberus/execution_plan.json`
 - `target/cerberus/review-pr/post-plan.json`
 - `target/cerberus/review-pr/post-result.json`
+- `target/cerberus/context-tiers/*`
 - test output from `./scripts/verify.sh`
 
 ## MVP Acceptance
@@ -333,6 +338,10 @@ MVP is complete when:
 - the fixture harness can produce a validated artifact;
 - OpenCode and OMP harnesses build execution plans and can invoke their agent
   commands when selected;
+- base+head workspaces are created as disposable worktrees without mutating the
+  caller checkout;
+- local runtime probes require explicit policy, run with bounded env/cwd/time,
+  and leave transcript evidence;
 - Markdown rendering works from stored artifacts;
 - `review-pr` can dry-run and post through fake GitHub fixtures without
   duplicate comments and without inline comments outside changed lines;
@@ -345,7 +354,6 @@ After MVP, consider:
 
 - GitHub acquisition and posting adapters;
 - rootless container runtime profile;
-- base/head checkout acquisition helpers;
 - remote runtime probe capability;
 - Daedalus reviewer config import;
 - SARIF/check renderers;

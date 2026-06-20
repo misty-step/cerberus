@@ -9,6 +9,7 @@ use cerberus::request::{
     build_git_range_request, build_pull_request, fetch_pull_request_head_sha,
     GitRangeRequestOptions, PullRequestOptions, RequestOptions,
 };
+use cerberus::schema::RuntimeTarget;
 use cerberus::{
     render_markdown, validate_artifact_for_request, validate_request, ReviewArtifact, ReviewRequest,
 };
@@ -24,7 +25,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Request(RequestArgs),
+    Request(Box<RequestArgs>),
     Review(Box<ReviewArgs>),
     ReviewPr(Box<ReviewPrArgs>),
     Render(RenderArgs),
@@ -53,6 +54,8 @@ struct GitRangeArgs {
     #[arg(long)]
     out: PathBuf,
     #[arg(long)]
+    base_workspace: Option<PathBuf>,
+    #[arg(long)]
     title: Option<String>,
     #[arg(long)]
     description: Option<String>,
@@ -62,6 +65,10 @@ struct GitRangeArgs {
     repo: Option<String>,
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    #[arg(long = "local-runtime-command")]
+    local_runtime_commands: Vec<String>,
+    #[arg(long)]
+    allow_local_runtime: bool,
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
     #[arg(long, default_value_t = 120)]
@@ -81,9 +88,15 @@ struct PullRequestArgs {
     #[arg(long)]
     head_workspace: Option<PathBuf>,
     #[arg(long)]
+    base_workspace: Option<PathBuf>,
+    #[arg(long)]
     request_id: Option<String>,
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    #[arg(long = "local-runtime-command")]
+    local_runtime_commands: Vec<String>,
+    #[arg(long)]
+    allow_local_runtime: bool,
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
     #[arg(long, default_value_t = 120)]
@@ -146,9 +159,15 @@ struct ReviewPrArgs {
     #[arg(long)]
     head_workspace: Option<PathBuf>,
     #[arg(long)]
+    base_workspace: Option<PathBuf>,
+    #[arg(long)]
     request_id: Option<String>,
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    #[arg(long = "local-runtime-command")]
+    local_runtime_commands: Vec<String>,
+    #[arg(long)]
+    allow_local_runtime: bool,
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
     #[arg(long, default_value_t = 120)]
@@ -182,7 +201,7 @@ struct RenderArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Request(args) => request(args),
+        Command::Request(args) => request(*args),
         Command::Review(args) => review(*args),
         Command::ReviewPr(args) => review_pr(*args),
         Command::Render(args) => render(args),
@@ -197,12 +216,15 @@ fn request(args: RequestArgs) -> Result<()> {
                 repo_path: args.repo_path,
                 base: args.base,
                 head: args.head,
+                base_workspace: args.base_workspace,
                 title: args.title,
                 description: args.description,
                 repo: args.repo,
                 common: RequestOptions {
                     request_id: args.request_id,
                     instructions: args.instructions,
+                    local_runtime: runtime_targets(args.local_runtime_commands),
+                    allow_local_runtime: args.allow_local_runtime,
                     allowed_env: args.allowed_env,
                     timeout_ms: timeout_ms(args.timeout_seconds)?,
                 },
@@ -216,9 +238,12 @@ fn request(args: RequestArgs) -> Result<()> {
                 repo: args.repo,
                 gh_binary: args.gh_binary,
                 head_workspace: args.head_workspace,
+                base_workspace: args.base_workspace,
                 common: RequestOptions {
                     request_id: args.request_id,
                     instructions: args.instructions,
+                    local_runtime: runtime_targets(args.local_runtime_commands),
+                    allow_local_runtime: args.allow_local_runtime,
                     allowed_env: args.allowed_env,
                     timeout_ms: timeout_ms(args.timeout_seconds)?,
                 },
@@ -234,6 +259,18 @@ fn timeout_ms(timeout_seconds: u64) -> Result<u64> {
     timeout_seconds
         .checked_mul(1000)
         .ok_or_else(|| anyhow!("timeout seconds {timeout_seconds} overflows milliseconds"))
+}
+
+fn runtime_targets(commands: Vec<String>) -> Vec<RuntimeTarget> {
+    commands
+        .into_iter()
+        .map(|command| RuntimeTarget {
+            kind: "command".to_string(),
+            command,
+            args: Vec::new(),
+            cwd: None,
+        })
+        .collect()
 }
 
 fn review(args: ReviewArgs) -> Result<()> {
@@ -301,9 +338,12 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         repo: Some(args.repo.clone()),
         gh_binary: gh_binary.clone(),
         head_workspace: args.head_workspace,
+        base_workspace: args.base_workspace,
         common: RequestOptions {
             request_id: args.request_id,
             instructions: args.instructions,
+            local_runtime: runtime_targets(args.local_runtime_commands),
+            allow_local_runtime: args.allow_local_runtime,
             allowed_env: args.allowed_env,
             timeout_ms: timeout_ms(args.timeout_seconds)?,
         },

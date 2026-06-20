@@ -168,6 +168,8 @@ pub struct ReviewPolicy {
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
     #[serde(default)]
+    pub allow_local_runtime: bool,
+    #[serde(default)]
     pub external_research: ExternalResearchPolicy,
     #[serde(default)]
     pub render_targets: Vec<String>,
@@ -180,6 +182,7 @@ impl Default for ReviewPolicy {
         Self {
             allow_degraded: default_allow_degraded(),
             timeout_ms: default_timeout_ms(),
+            allow_local_runtime: false,
             external_research: ExternalResearchPolicy::default(),
             render_targets: vec!["json".to_string(), "markdown".to_string()],
             allowed_env: Vec::new(),
@@ -220,7 +223,8 @@ impl ContextCapabilities {
             diff: !request.change.diff.body.trim().is_empty(),
             repo_head: request.context.workspaces.head.is_some(),
             repo_base: request.context.workspaces.base.is_some(),
-            local_runtime: !request.context.local_runtime.is_empty(),
+            local_runtime: request.policy.allow_local_runtime
+                && !request.context.local_runtime.is_empty(),
             remote_runtime: !request.context.remote_runtime.is_empty(),
             external_research: request.policy.external_research.clone(),
         }

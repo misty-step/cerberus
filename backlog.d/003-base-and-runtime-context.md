@@ -1,6 +1,6 @@
 # Add base checkout and runtime context tiers
 
-Priority: P1 | Status: pending | Estimate: L
+Priority: P1 | Status: shipped | Estimate: L
 
 ## Goal
 
@@ -48,3 +48,7 @@ comparison and explicit local/runtime probes without overstating evidence.
 `remote_runtime`, but the shipped implementation only proves diff and
 repo-head review. This closes the highest-value evidence gap without turning
 Cerberus into a hosted platform.
+
+**Evidence:** `./scripts/verify.sh` exercises base+head disposable worktrees,
+local runtime policy rejection, allowlisted runtime env capture, runtime
+transcript availability to OpenCode, and capability-overstatement rejection.

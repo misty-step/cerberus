@@ -13,6 +13,12 @@ grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.tx
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
+cargo run --locked -- request git-range --help > target/cerberus-request-git-range-help.txt
+grep -q -- '--base-workspace' target/cerberus-request-git-range-help.txt
+grep -q -- '--local-runtime-command' target/cerberus-request-git-range-help.txt
+grep -q -- '--allow-local-runtime' target/cerberus-request-git-range-help.txt
+cargo run --locked -- request pr --help > target/cerberus-request-pr-help.txt
+grep -q -- '--base-workspace' target/cerberus-request-pr-help.txt
 cargo run --locked -- review-pr --help > target/cerberus-review-pr-help.txt
 grep -q -- '--dry-run' target/cerberus-review-pr-help.txt
 grep -q -- '--post' target/cerberus-review-pr-help.txt
@@ -64,12 +70,20 @@ artifact_json="$(awk '
 } > target/cerberus/invalid-duplicate-xml-raw-artifacts.txt
 printf '%s\n%s\n' "$artifact_json" "$artifact_json" \
   > target/cerberus/invalid-duplicate-raw-artifacts.txt
+sed 's#{{context_capabilities}}#{"diff":true,"repo_head":false,"repo_base":true,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}#' \
+  fixtures/harness/pass-review.txt \
+  > target/cerberus/invalid-overstated-base.txt
+sed 's#{{context_capabilities}}#{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":true,"remote_runtime":false,"external_research":"forbid"}#' \
+  fixtures/harness/pass-review.txt \
+  > target/cerberus/invalid-overstated-runtime.txt
 expect_review_failure duplicate-artifacts target/cerberus/invalid-duplicate-artifacts.txt
 expect_review_failure duplicate-marker-xml-artifacts target/cerberus/invalid-duplicate-marker-xml-artifacts.txt
 expect_review_failure duplicate-marker-raw-artifacts target/cerberus/invalid-duplicate-marker-raw-artifacts.txt
 expect_review_failure duplicate-xml-artifacts target/cerberus/invalid-duplicate-xml-artifacts.txt
 expect_review_failure duplicate-xml-raw-artifacts target/cerberus/invalid-duplicate-xml-raw-artifacts.txt
 expect_review_failure duplicate-raw-artifacts target/cerberus/invalid-duplicate-raw-artifacts.txt
+expect_review_failure overstated-base target/cerberus/invalid-overstated-base.txt
+expect_review_failure overstated-runtime target/cerberus/invalid-overstated-runtime.txt
 expect_review_failure unknown-finding-id fixtures/harness/invalid-unknown-finding-id.txt
 expect_review_failure unknown-suggested-fix fixtures/harness/invalid-unknown-suggested-fix.txt
 expect_review_failure orphan-suggested-fix fixtures/harness/invalid-orphan-suggested-fix.txt
@@ -80,6 +94,8 @@ grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/dupli
 grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-xml-artifacts.stderr
 grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-xml-raw-artifacts.stderr
 grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-raw-artifacts.stderr
+grep -q 'artifact context capabilities overstate the request' target/cerberus/overstated-base.stderr
+grep -q 'artifact context capabilities overstate the request' target/cerberus/overstated-runtime.stderr
 grep -q 'references unknown finding id' target/cerberus/unknown-finding-id.stderr
 grep -q 'references unknown suggested fix id' target/cerberus/unknown-suggested-fix.stderr
 grep -q 'top-level suggested fix is not attached' target/cerberus/orphan-suggested-fix.stderr
@@ -110,6 +126,8 @@ git -C "$tmp_repo" add src/ratio.rs
 git -C "$tmp_repo" commit -q -m "guard denominator"
 head_sha="$(git -C "$tmp_repo" rev-parse HEAD)"
 
+mkdir -p target/cerberus/context-tiers
+
 cargo run --locked -- request git-range \
   --repo-path "$tmp_repo" \
   --base "$base_sha" \
@@ -118,6 +136,7 @@ cargo run --locked -- request git-range \
   --out target/cerberus/git-range-request.json
 
 grep -q '"kind": "git_range"' target/cerberus/git-range-request.json
+grep -q '"base"' target/cerberus/git-range-request.json
 cargo run --locked -- review \
   --request target/cerberus/git-range-request.json \
   --harness fixture \
@@ -134,6 +153,54 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --markdown target/cerberus/git-range-opencode-review.md \
   --execution-plan target/cerberus/git-range-opencode-execution_plan.json \
   --transcript target/cerberus/git-range-opencode-transcript.txt
+
+test "$(git -C "$tmp_repo" rev-parse HEAD)" = "$head_sha"
+
+if cargo run --locked -- request git-range \
+  --repo-path "$tmp_repo" \
+  --base "$base_sha" \
+  --head "$head_sha" \
+  --local-runtime-command env \
+  --out target/cerberus/context-tiers/forbidden-runtime-request.json \
+  > target/cerberus/context-tiers/forbidden-runtime-request.stdout \
+  2> target/cerberus/context-tiers/forbidden-runtime-request.stderr; then
+  echo "expected local runtime request without policy to fail" >&2
+  exit 1
+fi
+grep -q 'local runtime targets require policy.allow_local_runtime' \
+  target/cerberus/context-tiers/forbidden-runtime-request.stderr
+
+CERBERUS_ALLOWED_RUNTIME=visible cargo run --locked -- request git-range \
+  --repo-path "$tmp_repo" \
+  --base "$base_sha" \
+  --head "$head_sha" \
+  --local-runtime-command env \
+  --allow-local-runtime \
+  --allow-env CERBERUS_ALLOWED_RUNTIME \
+  --out target/cerberus/context-tiers/local-runtime-request.json
+
+GH_TOKEN=should-not-leak CERBERUS_ALLOWED_RUNTIME=visible cargo run --locked -- review \
+  --request target/cerberus/context-tiers/local-runtime-request.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --out target/cerberus/context-tiers/local-runtime-opencode-artifact.json \
+  --execution-plan target/cerberus/context-tiers/local-runtime-opencode-execution_plan.json \
+  --transcript target/cerberus/context-tiers/local-runtime-opencode-transcript.txt
+
+grep -q '"repo_base": true' target/cerberus/context-tiers/local-runtime-opencode-artifact.json
+grep -q '"local_runtime": true' target/cerberus/context-tiers/local-runtime-opencode-artifact.json
+grep -q '"workspace_mode": "repo_base_head_worktrees"' \
+  target/cerberus/context-tiers/local-runtime-opencode-execution_plan.json
+grep -q '"runtime_transcripts": \[' \
+  target/cerberus/context-tiers/local-runtime-opencode-execution_plan.json
+grep -q '\[local_runtime\]' target/cerberus/context-tiers/local-runtime-opencode-transcript.txt
+grep -q 'CERBERUS_ALLOWED_RUNTIME=visible' \
+  target/cerberus/context-tiers/local-runtime-opencode-transcript.txt
+if grep -q 'GH_TOKEN=should-not-leak' \
+  target/cerberus/context-tiers/local-runtime-opencode-transcript.txt; then
+  echo "runtime probe leaked GH_TOKEN into transcript" >&2
+  exit 1
+fi
 
 cargo run --locked -- review \
   --request fixtures/requests/diff-only.json \
@@ -255,6 +322,10 @@ test -s target/cerberus/git-range-opencode-artifact.json
 test -s target/cerberus/git-range-opencode-review.md
 test -s target/cerberus/git-range-opencode-execution_plan.json
 test -s target/cerberus/git-range-opencode-transcript.txt
+test -s target/cerberus/context-tiers/local-runtime-request.json
+test -s target/cerberus/context-tiers/local-runtime-opencode-artifact.json
+test -s target/cerberus/context-tiers/local-runtime-opencode-execution_plan.json
+test -s target/cerberus/context-tiers/local-runtime-opencode-transcript.txt
 test -s target/cerberus/opencode-artifact.json
 test -s target/cerberus/opencode-execution_plan.json
 test -s target/cerberus/opencode-transcript.txt
@@ -275,8 +346,10 @@ grep -q '"private_material_in_argv": false' target/cerberus/execution_plan.json
 grep -q '"diff": true' target/cerberus/artifact.json
 grep -q '"repo_head": false' target/cerberus/artifact.json
 grep -q '"repo_head": true' target/cerberus/git-range-artifact.json
+grep -q '"repo_base": true' target/cerberus/git-range-artifact.json
 grep -q '"repo_head": true' target/cerberus/git-range-opencode-artifact.json
-grep -q '"workspace_mode": "repo_head_worktree"' target/cerberus/git-range-opencode-execution_plan.json
+grep -q '"repo_base": true' target/cerberus/git-range-opencode-artifact.json
+grep -q '"workspace_mode": "repo_base_head_worktrees"' target/cerberus/git-range-opencode-execution_plan.json
 grep -q 'Cerberus Review: WARN' target/cerberus/review.md
 grep -q '"harness": "opencode"' target/cerberus/opencode-execution_plan.json
 grep -q '"harness": "omp"' target/cerberus/omp-execution_plan.json
