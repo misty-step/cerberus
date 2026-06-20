@@ -32,6 +32,11 @@ rendered Markdown.
 ## CLI
 
 ```sh
+cerberus request git-range --base origin/master --head HEAD \
+  --out target/cerberus/request.json
+
+cerberus request pr --number 123 --out target/cerberus/request.json
+
 cerberus review --request fixtures/requests/diff-only.json \
   --harness fixture \
   --fixture-output fixtures/harness/valid-review.txt \

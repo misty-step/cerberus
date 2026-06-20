@@ -234,11 +234,18 @@ Safety footguns to test:
 MVP CLI:
 
 ```text
+cerberus request git-range --base <ref> --head <ref> --out <request.json>
+cerberus request pr --number <n> --out <request.json>
+
 cerberus review --request <request.json> --out <artifact.json> \
   [--markdown <review.md>] [--harness opencode|omp|fixture]
 
 cerberus render --artifact <artifact.json> --markdown <review.md>
 ```
+
+The request commands are acquisition helpers. They produce `ReviewRequest.v1`
+and do not launch the reviewer or post comments. The review command remains
+the only execution boundary.
 
 The fixture harness exists only for deterministic verification. The preferred
 production product path is the OpenCode harness; OMP is a local fallback.

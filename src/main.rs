@@ -4,6 +4,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use cerberus::harness::{ExecutionPlan, HarnessKind, ReviewHarness};
+use cerberus::request::{
+    build_git_range_request, build_pull_request, GitRangeRequestOptions, PullRequestOptions,
+    RequestOptions,
+};
 use cerberus::{
     render_markdown, validate_artifact_for_request, validate_request, ReviewArtifact, ReviewRequest,
 };
@@ -19,8 +23,67 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    Request(RequestArgs),
     Review(Box<ReviewArgs>),
     Render(RenderArgs),
+}
+
+#[derive(Debug, Args)]
+struct RequestArgs {
+    #[command(subcommand)]
+    command: RequestCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RequestCommand {
+    GitRange(GitRangeArgs),
+    Pr(PullRequestArgs),
+}
+
+#[derive(Debug, Args)]
+struct GitRangeArgs {
+    #[arg(long, default_value = ".")]
+    repo_path: PathBuf,
+    #[arg(long)]
+    base: String,
+    #[arg(long, default_value = "HEAD")]
+    head: String,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long)]
+    title: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long)]
+    request_id: Option<String>,
+    #[arg(long)]
+    repo: Option<String>,
+    #[arg(long = "instruction")]
+    instructions: Vec<String>,
+    #[arg(long = "allow-env")]
+    allowed_env: Vec<String>,
+    #[arg(long, default_value_t = 120)]
+    timeout_seconds: u64,
+}
+
+#[derive(Debug, Args)]
+struct PullRequestArgs {
+    #[arg(long)]
+    number: u64,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long)]
+    repo: Option<String>,
+    #[arg(long)]
+    head_workspace: Option<PathBuf>,
+    #[arg(long)]
+    request_id: Option<String>,
+    #[arg(long = "instruction")]
+    instructions: Vec<String>,
+    #[arg(long = "allow-env")]
+    allowed_env: Vec<String>,
+    #[arg(long, default_value_t = 120)]
+    timeout_seconds: u64,
 }
 
 #[derive(Debug, Args)]
@@ -64,9 +127,50 @@ struct RenderArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Command::Request(args) => request(args),
         Command::Review(args) => review(*args),
         Command::Render(args) => render(args),
     }
+}
+
+fn request(args: RequestArgs) -> Result<()> {
+    let (request, out) = match args.command {
+        RequestCommand::GitRange(args) => {
+            let out = args.out;
+            let request = build_git_range_request(&GitRangeRequestOptions {
+                repo_path: args.repo_path,
+                base: args.base,
+                head: args.head,
+                title: args.title,
+                description: args.description,
+                repo: args.repo,
+                common: RequestOptions {
+                    request_id: args.request_id,
+                    instructions: args.instructions,
+                    allowed_env: args.allowed_env,
+                    timeout_ms: args.timeout_seconds * 1000,
+                },
+            })?;
+            (request, out)
+        }
+        RequestCommand::Pr(args) => {
+            let out = args.out;
+            let request = build_pull_request(&PullRequestOptions {
+                number: args.number,
+                repo: args.repo,
+                head_workspace: args.head_workspace,
+                common: RequestOptions {
+                    request_id: args.request_id,
+                    instructions: args.instructions,
+                    allowed_env: args.allowed_env,
+                    timeout_ms: args.timeout_seconds * 1000,
+                },
+            })?;
+            (request, out)
+        }
+    };
+    validate_request(&request)?;
+    write_json(&out, &request)
 }
 
 fn review(args: ReviewArgs) -> Result<()> {
