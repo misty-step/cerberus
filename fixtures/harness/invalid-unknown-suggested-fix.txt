@@ -1,0 +1,62 @@
+Cerberus invalid fixture transcript: finding references an unknown suggested fix.
+
+-----BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
+{
+  "schema_version": "cerberus.review_artifact.v1",
+  "artifact_id": "{{artifact_id}}",
+  "request_id": "{{request_id}}",
+  "request_digest": "{{request_digest}}",
+  "lifecycle_state": "completed",
+  "verdict": "WARN",
+  "context_capabilities": {{context_capabilities}},
+  "summary": {
+    "title": "Invalid artifact",
+    "body": "This fixture should fail validation.",
+    "analysis": "The finding points at a missing suggested fix.",
+    "residual_risk": []
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "severity": "major",
+      "category": "correctness",
+      "title": "Bad fix reference",
+      "description": "The suggested fix id is not present in the top-level fix list.",
+      "evidence": "The changed hunk is available.",
+      "confidence": 0.8,
+      "anchors": [
+        {
+          "kind": "inline",
+          "path": "src/ratio.rs",
+          "line": 3
+        }
+      ],
+      "citations": [],
+      "suggested_fixes": [
+        "missing-fix"
+      ]
+    }
+  ],
+  "comments": [],
+  "suggested_fixes": [],
+  "citations": [],
+  "receipts": [],
+  "run": {
+    "engine_version": "cerberus-fixture",
+    "config_digest": "sha256:fixture",
+    "started_at": "{{now}}",
+    "finished_at": "{{now}}",
+    "duration_ms": 1,
+    "cost_usd": null,
+    "coverage": {
+      "files_reviewed": [
+        "src/ratio.rs"
+      ],
+      "files_with_findings": [
+        "src/ratio.rs"
+      ]
+    }
+  },
+  "errors": []
+}
+-----END CERBERUS_REVIEW_ARTIFACT_V1-----

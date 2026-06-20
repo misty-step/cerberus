@@ -40,6 +40,15 @@ pub enum ValidationError {
     FindingMissingAnchor(String),
     #[error("finding references unknown citation id: {0}")]
     UnknownCitation(String),
+    #[error("{scope} references unknown finding id: {finding_id}")]
+    UnknownFindingReference { scope: String, finding_id: String },
+    #[error("{scope} references unknown suggested fix id: {suggested_fix_id}")]
+    UnknownSuggestedFixReference {
+        scope: String,
+        suggested_fix_id: String,
+    },
+    #[error("top-level suggested fix is not attached to any finding or comment: {0}")]
+    OrphanSuggestedFix(String),
     #[error("citation {0} references unknown finding id {1}")]
     CitationReferencesUnknownFinding(String, String),
     #[error("url citation {0} is missing observed_at")]
@@ -128,6 +137,12 @@ pub fn validate_artifact_for_request(
         .iter()
         .map(|citation| citation.id.as_str())
         .collect();
+    let suggested_fix_ids: HashSet<&str> = artifact
+        .suggested_fixes
+        .iter()
+        .map(|fix| fix.id.as_str())
+        .collect();
+    let mut referenced_fix_ids: HashSet<&str> = HashSet::new();
 
     for finding in &artifact.findings {
         if finding.anchors.is_empty() {
@@ -140,6 +155,15 @@ pub fn validate_artifact_for_request(
             if !citation_ids.contains(citation_id.as_str()) {
                 return Err(ValidationError::UnknownCitation(citation_id.clone()));
             }
+        }
+        for suggested_fix_id in &finding.suggested_fixes {
+            if !suggested_fix_ids.contains(suggested_fix_id.as_str()) {
+                return Err(ValidationError::UnknownSuggestedFixReference {
+                    scope: format!("finding {}", finding.id),
+                    suggested_fix_id: suggested_fix_id.clone(),
+                });
+            }
+            referenced_fix_ids.insert(suggested_fix_id.as_str());
         }
         if request.policy.external_research == ExternalResearchPolicy::RequireCitations
             && finding.citations.is_empty()
@@ -155,6 +179,23 @@ pub fn validate_artifact_for_request(
             return Err(ValidationError::InlineCommentAnchorMismatch);
         }
         validate_anchor(&comment.anchor, &changed_paths)?;
+        if let Some(finding_id) = &comment.finding_id {
+            if !finding_ids.contains(finding_id.as_str()) {
+                return Err(ValidationError::UnknownFindingReference {
+                    scope: format!("comment {}", comment.id),
+                    finding_id: finding_id.clone(),
+                });
+            }
+        }
+        for suggested_fix_id in &comment.suggested_fixes {
+            if !suggested_fix_ids.contains(suggested_fix_id.as_str()) {
+                return Err(ValidationError::UnknownSuggestedFixReference {
+                    scope: format!("comment {}", comment.id),
+                    suggested_fix_id: suggested_fix_id.clone(),
+                });
+            }
+            referenced_fix_ids.insert(suggested_fix_id.as_str());
+        }
     }
 
     let citations_by_id: HashMap<&str, _> = artifact
@@ -175,6 +216,20 @@ pub fn validate_artifact_for_request(
                     finding_id.clone(),
                 ));
             }
+        }
+    }
+
+    for fix in &artifact.suggested_fixes {
+        if let Some(finding_id) = &fix.finding_id {
+            if !finding_ids.contains(finding_id.as_str()) {
+                return Err(ValidationError::UnknownFindingReference {
+                    scope: format!("suggested fix {}", fix.id),
+                    finding_id: finding_id.clone(),
+                });
+            }
+        }
+        if fix.finding_id.is_none() && !referenced_fix_ids.contains(fix.id.as_str()) {
+            return Err(ValidationError::OrphanSuggestedFix(fix.id.clone()));
         }
     }
 
@@ -338,5 +393,132 @@ mod tests {
             validate_artifact_for_request(&artifact, &request),
             Err(ValidationError::FindingMissingAnchor(id)) if id == "f-1"
         ));
+    }
+
+    #[test]
+    fn rejects_comment_with_unknown_finding_id() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact.comments.push(Comment {
+            id: "c-1".to_string(),
+            kind: CommentKind::Inline,
+            intent: CommentIntent::Finding,
+            finding_id: Some("missing-finding".to_string()),
+            body: "This comment points at a finding that does not exist.".to_string(),
+            anchor: inline_anchor(),
+            dedupe_key: None,
+            suggested_fixes: Vec::new(),
+        });
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownFindingReference { scope, finding_id })
+                if scope == "comment c-1" && finding_id == "missing-finding"
+        ));
+    }
+
+    #[test]
+    fn rejects_finding_with_unknown_suggested_fix() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact
+            .findings
+            .push(anchored_finding_with_fix("f-1", "missing-fix"));
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownSuggestedFixReference {
+                scope,
+                suggested_fix_id,
+            }) if scope == "finding f-1" && suggested_fix_id == "missing-fix"
+        ));
+    }
+
+    #[test]
+    fn rejects_comment_with_unknown_suggested_fix() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact.comments.push(Comment {
+            id: "c-1".to_string(),
+            kind: CommentKind::Inline,
+            intent: CommentIntent::Finding,
+            finding_id: None,
+            body: "This comment points at a fix that does not exist.".to_string(),
+            anchor: inline_anchor(),
+            dedupe_key: None,
+            suggested_fixes: vec!["missing-fix".to_string()],
+        });
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownSuggestedFixReference {
+                scope,
+                suggested_fix_id,
+            }) if scope == "comment c-1" && suggested_fix_id == "missing-fix"
+        ));
+    }
+
+    #[test]
+    fn rejects_suggested_fix_with_unknown_finding_id() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact
+            .suggested_fixes
+            .push(suggested_fix("fix-1", Some("missing-finding".to_string())));
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::UnknownFindingReference { scope, finding_id })
+                if scope == "suggested fix fix-1" && finding_id == "missing-finding"
+        ));
+    }
+
+    #[test]
+    fn rejects_orphan_top_level_suggested_fix() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        artifact.suggested_fixes.push(suggested_fix("fix-1", None));
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::OrphanSuggestedFix(id)) if id == "fix-1"
+        ));
+    }
+
+    fn inline_anchor() -> Anchor {
+        Anchor {
+            kind: AnchorKind::Inline,
+            path: Some("src/lib.rs".to_string()),
+            line: Some(1),
+            start_line: None,
+            end_line: None,
+            hunk_digest: None,
+        }
+    }
+
+    fn anchored_finding_with_fix(id: &str, suggested_fix: &str) -> Finding {
+        Finding {
+            id: id.to_string(),
+            severity: Severity::Major,
+            category: "correctness".to_string(),
+            title: "bad fix reference".to_string(),
+            description: "references a fix that does not exist".to_string(),
+            evidence: "diff".to_string(),
+            confidence: 0.9,
+            anchors: vec![inline_anchor()],
+            citations: Vec::new(),
+            suggested_fixes: vec![suggested_fix.to_string()],
+        }
+    }
+
+    fn suggested_fix(id: &str, finding_id: Option<String>) -> SuggestedFix {
+        SuggestedFix {
+            id: id.to_string(),
+            finding_id,
+            applicability: FixApplicability::NeedsReview,
+            format: FixFormat::Instructions,
+            edits: Vec::new(),
+            diff: None,
+        }
     }
 }

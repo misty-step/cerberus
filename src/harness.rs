@@ -153,9 +153,12 @@ impl ReviewHarness {
             },
         )?;
 
+        let trusted_search_path = trusted_executable_search_path();
+        let executable = resolve_executable_in(&binary, &trusted_search_path)?;
+
         let plan = ExecutionPlan {
             harness: plan_harness.to_string(),
-            command: binary.clone(),
+            command: executable.display().to_string(),
             args: redact_prompt_path(&args),
             cwd: workspace.path().display().to_string(),
             timeout_ms: self.timeout.as_millis() as u64,
@@ -167,7 +170,6 @@ impl ReviewHarness {
         };
 
         let start = Instant::now();
-        let executable = resolve_executable(&binary).unwrap_or(binary);
         let mut command = Command::new(&executable);
         command
             .args(&args)
@@ -177,7 +179,7 @@ impl ReviewHarness {
         for (key, value) in allowed_child_env(&request.policy.allowed_env) {
             command.env(key, value);
         }
-        command.env("PATH", controlled_path());
+        command.env("PATH", join_search_path(&trusted_search_path));
         command.env("HOME", &child_home);
         command.env("XDG_CACHE_HOME", &child_cache);
         command.env("XDG_CONFIG_HOME", &child_config);
@@ -508,38 +510,86 @@ fn allowed_child_env(allowed_env: &[String]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn controlled_path() -> String {
+fn trusted_executable_search_path() -> Vec<PathBuf> {
     let mut paths = vec![
-        "/usr/bin".to_string(),
-        "/bin".to_string(),
-        "/usr/sbin".to_string(),
-        "/sbin".to_string(),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+        PathBuf::from("/usr/sbin"),
+        PathBuf::from("/sbin"),
     ];
     for candidate in ["/opt/homebrew/bin", "/usr/local/bin"] {
         if Path::new(candidate).is_dir() {
-            paths.push(candidate.to_string());
+            paths.push(PathBuf::from(candidate));
         }
     }
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
         for relative in [".bun/bin", ".opencode/bin", ".local/bin"] {
             let candidate = home.join(relative);
             if candidate.is_dir() {
-                paths.push(candidate.display().to_string());
+                paths.push(candidate);
             }
         }
     }
-    paths.join(":")
+    paths
 }
 
-fn resolve_executable(binary: &str) -> Option<String> {
-    if binary.contains('/') {
-        return Some(binary.to_string());
+fn join_search_path(paths: &[PathBuf]) -> String {
+    std::env::join_paths(paths)
+        .map(|joined| joined.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| {
+            paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(PATH_LIST_SEPARATOR)
+        })
+}
+
+#[cfg(windows)]
+const PATH_LIST_SEPARATOR: &str = ";";
+
+#[cfg(not(windows))]
+const PATH_LIST_SEPARATOR: &str = ":";
+
+fn resolve_executable_in(binary: &str, search_paths: &[PathBuf]) -> Result<PathBuf> {
+    let path = Path::new(binary);
+    if path.is_absolute() {
+        if is_executable_file(path) {
+            return Ok(path.to_path_buf());
+        }
+        return Err(anyhow!(
+            "absolute harness binary is not executable: {}",
+            path.display()
+        ));
     }
-    let paths = std::env::var_os("PATH")?;
-    std::env::split_paths(&paths)
+    if binary.contains('/') || binary.contains('\\') {
+        return Err(anyhow!(
+            "harness binary must be an absolute path or a bare name from the trusted search path: {binary}"
+        ));
+    }
+    search_paths
+        .iter()
         .map(|path| path.join(binary))
-        .find(|path| path.is_file())
-        .map(|path| path.display().to_string())
+        .find(|candidate| is_executable_file(candidate))
+        .ok_or_else(|| {
+            anyhow!(
+                "harness binary {binary:?} was not found in trusted search path: {}",
+                join_search_path(search_paths)
+            )
+        })
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 #[cfg(unix)]
@@ -716,65 +766,102 @@ fn unix_timestamp_string() -> String {
 }
 
 pub fn extract_marked_artifact(transcript: &str) -> Result<ReviewArtifact> {
-    let marked_json = extract_json_between_markers(transcript, ARTIFACT_BEGIN, ARTIFACT_END)
-        .or_else(|| extract_xml_wrapped_artifact_json(transcript))
-        .or_else(|| extract_unmarked_artifact_json(transcript));
-    let Some(json) = marked_json else {
+    let mut candidates = Vec::new();
+    let marker_candidates =
+        extract_json_between_markers(transcript, ARTIFACT_BEGIN, ARTIFACT_END, "marker");
+    let xml_candidates = extract_json_between_markers(
+        transcript,
+        "<CERBERUS_REVIEW_ARTIFACT_V1>",
+        "</CERBERUS_REVIEW_ARTIFACT_V1>",
+        "xml",
+    );
+    let explicit_spans = marker_candidates
+        .iter()
+        .chain(xml_candidates.iter())
+        .map(|candidate| (candidate.start, candidate.end))
+        .collect::<Vec<_>>();
+    let raw_candidates = extract_unmarked_artifact_json(transcript, &explicit_spans);
+    let marker_count = marker_candidates.len();
+    let xml_count = xml_candidates.len();
+    let raw_count = raw_candidates.len();
+    candidates.extend(marker_candidates);
+    candidates.extend(xml_candidates);
+    candidates.extend(raw_candidates);
+
+    if candidates.len() != 1 {
         let begin_count = transcript.matches(ARTIFACT_BEGIN).count();
         let end_count = transcript.matches(ARTIFACT_END).count();
         let xml_begin_count = transcript.matches("<CERBERUS_REVIEW_ARTIFACT_V1>").count();
         let xml_end_count = transcript.matches("</CERBERUS_REVIEW_ARTIFACT_V1>").count();
         return Err(anyhow!(
-            "expected exactly one artifact block, found {begin_count} begin markers, {end_count} end markers, {xml_begin_count} xml begin markers, and {xml_end_count} xml end markers"
+            "expected exactly one ReviewArtifact.v1 candidate, found {marker_count} marker, {xml_count} xml, and {raw_count} raw candidates ({begin_count} begin markers, {end_count} end markers, {xml_begin_count} xml begin markers, {xml_end_count} xml end markers)"
         ));
-    };
-    serde_json::from_str(&json).context("parse ReviewArtifact.v1 block")
-}
-
-fn extract_json_between_markers(transcript: &str, begin: &str, end: &str) -> Option<String> {
-    let start = transcript.find(begin)? + begin.len();
-    let remainder = &transcript[start..];
-    let finish = remainder.find(end)?;
-    let candidate = strip_markdown_json_fence(&remainder[..finish]);
-    if candidate.is_empty() {
-        None
-    } else {
-        Some(candidate.to_string())
     }
+    serde_json::from_str(&candidates.remove(0).json).context("parse ReviewArtifact.v1 block")
 }
 
-fn extract_xml_wrapped_artifact_json(transcript: &str) -> Option<String> {
-    let candidate = extract_json_between_markers(
-        transcript,
-        "<CERBERUS_REVIEW_ARTIFACT_V1>",
-        "</CERBERUS_REVIEW_ARTIFACT_V1>",
-    )?;
-    let parsed = serde_json::from_str::<ReviewArtifact>(&candidate).ok()?;
-    if parsed.schema_version == REVIEW_ARTIFACT_SCHEMA {
-        Some(candidate)
-    } else {
-        None
+#[derive(Debug)]
+struct ArtifactCandidate {
+    json: String,
+    start: usize,
+    end: usize,
+}
+
+fn extract_json_between_markers(
+    transcript: &str,
+    begin: &str,
+    end: &str,
+    _format: &'static str,
+) -> Vec<ArtifactCandidate> {
+    let mut candidates = Vec::new();
+    let mut cursor = 0;
+    while let Some(relative_start) = transcript[cursor..].find(begin) {
+        let block_start = cursor + relative_start;
+        let content_start = block_start + begin.len();
+        let Some(relative_end) = transcript[content_start..].find(end) else {
+            break;
+        };
+        let content_end = content_start + relative_end;
+        let block_end = content_end + end.len();
+        let candidate = strip_markdown_json_fence(&transcript[content_start..content_end]);
+        if !candidate.is_empty() {
+            candidates.push(ArtifactCandidate {
+                json: candidate.to_string(),
+                start: block_start,
+                end: block_end,
+            });
+        }
+        cursor = block_end;
     }
+    candidates
 }
 
-fn extract_unmarked_artifact_json(transcript: &str) -> Option<String> {
-    let schema_index = transcript.find(REVIEW_ARTIFACT_SCHEMA)?;
-    let mut starts: Vec<usize> = transcript[..schema_index]
-        .match_indices('{')
-        .map(|(index, _)| index)
-        .collect();
-    starts.reverse();
-    for start in starts {
+fn extract_unmarked_artifact_json(
+    transcript: &str,
+    excluded_spans: &[(usize, usize)],
+) -> Vec<ArtifactCandidate> {
+    let mut candidates = Vec::new();
+    for (start, _) in transcript.match_indices('{') {
+        if excluded_spans
+            .iter()
+            .any(|(span_start, span_end)| start >= *span_start && start < *span_end)
+        {
+            continue;
+        }
         let slice = &transcript[start..];
         let mut deserializer = serde_json::Deserializer::from_str(slice);
         let Ok(value) = Value::deserialize(&mut deserializer) else {
             continue;
         };
         if value.get("schema_version").and_then(Value::as_str) == Some(REVIEW_ARTIFACT_SCHEMA) {
-            return Some(value.to_string());
+            candidates.push(ArtifactCandidate {
+                json: value.to_string(),
+                start,
+                end: start,
+            });
         }
     }
-    None
+    candidates
 }
 
 fn strip_markdown_json_fence(raw: &str) -> &str {
@@ -878,11 +965,64 @@ mod tests {
 
     #[test]
     fn rejects_multiple_marker_blocks() {
+        let artifact = minimal_artifact_json();
         let transcript = format!(
-            "{begin}{{}}{end}\n{begin}{{}}{end}",
+            "{begin}{artifact}{end}\n{begin}{artifact}{end}",
             begin = ARTIFACT_BEGIN,
+            artifact = artifact,
             end = ARTIFACT_END
         );
+        assert!(extract_marked_artifact(&transcript).is_err());
+    }
+
+    #[test]
+    fn rejects_marker_and_xml_artifact_candidates_together() {
+        let artifact = minimal_artifact_json();
+        let transcript = format!(
+            "{begin}{artifact}{end}\n<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>",
+            begin = ARTIFACT_BEGIN,
+            artifact = artifact,
+            end = ARTIFACT_END
+        );
+        assert!(extract_marked_artifact(&transcript).is_err());
+    }
+
+    #[test]
+    fn rejects_marker_and_raw_artifact_candidates_together() {
+        let artifact = minimal_artifact_json();
+        let transcript = format!(
+            "{begin}{artifact}{end}\n{artifact}",
+            begin = ARTIFACT_BEGIN,
+            artifact = artifact,
+            end = ARTIFACT_END
+        );
+        assert!(extract_marked_artifact(&transcript).is_err());
+    }
+
+    #[test]
+    fn rejects_multiple_xml_artifact_candidates() {
+        let artifact = minimal_artifact_json();
+        let transcript = format!(
+            "<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>\n<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>",
+            artifact = artifact
+        );
+        assert!(extract_marked_artifact(&transcript).is_err());
+    }
+
+    #[test]
+    fn rejects_xml_and_raw_artifact_candidates_together() {
+        let artifact = minimal_artifact_json();
+        let transcript = format!(
+            "<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>\n{artifact}",
+            artifact = artifact
+        );
+        assert!(extract_marked_artifact(&transcript).is_err());
+    }
+
+    #[test]
+    fn rejects_multiple_raw_artifact_candidates() {
+        let artifact = minimal_artifact_json();
+        let transcript = format!("first\n{artifact}\nsecond\n{artifact}", artifact = artifact);
         assert!(extract_marked_artifact(&transcript).is_err());
     }
 
@@ -961,6 +1101,41 @@ mod tests {
         assert!(!text.contains("\"type\":\"text\""));
         assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
     }
+
+    #[test]
+    fn bare_substrate_binary_resolves_only_from_trusted_search_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let hostile_dir = temp.path().join("hostile-bin");
+        let trusted_dir = temp.path().join("trusted-bin");
+        fs::create_dir(&hostile_dir).unwrap();
+        fs::create_dir(&trusted_dir).unwrap();
+        let binary_name = "cerberus-test-opencode";
+        let hostile_binary = hostile_dir.join(binary_name);
+        let trusted_binary = trusted_dir.join(binary_name);
+        fs::write(&hostile_binary, "#!/bin/sh\nexit 1\n").unwrap();
+        fs::write(&trusted_binary, "#!/bin/sh\nexit 0\n").unwrap();
+        set_executable(&hostile_binary);
+        set_executable(&trusted_binary);
+
+        let resolved = resolve_executable_in(binary_name, &[trusted_dir]).unwrap();
+
+        assert_eq!(resolved, trusted_binary);
+    }
+
+    #[test]
+    fn relative_substrate_binary_paths_are_rejected() {
+        assert!(resolve_executable_in("./opencode", &[]).is_err());
+    }
+
+    #[cfg(unix)]
+    fn set_executable(path: &Path) {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    #[cfg(not(unix))]
+    fn set_executable(_path: &Path) {}
 
     #[test]
     fn opencode_artifact_scan_falls_back_to_transcript_without_text_events() {

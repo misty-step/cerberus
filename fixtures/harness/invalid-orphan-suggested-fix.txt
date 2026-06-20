@@ -1,0 +1,47 @@
+Cerberus invalid fixture transcript: top-level suggested fix is orphaned.
+
+-----BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
+{
+  "schema_version": "cerberus.review_artifact.v1",
+  "artifact_id": "{{artifact_id}}",
+  "request_id": "{{request_id}}",
+  "request_digest": "{{request_digest}}",
+  "lifecycle_state": "completed",
+  "verdict": "WARN",
+  "context_capabilities": {{context_capabilities}},
+  "summary": {
+    "title": "Invalid artifact",
+    "body": "This fixture should fail validation.",
+    "analysis": "The top-level suggested fix is not attached to any finding or comment.",
+    "residual_risk": []
+  },
+  "findings": [],
+  "comments": [],
+  "suggested_fixes": [
+    {
+      "id": "fix-orphan",
+      "applicability": "needs_review",
+      "format": "instructions",
+      "edits": [],
+      "diff": null
+    }
+  ],
+  "citations": [],
+  "receipts": [],
+  "run": {
+    "engine_version": "cerberus-fixture",
+    "config_digest": "sha256:fixture",
+    "started_at": "{{now}}",
+    "finished_at": "{{now}}",
+    "duration_ms": 1,
+    "cost_usd": null,
+    "coverage": {
+      "files_reviewed": [
+        "src/ratio.rs"
+      ],
+      "files_with_findings": []
+    }
+  },
+  "errors": []
+}
+-----END CERBERUS_REVIEW_ARTIFACT_V1-----
