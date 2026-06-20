@@ -513,9 +513,20 @@ fn kill_process_tree(child: &mut std::process::Child) {
 fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
     const CAP: usize = 1_000_000;
     if bytes.len() <= CAP {
-        bytes
+        return bytes;
+    }
+    const MARKER: &[u8] = b"\n...[cerberus truncated middle]...\n";
+    let available = CAP.saturating_sub(MARKER.len());
+    if available == 0 {
+        bytes[bytes.len() - CAP..].to_vec()
     } else {
-        bytes[..CAP].to_vec()
+        let head_len = available / 2;
+        let tail_len = available - head_len;
+        let mut capped = Vec::with_capacity(CAP);
+        capped.extend_from_slice(&bytes[..head_len]);
+        capped.extend_from_slice(MARKER);
+        capped.extend_from_slice(&bytes[bytes.len() - tail_len..]);
+        capped
     }
 }
 
@@ -773,6 +784,26 @@ mod tests {
             artifact_text_for_substrate(CommandSubstrate::Opencode, stdout.as_bytes(), "fallback");
         assert!(text.contains(ARTIFACT_BEGIN));
         assert!(!text.contains("\"type\":\"text\""));
+        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
+    }
+
+    #[test]
+    fn opencode_artifact_survives_large_stdout_tail_capture() {
+        let artifact = minimal_artifact_json();
+        let event = serde_json::json!({
+            "type": "text",
+            "part": {
+                "text": artifact
+            }
+        });
+        let mut stdout = vec![b'a'; 1_250_000];
+        stdout.extend_from_slice(b"\n");
+        stdout.extend_from_slice(serde_json::to_string(&event).unwrap().as_bytes());
+        stdout.extend_from_slice(b"\n");
+
+        let capped = cap_bytes(stdout);
+        assert!(String::from_utf8_lossy(&capped).contains("cerberus truncated middle"));
+        let text = artifact_text_for_substrate(CommandSubstrate::Opencode, &capped, "fallback");
         assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
     }
 
