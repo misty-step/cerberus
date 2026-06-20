@@ -1,0 +1,75 @@
+use std::path::PathBuf;
+use std::time::Duration;
+
+use anyhow::Result;
+
+use crate::harness::{
+    run_command_substrate, run_fixture_substrate, CommandSubstrateConfig, ExecutionPlan,
+    FixtureSubstrateConfig, OmpSubstrateConfig, OpenCodeSubstrateConfig,
+};
+use crate::schema::{ReviewArtifact, ReviewRequest};
+
+#[derive(Debug, Clone)]
+pub struct ReviewKernel {
+    pub substrate: ReviewSubstrate,
+}
+
+#[derive(Debug, Clone)]
+pub enum ReviewSubstrate {
+    Fixture(FixtureSubstrateConfig),
+    Opencode(OpenCodeSubstrateConfig),
+    Omp(OmpSubstrateConfig),
+}
+
+#[derive(Debug, Clone)]
+pub struct RunPolicy {
+    pub cwd: PathBuf,
+    pub timeout: Duration,
+    pub failure_transcript: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReviewRun {
+    pub artifact: ReviewArtifact,
+    pub transcript: String,
+    pub execution_plan: ExecutionPlan,
+}
+
+impl ReviewSubstrate {
+    pub fn fixture(output: PathBuf) -> Self {
+        Self::Fixture(FixtureSubstrateConfig { output })
+    }
+}
+
+impl ReviewKernel {
+    pub fn new(substrate: ReviewSubstrate) -> Self {
+        Self { substrate }
+    }
+
+    pub fn review(&self, request: &ReviewRequest, run_policy: &RunPolicy) -> Result<ReviewRun> {
+        let run = match &self.substrate {
+            ReviewSubstrate::Fixture(config) => {
+                run_fixture_substrate(request, &run_policy.cwd, run_policy.timeout, config)?
+            }
+            ReviewSubstrate::Opencode(config) => run_command_substrate(
+                CommandSubstrateConfig::Opencode(config),
+                request,
+                &run_policy.cwd,
+                run_policy.timeout,
+                run_policy.failure_transcript.as_deref(),
+            )?,
+            ReviewSubstrate::Omp(config) => run_command_substrate(
+                CommandSubstrateConfig::Omp(config),
+                request,
+                &run_policy.cwd,
+                run_policy.timeout,
+                run_policy.failure_transcript.as_deref(),
+            )?,
+        };
+        Ok(ReviewRun {
+            artifact: run.artifact,
+            transcript: run.transcript,
+            execution_plan: run.execution_plan,
+        })
+    }
+}

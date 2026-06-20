@@ -94,14 +94,15 @@ MVP excludes:
 The stable public seam is:
 
 ```text
-ReviewRequest.v1 + runtime policy -> ReviewArtifact.v1
+ReviewKernel::review(ReviewRequest.v1, RunPolicy) -> ReviewRun
 ```
 
 Callers may be GitHub Actions, local CLIs, task systems, hosted workers, or
 future services. They all acquire source context and map it into
-`ReviewRequest.v1`. Cerberus returns immutable artifacts. Renderers and posters
-project artifacts into Markdown, GitHub reviews, checks, SARIF, or other
-surfaces without mutating the artifact.
+`ReviewRequest.v1`, choose a `ReviewSubstrate` adapter config, and supply
+`RunPolicy` for cwd, timeout, and failure transcript handling. Cerberus returns
+immutable artifacts. Renderers and posters project artifacts into Markdown,
+GitHub reviews, checks, SARIF, or other surfaces without mutating the artifact.
 
 ### ReviewRequest.v1
 
@@ -155,11 +156,13 @@ Every finding must cite at least one concrete anchor:
 External research is allowed only when policy permits it. External claims must
 include citations. Model memory alone is not evidence.
 
-## Master Harness
+## Review Kernel and Harness
 
-Rust launches the Cerberus master through a narrow harness boundary.
+Rust launches the Cerberus master through a narrow `ReviewKernel` boundary.
+Substrate-specific options live in `ReviewSubstrate` adapter configs, not in
+the kernel contract or artifact schema.
 
-The harness must:
+The kernel-backed harness must:
 
 - write request and prompt material to private files, not argv;
 - scrub inherited environment variables by default;
@@ -201,7 +204,9 @@ omp -p --no-session --no-pty --no-extensions --no-skills --no-rules \
 ```
 
 The exact command is represented in `execution_plan.json` with placeholders for
-secret or private file paths.
+secret or private file paths. Prompt schema instructions are checked against
+the Rust `ReviewArtifact.v1` contract so the compact substrate prompt cannot
+silently drift from validation.
 
 ## Master Reviewer Prompt Contract
 
@@ -221,7 +226,7 @@ The master prompt tells Cerberus:
 
 MVP runtime is local process execution plus an ephemeral packet or workspace.
 Containers and hosted workers are later hardening profiles behind the same
-`ReviewHarness` contract.
+`ReviewKernel` contract.
 
 Do not start by building:
 

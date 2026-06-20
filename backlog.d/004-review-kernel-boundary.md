@@ -1,6 +1,6 @@
 # Deepen the review kernel boundary
 
-Priority: P1 | Status: pending | Estimate: L
+Priority: P1 | Status: shipped | Estimate: L
 
 ## Goal
 
@@ -9,13 +9,13 @@ substrate adapter options, prompt schema prose, and request-source plumbing.
 
 ## Oracle
 
-- [ ] A typed `ReviewKernel::review(request, run_policy) -> ReviewRun` owns the
+- [x] A typed `ReviewKernel::review(request, run_policy) -> ReviewRun` owns the
   common execution path.
-- [ ] OpenCode and OMP substrate options live behind adapter configs rather
+- [x] OpenCode and OMP substrate options live behind adapter configs rather
   than leaking into the CLI and core harness interface.
-- [ ] Prompt schema instructions are generated from or checked against Rust
+- [x] Prompt schema instructions are generated from or checked against Rust
   schema/validation fixtures.
-- [ ] Adding a new request source or substrate does not require editing
+- [x] Adding a new request source or substrate does not require editing
   unrelated prompt or CLI code beyond registration.
 
 ## Verification System
@@ -49,3 +49,9 @@ substrate adapter options, prompt schema prose, and request-source plumbing.
 prompt schema instructions, and provenance strings still leak across module
 boundaries. This matters before closed-loop delivery adds more callers and
 projection paths.
+
+**Shipped 2026-06-20:** Added `ReviewKernel`, `RunPolicy`, `ReviewRun`, and
+typed `ReviewSubstrate` configs; moved CLI review/review-pr calls through the
+kernel; added kernel integration coverage and prompt contract tests that compare
+generated prompt field paths against a serialized Rust `ReviewArtifact` shape
+plus validation fixture rules. Evidence: `./scripts/verify.sh`.

@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use cerberus::harness::{ExecutionPlan, HarnessKind, ReviewHarness};
+use cerberus::harness::{
+    ExecutionPlan, FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
+};
+use cerberus::kernel::{ReviewKernel, ReviewSubstrate, RunPolicy};
 use cerberus::post::{build_post_plan, trusted_lifecycle, GithubClient, SummaryTarget};
 use cerberus::request::{
     build_git_range_request, build_pull_request, fetch_pull_request_head_sha,
@@ -273,6 +276,34 @@ fn runtime_targets(commands: Vec<String>) -> Vec<RuntimeTarget> {
         .collect()
 }
 
+fn review_substrate(
+    harness: HarnessKind,
+    fixture_output: Option<PathBuf>,
+    opencode_binary: String,
+    opencode_attach: Option<String>,
+    opencode_agent: Option<String>,
+    omp_binary: String,
+    model: Option<String>,
+) -> Result<ReviewSubstrate> {
+    match harness {
+        HarnessKind::Fixture => {
+            let output = fixture_output
+                .ok_or_else(|| anyhow!("--fixture-output is required for fixture harness"))?;
+            Ok(ReviewSubstrate::Fixture(FixtureSubstrateConfig { output }))
+        }
+        HarnessKind::Opencode => Ok(ReviewSubstrate::Opencode(OpenCodeSubstrateConfig {
+            binary: opencode_binary,
+            attach: opencode_attach,
+            agent: opencode_agent,
+            model,
+        })),
+        HarnessKind::Omp => Ok(ReviewSubstrate::Omp(OmpSubstrateConfig {
+            binary: omp_binary,
+            model,
+        })),
+    }
+}
+
 fn review(args: ReviewArgs) -> Result<()> {
     let ReviewArgs {
         request,
@@ -296,18 +327,21 @@ fn review(args: ReviewArgs) -> Result<()> {
     let timeout = timeout_seconds
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_millis(request.policy.timeout_ms));
-    let review_harness = ReviewHarness {
-        kind: harness,
+    let kernel = ReviewKernel::new(review_substrate(
+        harness,
         fixture_output,
         opencode_binary,
         opencode_attach,
         opencode_agent,
         omp_binary,
         model,
+    )?);
+    let run_policy = RunPolicy {
+        cwd,
         timeout,
         failure_transcript: transcript.clone(),
     };
-    let run = review_harness.run(&request, &cwd)?;
+    let run = kernel.review(&request, &run_policy)?;
     let plan_path = execution_plan.unwrap_or_else(|| sibling_path(&out, "execution_plan.json"));
     write_json(&plan_path, &run.execution_plan)?;
     if let Some(transcript_path) = &transcript {
@@ -354,18 +388,21 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let cwd = args
         .cwd
         .unwrap_or(std::env::current_dir().context("read current directory")?);
-    let review_harness = ReviewHarness {
-        kind: args.harness,
-        fixture_output: args.fixture_output,
-        opencode_binary: args.opencode_binary,
-        opencode_attach: args.opencode_attach,
-        opencode_agent: args.opencode_agent,
-        omp_binary: args.omp_binary,
-        model: args.model,
+    let kernel = ReviewKernel::new(review_substrate(
+        args.harness,
+        args.fixture_output,
+        args.opencode_binary,
+        args.opencode_attach,
+        args.opencode_agent,
+        args.omp_binary,
+        args.model,
+    )?);
+    let run_policy = RunPolicy {
+        cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
         failure_transcript: Some(transcript_path.clone()),
     };
-    let run = review_harness.run(&request, &cwd)?;
+    let run = kernel.review(&request, &run_policy)?;
     write_json(&execution_plan_path, &run.execution_plan)?;
     write_text(&transcript_path, &run.transcript)?;
     validate_artifact_for_request(&run.artifact, &request)?;

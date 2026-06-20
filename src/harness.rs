@@ -26,16 +26,22 @@ pub enum HarnessKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReviewHarness {
-    pub kind: HarnessKind,
-    pub fixture_output: Option<PathBuf>,
-    pub opencode_binary: String,
-    pub opencode_attach: Option<String>,
-    pub opencode_agent: Option<String>,
-    pub omp_binary: String,
+pub struct FixtureSubstrateConfig {
+    pub output: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct OpenCodeSubstrateConfig {
+    pub binary: String,
+    pub attach: Option<String>,
+    pub agent: Option<String>,
     pub model: Option<String>,
-    pub timeout: Duration,
-    pub failure_transcript: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OmpSubstrateConfig {
+    pub binary: String,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -54,253 +60,242 @@ pub struct ExecutionPlan {
 }
 
 #[derive(Debug, Clone)]
-pub struct HarnessRun {
+pub(crate) struct HarnessRun {
     pub artifact: ReviewArtifact,
     pub transcript: String,
     pub execution_plan: ExecutionPlan,
 }
 
-impl ReviewHarness {
-    pub fn run(&self, request: &ReviewRequest, cwd: &Path) -> Result<HarnessRun> {
-        match self.kind {
-            HarnessKind::Fixture => self.run_fixture(request, cwd),
-            HarnessKind::Opencode => self.run_opencode(request, cwd),
-            HarnessKind::Omp => self.run_omp(request, cwd),
-        }
+pub(crate) fn run_fixture_substrate(
+    request: &ReviewRequest,
+    cwd: &Path,
+    timeout: Duration,
+    config: &FixtureSubstrateConfig,
+) -> Result<HarnessRun> {
+    let fixture_path = &config.output;
+    let raw = fs::read_to_string(fixture_path)
+        .with_context(|| format!("read fixture output {}", fixture_path.display()))?;
+    let request_digest = request_digest(request)?;
+    let capabilities = ContextCapabilities::from_request(request);
+    let temp = tempfile::Builder::new()
+        .prefix("cerberus-fixture-")
+        .tempdir()
+        .context("create private fixture tempdir")?;
+    let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+    let mut child_request = request_with_workspace_paths(request, &workspace);
+    let runtime_receipts =
+        run_local_runtime_probes(&mut child_request, &workspace, temp.path(), timeout)?;
+    let fixture_transcript = apply_fixture_template(&raw, request, &request_digest, &capabilities)?;
+    let transcript = format!(
+        "{}{}",
+        runtime_probe_transcript(&runtime_receipts),
+        fixture_transcript
+    );
+    let artifact = extract_marked_artifact(&transcript)?;
+    let plan = ExecutionPlan {
+        harness: "fixture".to_string(),
+        command: fixture_path.display().to_string(),
+        args: Vec::new(),
+        cwd: workspace.path().display().to_string(),
+        timeout_ms: timeout.as_millis() as u64,
+        env_allowlist: request.policy.allowed_env.clone(),
+        context_capabilities: capabilities,
+        prompt_transport: "fixture template".to_string(),
+        private_material_in_argv: false,
+        workspace_mode: workspace.mode().to_string(),
+        runtime_transcripts: runtime_receipts
+            .iter()
+            .map(|receipt| receipt.artifact.uri.clone())
+            .collect(),
+    };
+    Ok(HarnessRun {
+        artifact,
+        transcript,
+        execution_plan: plan,
+    })
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum CommandSubstrateConfig<'a> {
+    Opencode(&'a OpenCodeSubstrateConfig),
+    Omp(&'a OmpSubstrateConfig),
+}
+
+pub(crate) fn run_command_substrate(
+    substrate: CommandSubstrateConfig<'_>,
+    request: &ReviewRequest,
+    cwd: &Path,
+    timeout: Duration,
+    failure_transcript: Option<&Path>,
+) -> Result<HarnessRun> {
+    let request_digest = request_digest(request)?;
+    let capabilities = ContextCapabilities::from_request(request);
+    let temp = tempfile::Builder::new()
+        .prefix("cerberus-")
+        .tempdir()
+        .context("create private prompt tempdir")?;
+    let child_home = temp.path().join("home");
+    let child_cache = temp.path().join("cache");
+    let child_config = temp.path().join("config");
+    let child_data = temp.path().join("data");
+    for child_state_dir in [&child_home, &child_cache, &child_config, &child_data] {
+        fs::create_dir_all(child_state_dir)
+            .with_context(|| format!("create child state dir {}", child_state_dir.display()))?;
+        set_private_directory_permissions(child_state_dir)?;
     }
-
-    fn run_fixture(&self, request: &ReviewRequest, cwd: &Path) -> Result<HarnessRun> {
-        let fixture_path = self
-            .fixture_output
-            .as_ref()
-            .ok_or_else(|| anyhow!("--fixture-output is required for fixture harness"))?;
-        let raw = fs::read_to_string(fixture_path)
-            .with_context(|| format!("read fixture output {}", fixture_path.display()))?;
-        let request_digest = request_digest(request)?;
-        let capabilities = ContextCapabilities::from_request(request);
-        let temp = tempfile::Builder::new()
-            .prefix("cerberus-fixture-")
-            .tempdir()
-            .context("create private fixture tempdir")?;
-        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
-        let mut child_request = request_with_workspace_paths(request, &workspace);
-        let runtime_receipts =
-            run_local_runtime_probes(&mut child_request, &workspace, temp.path(), self.timeout)?;
-        let fixture_transcript =
-            apply_fixture_template(&raw, request, &request_digest, &capabilities)?;
-        let transcript = format!(
-            "{}{}",
-            runtime_probe_transcript(&runtime_receipts),
-            fixture_transcript
-        );
-        let artifact = extract_marked_artifact(&transcript)?;
-        let plan = ExecutionPlan {
-            harness: "fixture".to_string(),
-            command: fixture_path.display().to_string(),
-            args: Vec::new(),
-            cwd: workspace.path().display().to_string(),
-            timeout_ms: self.timeout.as_millis() as u64,
-            env_allowlist: request.policy.allowed_env.clone(),
-            context_capabilities: capabilities,
-            prompt_transport: "fixture template".to_string(),
-            private_material_in_argv: false,
-            workspace_mode: workspace.mode().to_string(),
-            runtime_transcripts: runtime_receipts
-                .iter()
-                .map(|receipt| receipt.artifact.uri.clone())
-                .collect(),
-        };
-        Ok(HarnessRun {
-            artifact,
-            transcript,
-            execution_plan: plan,
-        })
-    }
-
-    fn run_omp(&self, request: &ReviewRequest, cwd: &Path) -> Result<HarnessRun> {
-        self.run_command_substrate(request, cwd, CommandSubstrate::Omp)
-    }
-
-    fn run_opencode(&self, request: &ReviewRequest, cwd: &Path) -> Result<HarnessRun> {
-        self.run_command_substrate(request, cwd, CommandSubstrate::Opencode)
-    }
-
-    fn run_command_substrate(
-        &self,
-        request: &ReviewRequest,
-        cwd: &Path,
-        substrate: CommandSubstrate,
-    ) -> Result<HarnessRun> {
-        let request_digest = request_digest(request)?;
-        let capabilities = ContextCapabilities::from_request(request);
-        let temp = tempfile::Builder::new()
-            .prefix("cerberus-")
-            .tempdir()
-            .context("create private prompt tempdir")?;
-        let child_home = temp.path().join("home");
-        let child_cache = temp.path().join("cache");
-        let child_config = temp.path().join("config");
-        let child_data = temp.path().join("data");
-        for child_state_dir in [&child_home, &child_cache, &child_config, &child_data] {
-            fs::create_dir_all(child_state_dir)
-                .with_context(|| format!("create child state dir {}", child_state_dir.display()))?;
-            set_private_directory_permissions(child_state_dir)?;
-        }
-        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
-        let mut child_request = request_with_workspace_paths(request, &workspace);
-        let runtime_receipts =
-            run_local_runtime_probes(&mut child_request, &workspace, temp.path(), self.timeout)?;
-        let prompt = build_master_prompt(&child_request, &capabilities, &request_digest)?;
-        let prompt_path = temp.path().join("master-prompt.md");
-        fs::write(&prompt_path, prompt).context("write master prompt")?;
-        set_private_permissions(&prompt_path)?;
-        let request_path = temp.path().join("review-request.json");
-        fs::write(&request_path, serde_json::to_vec_pretty(&child_request)?)
-            .context("write review request")?;
-        set_private_permissions(&request_path)?;
-        if matches!(substrate, CommandSubstrate::Opencode) {
-            write_opencode_config(
-                &child_config,
-                &opencode_allowed_paths(&workspace, &runtime_receipts),
-            )?;
-        }
-
-        let (binary, args, plan_harness, prompt_transport) = self.command_for_substrate(
-            substrate,
-            CommandInput {
-                cwd: workspace.path(),
-                prompt_path: &prompt_path,
-                request_path: &request_path,
-                request,
-                capabilities: &capabilities,
-                request_digest: &request_digest,
-            },
+    let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+    let mut child_request = request_with_workspace_paths(request, &workspace);
+    let runtime_receipts =
+        run_local_runtime_probes(&mut child_request, &workspace, temp.path(), timeout)?;
+    let prompt = build_master_prompt(&child_request, &capabilities, &request_digest)?;
+    let prompt_path = temp.path().join("master-prompt.md");
+    fs::write(&prompt_path, prompt).context("write master prompt")?;
+    set_private_permissions(&prompt_path)?;
+    let request_path = temp.path().join("review-request.json");
+    fs::write(&request_path, serde_json::to_vec_pretty(&child_request)?)
+        .context("write review request")?;
+    set_private_permissions(&request_path)?;
+    if matches!(substrate, CommandSubstrateConfig::Opencode(_)) {
+        write_opencode_config(
+            &child_config,
+            &opencode_allowed_paths(&workspace, &runtime_receipts),
         )?;
+    }
 
-        let trusted_search_path = trusted_executable_search_path();
-        let executable = resolve_executable_in(&binary, &trusted_search_path)?;
+    let (binary, args, plan_harness, prompt_transport) = command_for_substrate(
+        substrate,
+        CommandInput {
+            cwd: workspace.path(),
+            prompt_path: &prompt_path,
+            request_path: &request_path,
+            request,
+            capabilities: &capabilities,
+            request_digest: &request_digest,
+        },
+    )?;
 
-        let plan = ExecutionPlan {
-            harness: plan_harness.to_string(),
-            command: executable.display().to_string(),
-            args: redact_prompt_path(&args),
-            cwd: workspace.path().display().to_string(),
-            timeout_ms: self.timeout.as_millis() as u64,
-            env_allowlist: request.policy.allowed_env.clone(),
-            context_capabilities: capabilities,
-            prompt_transport: prompt_transport.to_string(),
-            private_material_in_argv: false,
-            workspace_mode: workspace.mode().to_string(),
-            runtime_transcripts: runtime_receipts
-                .iter()
-                .map(|receipt| receipt.artifact.uri.clone())
-                .collect(),
-        };
+    let trusted_search_path = trusted_executable_search_path();
+    let executable = resolve_executable_in(&binary, &trusted_search_path)?;
 
-        let start = Instant::now();
-        let mut command = Command::new(&executable);
-        command
-            .args(&args)
-            .current_dir(workspace.path())
-            .stdin(Stdio::null())
-            .env_clear();
-        for (key, value) in allowed_child_env(&request.policy.allowed_env) {
-            command.env(key, value);
-        }
-        command.env("PATH", join_search_path(&trusted_search_path));
-        command.env("HOME", &child_home);
-        command.env("XDG_CACHE_HOME", &child_cache);
-        command.env("XDG_CONFIG_HOME", &child_config);
-        command.env("XDG_DATA_HOME", &child_data);
-        configure_process_group(&mut command);
+    let plan = ExecutionPlan {
+        harness: plan_harness.to_string(),
+        command: executable.display().to_string(),
+        args: redact_prompt_path(&args),
+        cwd: workspace.path().display().to_string(),
+        timeout_ms: timeout.as_millis() as u64,
+        env_allowlist: request.policy.allowed_env.clone(),
+        context_capabilities: capabilities,
+        prompt_transport: prompt_transport.to_string(),
+        private_material_in_argv: false,
+        workspace_mode: workspace.mode().to_string(),
+        runtime_transcripts: runtime_receipts
+            .iter()
+            .map(|receipt| receipt.artifact.uri.clone())
+            .collect(),
+    };
 
-        let output = run_with_timeout(command, self.timeout)
-            .with_context(|| format!("run {plan_harness} harness"))?;
-        let elapsed_ms = start.elapsed().as_millis();
-        let transcript = format!(
-            "{}exit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}",
-            runtime_probe_transcript(&runtime_receipts),
-            output.status,
-            elapsed_ms,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let artifact_text = artifact_text_for_substrate(substrate, &output.stdout, &transcript);
-        let artifact = match extract_marked_artifact(&artifact_text) {
-            Ok(artifact) => artifact,
-            Err(err) => {
-                write_failure_transcript(self.failure_transcript.as_deref(), &transcript)?;
-                return Err(err);
-            }
-        };
-        if let Err(err) = validate_process_status_matches_artifact(&output.status, &artifact) {
-            write_failure_transcript(self.failure_transcript.as_deref(), &transcript)?;
+    let start = Instant::now();
+    let mut command = Command::new(&executable);
+    command
+        .args(&args)
+        .current_dir(workspace.path())
+        .stdin(Stdio::null())
+        .env_clear();
+    for (key, value) in allowed_child_env(&request.policy.allowed_env) {
+        command.env(key, value);
+    }
+    command.env("PATH", join_search_path(&trusted_search_path));
+    command.env("HOME", &child_home);
+    command.env("XDG_CACHE_HOME", &child_cache);
+    command.env("XDG_CONFIG_HOME", &child_config);
+    command.env("XDG_DATA_HOME", &child_data);
+    configure_process_group(&mut command);
+
+    let output = run_with_timeout(command, timeout)
+        .with_context(|| format!("run {plan_harness} harness"))?;
+    let elapsed_ms = start.elapsed().as_millis();
+    let transcript = format!(
+        "{}exit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}",
+        runtime_probe_transcript(&runtime_receipts),
+        output.status,
+        elapsed_ms,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact_text = artifact_text_for_substrate(substrate, &output.stdout, &transcript);
+    let artifact = match extract_marked_artifact(&artifact_text) {
+        Ok(artifact) => artifact,
+        Err(err) => {
+            write_failure_transcript(failure_transcript, &transcript)?;
             return Err(err);
         }
-        Ok(HarnessRun {
-            artifact,
-            transcript,
-            execution_plan: plan,
-        })
+    };
+    if let Err(err) = validate_process_status_matches_artifact(&output.status, &artifact) {
+        write_failure_transcript(failure_transcript, &transcript)?;
+        return Err(err);
     }
+    Ok(HarnessRun {
+        artifact,
+        transcript,
+        execution_plan: plan,
+    })
+}
 
-    fn command_for_substrate(
-        &self,
-        substrate: CommandSubstrate,
-        input: CommandInput<'_>,
-    ) -> Result<(String, Vec<String>, &'static str, &'static str)> {
-        match substrate {
-            CommandSubstrate::Opencode => {
-                let message =
-                    build_opencode_message(input.request, input.capabilities, input.request_digest)
-                        .context("build opencode message")?;
-                let mut args = vec![
-                    "run".to_string(),
-                    message,
-                    "--format".to_string(),
-                    "json".to_string(),
-                    "--dir".to_string(),
-                    input.cwd.display().to_string(),
-                    "--file".to_string(),
-                    input.request_path.display().to_string(),
-                ];
-                if let Some(model) = &self.model {
-                    args.push("--model".to_string());
-                    args.push(model.clone());
-                }
-                if let Some(agent) = &self.opencode_agent {
-                    args.push("--agent".to_string());
-                    args.push(agent.clone());
-                }
-                if let Some(attach) = &self.opencode_attach {
-                    args.push("--attach".to_string());
-                    args.push(attach.clone());
-                }
-                Ok((
-                    self.opencode_binary.clone(),
-                    args,
-                    "opencode",
-                    "private request file attachment plus argv instructions",
-                ))
+fn command_for_substrate(
+    substrate: CommandSubstrateConfig<'_>,
+    input: CommandInput<'_>,
+) -> Result<(String, Vec<String>, &'static str, &'static str)> {
+    match substrate {
+        CommandSubstrateConfig::Opencode(config) => {
+            let message =
+                build_opencode_message(input.request, input.capabilities, input.request_digest)
+                    .context("build opencode message")?;
+            let mut args = vec![
+                "run".to_string(),
+                message,
+                "--format".to_string(),
+                "json".to_string(),
+                "--dir".to_string(),
+                input.cwd.display().to_string(),
+                "--file".to_string(),
+                input.request_path.display().to_string(),
+            ];
+            if let Some(model) = &config.model {
+                args.push("--model".to_string());
+                args.push(model.clone());
             }
-            CommandSubstrate::Omp => {
-                let mut args = vec![
-                    "-p".to_string(),
-                    "--no-session".to_string(),
-                    "--no-pty".to_string(),
-                    "--no-extensions".to_string(),
-                    "--no-skills".to_string(),
-                    "--no-rules".to_string(),
-                    "--cwd".to_string(),
-                    input.cwd.display().to_string(),
-                ];
-                if let Some(model) = &self.model {
-                    args.push("--model".to_string());
-                    args.push(model.clone());
-                }
-                args.push(format!("@{}", input.prompt_path.display()));
-                Ok((self.omp_binary.clone(), args, "omp", "private prompt file"))
+            if let Some(agent) = &config.agent {
+                args.push("--agent".to_string());
+                args.push(agent.clone());
             }
+            if let Some(attach) = &config.attach {
+                args.push("--attach".to_string());
+                args.push(attach.clone());
+            }
+            Ok((
+                config.binary.clone(),
+                args,
+                "opencode",
+                "private request file attachment plus argv instructions",
+            ))
+        }
+        CommandSubstrateConfig::Omp(config) => {
+            let mut args = vec![
+                "-p".to_string(),
+                "--no-session".to_string(),
+                "--no-pty".to_string(),
+                "--no-extensions".to_string(),
+                "--no-skills".to_string(),
+                "--no-rules".to_string(),
+                "--cwd".to_string(),
+                input.cwd.display().to_string(),
+            ];
+            if let Some(model) = &config.model {
+                args.push("--model".to_string());
+                args.push(model.clone());
+            }
+            args.push(format!("@{}", input.prompt_path.display()));
+            Ok((config.binary.clone(), args, "omp", "private prompt file"))
         }
     }
 }
@@ -698,12 +693,6 @@ fn runtime_probe_transcript(receipts: &[RuntimeProbeReceipt]) -> String {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum CommandSubstrate {
-    Opencode,
-    Omp,
-}
-
-#[derive(Debug, Clone, Copy)]
 struct CommandInput<'a> {
     cwd: &'a Path,
     prompt_path: &'a Path,
@@ -953,15 +942,15 @@ fn read_capped_file(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn artifact_text_for_substrate(
-    substrate: CommandSubstrate,
+    substrate: CommandSubstrateConfig<'_>,
     stdout: &[u8],
     transcript: &str,
 ) -> String {
     match substrate {
-        CommandSubstrate::Opencode => extract_opencode_text_events(stdout)
+        CommandSubstrateConfig::Opencode(_) => extract_opencode_text_events(stdout)
             .filter(|text| !text.trim().is_empty())
             .unwrap_or_else(|| transcript.to_string()),
-        CommandSubstrate::Omp => transcript.to_string(),
+        CommandSubstrateConfig::Omp(_) => transcript.to_string(),
     }
 }
 
@@ -1397,8 +1386,12 @@ mod tests {
             "{{\"type\":\"start\"}}\n{}\nnot json\n",
             serde_json::to_string(&event).unwrap()
         );
-        let text =
-            artifact_text_for_substrate(CommandSubstrate::Opencode, stdout.as_bytes(), "fallback");
+        let config = test_opencode_config();
+        let text = artifact_text_for_substrate(
+            CommandSubstrateConfig::Opencode(&config),
+            stdout.as_bytes(),
+            "fallback",
+        );
         assert!(text.contains(ARTIFACT_BEGIN));
         assert!(!text.contains("\"type\":\"text\""));
         assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
@@ -1449,7 +1442,12 @@ mod tests {
             end = ARTIFACT_END
         );
 
-        let text = artifact_text_for_substrate(CommandSubstrate::Opencode, stdout, &transcript);
+        let config = test_opencode_config();
+        let text = artifact_text_for_substrate(
+            CommandSubstrateConfig::Opencode(&config),
+            stdout,
+            &transcript,
+        );
 
         assert_eq!(text, transcript);
         assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
@@ -1471,7 +1469,12 @@ mod tests {
 
         let capped = cap_bytes(stdout);
         assert!(String::from_utf8_lossy(&capped).contains("cerberus truncated middle"));
-        let text = artifact_text_for_substrate(CommandSubstrate::Opencode, &capped, "fallback");
+        let config = test_opencode_config();
+        let text = artifact_text_for_substrate(
+            CommandSubstrateConfig::Opencode(&config),
+            &capped,
+            "fallback",
+        );
         assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
     }
 
@@ -1556,16 +1559,11 @@ mod tests {
 
     #[test]
     fn opencode_command_uses_file_transport_and_json_events() {
-        let harness = ReviewHarness {
-            kind: HarnessKind::Opencode,
-            fixture_output: None,
-            opencode_binary: "opencode".to_string(),
-            opencode_attach: Some("http://127.0.0.1:4096".to_string()),
-            opencode_agent: Some("build".to_string()),
-            omp_binary: "omp".to_string(),
+        let substrate = OpenCodeSubstrateConfig {
+            binary: "opencode".to_string(),
+            attach: Some("http://127.0.0.1:4096".to_string()),
+            agent: Some("build".to_string()),
             model: Some("openai/gpt-5.5".to_string()),
-            timeout: Duration::from_secs(1),
-            failure_transcript: None,
         };
         let request = serde_json::from_value::<ReviewRequest>(serde_json::json!({
             "schema_version": "cerberus.review_request.v1",
@@ -1582,19 +1580,18 @@ mod tests {
         .unwrap();
         let capabilities = ContextCapabilities::from_request(&request);
         let request_digest = request_digest(&request).unwrap();
-        let (_binary, args, plan_harness, transport) = harness
-            .command_for_substrate(
-                CommandSubstrate::Opencode,
-                CommandInput {
-                    cwd: Path::new("/work/repo"),
-                    prompt_path: Path::new("/tmp/cerberus-test/master-prompt.md"),
-                    request_path: Path::new("/tmp/cerberus-test/review-request.json"),
-                    request: &request,
-                    capabilities: &capabilities,
-                    request_digest: &request_digest,
-                },
-            )
-            .unwrap();
+        let (_binary, args, plan_harness, transport) = command_for_substrate(
+            CommandSubstrateConfig::Opencode(&substrate),
+            CommandInput {
+                cwd: Path::new("/work/repo"),
+                prompt_path: Path::new("/tmp/cerberus-test/master-prompt.md"),
+                request_path: Path::new("/tmp/cerberus-test/review-request.json"),
+                request: &request,
+                capabilities: &capabilities,
+                request_digest: &request_digest,
+            },
+        )
+        .unwrap();
         assert_eq!(plan_harness, "opencode");
         assert_eq!(
             transport,
@@ -1612,6 +1609,15 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--attach", "http://127.0.0.1:4096"]));
+    }
+
+    fn test_opencode_config() -> OpenCodeSubstrateConfig {
+        OpenCodeSubstrateConfig {
+            binary: "opencode".to_string(),
+            attach: None,
+            agent: None,
+            model: None,
+        }
     }
 
     #[test]

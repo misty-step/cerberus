@@ -2,9 +2,9 @@
 
 Cerberus is a context-adaptive AI code review runner. It accepts a
 source-agnostic `ReviewRequest.v1`, gives one master reviewer the available
-context through a selected agent substrate, validates the returned
-`ReviewArtifact.v1`, and renders or posts the result for callers such as local
-scripts and GitHub pull requests.
+context through `ReviewKernel`, validates the returned `ReviewArtifact.v1`, and
+renders or posts the result for callers such as local scripts and GitHub pull
+requests.
 
 There are no predefined reviewer subagents. The Cerberus master may launch
 ephemeral substrate subagents at runtime when the diff and context call for
@@ -14,6 +14,8 @@ rendering.
 OpenCode is the preferred production-oriented substrate because its
 server/session-first shape fits durable automated review better than a
 terminal-first wrapper. OMP remains supported as a local power-user fallback.
+OpenCode, OMP, and fixture-specific options live behind `ReviewSubstrate`
+adapter configs; callers pass a `RunPolicy` into `ReviewKernel::review`.
 
 See [spec.md](spec.md) for the locked MVP contract.
 
@@ -75,8 +77,8 @@ and `--allow-local-runtime` are present; probe env is restricted to
 `--allow-env` plus a trusted `PATH`, and transcripts are captured in the review
 transcript.
 
-The fixture harness is for deterministic verification. The production path is
-the OpenCode harness using the `build` agent profile by default against
+The fixture substrate is for deterministic verification. The production path is
+the OpenCode substrate using the `build` agent profile by default against
 disposable review worktrees; OMP is a local fallback.
 
 `review-pr` is orchestration over acquisition, review, rendering, and GitHub

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Plan 004: Review Kernel Boundary</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #141414;
+      --muted: #5b626a;
+      --line: #d8dde3;
+      --wash: #f5f7f9;
+      --accent: #1f6f5b;
+      --warn: #8a5a00;
+    }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    main {
+      width: min(88rem, calc(100% - 3rem));
+      margin: 0 auto;
+      padding: 2rem 0 4rem;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.55fr);
+      gap: 2rem;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 1.5rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.4rem, 5vw, 5rem);
+      line-height: 0.95;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 0.7rem;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    p, li {
+      line-height: 1.5;
+    }
+
+    .kicker, .muted {
+      color: var(--muted);
+    }
+
+    .lede {
+      max-width: 58rem;
+      font-size: 1.15rem;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--wash);
+      padding: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+      margin-top: 1.5rem;
+      border: 1px solid var(--line);
+    }
+
+    .cell {
+      min-width: 0;
+      background: #fff;
+      padding: 1rem;
+    }
+
+    .cell.em {
+      background: var(--wash);
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .ok {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .warn {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        width: min(100% - 2rem, 88rem);
+      }
+
+      header,
+      .grid,
+      .two {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <section>
+        <p class="kicker">Backlog 004 / Review Kernel Boundary</p>
+        <h1>Make the review kernel the small typed surface.</h1>
+        <p class="lede">Cerberus should be easy to extend without threading substrate flags and prompt-schema prose through unrelated layers. The chosen design keeps the existing execution engine, wraps it in a typed <code>ReviewKernel::review(&amp;ReviewRequest, &amp;RunPolicy) -&gt; ReviewRun</code> boundary, and moves OpenCode/OMP knobs into adapter config structs.</p>
+      </section>
+      <aside class="panel">
+        <h2>Chosen Design</h2>
+        <p><span class="ok">Keep:</span> current Rust harness execution, workspace isolation, runtime probes, artifact validation, fake adapters, and CLI flags.</p>
+        <p><span class="ok">Change:</span> CLI constructs <code>ReviewSubstrate</code> and <code>RunPolicy</code>, then calls <code>ReviewKernel</code>.</p>
+        <p><span class="warn">Avoid:</span> a new workflow engine, predefined subagents, generic adapter framework, or model-eval ownership.</p>
+      </aside>
+    </header>
+
+    <section class="grid" aria-label="Execution contract">
+      <article class="cell">
+        <h2>Standards</h2>
+        <p>Deep module, small interface. Typed Rust contracts. CLI as adapter. Prompt/schema drift caught by tests. No extra abstraction unless it deletes coupling.</p>
+      </article>
+      <article class="cell">
+        <h2>Acceptance</h2>
+        <p>Kernel API owns review execution. Substrate configs own OpenCode/OMP flags. Prompt instructions are checked against Rust artifact shape. Backlog 004 marked shipped.</p>
+      </article>
+      <article class="cell">
+        <h2>Verify</h2>
+        <p><code>cargo test --locked</code>, targeted kernel/prompt tests, live fixture/OpenCode/OMP CLI runs, then <code>./scripts/verify.sh</code>.</p>
+      </article>
+      <article class="cell em">
+        <h2>Stop If</h2>
+        <p>The boundary becomes a semantic wrapper, CLI compatibility breaks without need, or review needs product behavior outside the ticket.</p>
+      </article>
+    </section>
+
+    <section class="two">
+      <article>
+        <h2>Current State</h2>
+        <ul>
+          <li><code>src/main.rs</code> directly constructs <code>ReviewHarness</code> from CLI substrate flags.</li>
+          <li><code>src/harness.rs</code> mixes public harness config, execution, adapter command construction, runtime probes, and parsing.</li>
+          <li><code>src/prompt.rs</code> manually lists required <code>ReviewArtifact.v1</code> fields.</li>
+        </ul>
+      </article>
+      <article>
+        <h2>Change Shape</h2>
+        <ul>
+          <li>Add <code>ReviewKernel</code>, <code>RunPolicy</code>, <code>ReviewRun</code>, and <code>ReviewSubstrate</code> types.</li>
+          <li>Move OpenCode/OMP/fixture options into config structs consumed by the kernel.</li>
+          <li>Keep existing command execution private and compatible with fake substrate verification.</li>
+          <li>Add prompt/schema contract tests that enumerate top-level artifact fields and role-linked nested fields.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="two">
+      <article>
+        <h2>Verification System</h2>
+        <p><strong>Claim:</strong> callers can review through a small typed kernel while substrate specifics stay in adapter configs.</p>
+        <p><strong>Falsifier:</strong> adding a substrate forces prompt changes, CLI-only flags enter kernel structs, or artifact schema drift compiles while prompt prose is stale.</p>
+        <p><strong>Driver:</strong> tests plus live CLI fixture/fake OpenCode/fake OMP review runs.</p>
+        <p><strong>Evidence packet:</strong> <code>target/cerberus/</code> artifacts, execution plans, transcripts, and final gate output.</p>
+      </article>
+      <article>
+        <h2>Review Focus</h2>
+        <ul>
+          <li>Thermo: reject wrappers that only rename <code>ReviewHarness</code>.</li>
+          <li>Works critique: preserve CLI/operator behavior and evidence readability.</li>
+          <li>Delete-first: no generic substrate registry until a second real production substrate needs it.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
