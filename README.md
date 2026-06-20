@@ -1,103 +1,47 @@
 # Cerberus
 
-Multi-agent AI code review for GitHub pull requests.
+Cerberus is a context-adaptive AI code review runner. It accepts a
+source-agnostic `ReviewRequest.v1`, gives one master reviewer the available
+context through a selected agent substrate, validates the returned
+`ReviewArtifact.v1`, and renders the result for callers such as local scripts
+or future GitHub adapters.
 
-Cerberus now ships as a thin GitHub Action client that dispatches review runs to the hosted Cerberus API. The heavy Python/Shell matrix pipeline has been retired from this repository.
+There are no predefined reviewer subagents. The Cerberus master may launch
+ephemeral substrate subagents at runtime when the diff and context call for
+them. Rust owns the contracts, capability boundaries, receipts, validation, and
+rendering.
 
-## Quick Start
+OpenCode is the preferred production-oriented substrate because its
+server/session-first shape fits durable automated review better than a
+terminal-first wrapper. OMP remains supported as a local power-user fallback.
 
-Create `.github/workflows/cerberus.yml`:
+See [spec.md](spec.md) for the locked MVP contract.
 
-```yaml
-name: Cerberus Review
+## Verify
 
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: cerberus-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    steps:
-      - uses: misty-step/cerberus@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          api-key: ${{ secrets.CERBERUS_API_KEY }}
-          fail-on-verdict: 'true'
+```sh
+./scripts/verify.sh
 ```
 
-Required repository configuration:
+The verification script formats, lints, tests, checks the default harness
+surface, runs a deterministic fixture review, and smokes both the OpenCode and
+OMP harness paths through local fake binaries. Evidence is written to
+`target/cerberus/`, including execution plans, transcripts, artifacts, and
+rendered Markdown.
 
-- Secret: `CERBERUS_API_KEY`
+## CLI
 
-The scaffolder CLI writes the same template:
+```sh
+cerberus review --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out target/cerberus/artifact.json \
+  --markdown target/cerberus/review.md \
+  --execution-plan target/cerberus/execution_plan.json
 
-```bash
-npx @misty-step/cerberus init
+cerberus render --artifact target/cerberus/artifact.json \
+  --markdown target/cerberus/review-rendered.md
 ```
 
-## Action Inputs
-
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `github-token` | no | `''` | GitHub token forwarded to the hosted Cerberus pipeline for per-request PR reads and writes |
-| `api-key` | yes | - | Cerberus API authentication key |
-| `cerberus-url` | no | `https://cerberus.fly.dev` | API base URL override for self-hosted or non-default deployments |
-| `model` | no | `''` | Reserved; accepted but not yet wired to reviewer selection |
-| `timeout` | no | `600` | Max seconds to wait for review completion |
-| `poll-interval` | no | `5` | Seconds between status polls |
-| `fail-on-verdict` | no | `true` | Exit 1 if aggregated verdict is FAIL |
-
-Outputs:
-
-- `verdict`
-- `review-id`
-
-## How It Works
-
-1. The root action runs `dispatch.sh`.
-2. `dispatch.sh` validates the PR context, skips fork or draft PRs, and sends `POST /api/reviews`.
-3. The action polls `GET /api/reviews/:id` until the review completes or times out.
-4. The aggregated verdict becomes the GitHub Action result.
-
-The review engine itself lives in [`cerberus-elixir/`](cerberus-elixir/README.md).
-
-## Repository Layout
-
-- `action.yml` / `dispatch.sh`: thin GitHub Action client
-- `cerberus-elixir/`: Elixir API server and review engine
-- `defaults/`: model and product data consumed by the engine
-- `pi/agents/`: reviewer personas
-- `templates/`: consumer workflow templates
-- `bin/cerberus.js`: workflow scaffolder CLI
-
-## Local Verification
-
-```bash
-node --check bin/cerberus.js
-shellcheck dispatch.sh
-cd cerberus-elixir && mix test
-cd cerberus-elixir && mix format --check-formatted
-```
-
-## Docs
-
-- [API contract](docs/api-contract.md)
-- [Migration guide](docs/MIGRATION.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Terminology](docs/TERMINOLOGY.md)
-- [Docs index](docs/README.md)
-
-## Legacy Note
-
-Historical docs, walkthroughs, and ADRs may still mention the retired matrix pipeline. The supported product surface in this repository is now the API-dispatch action plus the Elixir engine.
+The fixture harness is for deterministic verification. The production path is
+the OpenCode harness; OMP is a local fallback.

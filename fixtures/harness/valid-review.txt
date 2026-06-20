@@ -1,0 +1,106 @@
+Cerberus fixture transcript.
+
+-----BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
+{
+  "schema_version": "cerberus.review_artifact.v1",
+  "artifact_id": "{{artifact_id}}",
+  "request_id": "{{request_id}}",
+  "request_digest": "{{request_digest}}",
+  "lifecycle_state": "completed",
+  "verdict": "WARN",
+  "context_capabilities": {{context_capabilities}},
+  "summary": {
+    "title": "Diff-only review found one behavioral concern",
+    "body": "The guard avoids division by zero, but returning 0.0 silently changes the mathematical meaning and may hide caller bugs.",
+    "analysis": "This fixture intentionally records only diff evidence. It does not claim repo, test, or runtime access.",
+    "residual_risk": [
+      "No surrounding call sites were available in diff-only mode."
+    ]
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "severity": "major",
+      "category": "correctness",
+      "title": "Silent zero return may mask invalid denominator",
+      "description": "The new branch returns 0.0 for every zero denominator. If callers distinguish a true zero ratio from invalid input, this will silently produce a plausible but wrong result.",
+      "evidence": "The changed hunk adds `if denominator == 0.0 { return 0.0; }` before the existing division.",
+      "confidence": 0.76,
+      "anchors": [
+        {
+          "kind": "inline",
+          "path": "src/ratio.rs",
+          "line": 3
+        }
+      ],
+      "citations": [],
+      "suggested_fixes": [
+        "fix-001"
+      ]
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-001",
+      "kind": "inline",
+      "intent": "finding",
+      "finding_id": "finding-001",
+      "body": "Returning `0.0` for invalid input can be indistinguishable from a legitimate zero ratio. Consider an explicit error, `Option`, or documented sentinel behavior.",
+      "anchor": {
+        "kind": "inline",
+        "path": "src/ratio.rs",
+        "line": 3
+      },
+      "dedupe_key": "src/ratio.rs:3:zero-denominator",
+      "suggested_fixes": [
+        "fix-001"
+      ]
+    }
+  ],
+  "suggested_fixes": [
+    {
+      "id": "fix-001",
+      "finding_id": "finding-001",
+      "applicability": "needs_review",
+      "format": "instructions",
+      "edits": [],
+      "diff": null
+    }
+  ],
+  "citations": [],
+  "receipts": [
+    {
+      "id": "receipt-master",
+      "role": "master",
+      "perspective": "fixture",
+      "model": "fixture",
+      "provider": "local",
+      "harness": "fixture",
+      "status": "completed",
+      "verdict": "WARN",
+      "summary": "Fixture master produced one diff-grounded concern.",
+      "artifact_digest": null,
+      "transcript_uri": "fixtures/harness/valid-review.txt",
+      "usage": null,
+      "error": null
+    }
+  ],
+  "run": {
+    "engine_version": "cerberus-fixture",
+    "config_digest": "sha256:fixture",
+    "started_at": "{{now}}",
+    "finished_at": "{{now}}",
+    "duration_ms": 1,
+    "cost_usd": null,
+    "coverage": {
+      "files_reviewed": [
+        "src/ratio.rs"
+      ],
+      "files_with_findings": [
+        "src/ratio.rs"
+      ]
+    }
+  },
+  "errors": []
+}
+-----END CERBERUS_REVIEW_ARTIFACT_V1-----

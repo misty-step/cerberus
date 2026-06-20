@@ -1,7 +1,0 @@
-#!/bin/sh
-set -eu
-
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-RELEASE_ROOT="$(dirname "$SCRIPT_DIR")"
-
-exec "$RELEASE_ROOT/bin/cerberus" eval "Cerberus.CLI.main(System.argv())" -- "$@"
