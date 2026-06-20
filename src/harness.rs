@@ -30,6 +30,7 @@ pub struct ReviewHarness {
     pub fixture_output: Option<PathBuf>,
     pub opencode_binary: String,
     pub opencode_attach: Option<String>,
+    pub opencode_agent: Option<String>,
     pub omp_binary: String,
     pub model: Option<String>,
     pub timeout: Duration,
@@ -198,6 +199,10 @@ impl ReviewHarness {
                 if let Some(model) = &self.model {
                     args.push("--model".to_string());
                     args.push(model.clone());
+                }
+                if let Some(agent) = &self.opencode_agent {
+                    args.push("--agent".to_string());
+                    args.push(agent.clone());
                 }
                 if let Some(attach) = &self.opencode_attach {
                     args.push("--attach".to_string());
@@ -812,6 +817,7 @@ mod tests {
             fixture_output: None,
             opencode_binary: "opencode".to_string(),
             opencode_attach: Some("http://127.0.0.1:4096".to_string()),
+            opencode_agent: Some("explore".to_string()),
             omp_binary: "omp".to_string(),
             model: Some("openai/gpt-5.5".to_string()),
             timeout: Duration::from_secs(1),
@@ -831,6 +837,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--file", "/tmp/cerberus-test/master-prompt.md"]));
+        assert!(args.windows(2).any(|pair| pair == ["--agent", "explore"]));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--attach", "http://127.0.0.1:4096"]));

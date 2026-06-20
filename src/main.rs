@@ -102,6 +102,8 @@ struct ReviewArgs {
     opencode_binary: String,
     #[arg(long)]
     opencode_attach: Option<String>,
+    #[arg(long, default_value = "explore")]
+    opencode_agent: Option<String>,
     #[arg(long, default_value = "omp")]
     omp_binary: String,
     #[arg(long)]
@@ -182,6 +184,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         fixture_output,
         opencode_binary,
         opencode_attach,
+        opencode_agent,
         omp_binary,
         model,
         cwd,
@@ -200,6 +203,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         fixture_output,
         opencode_binary,
         opencode_attach,
+        opencode_agent,
         omp_binary,
         model,
         timeout,

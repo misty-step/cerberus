@@ -34,7 +34,7 @@ while [[ $# -gt 0 ]]; do
       prompt="${2:-}"
       shift 2
       ;;
-    --model|--attach)
+    --model|--attach|--agent)
       shift 2
       ;;
     *)
