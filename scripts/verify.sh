@@ -56,7 +56,17 @@ cargo run --locked -- review \
   --harness fixture \
   --fixture-output fixtures/harness/valid-review.txt \
   --out target/cerberus/git-range-artifact.json \
-  --markdown target/cerberus/git-range-review.md
+  --markdown target/cerberus/git-range-review.md \
+  --execution-plan target/cerberus/git-range-execution_plan.json
+
+GH_TOKEN=should-not-leak cargo run --locked -- review \
+  --request target/cerberus/git-range-request.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --out target/cerberus/git-range-opencode-artifact.json \
+  --markdown target/cerberus/git-range-opencode-review.md \
+  --execution-plan target/cerberus/git-range-opencode-execution_plan.json \
+  --transcript target/cerberus/git-range-opencode-transcript.txt
 
 cargo run --locked -- review \
   --request fixtures/requests/diff-only.json \
@@ -97,6 +107,11 @@ test -s target/cerberus/transcript.txt
 test -s target/cerberus/git-range-request.json
 test -s target/cerberus/git-range-artifact.json
 test -s target/cerberus/git-range-review.md
+test -s target/cerberus/git-range-execution_plan.json
+test -s target/cerberus/git-range-opencode-artifact.json
+test -s target/cerberus/git-range-opencode-review.md
+test -s target/cerberus/git-range-opencode-execution_plan.json
+test -s target/cerberus/git-range-opencode-transcript.txt
 test -s target/cerberus/opencode-artifact.json
 test -s target/cerberus/opencode-execution_plan.json
 test -s target/cerberus/opencode-transcript.txt
@@ -108,6 +123,8 @@ grep -q '"private_material_in_argv": false' target/cerberus/execution_plan.json
 grep -q '"diff": true' target/cerberus/artifact.json
 grep -q '"repo_head": false' target/cerberus/artifact.json
 grep -q '"repo_head": true' target/cerberus/git-range-artifact.json
+grep -q '"repo_head": true' target/cerberus/git-range-opencode-artifact.json
+grep -q '"workspace_mode": "repo_head_worktree"' target/cerberus/git-range-opencode-execution_plan.json
 grep -q 'Cerberus Review: WARN' target/cerberus/review.md
 grep -q '"harness": "opencode"' target/cerberus/opencode-execution_plan.json
 grep -q '"harness": "omp"' target/cerberus/omp-execution_plan.json

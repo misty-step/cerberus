@@ -236,15 +236,23 @@ impl ReviewHarness {
 struct RunWorkspace {
     path: PathBuf,
     mode: String,
+    cleanup: Option<WorktreeCleanup>,
+}
+
+#[derive(Debug)]
+struct WorktreeCleanup {
+    source: PathBuf,
+    path: PathBuf,
 }
 
 impl RunWorkspace {
     fn prepare(request: &ReviewRequest, fallback_cwd: &Path, temp_root: &Path) -> Result<Self> {
         if let Some(head) = &request.context.workspaces.head {
-            return Ok(Self {
-                path: PathBuf::from(&head.path),
-                mode: "repo_head".to_string(),
-            });
+            return Self::prepare_repo_head_workspace(
+                Path::new(&head.path),
+                head.sha.as_deref(),
+                temp_root,
+            );
         }
         let packet = temp_root.join("packet");
         fs::create_dir_all(&packet).context("create diff-only packet workspace")?;
@@ -260,13 +268,57 @@ impl RunWorkspace {
             Ok(Self {
                 path: fallback_cwd.to_path_buf(),
                 mode: "fallback_empty_diff".to_string(),
+                cleanup: None,
             })
         } else {
             Ok(Self {
                 path: packet,
                 mode: "diff_packet".to_string(),
+                cleanup: None,
             })
         }
+    }
+
+    fn prepare_repo_head_workspace(
+        source: &Path,
+        sha: Option<&str>,
+        temp_root: &Path,
+    ) -> Result<Self> {
+        let sha = sha.ok_or_else(|| {
+            anyhow!(
+                "repo_head workspace {} requires a sha for disposable review checkout",
+                source.display()
+            )
+        })?;
+        let worktree = temp_root.join("repo-head");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(source)
+            .args(["worktree", "add", "--detach"])
+            .arg(&worktree)
+            .arg(sha)
+            .output()
+            .with_context(|| {
+                format!(
+                    "create disposable review worktree from {}",
+                    source.display()
+                )
+            })?;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "create disposable review worktree from {} failed: {}",
+                source.display(),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Ok(Self {
+            path: worktree.clone(),
+            mode: "repo_head_worktree".to_string(),
+            cleanup: Some(WorktreeCleanup {
+                source: source.to_path_buf(),
+                path: worktree,
+            }),
+        })
     }
 
     fn path(&self) -> &Path {
@@ -275,6 +327,19 @@ impl RunWorkspace {
 
     fn mode(&self) -> &str {
         &self.mode
+    }
+}
+
+impl Drop for RunWorkspace {
+    fn drop(&mut self) {
+        if let Some(cleanup) = &self.cleanup {
+            let _ = Command::new("git")
+                .arg("-C")
+                .arg(&cleanup.source)
+                .args(["worktree", "remove", "--force"])
+                .arg(&cleanup.path)
+                .output();
+        }
     }
 }
 
