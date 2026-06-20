@@ -11,7 +11,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::digest::request_digest;
-use crate::prompt::{build_master_prompt, ARTIFACT_BEGIN, ARTIFACT_END};
+use crate::prompt::{build_master_prompt, build_opencode_message, ARTIFACT_BEGIN, ARTIFACT_END};
 use crate::schema::{
     ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact, ReviewRequest,
     REVIEW_ARTIFACT_SCHEMA,
@@ -120,10 +120,23 @@ impl ReviewHarness {
         let prompt_path = temp.path().join("master-prompt.md");
         fs::write(&prompt_path, prompt).context("write master prompt")?;
         set_private_permissions(&prompt_path)?;
+        let request_path = temp.path().join("review-request.json");
+        fs::write(&request_path, serde_json::to_vec_pretty(request)?)
+            .context("write review request")?;
+        set_private_permissions(&request_path)?;
         let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
 
-        let (binary, args, plan_harness, prompt_transport) =
-            self.command_for_substrate(substrate, workspace.path(), &prompt_path);
+        let (binary, args, plan_harness, prompt_transport) = self.command_for_substrate(
+            substrate,
+            CommandInput {
+                cwd: workspace.path(),
+                prompt_path: &prompt_path,
+                request_path: &request_path,
+                request,
+                capabilities: &capabilities,
+                request_digest: &request_digest,
+            },
+        )?;
 
         let plan = ExecutionPlan {
             harness: plan_harness.to_string(),
@@ -181,20 +194,22 @@ impl ReviewHarness {
     fn command_for_substrate(
         &self,
         substrate: CommandSubstrate,
-        cwd: &Path,
-        prompt_path: &Path,
-    ) -> (String, Vec<String>, &'static str, &'static str) {
+        input: CommandInput<'_>,
+    ) -> Result<(String, Vec<String>, &'static str, &'static str)> {
         match substrate {
             CommandSubstrate::Opencode => {
+                let message =
+                    build_opencode_message(input.request, input.capabilities, input.request_digest)
+                        .context("build opencode message")?;
                 let mut args = vec![
                     "run".to_string(),
-                    "Read the attached Cerberus master prompt. If repo_head is true, use tools to inspect changed checkout files before the final response. Then return the required raw JSON review artifact only.".to_string(),
+                    message,
                     "--format".to_string(),
                     "json".to_string(),
                     "--dir".to_string(),
-                    cwd.display().to_string(),
+                    input.cwd.display().to_string(),
                     "--file".to_string(),
-                    prompt_path.display().to_string(),
+                    input.request_path.display().to_string(),
                 ];
                 if let Some(model) = &self.model {
                     args.push("--model".to_string());
@@ -208,12 +223,12 @@ impl ReviewHarness {
                     args.push("--attach".to_string());
                     args.push(attach.clone());
                 }
-                (
+                Ok((
                     self.opencode_binary.clone(),
                     args,
                     "opencode",
-                    "private prompt file attachment",
-                )
+                    "private request file attachment plus argv instructions",
+                ))
             }
             CommandSubstrate::Omp => {
                 let mut args = vec![
@@ -224,14 +239,14 @@ impl ReviewHarness {
                     "--no-skills".to_string(),
                     "--no-rules".to_string(),
                     "--cwd".to_string(),
-                    cwd.display().to_string(),
+                    input.cwd.display().to_string(),
                 ];
                 if let Some(model) = &self.model {
                     args.push("--model".to_string());
                     args.push(model.clone());
                 }
-                args.push(format!("@{}", prompt_path.display()));
-                (self.omp_binary.clone(), args, "omp", "private prompt file")
+                args.push(format!("@{}", input.prompt_path.display()));
+                Ok((self.omp_binary.clone(), args, "omp", "private prompt file"))
             }
         }
     }
@@ -352,6 +367,16 @@ impl Drop for RunWorkspace {
 enum CommandSubstrate {
     Opencode,
     Omp,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CommandInput<'a> {
+    cwd: &'a Path,
+    prompt_path: &'a Path,
+    request_path: &'a Path,
+    request: &'a ReviewRequest,
+    capabilities: &'a ContextCapabilities,
+    request_digest: &'a str,
 }
 
 #[derive(Debug)]
@@ -534,6 +559,8 @@ fn redact_prompt_path(args: &[String]) -> Vec<String> {
                 "@<prompt-file>".to_string()
             } else if arg.contains("/master-prompt.md") {
                 "<prompt-file>".to_string()
+            } else if arg.contains("/review-request.json") {
+                "<request-file>".to_string()
             } else {
                 arg.clone()
             }
@@ -797,6 +824,8 @@ mod tests {
             "@/tmp/private/prompt.md".to_string(),
             "--file".to_string(),
             "/tmp/cerberus-abc/master-prompt.md".to_string(),
+            "--file".to_string(),
+            "/tmp/cerberus-abc/review-request.json".to_string(),
             "--no-session".to_string(),
         ];
         assert_eq!(
@@ -805,6 +834,8 @@ mod tests {
                 "@<prompt-file>".to_string(),
                 "--file".to_string(),
                 "<prompt-file>".to_string(),
+                "--file".to_string(),
+                "<request-file>".to_string(),
                 "--no-session".to_string()
             ]
         );
@@ -817,27 +848,53 @@ mod tests {
             fixture_output: None,
             opencode_binary: "opencode".to_string(),
             opencode_attach: Some("http://127.0.0.1:4096".to_string()),
-            opencode_agent: Some("build".to_string()),
+            opencode_agent: Some("plan".to_string()),
             omp_binary: "omp".to_string(),
             model: Some("openai/gpt-5.5".to_string()),
             timeout: Duration::from_secs(1),
         };
-        let (_binary, args, plan_harness, transport) = harness.command_for_substrate(
-            CommandSubstrate::Opencode,
-            Path::new("/work/repo"),
-            Path::new("/tmp/cerberus-test/master-prompt.md"),
-        );
+        let request = serde_json::from_value::<ReviewRequest>(serde_json::json!({
+            "schema_version": "cerberus.review_request.v1",
+            "request_id": "req-1",
+            "source": {"kind": "fixture", "metadata": {}},
+            "change": {
+                "title": "change",
+                "diff": {"format": "unified", "body": "diff --git a/src/lib.rs b/src/lib.rs\n"},
+                "files": []
+            },
+            "context": {},
+            "policy": {}
+        }))
+        .unwrap();
+        let capabilities = ContextCapabilities::from_request(&request);
+        let request_digest = request_digest(&request).unwrap();
+        let (_binary, args, plan_harness, transport) = harness
+            .command_for_substrate(
+                CommandSubstrate::Opencode,
+                CommandInput {
+                    cwd: Path::new("/work/repo"),
+                    prompt_path: Path::new("/tmp/cerberus-test/master-prompt.md"),
+                    request_path: Path::new("/tmp/cerberus-test/review-request.json"),
+                    request: &request,
+                    capabilities: &capabilities,
+                    request_digest: &request_digest,
+                },
+            )
+            .unwrap();
         assert_eq!(plan_harness, "opencode");
-        assert_eq!(transport, "private prompt file attachment");
+        assert_eq!(
+            transport,
+            "private request file attachment plus argv instructions"
+        );
         assert!(args.windows(2).any(|pair| pair == ["--format", "json"]));
         assert!(args
             .iter()
-            .any(|arg| arg == "Read the attached Cerberus master prompt. If repo_head is true, use tools to inspect changed checkout files before the final response. Then return the required raw JSON review artifact only."));
+            .any(|arg| arg.contains("Request digest: sha256:")));
         assert!(args.windows(2).any(|pair| pair == ["--dir", "/work/repo"]));
         assert!(args
             .windows(2)
-            .any(|pair| pair == ["--file", "/tmp/cerberus-test/master-prompt.md"]));
-        assert!(args.windows(2).any(|pair| pair == ["--agent", "build"]));
+            .any(|pair| pair == ["--file", "/tmp/cerberus-test/review-request.json"]));
+        assert!(args.windows(2).any(|pair| pair == ["--agent", "plan"]));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--attach", "http://127.0.0.1:4096"]));

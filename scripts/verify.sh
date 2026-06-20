@@ -130,5 +130,6 @@ grep -q '"harness": "opencode"' target/cerberus/opencode-execution_plan.json
 grep -q '"harness": "omp"' target/cerberus/omp-execution_plan.json
 grep -q '"workspace_mode": "diff_packet"' target/cerberus/opencode-execution_plan.json
 grep -q '"workspace_mode": "diff_packet"' target/cerberus/omp-execution_plan.json
-grep -q '<prompt-file>' target/cerberus/opencode-execution_plan.json
+grep -q '<request-file>' target/cerberus/opencode-execution_plan.json
+grep -q '<request-file>' target/cerberus/git-range-opencode-execution_plan.json
 grep -q '<prompt-file>' target/cerberus/omp-execution_plan.json

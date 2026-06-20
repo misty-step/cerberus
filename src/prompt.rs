@@ -68,3 +68,17 @@ ReviewRequest:
         request_json = request_json
     ))
 }
+
+pub fn build_opencode_message(
+    request: &ReviewRequest,
+    capabilities: &ContextCapabilities,
+    request_digest: &str,
+) -> Result<String, serde_json::Error> {
+    let capabilities_json = serde_json::to_string(capabilities)?;
+    Ok(format!(
+        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. If repo_head is true, use tools to inspect changed checkout files before the final response. If you do not inspect checkout files directly, return WARN or completed_degraded, not PASS. Return exactly one raw JSON ReviewArtifact.v1 object and nothing else.",
+        request_id = request.request_id.as_str(),
+        request_digest = request_digest,
+        capabilities_json = capabilities_json
+    ))
+}
