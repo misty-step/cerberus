@@ -163,11 +163,14 @@ The harness must:
 - write request and prompt material to private files, not argv;
 - scrub inherited environment variables by default;
 - pass only explicitly allowed provider keys and runtime variables;
+- resolve substrate binaries only from explicit absolute paths or the
+  harness-owned trusted search path, never from the parent process `PATH`;
 - use an isolated session/profile path where practical;
 - bound wall time and captured output;
 - kill child processes on timeout;
 - capture stdout/stderr as receipts;
-- require exactly one marked `ReviewArtifact.v1` block in agent output;
+- require exactly one `ReviewArtifact.v1` candidate across marker, XML wrapper,
+  and raw JSON fallback formats;
 - validate the artifact against the request digest and capabilities.
 
 OpenCode invocation should start from this posture:
@@ -230,12 +233,17 @@ Do not start by building:
 Safety footguns to test:
 
 - prompt or diff material appearing in argv;
+- hostile parent `PATH` selecting a different OpenCode or OMP binary than the
+  child process would receive;
 - ambient `GH_TOKEN`, SSH agent, cloud credentials, or repo `.env` entering
   the child env;
 - unbounded stdout/stderr;
 - orphan child processes after timeout;
-- invalid, multiple, or missing artifact marker blocks;
+- invalid, multiple, or missing artifact candidates across marker, XML wrapper,
+  and raw JSON fallback formats;
 - artifact claims beyond declared context capabilities.
+- artifact comments, findings, citations, and suggested fixes referencing
+  unknown IDs or leaving top-level fixes unattached to a finding or comment.
 
 ## CLI Surface
 
