@@ -174,13 +174,13 @@ OpenCode invocation should start from this posture:
 
 ```text
 opencode run --format json --dir <ephemeral-workspace-or-packet> \
-  --file <prompt-file> --agent explore
+  --file <prompt-file> --agent plan
 ```
 
 If attaching to a managed OpenCode server, the harness may add
 `--attach <server-url>`.
 
-The `explore` agent is a substrate permission/profile default, not a
+The `plan` agent is a substrate permission/profile default, not a
 predefined Cerberus reviewer persona. Cerberus still defines one master review
 contract; OpenCode profiles constrain how that master can inspect the provided
 workspace.

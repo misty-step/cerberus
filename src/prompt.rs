@@ -10,61 +10,6 @@ pub fn build_master_prompt(
 ) -> Result<String, serde_json::Error> {
     let request_json = serde_json::to_string_pretty(request)?;
     let capabilities_json = serde_json::to_string_pretty(capabilities)?;
-    let changed_paths: Vec<&str> = request
-        .change
-        .files
-        .iter()
-        .map(|file| file.path.as_str())
-        .collect();
-    let artifact_template = serde_json::to_string_pretty(&serde_json::json!({
-        "schema_version": "cerberus.review_artifact.v1",
-        "artifact_id": "artifact-unique-run-id",
-        "request_id": request.request_id,
-        "request_digest": request_digest,
-        "lifecycle_state": "completed",
-        "verdict": "PASS",
-        "context_capabilities": capabilities,
-        "summary": {
-            "title": "Concise review title",
-            "body": "Plain-language review result.",
-            "analysis": "Evidence-backed analysis of the changed behavior and residual uncertainty.",
-            "residual_risk": ["Unverified path, skipped command, or context limitation."]
-        },
-        "findings": [],
-        "comments": [],
-        "suggested_fixes": [],
-        "citations": [],
-        "receipts": [
-            {
-                "id": "receipt-master",
-                "role": "master",
-                "perspective": "synthesis",
-                "model": null,
-                "provider": null,
-                "harness": "opencode",
-                "status": "completed",
-                "verdict": "PASS",
-                "summary": "One-sentence receipt summary.",
-                "artifact_digest": null,
-                "transcript_uri": null,
-                "usage": null,
-                "error": null
-            }
-        ],
-        "run": {
-            "engine_version": "cerberus-opencode",
-            "config_digest": "sha256:prompt-only",
-            "started_at": "0",
-            "finished_at": "0",
-            "duration_ms": 0,
-            "cost_usd": null,
-            "coverage": {
-                "files_reviewed": changed_paths,
-                "files_with_findings": []
-            }
-        },
-        "errors": []
-    }))?;
     Ok(format!(
         r#"You are Cerberus, the master code reviewer.
 
@@ -84,17 +29,29 @@ Mission:
 - The first output character must be `{{` and the last output character must be `}}`.
 - Do not wrap the artifact in Markdown fences or marker text.
 
-Required ReviewArtifact.v1 JSON shape:
-{artifact_template}
+Required ReviewArtifact.v1 fields:
+- schema_version: "cerberus.review_artifact.v1"
+- artifact_id: a unique non-placeholder string for this run
+- request_id: "{request_id}"
+- request_digest: "{request_digest}"
+- lifecycle_state: one of completed, completed_degraded, failed, skipped, cancelled, stale
+- verdict: one of PASS, WARN, FAIL, SKIP
+- context_capabilities: copy the ContextCapabilities object below exactly
+- summary: object with title, body, analysis, residual_risk array
+- findings: array; every finding needs id, severity, category, title, description, evidence, confidence, anchors, citations, suggested_fixes
+- comments: array; inline comments must use anchor.kind "inline"
+- suggested_fixes: array
+- citations: array; URL citations require observed_at
+- receipts: include at least receipt-master with role "master", harness "opencode", status "completed", verdict, and a non-placeholder summary of what evidence you inspected
+- run: include engine_version "cerberus-opencode", config_digest "sha256:prompt-only", started_at "0", finished_at "0", duration_ms 0, cost_usd null, and coverage
+- errors: array
 
-Artifact requirements:
-- Copy request_id, request_digest, and context_capabilities exactly from this prompt.
-- Use lifecycle_state values: completed, completed_degraded, failed, skipped, cancelled, stale.
-- Use verdict values: PASS, WARN, FAIL, SKIP.
+Coverage requirements:
+- run.coverage.files_reviewed must list only files you actually inspected from the diff or checkout.
+- run.coverage.files_with_findings must list files with findings.
+- If repo_head is true and you do not inspect checkout files directly, do not return PASS; use WARN or completed_degraded and explain why.
+- If you only inspect the diff from the request, say so in summary.residual_risk.
 - Empty findings/comments/suggested_fixes/citations arrays are valid when there are no actionable issues.
-- If reporting a finding, include at least one anchor. Inline anchors must use a path from ReviewRequest.change.files.
-- If reporting an inline comment, its anchor.kind must be inline.
-- If external research is used, add citations and set observed_at for URL citations.
 - Do not claim tests, runtime QA, base checkout inspection, or external research unless the request context actually provides it.
 
 Request digest: {request_digest}
@@ -105,7 +62,7 @@ ContextCapabilities:
 ReviewRequest:
 {request_json}
 "#,
-        artifact_template = artifact_template,
+        request_id = request.request_id.as_str(),
         request_digest = request_digest,
         capabilities_json = capabilities_json,
         request_json = request_json

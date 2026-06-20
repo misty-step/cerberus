@@ -817,7 +817,7 @@ mod tests {
             fixture_output: None,
             opencode_binary: "opencode".to_string(),
             opencode_attach: Some("http://127.0.0.1:4096".to_string()),
-            opencode_agent: Some("explore".to_string()),
+            opencode_agent: Some("plan".to_string()),
             omp_binary: "omp".to_string(),
             model: Some("openai/gpt-5.5".to_string()),
             timeout: Duration::from_secs(1),
@@ -837,7 +837,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--file", "/tmp/cerberus-test/master-prompt.md"]));
-        assert!(args.windows(2).any(|pair| pair == ["--agent", "explore"]));
+        assert!(args.windows(2).any(|pair| pair == ["--agent", "plan"]));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--attach", "http://127.0.0.1:4096"]));
