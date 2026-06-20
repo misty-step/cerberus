@@ -210,16 +210,16 @@ fn review(args: ReviewArgs) -> Result<()> {
         failure_transcript: transcript.clone(),
     };
     let run = review_harness.run(&request, &cwd)?;
+    let plan_path = execution_plan.unwrap_or_else(|| sibling_path(&out, "execution_plan.json"));
+    write_json(&plan_path, &run.execution_plan)?;
+    if let Some(transcript_path) = &transcript {
+        write_text(transcript_path, &run.transcript)?;
+    }
     validate_artifact_for_request(&run.artifact, &request)?;
 
     write_json(&out, &run.artifact)?;
     if let Some(markdown) = markdown {
         write_text(&markdown, &render_markdown(&run.artifact))?;
-    }
-    let plan_path = execution_plan.unwrap_or_else(|| sibling_path(&out, "execution_plan.json"));
-    write_json(&plan_path, &run.execution_plan)?;
-    if let Some(transcript_path) = transcript {
-        write_text(&transcript_path, &run.transcript)?;
     }
     Ok(())
 }

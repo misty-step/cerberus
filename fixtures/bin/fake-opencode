@@ -60,6 +60,10 @@ if [[ -f "$workdir/request.json" ]]; then
 else
   test -e "$workdir/.git"
   test -f "$workdir/src/ratio.rs"
+  grep -F "\"path\": \"$workdir\"" "$request_file" >/dev/null || {
+    echo "request workspace path was not rewritten to the disposable worktree" >&2
+    exit 67
+  }
   capabilities='{"diff":true,"repo_head":true,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
 fi
 

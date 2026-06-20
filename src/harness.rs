@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -130,11 +131,15 @@ impl ReviewHarness {
         let prompt_path = temp.path().join("master-prompt.md");
         fs::write(&prompt_path, prompt).context("write master prompt")?;
         set_private_permissions(&prompt_path)?;
+        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
         let request_path = temp.path().join("review-request.json");
-        fs::write(&request_path, serde_json::to_vec_pretty(request)?)
+        let child_request = request_with_workspace_path(request, workspace.path());
+        fs::write(&request_path, serde_json::to_vec_pretty(&child_request)?)
             .context("write review request")?;
         set_private_permissions(&request_path)?;
-        let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+        if matches!(substrate, CommandSubstrate::Opencode) {
+            write_opencode_config(&child_config, workspace.path())?;
+        }
 
         let (binary, args, plan_harness, prompt_transport) = self.command_for_substrate(
             substrate,
@@ -168,8 +173,6 @@ impl ReviewHarness {
             .args(&args)
             .current_dir(workspace.path())
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
             .env_clear();
         for (key, value) in allowed_child_env(&request.policy.allowed_env) {
             command.env(key, value);
@@ -269,6 +272,39 @@ impl ReviewHarness {
             }
         }
     }
+}
+
+fn request_with_workspace_path(request: &ReviewRequest, workspace_path: &Path) -> ReviewRequest {
+    let mut child_request = request.clone();
+    if let Some(head) = &mut child_request.context.workspaces.head {
+        head.path = workspace_path.display().to_string();
+    }
+    child_request
+}
+
+fn write_opencode_config(config_home: &Path, workspace_path: &Path) -> Result<()> {
+    let config_dir = config_home.join("opencode");
+    fs::create_dir_all(&config_dir)
+        .with_context(|| format!("create OpenCode config dir {}", config_dir.display()))?;
+    set_private_directory_permissions(&config_dir)?;
+    let workspace = workspace_path.display().to_string();
+    let workspace_children = format!("{workspace}/**");
+    let config = serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "permission": {
+            "external_directory": {
+                workspace.as_str(): "allow",
+                workspace_children.as_str(): "allow"
+            },
+            "edit": {
+                "*": "deny"
+            }
+        }
+    });
+    let config_path = config_dir.join("opencode.json");
+    fs::write(&config_path, serde_json::to_vec_pretty(&config)?)
+        .with_context(|| format!("write OpenCode config {}", config_path.display()))?;
+    set_private_permissions(&config_path)
 }
 
 #[derive(Debug)]
@@ -430,26 +466,35 @@ fn validate_process_status_matches_artifact(status: &str, artifact: &ReviewArtif
 }
 
 fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<CommandOutput> {
+    let stdout_capture = tempfile::NamedTempFile::new().context("create stdout capture file")?;
+    let stderr_capture = tempfile::NamedTempFile::new().context("create stderr capture file")?;
+    command.stdout(Stdio::from(
+        stdout_capture
+            .reopen()
+            .context("open stdout capture writer")?,
+    ));
+    command.stderr(Stdio::from(
+        stderr_capture
+            .reopen()
+            .context("open stderr capture writer")?,
+    ));
     let mut child = command.spawn().context("spawn command")?;
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait().context("poll command")? {
-            let output = child.wait_with_output().context("collect command output")?;
             return Ok(CommandOutput {
                 status: status.to_string(),
-                stdout: cap_bytes(output.stdout),
-                stderr: cap_bytes(output.stderr),
+                stdout: read_capped_file(stdout_capture.path()).context("read stdout capture")?,
+                stderr: read_capped_file(stderr_capture.path()).context("read stderr capture")?,
             });
         }
         if start.elapsed() >= timeout {
             kill_process_tree(&mut child);
-            let output = child
-                .wait_with_output()
-                .context("collect killed command output")?;
+            child.wait().context("collect killed command status")?;
             return Ok(CommandOutput {
                 status: "timeout".to_string(),
-                stdout: cap_bytes(output.stdout),
-                stderr: cap_bytes(output.stderr),
+                stdout: read_capped_file(stdout_capture.path()).context("read stdout capture")?,
+                stderr: read_capped_file(stderr_capture.path()).context("read stderr capture")?,
             });
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -528,13 +573,14 @@ fn kill_process_tree(child: &mut std::process::Child) {
 }
 
 const OUTPUT_CAPTURE_CAP: usize = 64_000_000;
+const OUTPUT_TRUNCATION_MARKER: &[u8] = b"\n...[cerberus truncated middle]...\n";
 
+#[cfg(test)]
 fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
     if bytes.len() <= OUTPUT_CAPTURE_CAP {
         return bytes;
     }
-    const MARKER: &[u8] = b"\n...[cerberus truncated middle]...\n";
-    let available = OUTPUT_CAPTURE_CAP.saturating_sub(MARKER.len());
+    let available = OUTPUT_CAPTURE_CAP.saturating_sub(OUTPUT_TRUNCATION_MARKER.len());
     if available == 0 {
         bytes[bytes.len() - OUTPUT_CAPTURE_CAP..].to_vec()
     } else {
@@ -542,10 +588,41 @@ fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
         let tail_len = available - head_len;
         let mut capped = Vec::with_capacity(OUTPUT_CAPTURE_CAP);
         capped.extend_from_slice(&bytes[..head_len]);
-        capped.extend_from_slice(MARKER);
+        capped.extend_from_slice(OUTPUT_TRUNCATION_MARKER);
         capped.extend_from_slice(&bytes[bytes.len() - tail_len..]);
         capped
     }
+}
+
+fn read_capped_file(path: &Path) -> Result<Vec<u8>> {
+    let mut file = fs::File::open(path)?;
+    let len = file.metadata()?.len() as usize;
+    if len <= OUTPUT_CAPTURE_CAP {
+        let mut bytes = Vec::with_capacity(len);
+        file.read_to_end(&mut bytes)?;
+        return Ok(bytes);
+    }
+
+    let available = OUTPUT_CAPTURE_CAP.saturating_sub(OUTPUT_TRUNCATION_MARKER.len());
+    if available == 0 {
+        file.seek(SeekFrom::End(-(OUTPUT_CAPTURE_CAP as i64)))?;
+        let mut bytes = Vec::with_capacity(OUTPUT_CAPTURE_CAP);
+        file.read_to_end(&mut bytes)?;
+        return Ok(bytes);
+    }
+
+    let head_len = available / 2;
+    let tail_len = available - head_len;
+    let mut bytes = Vec::with_capacity(OUTPUT_CAPTURE_CAP);
+    let mut head = vec![0; head_len];
+    file.read_exact(&mut head)?;
+    bytes.extend_from_slice(&head);
+    bytes.extend_from_slice(OUTPUT_TRUNCATION_MARKER);
+    file.seek(SeekFrom::End(-(tail_len as i64)))?;
+    let mut tail = vec![0; tail_len];
+    file.read_exact(&mut tail)?;
+    bytes.extend_from_slice(&tail);
+    Ok(bytes)
 }
 
 fn artifact_text_for_substrate(
@@ -693,10 +770,7 @@ fn extract_unmarked_artifact_json(transcript: &str) -> Option<String> {
         let Ok(value) = Value::deserialize(&mut deserializer) else {
             continue;
         };
-        let Ok(parsed) = serde_json::from_value::<ReviewArtifact>(value.clone()) else {
-            continue;
-        };
-        if parsed.schema_version == REVIEW_ARTIFACT_SCHEMA {
+        if value.get("schema_version").and_then(Value::as_str) == Some(REVIEW_ARTIFACT_SCHEMA) {
             return Some(value.to_string());
         }
     }
@@ -773,6 +847,36 @@ mod tests {
     }
 
     #[test]
+    fn opencode_config_allows_only_review_workspace_external_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("repo-head");
+        fs::create_dir(&workspace).unwrap();
+
+        write_opencode_config(temp.path(), &workspace).unwrap();
+
+        let config_path = temp.path().join("opencode/opencode.json");
+        let config: Value =
+            serde_json::from_str(&fs::read_to_string(config_path).unwrap()).unwrap();
+        assert_eq!(
+            config.pointer("/permission/edit/*").and_then(Value::as_str),
+            Some("deny")
+        );
+        let escaped_workspace = workspace
+            .display()
+            .to_string()
+            .replace('~', "~0")
+            .replace('/', "~1");
+        assert_eq!(
+            config
+                .pointer(&format!(
+                    "/permission/external_directory/{escaped_workspace}"
+                ))
+                .and_then(Value::as_str),
+            Some("allow")
+        );
+    }
+
+    #[test]
     fn rejects_multiple_marker_blocks() {
         let transcript = format!(
             "{begin}{{}}{end}\n{begin}{{}}{end}",
@@ -814,6 +918,19 @@ mod tests {
             "Here is the review.\n```json\n{json}\n```\nDone.",
             json = minimal_artifact_json()
         );
+        assert_eq!(
+            extract_marked_artifact(&transcript).unwrap().request_id,
+            "req-1"
+        );
+    }
+
+    #[test]
+    fn extracts_raw_review_artifact_json_after_prose_prefix() {
+        let transcript = format!(
+            "I have enough evidence.\n\n{json}",
+            json = minimal_artifact_json()
+        );
+
         assert_eq!(
             extract_marked_artifact(&transcript).unwrap().request_id,
             "req-1"
@@ -863,6 +980,18 @@ mod tests {
         assert!(String::from_utf8_lossy(&capped).contains("cerberus truncated middle"));
         let text = artifact_text_for_substrate(CommandSubstrate::Opencode, &capped, "fallback");
         assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_with_timeout_captures_stdout_larger_than_pipe_buffer() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "yes x | head -c 200000"]);
+
+        let output = run_with_timeout(command, Duration::from_secs(5)).unwrap();
+
+        assert!(output.status.contains('0'));
+        assert_eq!(output.stdout.len(), 200000);
     }
 
     fn minimal_artifact_json() -> String {
