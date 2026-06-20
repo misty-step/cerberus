@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+state_dir="${CERBERUS_FAKE_GH_STATE_DIR:-$repo_root/target/cerberus/fake-gh-state}"
+log_file="${CERBERUS_FAKE_GH_LOG:-}"
+
+mkdir -p "$state_dir"
+
+record() {
+  if [[ -n "$log_file" ]]; then
+    {
+      printf '%s %s\n' "$1" "$2"
+      if [[ -n "${3:-}" ]]; then
+        printf '%s\n' "$3"
+      fi
+    } >> "$log_file"
+  fi
+}
+
+if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+  count_file="$state_dir/pr-view-count"
+  count=0
+  if [[ -s "$count_file" ]]; then
+    count="$(cat "$count_file")"
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  head_sha="${CERBERUS_FAKE_GH_HEAD_SHA:-0123456789abcdef}"
+  if [[ -n "${CERBERUS_FAKE_GH_MOVED_HEAD_SHA:-}" && "$count" != "1" ]]; then
+    head_sha="$CERBERUS_FAKE_GH_MOVED_HEAD_SHA"
+  fi
+  HEAD_SHA="$head_sha" python3 - "$repo_root/fixtures/github/pr-view.json" <<'PY'
+import json, os, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    payload = json.load(fh)
+payload["headRefOid"] = os.environ["HEAD_SHA"]
+print(json.dumps(payload))
+PY
+  exit 0
+fi
+
+if [[ "${1:-}" == "pr" && "${2:-}" == "diff" ]]; then
+  cat "$repo_root/fixtures/github/pr.diff"
+  exit 0
+fi
+
+if [[ "${1:-}" != "api" ]]; then
+  echo "fake-gh only supports pr view, pr diff, and api" >&2
+  exit 1
+fi
+
+shift
+method="GET"
+path=""
+read_input=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --method)
+      method="${2:-}"
+      shift 2
+      ;;
+    --input)
+      if [[ "${2:-}" != "-" ]]; then
+        echo "fake-gh expects --input -" >&2
+        exit 1
+      fi
+      read_input=1
+      shift 2
+      ;;
+    *)
+      if [[ -z "$path" ]]; then
+        path="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+body=""
+if [[ "$read_input" == "1" ]]; then
+  body="$(cat)"
+fi
+record "$method" "$path" "$body"
+
+comment_array() {
+  local file="$1"
+  if [[ -s "$file" ]]; then
+    cat "$file"
+  else
+    printf '[]\n'
+  fi
+}
+
+case "$method $path" in
+  "GET /repos/example/fixture/issues/7/comments?per_page=100&page=1")
+    if [[ "${CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2:-}" == "1" ]]; then
+      python3 - <<'PY'
+import json
+print(json.dumps([{"id": i, "body": f"filler issue comment {i}"} for i in range(1, 101)]))
+PY
+    else
+      comment_array "$state_dir/issue-comments.json"
+    fi
+    ;;
+  "GET /repos/example/fixture/issues/7/comments?per_page=100&page=2")
+    if [[ "${CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2:-}" == "1" ]]; then
+      comment_array "$state_dir/issue-comments.json"
+    else
+      printf '[]\n'
+    fi
+    ;;
+  "GET /repos/example/fixture/issues/7/comments?per_page=100&page="*)
+    printf '[]\n'
+    ;;
+  "GET /repos/example/fixture/pulls/7/comments?per_page=100&page=1")
+    if [[ "${CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2:-}" == "1" ]]; then
+      python3 - <<'PY'
+import json
+print(json.dumps([{"id": 1000 + i, "body": f"filler pull comment {i}"} for i in range(1, 101)]))
+PY
+    else
+      comment_array "$state_dir/pull-comments.json"
+    fi
+    ;;
+  "GET /repos/example/fixture/pulls/7/comments?per_page=100&page=2")
+    if [[ "${CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2:-}" == "1" ]]; then
+      comment_array "$state_dir/pull-comments.json"
+    else
+      printf '[]\n'
+    fi
+    ;;
+  "GET /repos/example/fixture/pulls/7/comments?per_page=100&page="*)
+    printf '[]\n'
+    ;;
+  "GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_name=Cerberus%20Review&per_page=100&page=1")
+    if [[ "${CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2:-}" == "1" ]]; then
+      python3 - <<'PY'
+import json
+print(json.dumps({"check_runs": [{"id": 3000 + i, "external_id": f"filler:{i}"} for i in range(1, 101)]}))
+PY
+    elif [[ -s "$state_dir/check-run.json" ]]; then
+      printf '{"check_runs":[%s]}\n' "$(cat "$state_dir/check-run.json")"
+    else
+      printf '{"check_runs":[]}\n'
+    fi
+    ;;
+  "GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_name=Cerberus%20Review&per_page=100&page=2")
+    if [[ "${CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2:-}" == "1" && -s "$state_dir/check-run.json" ]]; then
+      printf '{"check_runs":[%s]}\n' "$(cat "$state_dir/check-run.json")"
+    else
+      printf '{"check_runs":[]}\n'
+    fi
+    ;;
+  "GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_name=Cerberus%20Review&per_page=100&page="*)
+    printf '{"check_runs":[]}\n'
+    ;;
+  "POST /repos/example/fixture/check-runs")
+    printf '{"id":501,"external_id":"cerberus:pr:7:0123456789abcdef","html_url":"https://github.com/example/fixture/runs/501"}\n' > "$state_dir/check-run.json"
+    cat "$state_dir/check-run.json"
+    ;;
+  "PATCH /repos/example/fixture/check-runs/501")
+    printf '{"id":501,"external_id":"cerberus:pr:7:0123456789abcdef","html_url":"https://github.com/example/fixture/runs/501","updated":true}\n' > "$state_dir/check-run.json"
+    cat "$state_dir/check-run.json"
+    ;;
+  "POST /repos/example/fixture/statuses/0123456789abcdef")
+    printf '{"id":301,"state":"success"}\n'
+    ;;
+  "POST /repos/example/fixture/issues/7/comments")
+    BODY="$body" python3 - "$state_dir/issue-comments.json" <<'PY'
+import json, os, sys
+target = sys.argv[1]
+payload = json.loads(os.environ["BODY"])
+comment = {"id": 101, "body": payload["body"]}
+with open(target, "w", encoding="utf-8") as fh:
+    json.dump([comment], fh)
+print(json.dumps(comment))
+PY
+    ;;
+  "PATCH /repos/example/fixture/issues/comments/101")
+    BODY="$body" python3 - "$state_dir/issue-comments.json" <<'PY'
+import json, os, sys
+target = sys.argv[1]
+payload = json.loads(os.environ["BODY"])
+comment = {"id": 101, "body": payload["body"], "updated": True}
+with open(target, "w", encoding="utf-8") as fh:
+    json.dump([comment], fh)
+print(json.dumps(comment))
+PY
+    ;;
+  "POST /repos/example/fixture/pulls/7/reviews")
+    BODY="$body" python3 - "$state_dir/pull-comments.json" <<'PY'
+import json, os, sys
+target = sys.argv[1]
+payload = json.loads(os.environ["BODY"])
+comments = []
+for index, item in enumerate(payload.get("comments", []), start=1):
+    comments.append({
+        "id": 200 + index,
+        "body": item["body"],
+        "path": item["path"],
+        "line": item["line"],
+    })
+with open(target, "w", encoding="utf-8") as fh:
+    json.dump(comments, fh)
+print(json.dumps({"id": 401, "comments": comments}))
+PY
+    ;;
+  "PATCH /repos/example/fixture/pulls/comments/201")
+    BODY="$body" python3 - "$state_dir/pull-comments.json" <<'PY'
+import json, os, sys
+target = sys.argv[1]
+payload = json.loads(os.environ["BODY"])
+if os.path.exists(target):
+    with open(target, encoding="utf-8") as fh:
+        comments = json.load(fh)
+else:
+    comments = []
+for comment in comments:
+    if comment["id"] == 201:
+        comment["body"] = payload["body"]
+        comment["updated"] = True
+        print(json.dumps(comment))
+        break
+else:
+    comment = {"id": 201, "body": payload["body"], "updated": True}
+    comments.append(comment)
+    print(json.dumps(comment))
+with open(target, "w", encoding="utf-8") as fh:
+    json.dump(comments, fh)
+PY
+    ;;
+  *)
+    echo "unsupported fake-gh api call: $method $path" >&2
+    exit 1
+    ;;
+esac

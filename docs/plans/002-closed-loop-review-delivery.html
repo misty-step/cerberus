@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>002 Closed Loop Review Delivery</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #12171d;
+        --muted: #5b6570;
+        --line: #d7dde5;
+        --panel: #f6f8fa;
+        --accent: #075e54;
+        --warn: #8a4b00;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: #fff;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 48px 28px 80px;
+      }
+      h1 {
+        margin: 0;
+        max-width: 920px;
+        font-size: 42px;
+        line-height: 1.06;
+      }
+      h2 {
+        margin: 40px 0 12px;
+        font-size: 22px;
+      }
+      p, li {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.95em;
+      }
+      .lede {
+        max-width: 850px;
+        font-size: 20px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+      .cell {
+        background: var(--panel);
+        padding: 18px;
+      }
+      .cell strong {
+        display: block;
+        color: var(--ink);
+        margin-bottom: 8px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        border-top: 1px solid var(--line);
+        padding: 11px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+      }
+      .accent {
+        color: var(--accent);
+      }
+      .warn {
+        color: var(--warn);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="accent">BACKLOG 002 / EXECUTOR CONTRACT</p>
+      <h1>Close the loop from a GitHub PR to validated Cerberus review output.</h1>
+      <p class="lede">Deliver <code>cerberus review-pr</code> as orchestration over PR acquisition, review execution, artifact validation, dry-run posting plans, and idempotent GitHub projection. Keep <code>ReviewArtifact.v1</code> caller-neutral; GitHub output is a renderer/poster.</p>
+
+      <section class="grid" aria-label="quality system">
+        <div class="cell"><strong>Outcome</strong><p>An operator can run one command for a pull request and get receipts plus either an exact dry-run plan or GitHub output without duplicate comments.</p></div>
+        <div class="cell"><strong>Standards</strong><p>Small Rust seams, explicit posting plan, dry-run before writes, idempotency markers, no GitHub-specific mutation of the artifact.</p></div>
+        <div class="cell"><strong>Proof</strong><p>Unit tests for line mapping and idempotency, fake-<code>gh</code> integration in <code>./scripts/verify.sh</code>, and an operator-gated live smoke.</p></div>
+        <div class="cell"><strong>Stop If</strong><p>GitHub write credentials are unavailable for live smoke, inline mapping cannot be proven from the diff, or posting would require hidden side effects.</p></div>
+      </section>
+
+      <h2>Verification System</h2>
+      <table>
+        <tbody>
+          <tr><th>Claim</th><td><code>review-pr</code> can acquire a PR, run a harness, validate the artifact, write receipts, and produce or apply a deterministic GitHub posting plan.</td></tr>
+          <tr><th>Falsifier</th><td>A repeated run duplicates output, a stale head SHA posts, an out-of-diff inline comment is posted, dry-run differs from post mode, or failed artifacts publish as successful.</td></tr>
+          <tr><th>Driver</th><td><code>./scripts/verify.sh</code> with fake <code>gh</code>, unit tests for <code>PostPlan.v1</code>, and optional <code>CERBERUS_LIVE_REVIEW_PR=1</code> live smoke.</td></tr>
+          <tr><th>Evidence</th><td><code>target/cerberus/review-pr/*</code>, fake <code>gh</code> transcript, generated post plan, live PR/check URLs when enabled.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Execution Sequence</h2>
+      <ol>
+        <li>Document <code>review-pr</code>, posting modes, receipts, and GitHub credential boundaries.</li>
+        <li>Add <code>PostPlan.v1</code> with check/status, review comment, and contextual summary operations.</li>
+        <li>Add diff line mapping so only changed PR lines become inline comments.</li>
+        <li>Implement <code>review-pr</code> dry-run and posting against a <code>gh</code>-backed adapter with idempotency markers.</li>
+        <li>Extend <code>./scripts/verify.sh</code> with fake-<code>gh</code> dry-run/post/idempotency smoke and document optional live self-review.</li>
+        <li>Run code review, QA, refactor lanes, then squash merge if clean.</li>
+      </ol>
+
+      <h2>Credential Boundary</h2>
+      <p class="warn">GitHub Checks write access is not universally available to classic user tokens. The posting plan must name whether it will use Checks API or commit-status fallback, and post mode must fail clearly when the selected operation is unauthorized.</p>
+
+      <h2>Non-Goals</h2>
+      <p>No hosted worker, no long-running service, no model evaluation, no new static reviewer topology, and no mutation of <code>ReviewArtifact.v1</code> to fit GitHub.</p>
+    </main>
+  </body>
+</html>

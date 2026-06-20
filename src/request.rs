@@ -35,6 +35,7 @@ pub struct GitRangeRequestOptions {
 pub struct PullRequestOptions {
     pub number: u64,
     pub repo: Option<String>,
+    pub gh_binary: String,
     pub head_workspace: Option<PathBuf>,
     pub common: RequestOptions,
 }
@@ -145,8 +146,16 @@ pub fn build_git_range_request(options: &GitRangeRequestOptions) -> Result<Revie
 }
 
 pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest> {
-    let pr = gh_pr_view(options.number, options.repo.as_deref())?;
-    let diff = gh_pr_diff(options.number, options.repo.as_deref())?;
+    let pr = gh_pr_view(
+        options.number,
+        options.repo.as_deref(),
+        options.gh_binary.as_str(),
+    )?;
+    let diff = gh_pr_diff(
+        options.number,
+        options.repo.as_deref(),
+        options.gh_binary.as_str(),
+    )?;
     if diff.trim().is_empty() {
         bail!("pull request #{} produced an empty diff", options.number);
     }
@@ -219,6 +228,15 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         },
         policy: policy_from_options(&options.common),
     })
+}
+
+pub fn fetch_pull_request_head_sha(
+    number: u64,
+    repo: Option<&str>,
+    gh_binary: &str,
+) -> Result<String> {
+    let pr = gh_pr_view(number, repo, gh_binary)?;
+    require_pr_head_sha(number, &pr)
 }
 
 fn policy_from_options(options: &RequestOptions) -> ReviewPolicy {
@@ -413,24 +431,24 @@ fn short_sha(value: &str) -> String {
     value.chars().take(12).collect()
 }
 
-fn gh_pr_view(number: u64, repo: Option<&str>) -> Result<GhPullRequest> {
+fn gh_pr_view(number: u64, repo: Option<&str>, gh_binary: &str) -> Result<GhPullRequest> {
     let number = number.to_string();
     let fields = "number,title,body,url,baseRefName,headRefName,headRefOid,files";
     let mut args = vec!["pr", "view", number.as_str(), "--json", fields];
     if let Some(repo) = repo {
         args.extend(["-R", repo]);
     }
-    let output = run(Path::new("."), "gh", &args)?;
+    let output = run(Path::new("."), gh_binary, &args)?;
     serde_json::from_str(&output).context("parse gh pr view JSON")
 }
 
-fn gh_pr_diff(number: u64, repo: Option<&str>) -> Result<String> {
+fn gh_pr_diff(number: u64, repo: Option<&str>, gh_binary: &str) -> Result<String> {
     let number = number.to_string();
     let mut args = vec!["pr", "diff", number.as_str(), "--patch", "--color", "never"];
     if let Some(repo) = repo {
         args.extend(["-R", repo]);
     }
-    run(Path::new("."), "gh", &args)
+    run(Path::new("."), gh_binary, &args)
 }
 
 #[derive(Debug, Deserialize)]

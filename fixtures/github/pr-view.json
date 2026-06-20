@@ -1,0 +1,17 @@
+{
+  "number": 7,
+  "title": "Avoid divide by zero in ratio helper",
+  "body": "Adds a guard for zero denominators.",
+  "url": "https://github.com/example/fixture/pull/7",
+  "baseRefName": "main",
+  "headRefName": "fix/ratio-zero",
+  "headRefOid": "0123456789abcdef",
+  "files": [
+    {
+      "path": "src/ratio.rs",
+      "changeType": "MODIFIED",
+      "additions": 3,
+      "deletions": 0
+    }
+  ]
+}

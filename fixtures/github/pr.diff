@@ -1,0 +1,11 @@
+diff --git a/src/ratio.rs b/src/ratio.rs
+index 1111111..2222222 100644
+--- a/src/ratio.rs
++++ b/src/ratio.rs
+@@ -1,3 +1,6 @@
+ pub fn ratio(numerator: f64, denominator: f64) -> f64 {
++    if denominator == 0.0 {
++        return 0.0;
++    }
+     numerator / denominator
+ }

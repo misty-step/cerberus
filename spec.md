@@ -257,11 +257,33 @@ cerberus review --request <request.json> --out <artifact.json> \
   [--markdown <review.md>] [--harness opencode|omp|fixture]
 
 cerberus render --artifact <artifact.json> --markdown <review.md>
+
+cerberus review-pr --number <n> --repo <owner/name> \
+  [--out-dir <dir>] [--dry-run|--post] \
+  [--summary-target check-run|status] \
+  [--harness opencode|omp|fixture]
 ```
 
 The request commands are acquisition helpers. They produce `ReviewRequest.v1`
 and do not launch the reviewer or post comments. The review command remains
 the only execution boundary.
+
+`review-pr` is a convenience orchestrator over the existing acquisition and
+review boundaries. It must write the same request, execution plan, transcript,
+artifact, and Markdown receipts as the separate commands, then produce a
+`PostPlan.v1`. Dry-run mode reads existing GitHub state but does not write.
+Posting mode applies the post plan through `gh api`.
+
+GitHub projection is not part of `ReviewArtifact.v1`. The post plan maps the
+artifact to a per-head-SHA summary, contextual PR issue comment, and PR review
+comments. Inline review comments are emitted only when the artifact anchor maps
+to a changed new-side line in the PR diff; every unmappable inline comment is
+included in contextual summary output instead.
+
+`--summary-target check-run` creates or updates a Cerberus check run when the
+available token has Checks write access. `--summary-target status` posts a
+commit status fallback for user-token environments where check-run creation is
+not authorized.
 
 The fixture harness exists only for deterministic verification. The preferred
 production product path is the OpenCode harness; OMP is a local fallback.
@@ -296,6 +318,8 @@ Evidence packet:
 - `target/cerberus/artifact.json`
 - `target/cerberus/review.md`
 - `target/cerberus/execution_plan.json`
+- `target/cerberus/review-pr/post-plan.json`
+- `target/cerberus/review-pr/post-result.json`
 - test output from `./scripts/verify.sh`
 
 ## MVP Acceptance
@@ -310,6 +334,8 @@ MVP is complete when:
 - OpenCode and OMP harnesses build execution plans and can invoke their agent
   commands when selected;
 - Markdown rendering works from stored artifacts;
+- `review-pr` can dry-run and post through fake GitHub fixtures without
+  duplicate comments and without inline comments outside changed lines;
 - `./scripts/verify.sh` passes from a clean checkout;
 - final git state is clean.
 

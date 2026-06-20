@@ -3,8 +3,8 @@
 Cerberus is a context-adaptive AI code review runner. It accepts a
 source-agnostic `ReviewRequest.v1`, gives one master reviewer the available
 context through a selected agent substrate, validates the returned
-`ReviewArtifact.v1`, and renders the result for callers such as local scripts
-or future GitHub adapters.
+`ReviewArtifact.v1`, and renders or posts the result for callers such as local
+scripts and GitHub pull requests.
 
 There are no predefined reviewer subagents. The Cerberus master may launch
 ephemeral substrate subagents at runtime when the diff and context call for
@@ -24,10 +24,11 @@ See [spec.md](spec.md) for the locked MVP contract.
 ```
 
 The verification script formats, lints, tests, checks the default harness
-surface, runs a deterministic fixture review, and smokes both the OpenCode and
-OMP harness paths through local fake binaries. Evidence is written to
-`target/cerberus/`, including execution plans, transcripts, artifacts, and
-rendered Markdown.
+surface, runs deterministic fixture reviews, smokes both the OpenCode and OMP
+harness paths through local fake binaries, and exercises `review-pr` through a
+fake `gh` adapter. Evidence is written to `target/cerberus/`, including
+execution plans, transcripts, artifacts, rendered Markdown, post plans, post
+results, and fake GitHub API transcripts.
 
 ## CLI
 
@@ -46,8 +47,41 @@ cerberus review --request fixtures/requests/diff-only.json \
 
 cerberus render --artifact target/cerberus/artifact.json \
   --markdown target/cerberus/review-rendered.md
+
+cerberus review-pr --number 123 --repo owner/name \
+  --harness opencode \
+  --out-dir target/cerberus/review-pr \
+  --dry-run
+
+cerberus review-pr --number 123 --repo owner/name \
+  --harness opencode \
+  --out-dir target/cerberus/review-pr \
+  --summary-target check-run \
+  --post
 ```
 
 The fixture harness is for deterministic verification. The production path is
 the OpenCode harness using the `build` agent profile by default against a
 disposable review worktree; OMP is a local fallback.
+
+`review-pr` is orchestration over acquisition, review, rendering, and GitHub
+projection. It writes `request.json`, `artifact.json`, `review.md`,
+`execution_plan.json`, `transcript.txt`, and `post-plan.json` under
+`--out-dir`. `--dry-run` reads existing GitHub comments/checks through `gh api`
+and prints the exact create/update plan without writing. `--post` applies that
+plan and writes `post-result.json`.
+
+GitHub Checks writes require a token with Checks write access, usually a GitHub
+App or fine-grained token. Classic user tokens commonly cannot create check
+runs. Use `--summary-target status` when commit statuses are the available
+credential boundary; status posting is append-only by GitHub design, but the
+latest `Cerberus Review` context is what branch protection reads. Review
+summary and inline comments use per-head-SHA markers so repeated runs update
+prior Cerberus output instead of duplicating it.
+
+For an operator-gated live smoke, set `CERBERUS_LIVE_REVIEW_PR=1`,
+`CERBERUS_LIVE_REVIEW_REPO=owner/name`, and
+`CERBERUS_LIVE_REVIEW_NUMBER=<pull request number>` before running
+`./scripts/verify.sh`. The live smoke defaults to `--dry-run` and
+`--summary-target status`; set `CERBERUS_LIVE_REVIEW_POST=1` only when the
+target PR is intentionally allowed to receive Cerberus output.

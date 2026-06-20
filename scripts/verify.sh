@@ -13,6 +13,10 @@ grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.tx
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
+cargo run --locked -- review-pr --help > target/cerberus-review-pr-help.txt
+grep -q -- '--dry-run' target/cerberus-review-pr-help.txt
+grep -q -- '--post' target/cerberus-review-pr-help.txt
+grep -q -- '--summary-target' target/cerberus-review-pr-help.txt
 
 rm -rf target/cerberus
 mkdir -p target/cerberus
@@ -162,6 +166,82 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --execution-plan target/cerberus/omp-execution_plan.json \
   --transcript target/cerberus/omp-transcript.txt
 
+fake_gh="$PWD/fixtures/bin/fake-gh"
+fake_gh_state="target/cerberus/fake-gh-state"
+rm -rf "$fake_gh_state"
+CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" cargo run --locked -- review-pr \
+  --number 7 \
+  --repo example/fixture \
+  --gh-binary "$fake_gh" \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out-dir target/cerberus/review-pr-dry-run \
+  --dry-run \
+  > target/cerberus/review-pr-dry-run.stdout
+
+grep -q '"schema_version": "cerberus.post_plan.v1"' target/cerberus/review-pr-dry-run/post-plan.json
+grep -q '"id": "create-check-run"' target/cerberus/review-pr-dry-run/post-plan.json
+grep -q '"path": "/repos/example/fixture/pulls/7/reviews"' target/cerberus/review-pr-dry-run/post-plan.json
+grep -q '"line": 3' target/cerberus/review-pr-dry-run/post-plan.json
+grep -q '"commit_id": "0123456789abcdef"' target/cerberus/review-pr-dry-run/post-plan.json
+grep -q 'comment-001' target/cerberus/review-pr-dry-run/review.md
+
+rm -rf "$fake_gh_state"
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_MOVED_HEAD_SHA=feedfacefeedface \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-stale-head \
+    --dry-run \
+    > target/cerberus/review-pr-stale-head.stdout \
+    2> target/cerberus/review-pr-stale-head.stderr; then
+  echo "expected review-pr to reject a moved PR head" >&2
+  exit 1
+fi
+grep -q 'head moved from 0123456789abcdef to feedfacefeedface' target/cerberus/review-pr-stale-head.stderr
+
+rm -rf "$fake_gh_state"
+CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-first-gh.log \
+cargo run --locked -- review-pr \
+  --number 7 \
+  --repo example/fixture \
+  --gh-binary "$fake_gh" \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out-dir target/cerberus/review-pr-post-first \
+  --summary-target check-run \
+  --post
+
+CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-second-gh.log \
+cargo run --locked -- review-pr \
+  --number 7 \
+  --repo example/fixture \
+  --gh-binary "$fake_gh" \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out-dir target/cerberus/review-pr-post-second \
+  --summary-target check-run \
+  --post
+
+CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2=1 \
+CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-page-two-gh.log \
+cargo run --locked -- review-pr \
+  --number 7 \
+  --repo example/fixture \
+  --gh-binary "$fake_gh" \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out-dir target/cerberus/review-pr-post-page-two \
+  --summary-target check-run \
+  --post
+
 test -s target/cerberus/artifact.json
 test -s target/cerberus/review.md
 test -s target/cerberus/review-rendered.md
@@ -181,6 +261,15 @@ test -s target/cerberus/opencode-transcript.txt
 test -s target/cerberus/omp-artifact.json
 test -s target/cerberus/omp-execution_plan.json
 test -s target/cerberus/omp-transcript.txt
+test -s target/cerberus/review-pr-dry-run/request.json
+test -s target/cerberus/review-pr-dry-run/artifact.json
+test -s target/cerberus/review-pr-dry-run/review.md
+test -s target/cerberus/review-pr-dry-run/execution_plan.json
+test -s target/cerberus/review-pr-dry-run/transcript.txt
+test -s target/cerberus/review-pr-dry-run/post-plan.json
+test -s target/cerberus/review-pr-post-first/post-result.json
+test -s target/cerberus/review-pr-post-second/post-result.json
+test -s target/cerberus/review-pr-post-page-two/post-result.json
 
 grep -q '"private_material_in_argv": false' target/cerberus/execution_plan.json
 grep -q '"diff": true' target/cerberus/artifact.json
@@ -196,3 +285,34 @@ grep -q '"workspace_mode": "diff_packet"' target/cerberus/omp-execution_plan.jso
 grep -q '<request-file>' target/cerberus/opencode-execution_plan.json
 grep -q '<request-file>' target/cerberus/git-range-opencode-execution_plan.json
 grep -q '<prompt-file>' target/cerberus/omp-execution_plan.json
+grep -q 'POST /repos/example/fixture/check-runs' target/cerberus/review-pr-post-first-gh.log
+grep -q 'POST /repos/example/fixture/pulls/7/reviews' target/cerberus/review-pr-post-first-gh.log
+grep -q 'GET /repos/example/fixture/issues/7/comments?per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log
+grep -q 'GET /repos/example/fixture/pulls/7/comments?per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log
+grep -q 'GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_name=Cerberus%20Review&per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log
+grep -q 'PATCH /repos/example/fixture/check-runs/501' target/cerberus/review-pr-post-second-gh.log
+grep -q 'PATCH /repos/example/fixture/issues/comments/101' target/cerberus/review-pr-post-second-gh.log
+grep -q 'PATCH /repos/example/fixture/pulls/comments/201' target/cerberus/review-pr-post-second-gh.log
+grep -q 'GET /repos/example/fixture/issues/7/comments?per_page=100&page=2' target/cerberus/review-pr-post-page-two-gh.log
+grep -q 'GET /repos/example/fixture/pulls/7/comments?per_page=100&page=2' target/cerberus/review-pr-post-page-two-gh.log
+grep -q 'GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_name=Cerberus%20Review&per_page=100&page=2' target/cerberus/review-pr-post-page-two-gh.log
+grep -q 'PATCH /repos/example/fixture/check-runs/501' target/cerberus/review-pr-post-page-two-gh.log
+grep -q 'PATCH /repos/example/fixture/issues/comments/101' target/cerberus/review-pr-post-page-two-gh.log
+grep -q 'PATCH /repos/example/fixture/pulls/comments/201' target/cerberus/review-pr-post-page-two-gh.log
+
+if [[ "${CERBERUS_LIVE_REVIEW_PR:-}" == "1" ]]; then
+  : "${CERBERUS_LIVE_REVIEW_REPO:?set CERBERUS_LIVE_REVIEW_REPO=owner/name}"
+  : "${CERBERUS_LIVE_REVIEW_NUMBER:?set CERBERUS_LIVE_REVIEW_NUMBER=<pull request number>}"
+  live_out="target/cerberus/live-review-pr"
+  live_mode="--dry-run"
+  if [[ "${CERBERUS_LIVE_REVIEW_POST:-}" == "1" ]]; then
+    live_mode="--post"
+  fi
+  cargo run --locked -- review-pr \
+    --number "$CERBERUS_LIVE_REVIEW_NUMBER" \
+    --repo "$CERBERUS_LIVE_REVIEW_REPO" \
+    --out-dir "$live_out" \
+    --summary-target "${CERBERUS_LIVE_REVIEW_SUMMARY_TARGET:-status}" \
+    --harness "${CERBERUS_LIVE_REVIEW_HARNESS:-opencode}" \
+    $live_mode
+fi
