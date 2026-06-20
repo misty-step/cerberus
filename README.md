@@ -49,5 +49,5 @@ cerberus render --artifact target/cerberus/artifact.json \
 ```
 
 The fixture harness is for deterministic verification. The production path is
-the OpenCode harness using the read-only `plan` agent profile by default
-against a disposable review worktree; OMP is a local fallback.
+the OpenCode harness using the `build` agent profile by default against a
+disposable review worktree; OMP is a local fallback.

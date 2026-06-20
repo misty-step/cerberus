@@ -174,18 +174,19 @@ OpenCode invocation should start from this posture:
 
 ```text
 opencode run --format json --dir <ephemeral-workspace-or-packet> \
-  --file <request-file> --agent plan
+  --file <prompt-file> --file <request-file> --agent build
 ```
 
 If attaching to a managed OpenCode server, the harness may add
 `--attach <server-url>`.
 
-The read-only `plan` agent is a substrate permission/profile default, not a
+The `build` agent is a substrate permission/profile default, not a
 predefined Cerberus reviewer persona. Cerberus still defines one master review
 contract; OpenCode profiles constrain how that master can inspect the provided
 workspace. For repo-head context, Cerberus runs that profile inside a
 disposable detached git worktree so model-side edits cannot mutate the user's
-checkout if an explicit non-read-only profile is selected.
+checkout. The read-only `plan` profile remains an explicit option, but live
+probes showed it can skip checkout inspection for this review flow.
 
 OMP invocation remains supported as a fallback and should start from this
 posture:

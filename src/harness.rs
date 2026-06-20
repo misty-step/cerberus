@@ -209,6 +209,8 @@ impl ReviewHarness {
                     "--dir".to_string(),
                     input.cwd.display().to_string(),
                     "--file".to_string(),
+                    input.prompt_path.display().to_string(),
+                    "--file".to_string(),
                     input.request_path.display().to_string(),
                 ];
                 if let Some(model) = &self.model {
@@ -227,7 +229,7 @@ impl ReviewHarness {
                     self.opencode_binary.clone(),
                     args,
                     "opencode",
-                    "private request file attachment plus argv instructions",
+                    "private prompt and request file attachments plus argv instructions",
                 ))
             }
             CommandSubstrate::Omp => {
@@ -848,7 +850,7 @@ mod tests {
             fixture_output: None,
             opencode_binary: "opencode".to_string(),
             opencode_attach: Some("http://127.0.0.1:4096".to_string()),
-            opencode_agent: Some("plan".to_string()),
+            opencode_agent: Some("build".to_string()),
             omp_binary: "omp".to_string(),
             model: Some("openai/gpt-5.5".to_string()),
             timeout: Duration::from_secs(1),
@@ -884,7 +886,7 @@ mod tests {
         assert_eq!(plan_harness, "opencode");
         assert_eq!(
             transport,
-            "private request file attachment plus argv instructions"
+            "private prompt and request file attachments plus argv instructions"
         );
         assert!(args.windows(2).any(|pair| pair == ["--format", "json"]));
         assert!(args
@@ -893,8 +895,11 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["--dir", "/work/repo"]));
         assert!(args
             .windows(2)
+            .any(|pair| pair == ["--file", "/tmp/cerberus-test/master-prompt.md"]));
+        assert!(args
+            .windows(2)
             .any(|pair| pair == ["--file", "/tmp/cerberus-test/review-request.json"]));
-        assert!(args.windows(2).any(|pair| pair == ["--agent", "plan"]));
+        assert!(args.windows(2).any(|pair| pair == ["--agent", "build"]));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--attach", "http://127.0.0.1:4096"]));
