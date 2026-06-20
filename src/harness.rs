@@ -499,25 +499,60 @@ fn unix_timestamp_string() -> String {
 }
 
 pub fn extract_marked_artifact(transcript: &str) -> Result<ReviewArtifact> {
-    let begin_count = transcript.matches(ARTIFACT_BEGIN).count();
-    let end_count = transcript.matches(ARTIFACT_END).count();
-    if begin_count != 1 || end_count != 1 {
+    let marked_json = extract_json_between_markers(transcript, ARTIFACT_BEGIN, ARTIFACT_END)
+        .or_else(|| extract_xml_wrapped_artifact_json(transcript));
+    let Some(json) = marked_json else {
+        let begin_count = transcript.matches(ARTIFACT_BEGIN).count();
+        let end_count = transcript.matches(ARTIFACT_END).count();
+        let xml_begin_count = transcript.matches("<CERBERUS_REVIEW_ARTIFACT_V1>").count();
+        let xml_end_count = transcript.matches("</CERBERUS_REVIEW_ARTIFACT_V1>").count();
         return Err(anyhow!(
-            "expected exactly one artifact block, found {begin_count} begin markers and {end_count} end markers"
+            "expected exactly one artifact block, found {begin_count} begin markers, {end_count} end markers, {xml_begin_count} xml begin markers, and {xml_end_count} xml end markers"
         ));
+    };
+    serde_json::from_str(&json).context("parse ReviewArtifact.v1 block")
+}
+
+fn extract_json_between_markers(transcript: &str, begin: &str, end: &str) -> Option<String> {
+    let start = transcript.find(begin)? + begin.len();
+    let remainder = &transcript[start..];
+    let finish = remainder.find(end)?;
+    let candidate = strip_markdown_json_fence(&remainder[..finish]);
+    if candidate.is_empty() {
+        None
+    } else {
+        Some(candidate.to_string())
     }
-    let start = transcript
-        .find(ARTIFACT_BEGIN)
-        .ok_or_else(|| anyhow!("artifact begin marker missing"))?
-        + ARTIFACT_BEGIN.len();
-    let end = transcript
-        .find(ARTIFACT_END)
-        .ok_or_else(|| anyhow!("artifact end marker missing"))?;
-    if end <= start {
-        return Err(anyhow!("artifact markers are out of order"));
+}
+
+fn extract_xml_wrapped_artifact_json(transcript: &str) -> Option<String> {
+    let candidate = extract_json_between_markers(
+        transcript,
+        "<CERBERUS_REVIEW_ARTIFACT_V1>",
+        "</CERBERUS_REVIEW_ARTIFACT_V1>",
+    )?;
+    let parsed = serde_json::from_str::<ReviewArtifact>(&candidate).ok()?;
+    if parsed.schema_version == crate::schema::REVIEW_ARTIFACT_SCHEMA {
+        Some(candidate)
+    } else {
+        None
     }
-    let json = transcript[start..end].trim();
-    serde_json::from_str(json).context("parse ReviewArtifact.v1 block")
+}
+
+fn strip_markdown_json_fence(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    let Some(without_prefix) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    let without_language = without_prefix
+        .strip_prefix("json")
+        .or_else(|| without_prefix.strip_prefix("JSON"))
+        .unwrap_or(without_prefix)
+        .trim_start_matches([' ', '\t', '\r', '\n']);
+    without_language
+        .strip_suffix("```")
+        .unwrap_or(without_language)
+        .trim()
 }
 
 #[cfg(unix)]
@@ -555,8 +590,58 @@ mod tests {
     }
 
     #[test]
+    fn extracts_artifact_inside_markdown_json_fence() {
+        let transcript = format!(
+            "{begin}\n```json\n{json}\n```\n{end}",
+            begin = ARTIFACT_BEGIN,
+            json = minimal_artifact_json(),
+            end = ARTIFACT_END
+        );
+        assert_eq!(
+            extract_marked_artifact(&transcript).unwrap().request_id,
+            "req-1"
+        );
+    }
+
+    #[test]
+    fn extracts_artifact_from_opencode_xml_wrapper_variant() {
+        let transcript = format!(
+            "```json\n<CERBERUS_REVIEW_ARTIFACT_V1>\n{json}\n</CERBERUS_REVIEW_ARTIFACT_V1>\n```",
+            json = minimal_artifact_json()
+        );
+        assert_eq!(
+            extract_marked_artifact(&transcript).unwrap().request_id,
+            "req-1"
+        );
+    }
+
+    #[test]
     fn opencode_json_events_are_reduced_to_text_before_artifact_scan() {
-        let artifact = serde_json::json!({
+        let artifact = minimal_artifact_json();
+        let event = serde_json::json!({
+            "type": "text",
+            "part": {
+                "text": format!(
+                    "{begin}\n{artifact}\n{end}",
+                    begin = ARTIFACT_BEGIN,
+                    artifact = artifact,
+                    end = ARTIFACT_END
+                )
+            }
+        });
+        let stdout = format!(
+            "{{\"type\":\"start\"}}\n{}\nnot json\n",
+            serde_json::to_string(&event).unwrap()
+        );
+        let text =
+            artifact_text_for_substrate(CommandSubstrate::Opencode, stdout.as_bytes(), "fallback");
+        assert!(text.contains(ARTIFACT_BEGIN));
+        assert!(!text.contains("\"type\":\"text\""));
+        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
+    }
+
+    fn minimal_artifact_json() -> String {
+        serde_json::json!({
             "schema_version": "cerberus.review_artifact.v1",
             "artifact_id": "artifact-test",
             "request_id": "req-1",
@@ -595,27 +680,8 @@ mod tests {
                 }
             },
             "errors": []
-        });
-        let event = serde_json::json!({
-            "type": "text",
-            "part": {
-                "text": format!(
-                    "{begin}\n{artifact}\n{end}",
-                    begin = ARTIFACT_BEGIN,
-                    artifact = artifact,
-                    end = ARTIFACT_END
-                )
-            }
-        });
-        let stdout = format!(
-            "{{\"type\":\"start\"}}\n{}\nnot json\n",
-            serde_json::to_string(&event).unwrap()
-        );
-        let text =
-            artifact_text_for_substrate(CommandSubstrate::Opencode, stdout.as_bytes(), "fallback");
-        assert!(text.contains(ARTIFACT_BEGIN));
-        assert!(!text.contains("\"type\":\"text\""));
-        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
+        })
+        .to_string()
     }
 
     #[test]

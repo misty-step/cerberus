@@ -150,25 +150,24 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
     if diff.trim().is_empty() {
         bail!("pull request #{} produced an empty diff", options.number);
     }
+    let head_sha = require_pr_head_sha(options.number, &pr)?;
     let repo = options.repo.clone().or_else(|| {
         pr.head_repository
             .as_ref()
             .map(|repo| repo.name_with_owner.clone())
     });
-    let request_id = options.common.request_id.clone().unwrap_or_else(|| {
-        format!(
-            "github-pr-{}-{}",
-            options.number,
-            short_sha(pr.head_ref_oid.as_deref().unwrap_or("unknown"))
-        )
-    });
+    let request_id = options
+        .common
+        .request_id
+        .clone()
+        .unwrap_or_else(|| format!("github-pr-{}-{}", options.number, short_sha(&head_sha)));
     let head_workspace = options
         .head_workspace
         .as_ref()
         .map(|path| absolute_path(path))
         .transpose()?;
     if let Some(path) = &head_workspace {
-        validate_head_workspace(path, pr.head_ref_oid.as_deref())?;
+        validate_head_workspace(path, &head_sha)?;
     }
 
     Ok(ReviewRequest {
@@ -189,7 +188,7 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
             description: pr.body,
             base_ref: pr.base_ref_name,
             head_ref: pr.head_ref_name.clone(),
-            head_sha: pr.head_ref_oid.clone(),
+            head_sha: Some(head_sha.clone()),
             diff: Diff {
                 format: "unified".to_string(),
                 digest: Some(sha256_digest(diff.as_bytes())),
@@ -210,7 +209,7 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
                     kind: WorkspaceKind::Checkout,
                     path: path.display().to_string(),
                     ref_name: pr.head_ref_name,
-                    sha: pr.head_ref_oid,
+                    sha: Some(head_sha),
                 }),
                 base: None,
             },
@@ -260,7 +259,15 @@ fn absolute_path(path: &Path) -> Result<PathBuf> {
     }
 }
 
-fn validate_head_workspace(path: &Path, expected_sha: Option<&str>) -> Result<()> {
+fn require_pr_head_sha(number: u64, pr: &GhPullRequest) -> Result<String> {
+    pr.head_ref_oid
+        .as_ref()
+        .filter(|sha| !sha.trim().is_empty())
+        .cloned()
+        .ok_or_else(|| anyhow!("pull request #{number} is missing headRefOid"))
+}
+
+fn validate_head_workspace(path: &Path, expected_sha: &str) -> Result<()> {
     let dirty = git_output(path, &["status", "--porcelain", "--untracked-files=no"])
         .with_context(|| format!("inspect head workspace {}", path.display()))?;
     if !dirty.trim().is_empty() {
@@ -270,15 +277,13 @@ fn validate_head_workspace(path: &Path, expected_sha: Option<&str>) -> Result<()
         );
     }
 
-    if let Some(expected) = expected_sha {
-        let actual = git_output(path, &["rev-parse", "HEAD"])
-            .with_context(|| format!("resolve head workspace {}", path.display()))?;
-        if actual != expected {
-            bail!(
-                "head workspace {} is at {actual}, but PR head is {expected}",
-                path.display()
-            );
-        }
+    let actual = git_output(path, &["rev-parse", "HEAD"])
+        .with_context(|| format!("resolve head workspace {}", path.display()))?;
+    if actual != expected_sha {
+        bail!(
+            "head workspace {} is at {actual}, but PR head is {expected_sha}",
+            path.display()
+        );
     }
     Ok(())
 }
@@ -493,6 +498,20 @@ mod tests {
         git_output(repo, &["rev-parse", "HEAD"]).unwrap()
     }
 
+    fn gh_pr(head_ref_oid: Option<String>) -> GhPullRequest {
+        GhPullRequest {
+            number: 7,
+            title: "title".to_string(),
+            body: None,
+            url: None,
+            base_ref_name: Some("master".to_string()),
+            head_ref_name: Some("branch".to_string()),
+            head_ref_oid,
+            files: Vec::new(),
+            head_repository: None,
+        }
+    }
+
     #[test]
     fn parses_name_status_with_rename() {
         let files = parse_name_status("M\tsrc/lib.rs\nR100\told.rs\tnew.rs\n").unwrap();
@@ -520,7 +539,7 @@ mod tests {
     fn validates_clean_matching_head_workspace() {
         let repo = init_repo();
         let head = commit_file(repo.path(), "one\n", "one");
-        validate_head_workspace(repo.path(), Some(&head)).unwrap();
+        validate_head_workspace(repo.path(), &head).unwrap();
     }
 
     #[test]
@@ -528,7 +547,7 @@ mod tests {
         let repo = init_repo();
         let old = commit_file(repo.path(), "one\n", "one");
         let _new = commit_file(repo.path(), "two\n", "two");
-        let err = validate_head_workspace(repo.path(), Some(&old)).unwrap_err();
+        let err = validate_head_workspace(repo.path(), &old).unwrap_err();
         assert!(err.to_string().contains("but PR head is"));
     }
 
@@ -537,7 +556,23 @@ mod tests {
         let repo = init_repo();
         let head = commit_file(repo.path(), "one\n", "one");
         fs::write(repo.path().join("file.txt"), "dirty\n").unwrap();
-        let err = validate_head_workspace(repo.path(), Some(&head)).unwrap_err();
+        let err = validate_head_workspace(repo.path(), &head).unwrap_err();
         assert!(err.to_string().contains("uncommitted tracked changes"));
+    }
+
+    #[test]
+    fn rejects_github_pr_without_head_oid() {
+        let err = require_pr_head_sha(7, &gh_pr(None)).unwrap_err();
+        assert!(err.to_string().contains("missing headRefOid"));
+    }
+
+    #[test]
+    fn requires_non_empty_github_pr_head_oid() {
+        let err = require_pr_head_sha(7, &gh_pr(Some("".to_string()))).unwrap_err();
+        assert!(err.to_string().contains("missing headRefOid"));
+        assert_eq!(
+            require_pr_head_sha(7, &gh_pr(Some("abc123".to_string()))).unwrap(),
+            "abc123"
+        );
     }
 }
