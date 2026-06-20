@@ -511,7 +511,7 @@ fn kill_process_tree(child: &mut std::process::Child) {
 }
 
 fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
-    const CAP: usize = 1_000_000;
+    const CAP: usize = 8_000_000;
     if bytes.len() <= CAP {
         return bytes;
     }
@@ -796,7 +796,7 @@ mod tests {
                 "text": artifact
             }
         });
-        let mut stdout = vec![b'a'; 1_250_000];
+        let mut stdout = vec![b'a'; 8_250_000];
         stdout.extend_from_slice(b"\n");
         stdout.extend_from_slice(serde_json::to_string(&event).unwrap().as_bytes());
         stdout.extend_from_slice(b"\n");
