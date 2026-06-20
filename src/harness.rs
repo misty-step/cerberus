@@ -510,19 +510,20 @@ fn kill_process_tree(child: &mut std::process::Child) {
     let _ = child.kill();
 }
 
+const OUTPUT_CAPTURE_CAP: usize = 64_000_000;
+
 fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
-    const CAP: usize = 8_000_000;
-    if bytes.len() <= CAP {
+    if bytes.len() <= OUTPUT_CAPTURE_CAP {
         return bytes;
     }
     const MARKER: &[u8] = b"\n...[cerberus truncated middle]...\n";
-    let available = CAP.saturating_sub(MARKER.len());
+    let available = OUTPUT_CAPTURE_CAP.saturating_sub(MARKER.len());
     if available == 0 {
-        bytes[bytes.len() - CAP..].to_vec()
+        bytes[bytes.len() - OUTPUT_CAPTURE_CAP..].to_vec()
     } else {
         let head_len = available / 2;
         let tail_len = available - head_len;
-        let mut capped = Vec::with_capacity(CAP);
+        let mut capped = Vec::with_capacity(OUTPUT_CAPTURE_CAP);
         capped.extend_from_slice(&bytes[..head_len]);
         capped.extend_from_slice(MARKER);
         capped.extend_from_slice(&bytes[bytes.len() - tail_len..]);
@@ -796,7 +797,7 @@ mod tests {
                 "text": artifact
             }
         });
-        let mut stdout = vec![b'a'; 8_250_000];
+        let mut stdout = vec![b'a'; OUTPUT_CAPTURE_CAP + 250_000];
         stdout.extend_from_slice(b"\n");
         stdout.extend_from_slice(serde_json::to_string(&event).unwrap().as_bytes());
         stdout.extend_from_slice(b"\n");
