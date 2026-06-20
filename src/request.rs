@@ -167,6 +167,9 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         .as_ref()
         .map(|path| absolute_path(path))
         .transpose()?;
+    if let Some(path) = &head_workspace {
+        validate_head_workspace(path, pr.head_ref_oid.as_deref())?;
+    }
 
     Ok(ReviewRequest {
         schema_version: REVIEW_REQUEST_SCHEMA.to_string(),
@@ -255,6 +258,29 @@ fn absolute_path(path: &Path) -> Result<PathBuf> {
             .context("read current directory")
             .map(|cwd| cwd.join(path))
     }
+}
+
+fn validate_head_workspace(path: &Path, expected_sha: Option<&str>) -> Result<()> {
+    let dirty = git_output(path, &["status", "--porcelain", "--untracked-files=no"])
+        .with_context(|| format!("inspect head workspace {}", path.display()))?;
+    if !dirty.trim().is_empty() {
+        bail!(
+            "head workspace {} has uncommitted tracked changes; commit, stash, or omit --head-workspace",
+            path.display()
+        );
+    }
+
+    if let Some(expected) = expected_sha {
+        let actual = git_output(path, &["rev-parse", "HEAD"])
+            .with_context(|| format!("resolve head workspace {}", path.display()))?;
+        if actual != expected {
+            bail!(
+                "head workspace {} is at {actual}, but PR head is {expected}",
+                path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn detect_repo_slug(repo_path: &Path) -> Result<String> {
@@ -440,6 +466,32 @@ impl From<GhPrFile> for ChangedFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn init_repo() -> tempfile::TempDir {
+        let repo = tempfile::tempdir().unwrap();
+        run(repo.path(), "git", &["init", "-q"]).unwrap();
+        run(
+            repo.path(),
+            "git",
+            &["config", "user.email", "cerberus@example.invalid"],
+        )
+        .unwrap();
+        run(
+            repo.path(),
+            "git",
+            &["config", "user.name", "Cerberus Test"],
+        )
+        .unwrap();
+        repo
+    }
+
+    fn commit_file(repo: &Path, contents: &str, message: &str) -> String {
+        fs::write(repo.join("file.txt"), contents).unwrap();
+        run(repo, "git", &["add", "file.txt"]).unwrap();
+        run(repo, "git", &["commit", "-q", "-m", message]).unwrap();
+        git_output(repo, &["rev-parse", "HEAD"]).unwrap()
+    }
 
     #[test]
     fn parses_name_status_with_rename() {
@@ -462,5 +514,30 @@ mod tests {
             parse_github_slug("git@github.com:misty-step/cerberus.git"),
             Some("misty-step/cerberus".to_string())
         );
+    }
+
+    #[test]
+    fn validates_clean_matching_head_workspace() {
+        let repo = init_repo();
+        let head = commit_file(repo.path(), "one\n", "one");
+        validate_head_workspace(repo.path(), Some(&head)).unwrap();
+    }
+
+    #[test]
+    fn rejects_mismatched_head_workspace_sha() {
+        let repo = init_repo();
+        let old = commit_file(repo.path(), "one\n", "one");
+        let _new = commit_file(repo.path(), "two\n", "two");
+        let err = validate_head_workspace(repo.path(), Some(&old)).unwrap_err();
+        assert!(err.to_string().contains("but PR head is"));
+    }
+
+    #[test]
+    fn rejects_dirty_head_workspace() {
+        let repo = init_repo();
+        let head = commit_file(repo.path(), "one\n", "one");
+        fs::write(repo.path().join("file.txt"), "dirty\n").unwrap();
+        let err = validate_head_workspace(repo.path(), Some(&head)).unwrap_err();
+        assert!(err.to_string().contains("uncommitted tracked changes"));
     }
 }
