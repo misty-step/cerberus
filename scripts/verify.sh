@@ -10,6 +10,7 @@ cargo test --locked
 cargo run --locked -- review --help > target/cerberus-review-help.txt
 grep -q '\[default: opencode\]' target/cerberus-review-help.txt
 grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.txt
+grep -q -- '--receipt-bundle' target/cerberus-review-help.txt
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
@@ -23,9 +24,11 @@ cargo run --locked -- review-pr --help > target/cerberus-review-pr-help.txt
 grep -q -- '--dry-run' target/cerberus-review-pr-help.txt
 grep -q -- '--post' target/cerberus-review-pr-help.txt
 grep -q -- '--summary-target' target/cerberus-review-pr-help.txt
+grep -q -- '--receipt-bundle' target/cerberus-review-pr-help.txt
 
 rm -rf target/cerberus
 mkdir -p target/cerberus
+mkdir -p target/cerberus/receipts
 
 expect_review_failure() {
   local name="$1"
@@ -100,6 +103,70 @@ grep -q 'references unknown finding id' target/cerberus/unknown-finding-id.stder
 grep -q 'references unknown suggested fix id' target/cerberus/unknown-suggested-fix.stderr
 grep -q 'top-level suggested fix is not attached' target/cerberus/orphan-suggested-fix.stderr
 
+printf 'stale receipt should be removed before a failed run\n' \
+  > target/cerberus/receipts/stale-before-failed-review.json
+printf 'no review artifact here\n' > target/cerberus/no-artifact.txt
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output target/cerberus/no-artifact.txt \
+  --out target/cerberus/no-artifact-output.json \
+  --receipt-bundle target/cerberus/receipts/stale-before-failed-review.json \
+  > target/cerberus/no-artifact.stdout \
+  2> target/cerberus/no-artifact.stderr; then
+  echo "expected missing artifact review to fail" >&2
+  exit 1
+fi
+test ! -e target/cerberus/receipts/stale-before-failed-review.json
+
+python3 - <<'PY'
+from pathlib import Path
+
+source = Path("fixtures/harness/valid-review.txt")
+target = Path("target/cerberus/invalid-secret-schema.txt")
+text = source.read_text()
+text = text.replace(
+    '"schema_version": "cerberus.review_artifact.v1"',
+    '"schema_version": "cerberus.review_artifact.v1 GH_TOKEN master-prompt.md review-request.json"',
+    1,
+)
+target.write_text(text)
+PY
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output target/cerberus/invalid-secret-schema.txt \
+  --out target/cerberus/invalid-secret-schema-artifact.json \
+  --execution-plan target/cerberus/invalid-secret-schema-execution_plan.json \
+  --transcript target/cerberus/invalid-secret-schema-transcript.txt \
+  --receipt-bundle target/cerberus/receipts/invalid-secret-schema.json \
+  > target/cerberus/invalid-secret-schema.stdout \
+  2> target/cerberus/invalid-secret-schema.stderr; then
+  echo "expected invalid schema review to fail" >&2
+  exit 1
+fi
+test -s target/cerberus/invalid-secret-schema-artifact.json
+test -s target/cerberus/receipts/invalid-secret-schema.json
+grep -q '"status": "failed"' target/cerberus/receipts/invalid-secret-schema.json
+grep -q '"trusted_for_posting": false' target/cerberus/receipts/invalid-secret-schema.json
+grep -q '"error": "artifact_validation_failed"' target/cerberus/receipts/invalid-secret-schema.json
+if grep -q 'GH_TOKEN\|master-prompt.md\|review-request.json' \
+  target/cerberus/receipts/invalid-secret-schema.json; then
+  echo "failed-validation receipt leaked private validation details" >&2
+  exit 1
+fi
+python3 - <<'PY'
+import hashlib
+import json
+from pathlib import Path
+
+artifact = Path("target/cerberus/invalid-secret-schema-artifact.json").read_bytes()
+receipt = json.loads(Path("target/cerberus/receipts/invalid-secret-schema.json").read_text())
+expected = "sha256:" + hashlib.sha256(artifact).hexdigest()
+if receipt["artifact_digest"] != expected:
+    raise SystemExit(f"artifact digest mismatch: {receipt['artifact_digest']} != {expected}")
+PY
+
 tmp_repo="$(mktemp -d)"
 trap 'rm -rf "$tmp_repo"' EXIT
 git -C "$tmp_repo" init -q
@@ -143,7 +210,8 @@ cargo run --locked -- review \
   --fixture-output fixtures/harness/valid-review.txt \
   --out target/cerberus/git-range-artifact.json \
   --markdown target/cerberus/git-range-review.md \
-  --execution-plan target/cerberus/git-range-execution_plan.json
+  --execution-plan target/cerberus/git-range-execution_plan.json \
+  --receipt-bundle target/cerberus/receipts/git-range-fixture.json
 
 GH_TOKEN=should-not-leak cargo run --locked -- review \
   --request target/cerberus/git-range-request.json \
@@ -152,7 +220,8 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --out target/cerberus/git-range-opencode-artifact.json \
   --markdown target/cerberus/git-range-opencode-review.md \
   --execution-plan target/cerberus/git-range-opencode-execution_plan.json \
-  --transcript target/cerberus/git-range-opencode-transcript.txt
+  --transcript target/cerberus/git-range-opencode-transcript.txt \
+  --receipt-bundle target/cerberus/receipts/git-range-opencode.json
 
 test "$(git -C "$tmp_repo" rev-parse HEAD)" = "$head_sha"
 
@@ -185,7 +254,8 @@ GH_TOKEN=should-not-leak CERBERUS_ALLOWED_RUNTIME=visible cargo run --locked -- 
   --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
   --out target/cerberus/context-tiers/local-runtime-opencode-artifact.json \
   --execution-plan target/cerberus/context-tiers/local-runtime-opencode-execution_plan.json \
-  --transcript target/cerberus/context-tiers/local-runtime-opencode-transcript.txt
+  --transcript target/cerberus/context-tiers/local-runtime-opencode-transcript.txt \
+  --receipt-bundle target/cerberus/receipts/local-runtime-opencode.json
 
 grep -q '"repo_base": true' target/cerberus/context-tiers/local-runtime-opencode-artifact.json
 grep -q '"local_runtime": true' target/cerberus/context-tiers/local-runtime-opencode-artifact.json
@@ -209,11 +279,23 @@ cargo run --locked -- review \
   --out target/cerberus/artifact.json \
   --markdown target/cerberus/review.md \
   --execution-plan target/cerberus/execution_plan.json \
-  --transcript target/cerberus/transcript.txt
+  --transcript target/cerberus/transcript.txt \
+  --receipt-bundle target/cerberus/receipts/fixture.json
 
 cargo run --locked -- render \
   --artifact target/cerberus/artifact.json \
   --markdown target/cerberus/review-rendered.md
+
+cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out target/cerberus/default-transcript/artifact.json \
+  --receipt-bundle target/cerberus/default-transcript/receipt-bundle.json
+
+test -s target/cerberus/default-transcript/transcript.txt
+grep -q '"transcript_uri": "target/cerberus/default-transcript/transcript.txt"' \
+  target/cerberus/default-transcript/receipt-bundle.json
 
 GH_TOKEN=should-not-leak cargo run --locked -- review \
   --request fixtures/requests/diff-only.json \
@@ -222,7 +304,8 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --out target/cerberus/opencode-artifact.json \
   --markdown target/cerberus/opencode-review.md \
   --execution-plan target/cerberus/opencode-execution_plan.json \
-  --transcript target/cerberus/opencode-transcript.txt
+  --transcript target/cerberus/opencode-transcript.txt \
+  --receipt-bundle target/cerberus/receipts/opencode.json
 
 GH_TOKEN=should-not-leak cargo run --locked -- review \
   --request fixtures/requests/diff-only.json \
@@ -231,7 +314,8 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --out target/cerberus/omp-artifact.json \
   --markdown target/cerberus/omp-review.md \
   --execution-plan target/cerberus/omp-execution_plan.json \
-  --transcript target/cerberus/omp-transcript.txt
+  --transcript target/cerberus/omp-transcript.txt \
+  --receipt-bundle target/cerberus/receipts/omp.json
 
 fake_gh="$PWD/fixtures/bin/fake-gh"
 fake_gh_state="target/cerberus/fake-gh-state"
@@ -243,6 +327,7 @@ CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" cargo run --locked -- review-pr \
   --harness fixture \
   --fixture-output fixtures/harness/valid-review.txt \
   --out-dir target/cerberus/review-pr-dry-run \
+  --receipt-bundle target/cerberus/receipts/review-pr-dry-run.json \
   --dry-run \
   > target/cerberus/review-pr-dry-run.stdout
 
@@ -270,6 +355,35 @@ if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
   exit 1
 fi
 grep -q 'head moved from 0123456789abcdef to feedfacefeedface' target/cerberus/review-pr-stale-head.stderr
+test ! -e target/cerberus/review-pr-stale-head/receipt-bundle.json
+
+rm -rf "$fake_gh_state"
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_MOVED_HEAD_SHA=feedfacefeedface \
+  CERBERUS_FAKE_GH_MOVE_HEAD_AFTER_VIEW_COUNT=3 \
+  CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-final-stale-gh.log \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-post-final-stale \
+    --summary-target check-run \
+    --post \
+    > target/cerberus/review-pr-post-final-stale.stdout \
+    2> target/cerberus/review-pr-post-final-stale.stderr; then
+  echo "expected review-pr post to reject a PR head moved after post-plan creation" >&2
+  exit 1
+fi
+grep -q 'head moved from 0123456789abcdef to feedfacefeedface' \
+  target/cerberus/review-pr-post-final-stale.stderr
+test ! -e target/cerberus/review-pr-post-final-stale/receipt-bundle.json
+test ! -e target/cerberus/review-pr-post-final-stale/post-result.json
+if grep -q '^POST ' target/cerberus/review-pr-post-final-stale-gh.log; then
+  echo "review-pr posted after final stale-head guard failed" >&2
+  exit 1
+fi
 
 rm -rf "$fake_gh_state"
 CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
@@ -339,8 +453,19 @@ test -s target/cerberus/review-pr-dry-run/execution_plan.json
 test -s target/cerberus/review-pr-dry-run/transcript.txt
 test -s target/cerberus/review-pr-dry-run/post-plan.json
 test -s target/cerberus/review-pr-post-first/post-result.json
+test -s target/cerberus/review-pr-post-first/receipt-bundle.json
 test -s target/cerberus/review-pr-post-second/post-result.json
+test -s target/cerberus/review-pr-post-second/receipt-bundle.json
 test -s target/cerberus/review-pr-post-page-two/post-result.json
+test -s target/cerberus/review-pr-post-page-two/receipt-bundle.json
+test -s target/cerberus/receipts/fixture.json
+test -s target/cerberus/receipts/opencode.json
+test -s target/cerberus/receipts/omp.json
+test -s target/cerberus/receipts/git-range-fixture.json
+test -s target/cerberus/receipts/git-range-opencode.json
+test -s target/cerberus/receipts/invalid-secret-schema.json
+test -s target/cerberus/receipts/local-runtime-opencode.json
+test -s target/cerberus/receipts/review-pr-dry-run.json
 
 grep -q '"private_material_in_argv": false' target/cerberus/execution_plan.json
 grep -q '"diff": true' target/cerberus/artifact.json
@@ -358,6 +483,22 @@ grep -q '"workspace_mode": "diff_packet"' target/cerberus/omp-execution_plan.jso
 grep -q '<request-file>' target/cerberus/opencode-execution_plan.json
 grep -q '<request-file>' target/cerberus/git-range-opencode-execution_plan.json
 grep -q '<prompt-file>' target/cerberus/omp-execution_plan.json
+grep -q '"schema_version": "cerberus.review_receipt_bundle.v1"' target/cerberus/receipts/opencode.json
+grep -q '"harness": "opencode"' target/cerberus/receipts/opencode.json
+grep -q '"model": "fake/opencode-reviewer"' target/cerberus/receipts/opencode.json
+grep -q '"prompt_tokens": 123' target/cerberus/receipts/opencode.json
+grep -q '"completion_tokens": 45' target/cerberus/receipts/opencode.json
+grep -q '"cost_usd": 0.0042' target/cerberus/receipts/opencode.json
+grep -q '"validation": {' target/cerberus/receipts/opencode.json
+grep -q '"trusted_for_posting": true' target/cerberus/receipts/opencode.json
+grep -q '"capability_tier": "diff_only"' target/cerberus/receipts/fixture.json
+grep -q '"capability_tier": "repo_base_and_head"' target/cerberus/receipts/git-range-opencode.json
+grep -q '"capability_tier": "local_runtime"' target/cerberus/receipts/local-runtime-opencode.json
+grep -q '"transcript_uri": "target/cerberus/opencode-transcript.txt"' target/cerberus/receipts/opencode.json
+if grep -R 'GH_TOKEN\|should-not-leak\|master-prompt.md\|review-request.json' target/cerberus/receipts; then
+  echo "receipt bundle leaked private prompt/request material or secret names" >&2
+  exit 1
+fi
 grep -q 'POST /repos/example/fixture/check-runs' target/cerberus/review-pr-post-first-gh.log
 grep -q 'POST /repos/example/fixture/pulls/7/reviews' target/cerberus/review-pr-post-first-gh.log
 grep -q 'GET /repos/example/fixture/issues/7/comments?per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log

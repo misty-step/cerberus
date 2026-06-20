@@ -21,5 +21,6 @@ fn kernel_review_runs_fixture_through_small_typed_boundary() {
     assert_eq!(run.artifact.schema_version, REVIEW_ARTIFACT_SCHEMA);
     assert_eq!(run.execution_plan.harness, "fixture");
     assert_eq!(run.execution_plan.prompt_transport, "fixture template");
+    assert_eq!(run.telemetry, Default::default());
     assert!(!run.transcript.is_empty());
 }

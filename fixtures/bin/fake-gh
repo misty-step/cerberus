@@ -27,7 +27,8 @@ if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
   count=$((count + 1))
   printf '%s\n' "$count" > "$count_file"
   head_sha="${CERBERUS_FAKE_GH_HEAD_SHA:-0123456789abcdef}"
-  if [[ -n "${CERBERUS_FAKE_GH_MOVED_HEAD_SHA:-}" && "$count" != "1" ]]; then
+  move_after="${CERBERUS_FAKE_GH_MOVE_HEAD_AFTER_VIEW_COUNT:-1}"
+  if [[ -n "${CERBERUS_FAKE_GH_MOVED_HEAD_SHA:-}" && "$count" -gt "$move_after" ]]; then
     head_sha="$CERBERUS_FAKE_GH_MOVED_HEAD_SHA"
   fi
   HEAD_SHA="$head_sha" python3 - "$repo_root/fixtures/github/pr-view.json" <<'PY'

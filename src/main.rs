@@ -6,8 +6,9 @@ use anyhow::{anyhow, Context, Result};
 use cerberus::harness::{
     ExecutionPlan, FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
-use cerberus::kernel::{ReviewKernel, ReviewSubstrate, RunPolicy};
+use cerberus::kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
 use cerberus::post::{build_post_plan, trusted_lifecycle, GithubClient, SummaryTarget};
+use cerberus::receipt::{build_review_receipt_bundle, ReceiptBundleInput};
 use cerberus::request::{
     build_git_range_request, build_pull_request, fetch_pull_request_head_sha,
     GitRangeRequestOptions, PullRequestOptions, RequestOptions,
@@ -136,6 +137,8 @@ struct ReviewArgs {
     execution_plan: Option<PathBuf>,
     #[arg(long)]
     transcript: Option<PathBuf>,
+    #[arg(long)]
+    receipt_bundle: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -191,6 +194,8 @@ struct ReviewPrArgs {
     model: Option<String>,
     #[arg(long)]
     cwd: Option<PathBuf>,
+    #[arg(long)]
+    receipt_bundle: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -320,10 +325,19 @@ fn review(args: ReviewArgs) -> Result<()> {
         timeout_seconds,
         execution_plan,
         transcript,
+        receipt_bundle,
     } = args;
+    if let Some(receipt_bundle) = &receipt_bundle {
+        remove_file_if_exists(receipt_bundle)?;
+    }
     let request = read_json::<ReviewRequest>(&request)?;
     validate_request(&request)?;
     let cwd = cwd.unwrap_or(std::env::current_dir().context("read current directory")?);
+    let transcript_path = transcript.or_else(|| {
+        receipt_bundle
+            .as_ref()
+            .map(|_| sibling_path(&out, "transcript.txt"))
+    });
     let timeout = timeout_seconds
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_millis(request.policy.timeout_ms));
@@ -339,17 +353,29 @@ fn review(args: ReviewArgs) -> Result<()> {
     let run_policy = RunPolicy {
         cwd,
         timeout,
-        failure_transcript: transcript.clone(),
+        failure_transcript: transcript_path.clone(),
     };
     let run = kernel.review(&request, &run_policy)?;
     let plan_path = execution_plan.unwrap_or_else(|| sibling_path(&out, "execution_plan.json"));
     write_json(&plan_path, &run.execution_plan)?;
-    if let Some(transcript_path) = &transcript {
+    if let Some(transcript_path) = &transcript_path {
         write_text(transcript_path, &run.transcript)?;
     }
-    validate_artifact_for_request(&run.artifact, &request)?;
-
     write_json(&out, &run.artifact)?;
+    let validation_result = validate_artifact_for_request(&run.artifact, &request);
+    if let Some(receipt_bundle) = &receipt_bundle {
+        write_review_receipt_bundle(
+            receipt_bundle,
+            &request,
+            &run,
+            &out,
+            transcript_path.as_deref(),
+            Some(&plan_path),
+            validation_result.is_err(),
+        )?;
+    }
+    validation_result?;
+
     if let Some(markdown) = markdown {
         write_text(&markdown, &render_markdown(&run.artifact))?;
     }
@@ -362,9 +388,14 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let markdown_path = args.out_dir.join("review.md");
     let execution_plan_path = args.out_dir.join("execution_plan.json");
     let transcript_path = args.out_dir.join("transcript.txt");
+    let receipt_bundle_path = args
+        .receipt_bundle
+        .clone()
+        .unwrap_or_else(|| args.out_dir.join("receipt-bundle.json"));
     let post_plan_path = args.out_dir.join("post-plan.json");
     let post_result_path = args.out_dir.join("post-result.json");
     clean_review_pr_post_receipts(&post_plan_path, &post_result_path)?;
+    remove_file_if_exists(&receipt_bundle_path)?;
     let gh_binary = args.gh_binary.clone();
 
     let request = build_pull_request(&PullRequestOptions {
@@ -384,6 +415,13 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     })?;
     validate_request(&request)?;
     write_json(&request_path, &request)?;
+    let head_sha = request
+        .change
+        .head_sha
+        .as_deref()
+        .ok_or_else(|| anyhow!("review-pr requires request.change.head_sha"))?
+        .to_string();
+    ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, &head_sha)?;
 
     let cwd = args
         .cwd
@@ -405,28 +443,42 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let run = kernel.review(&request, &run_policy)?;
     write_json(&execution_plan_path, &run.execution_plan)?;
     write_text(&transcript_path, &run.transcript)?;
-    validate_artifact_for_request(&run.artifact, &request)?;
+    write_json(&artifact_path, &run.artifact)?;
+    let validation_result = validate_artifact_for_request(&run.artifact, &request);
+    ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, &head_sha)?;
+    if validation_result.is_err() {
+        write_review_receipt_bundle(
+            &receipt_bundle_path,
+            &request,
+            &run,
+            &artifact_path,
+            Some(&transcript_path),
+            Some(&execution_plan_path),
+            true,
+        )?;
+        validation_result?;
+    }
     if !trusted_lifecycle(&run.artifact) {
-        write_json(&artifact_path, &run.artifact)?;
+        write_review_receipt_bundle(
+            &receipt_bundle_path,
+            &request,
+            &run,
+            &artifact_path,
+            Some(&transcript_path),
+            Some(&execution_plan_path),
+            false,
+        )?;
         write_text(&markdown_path, &render_markdown(&run.artifact))?;
         return Err(anyhow!(
             "review artifact lifecycle {:?} is not trusted for posting",
             run.artifact.lifecycle_state
         ));
     }
-    write_json(&artifact_path, &run.artifact)?;
     write_text(&markdown_path, &render_markdown(&run.artifact))?;
-
-    let head_sha = request
-        .change
-        .head_sha
-        .as_deref()
-        .ok_or_else(|| anyhow!("review-pr requires request.change.head_sha"))?;
-    ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, head_sha)?;
 
     let github = GithubClient::new(gh_binary.clone());
     let existing =
-        github.read_existing_state(&args.repo, args.number, head_sha, args.summary_target)?;
+        github.read_existing_state(&args.repo, args.number, &head_sha, args.summary_target)?;
     let post_plan = build_post_plan(
         &request,
         &run.artifact,
@@ -439,9 +491,27 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
 
     if args.post {
         ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, &post_plan.head_sha)?;
+        write_review_receipt_bundle(
+            &receipt_bundle_path,
+            &request,
+            &run,
+            &artifact_path,
+            Some(&transcript_path),
+            Some(&execution_plan_path),
+            false,
+        )?;
         let result = github.apply_plan(&post_plan)?;
         write_json(&post_result_path, &result)?;
     } else {
+        write_review_receipt_bundle(
+            &receipt_bundle_path,
+            &request,
+            &run,
+            &artifact_path,
+            Some(&transcript_path),
+            Some(&execution_plan_path),
+            false,
+        )?;
         println!("{}", serde_json::to_string_pretty(&post_plan)?);
     }
 
@@ -480,6 +550,29 @@ fn render(args: RenderArgs) -> Result<()> {
     let artifact = read_json::<ReviewArtifact>(&args.artifact)?;
     write_text(&args.markdown, &render_markdown(&artifact))?;
     Ok(())
+}
+
+fn write_review_receipt_bundle(
+    path: &Path,
+    request: &ReviewRequest,
+    run: &ReviewRun,
+    artifact_path: &Path,
+    transcript_path: Option<&Path>,
+    execution_plan_path: Option<&Path>,
+    validation_failed: bool,
+) -> Result<()> {
+    let bundle = build_review_receipt_bundle(ReceiptBundleInput {
+        request,
+        artifact: &run.artifact,
+        harness: &run.execution_plan.harness,
+        telemetry: &run.telemetry,
+        transcript: &run.transcript,
+        artifact_uri: artifact_path.display().to_string(),
+        transcript_uri: transcript_path.map(|path| path.display().to_string()),
+        execution_plan_uri: execution_plan_path.map(|path| path.display().to_string()),
+        validation_failed,
+    })?;
+    write_json(path, &bundle)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>

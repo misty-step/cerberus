@@ -1,6 +1,6 @@
 # Emit upstream evaluation-ready receipts
 
-Priority: P2 | Status: pending | Estimate: M
+Priority: P2 | Status: shipped | Estimate: M
 
 ## Goal
 
@@ -9,12 +9,12 @@ Cerberus own model or harness evaluation.
 
 ## Oracle
 
-- [ ] Each review run can emit a stable receipt bundle with request digest,
+- [x] Each review run can emit a stable receipt bundle with request digest,
   artifact digest, harness, model, latency, cost when available, capability
   tier, transcript URI, and validation outcome.
-- [ ] Receipt bundles are redacted and deterministic enough for replay or
+- [x] Receipt bundles are redacted and deterministic enough for replay or
   scoring.
-- [ ] A documented handoff format lets upstream labs compare harness/model
+- [x] A documented handoff format lets upstream labs compare harness/model
   candidates without changing Cerberus runtime behavior.
 
 ## Verification System
@@ -46,3 +46,11 @@ Cerberus own model or harness evaluation.
 ADR 0002 says Cerberus should record enough receipts for evaluators to score
 runs. This is deliberately P2 until execution hardening and delivery loops are
 in place.
+
+**Shipped 2026-06-20:** Added `ReviewReceiptBundle.v1`, `ReviewTelemetry`,
+private OpenCode/OMP telemetry parsing, `--receipt-bundle` support for
+`review` and `review-pr`, and verifier coverage for positive and negative
+receipt paths. Receipts now include request/artifact digests, harness, model,
+usage/cost when available, latency, capability tier derived from the request,
+artifact/transcript/execution-plan URIs, and sanitized validation outcome.
+Evidence: `./scripts/verify.sh`.

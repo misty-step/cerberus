@@ -81,6 +81,12 @@ other upstream laboratories may evaluate Cerberus, produce reviewer config
 candidates, and compare harnesses or models. Cerberus only needs enough receipt
 surface for those systems to replay and score runs later.
 
+That handoff surface is `ReviewReceiptBundle.v1`, emitted beside review
+outputs. It contains stable request and artifact digests, harness, model, usage
+and cost when available, latency, capability tier, artifact/transcript URIs, and
+validation outcome. It must not contain private prompt file paths, request file
+paths, secret names, or transcript excerpts.
+
 MVP excludes:
 
 - model leaderboards;
@@ -260,13 +266,15 @@ cerberus request git-range --base <ref> --head <ref> --out <request.json>
 cerberus request pr --number <n> --out <request.json>
 
 cerberus review --request <request.json> --out <artifact.json> \
-  [--markdown <review.md>] [--harness opencode|omp|fixture]
+  [--markdown <review.md>] [--receipt-bundle <bundle.json>] \
+  [--harness opencode|omp|fixture]
 
 cerberus render --artifact <artifact.json> --markdown <review.md>
 
 cerberus review-pr --number <n> --repo <owner/name> \
   [--out-dir <dir>] [--dry-run|--post] \
   [--summary-target check-run|status] \
+  [--receipt-bundle <bundle.json>] \
   [--harness opencode|omp|fixture]
 ```
 
@@ -276,9 +284,9 @@ the only execution boundary.
 
 `review-pr` is a convenience orchestrator over the existing acquisition and
 review boundaries. It must write the same request, execution plan, transcript,
-artifact, and Markdown receipts as the separate commands, then produce a
-`PostPlan.v1`. Dry-run mode reads existing GitHub state but does not write.
-Posting mode applies the post plan through `gh api`.
+artifact, Markdown, and `ReviewReceiptBundle.v1` receipts as the separate
+commands, then produce a `PostPlan.v1`. Dry-run mode reads existing GitHub
+state but does not write. Posting mode applies the post plan through `gh api`.
 
 GitHub projection is not part of `ReviewArtifact.v1`. The post plan maps the
 artifact to a per-head-SHA summary, contextual PR issue comment, and PR review
@@ -319,14 +327,15 @@ Driver:
 
 The verification script runs formatting, linting, unit tests, context-tier
 fixture checks, and CLI smoke reviews using fixture request/output data. Smoke
-runs write artifacts, transcripts, execution plans, and rendered Markdown under
-`target/cerberus/`.
+runs write artifacts, transcripts, execution plans, rendered Markdown, and
+evaluation receipt bundles under `target/cerberus/`.
 
 Evidence packet:
 
 - `target/cerberus/artifact.json`
 - `target/cerberus/review.md`
 - `target/cerberus/execution_plan.json`
+- `target/cerberus/receipts/*.json`
 - `target/cerberus/review-pr/post-plan.json`
 - `target/cerberus/review-pr/post-result.json`
 - `target/cerberus/context-tiers/*`
@@ -347,6 +356,8 @@ MVP is complete when:
   caller checkout;
 - local runtime probes require explicit policy, run with bounded env/cwd/time,
   and leave transcript evidence;
+- review and review-pr can emit redacted `ReviewReceiptBundle.v1` handoff
+  bundles for upstream scoring;
 - Markdown rendering works from stored artifacts;
 - `review-pr` can dry-run and post through fake GitHub fixtures without
   duplicate comments and without inline comments outside changed lines;

@@ -15,8 +15,9 @@ use crate::digest::{request_digest, sha256_digest};
 use crate::prompt::{build_master_prompt, build_opencode_message, ARTIFACT_BEGIN, ARTIFACT_END};
 use crate::schema::{
     ContextArtifact, ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact,
-    ReviewRequest, RuntimeTarget, REVIEW_ARTIFACT_SCHEMA,
+    ReviewRequest, ReviewTelemetry, RuntimeTarget, REVIEW_ARTIFACT_SCHEMA,
 };
+use crate::telemetry::{omp_telemetry, opencode_telemetry};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum HarnessKind {
@@ -64,6 +65,7 @@ pub(crate) struct HarnessRun {
     pub artifact: ReviewArtifact,
     pub transcript: String,
     pub execution_plan: ExecutionPlan,
+    pub telemetry: ReviewTelemetry,
 }
 
 pub(crate) fn run_fixture_substrate(
@@ -112,6 +114,7 @@ pub(crate) fn run_fixture_substrate(
         artifact,
         transcript,
         execution_plan: plan,
+        telemetry: ReviewTelemetry::default(),
     })
 }
 
@@ -223,6 +226,7 @@ pub(crate) fn run_command_substrate(
         String::from_utf8_lossy(&output.stderr)
     );
     let artifact_text = artifact_text_for_substrate(substrate, &output.stdout, &transcript);
+    let telemetry = telemetry_for_substrate(substrate, &output.stdout);
     let artifact = match extract_marked_artifact(&artifact_text) {
         Ok(artifact) => artifact,
         Err(err) => {
@@ -238,6 +242,7 @@ pub(crate) fn run_command_substrate(
         artifact,
         transcript,
         execution_plan: plan,
+        telemetry,
     })
 }
 
@@ -973,6 +978,18 @@ fn extract_opencode_text_events(stdout: &[u8]) -> Option<String> {
         None
     } else {
         Some(text)
+    }
+}
+
+fn telemetry_for_substrate(
+    substrate: CommandSubstrateConfig<'_>,
+    stdout: &[u8],
+) -> ReviewTelemetry {
+    match substrate {
+        CommandSubstrateConfig::Opencode(config) => {
+            opencode_telemetry(stdout, config.model.as_deref())
+        }
+        CommandSubstrateConfig::Omp(config) => omp_telemetry(config.model.as_deref()),
     }
 }
 

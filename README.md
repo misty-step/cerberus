@@ -31,7 +31,7 @@ harness paths through local fake binaries, exercises base+head context and
 local runtime probes, and runs `review-pr` through a fake `gh` adapter.
 Evidence is written to `target/cerberus/`, including execution plans,
 transcripts, artifacts, rendered Markdown, post plans, post results, context
-tier receipts, and fake GitHub API transcripts.
+tier receipts, evaluation receipt bundles, and fake GitHub API transcripts.
 
 ## CLI
 
@@ -52,7 +52,8 @@ cerberus review --request fixtures/requests/diff-only.json \
   --fixture-output fixtures/harness/valid-review.txt \
   --out target/cerberus/artifact.json \
   --markdown target/cerberus/review.md \
-  --execution-plan target/cerberus/execution_plan.json
+  --execution-plan target/cerberus/execution_plan.json \
+  --receipt-bundle target/cerberus/receipts/fixture.json
 
 cerberus render --artifact target/cerberus/artifact.json \
   --markdown target/cerberus/review-rendered.md
@@ -83,10 +84,17 @@ disposable review worktrees; OMP is a local fallback.
 
 `review-pr` is orchestration over acquisition, review, rendering, and GitHub
 projection. It writes `request.json`, `artifact.json`, `review.md`,
-`execution_plan.json`, `transcript.txt`, and `post-plan.json` under
-`--out-dir`. `--dry-run` reads existing GitHub comments/checks through `gh api`
-and prints the exact create/update plan without writing. `--post` applies that
-plan and writes `post-result.json`.
+`execution_plan.json`, `transcript.txt`, `receipt-bundle.json`, and
+`post-plan.json` under `--out-dir`. `--dry-run` reads existing GitHub
+comments/checks through `gh api` and prints the exact create/update plan
+without writing. `--post` applies that plan and writes `post-result.json`.
+
+`ReviewReceiptBundle.v1` is the upstream evaluation handoff. It records the
+request digest, artifact digest, harness, model and usage when available,
+latency, capability tier, artifact/transcript URIs, and validation outcome
+without embedding prompt files, request files, secret names, or transcript
+excerpts. Daedalus or another lab can score those bundles without Cerberus
+owning model or harness evaluation.
 
 GitHub Checks writes require a token with Checks write access, usually a GitHub
 App or fine-grained token. Classic user tokens commonly cannot create check

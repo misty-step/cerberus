@@ -7,7 +7,7 @@ use crate::harness::{
     run_command_substrate, run_fixture_substrate, CommandSubstrateConfig, ExecutionPlan,
     FixtureSubstrateConfig, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
-use crate::schema::{ReviewArtifact, ReviewRequest};
+use crate::schema::{ReviewArtifact, ReviewRequest, ReviewTelemetry};
 
 #[derive(Debug, Clone)]
 pub struct ReviewKernel {
@@ -33,6 +33,7 @@ pub struct ReviewRun {
     pub artifact: ReviewArtifact,
     pub transcript: String,
     pub execution_plan: ExecutionPlan,
+    pub telemetry: ReviewTelemetry,
 }
 
 impl ReviewSubstrate {
@@ -70,6 +71,7 @@ impl ReviewKernel {
             artifact: run.artifact,
             transcript: run.transcript,
             execution_plan: run.execution_plan,
+            telemetry: run.telemetry,
         })
     }
 }
