@@ -125,7 +125,7 @@ impl ReviewHarness {
         for child_state_dir in [&child_home, &child_cache, &child_config, &child_data] {
             fs::create_dir_all(child_state_dir)
                 .with_context(|| format!("create child state dir {}", child_state_dir.display()))?;
-            set_private_permissions(child_state_dir)?;
+            set_private_directory_permissions(child_state_dir)?;
         }
         let prompt_path = temp.path().join("master-prompt.md");
         fs::write(&prompt_path, prompt).context("write master prompt")?;
@@ -733,14 +733,43 @@ fn set_private_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn set_private_directory_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_directory_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::prompt::{ARTIFACT_BEGIN, ARTIFACT_END};
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn rejects_missing_marker_block() {
         assert!(extract_marked_artifact("{}").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_directory_permissions_remain_traversable() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("state");
+        fs::create_dir(&dir).unwrap();
+
+        set_private_directory_permissions(&dir).unwrap();
+
+        let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
     }
 
     #[test]
