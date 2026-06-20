@@ -7,6 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Context, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::digest::request_digest;
@@ -165,7 +166,8 @@ impl ReviewHarness {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        let artifact = extract_marked_artifact(&transcript)?;
+        let artifact_text = artifact_text_for_substrate(substrate, &output.stdout, &transcript);
+        let artifact = extract_marked_artifact(&artifact_text)?;
         validate_process_status_matches_artifact(&output.status, &artifact)?;
         Ok(HarnessRun {
             artifact,
@@ -184,6 +186,7 @@ impl ReviewHarness {
             CommandSubstrate::Opencode => {
                 let mut args = vec![
                     "run".to_string(),
+                    "Read the attached Cerberus master prompt and follow it exactly.".to_string(),
                     "--format".to_string(),
                     "json".to_string(),
                     "--dir".to_string(),
@@ -418,6 +421,41 @@ fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
     }
 }
 
+fn artifact_text_for_substrate(
+    substrate: CommandSubstrate,
+    stdout: &[u8],
+    transcript: &str,
+) -> String {
+    match substrate {
+        CommandSubstrate::Opencode => extract_opencode_text_events(stdout)
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_else(|| transcript.to_string()),
+        CommandSubstrate::Omp => transcript.to_string(),
+    }
+}
+
+fn extract_opencode_text_events(stdout: &[u8]) -> Option<String> {
+    let raw = String::from_utf8_lossy(stdout);
+    let mut text = String::new();
+    for line in raw.lines() {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) != Some("text") {
+            continue;
+        }
+        if let Some(part_text) = value.pointer("/part/text").and_then(Value::as_str) {
+            text.push_str(part_text);
+            text.push('\n');
+        }
+    }
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 fn redact_prompt_path(args: &[String]) -> Vec<String> {
     args.iter()
         .map(|arg| {
@@ -517,6 +555,70 @@ mod tests {
     }
 
     #[test]
+    fn opencode_json_events_are_reduced_to_text_before_artifact_scan() {
+        let artifact = serde_json::json!({
+            "schema_version": "cerberus.review_artifact.v1",
+            "artifact_id": "artifact-test",
+            "request_id": "req-1",
+            "request_digest": "sha256:req",
+            "lifecycle_state": "completed",
+            "verdict": "PASS",
+            "context_capabilities": {
+                "diff": true,
+                "repo_head": true,
+                "repo_base": false,
+                "local_runtime": false,
+                "remote_runtime": false,
+                "external_research": "forbid"
+            },
+            "summary": {
+                "title": "ok",
+                "body": "ok",
+                "analysis": "",
+                "residual_risk": []
+            },
+            "findings": [],
+            "comments": [],
+            "suggested_fixes": [],
+            "citations": [],
+            "receipts": [],
+            "run": {
+                "engine_version": "test",
+                "config_digest": "sha256:test",
+                "started_at": "0",
+                "finished_at": "1",
+                "duration_ms": 1,
+                "cost_usd": null,
+                "coverage": {
+                    "files_reviewed": [],
+                    "files_with_findings": []
+                }
+            },
+            "errors": []
+        });
+        let event = serde_json::json!({
+            "type": "text",
+            "part": {
+                "text": format!(
+                    "{begin}\n{artifact}\n{end}",
+                    begin = ARTIFACT_BEGIN,
+                    artifact = artifact,
+                    end = ARTIFACT_END
+                )
+            }
+        });
+        let stdout = format!(
+            "{{\"type\":\"start\"}}\n{}\nnot json\n",
+            serde_json::to_string(&event).unwrap()
+        );
+        let text =
+            artifact_text_for_substrate(CommandSubstrate::Opencode, stdout.as_bytes(), "fallback");
+        assert!(text.contains(ARTIFACT_BEGIN));
+        assert!(!text.contains("\"type\":\"text\""));
+        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
+    }
+
+    #[test]
     fn redacts_prompt_file_from_execution_plan_args() {
         let args = vec![
             "@/tmp/private/prompt.md".to_string(),
@@ -554,6 +656,9 @@ mod tests {
         assert_eq!(plan_harness, "opencode");
         assert_eq!(transport, "private prompt file attachment");
         assert!(args.windows(2).any(|pair| pair == ["--format", "json"]));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "Read the attached Cerberus master prompt and follow it exactly."));
         assert!(args.windows(2).any(|pair| pair == ["--dir", "/work/repo"]));
         assert!(args
             .windows(2)
