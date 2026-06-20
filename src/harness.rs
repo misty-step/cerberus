@@ -118,6 +118,15 @@ impl ReviewHarness {
             .prefix("cerberus-")
             .tempdir()
             .context("create private prompt tempdir")?;
+        let child_home = temp.path().join("home");
+        let child_cache = temp.path().join("cache");
+        let child_config = temp.path().join("config");
+        let child_data = temp.path().join("data");
+        for child_state_dir in [&child_home, &child_cache, &child_config, &child_data] {
+            fs::create_dir_all(child_state_dir)
+                .with_context(|| format!("create child state dir {}", child_state_dir.display()))?;
+            set_private_permissions(child_state_dir)?;
+        }
         let prompt_path = temp.path().join("master-prompt.md");
         fs::write(&prompt_path, prompt).context("write master prompt")?;
         set_private_permissions(&prompt_path)?;
@@ -166,10 +175,10 @@ impl ReviewHarness {
             command.env(key, value);
         }
         command.env("PATH", controlled_path());
-        command.env("HOME", temp.path());
-        command.env("XDG_CACHE_HOME", temp.path().join("cache"));
-        command.env("XDG_CONFIG_HOME", temp.path().join("config"));
-        command.env("XDG_DATA_HOME", temp.path().join("data"));
+        command.env("HOME", &child_home);
+        command.env("XDG_CACHE_HOME", &child_cache);
+        command.env("XDG_CONFIG_HOME", &child_config);
+        command.env("XDG_DATA_HOME", &child_data);
         configure_process_group(&mut command);
 
         let output = run_with_timeout(command, self.timeout)
