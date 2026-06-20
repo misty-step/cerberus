@@ -102,7 +102,7 @@ struct ReviewArgs {
     opencode_binary: String,
     #[arg(long)]
     opencode_attach: Option<String>,
-    #[arg(long, default_value = "plan")]
+    #[arg(long, default_value = "build")]
     opencode_agent: Option<String>,
     #[arg(long, default_value = "omp")]
     omp_binary: String,
