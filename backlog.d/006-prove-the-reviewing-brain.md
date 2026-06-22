@@ -1,6 +1,9 @@
 # Self-review tracer bullet: Cerberus reviews its own PRs with a real GLM-5.2 agent
 
-Priority: P0 · Status: ready · Estimate: M · Shape: docs/plans/006-self-review-tracer-bullet.html
+Priority: P0 · Status: in-progress · Estimate: M · Shape: docs/plans/006-self-review-tracer-bullet.html
+
+## Delivery receipt (2026-06-22)
+Delivered and proven live on [PR #466](https://github.com/misty-step/cerberus/pull/466) (open, pending merge). A single OpenCode + `openrouter/z-ai/glm-5.2` agent explored a `repo_head` worktree autonomously and posted a validated `WARN` review — commit status + summary comment + inline comments — in ~132s. Idempotency confirmed live: a second `--post` issued `PATCH` (one summary comment, updated, not duplicated). Evidence: `evidence/self-review-001/`. Two bugs the dogfood surfaced were fixed in-branch (`Edit.replacement` → `Option`; convergence pressure so the agent reliably emits an artifact). Two were logged: web-vs-`external_research` → ticket 007 child 6; untrusted-PR key-exfil → ticket 013. Follow-up F3 (dogfound): the prompt contract checklist (`ARTIFACT_FIELD_PATHS`) still lists `suggested_fixes[].edits[].replacement`, implying it is required after the schema made it optional — reword the contract to mark optional fields, and add a `validation` check that `format=replacement` fixes carry a replacement.
 
 ## Goal
 Wire a real single OpenCode + GLM-5.2 agent into the existing `review-pr` pipeline, let it explore a Cerberus PR's worktree autonomously, and post a genuine, schema-valid, idempotent review (top-level summary + inline comments) — the first proof the reviewing brain works at all.
