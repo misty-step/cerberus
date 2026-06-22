@@ -21,3 +21,19 @@ jobs:
 
       - name: Run repo gate
         run: ./scripts/verify.sh
+
+  # Branch protection on master requires the `merge-gate` status context.
+  # This job aggregates every required CI job into that single context, so the
+  # protection rule has a real producer. Add future required jobs to `needs`.
+  merge-gate:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Require all checks to pass
+        run: |
+          if [ "${{ needs.verify.result }}" != "success" ]; then
+            echo "merge-gate: verify did not succeed (${{ needs.verify.result }})"
+            exit 1
+          fi
+          echo "merge-gate: all required checks passed"
