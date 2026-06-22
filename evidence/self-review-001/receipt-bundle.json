@@ -1,0 +1,27 @@
+{
+  "schema_version": "cerberus.review_receipt_bundle.v1",
+  "request_id": "github-pr-466-c54e947a9aa1",
+  "request_digest": "sha256:c07e6e11bebba8215e6789658f375a42f0329133ec1af3535c6657d05c458743",
+  "artifact_id": "artifact-github-pr-466-c54e947a",
+  "artifact_digest": "sha256:be31e9c4d3a4f5ffee756864987b052a49530eb8768e629f2d9245963a552558",
+  "harness": "opencode",
+  "model": "openrouter/z-ai/glm-5.2",
+  "usage": {},
+  "latency_ms": 132408,
+  "capability_tier": "repo_head",
+  "context_capabilities": {
+    "diff": true,
+    "repo_head": true,
+    "repo_base": false,
+    "local_runtime": false,
+    "remote_runtime": false,
+    "external_research": "forbid"
+  },
+  "artifact_uri": "target/cerberus/self-review-post/artifact.json",
+  "transcript_uri": "target/cerberus/self-review-post/transcript.txt",
+  "execution_plan_uri": "target/cerberus/self-review-post/execution_plan.json",
+  "validation": {
+    "status": "passed",
+    "trusted_for_posting": true
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "schema_version": "cerberus.post_plan.v1",
+  "repo": "misty-step/cerberus",
+  "pull_request": 466,
+  "head_sha": "c54e947a9aa1d3f97b62128e7dea2603ac3bea23",
+  "artifact_id": "artifact-github-pr-466-c54e947a",
+  "artifact_digest": "sha256:37b79a125a4081c64e8dce9ce0b0a9d22406837660000337b09de5d1a404ecbd",
+  "summary_target": "status",
+  "operations": [
+    {
+      "id": "create-commit-status",
+      "method": "POST",
+      "path": "/repos/misty-step/cerberus/statuses/c54e947a9aa1d3f97b62128e7dea2603ac3bea23",
+      "description": "Create Cerberus commit status for this PR head",
+      "idempotency_key": "cerberus:status:misty-step/cerberus:466:c54e947a9aa1d3f97b62128e7dea2603ac3bea23",
+      "body": {
+        "context": "Cerberus Review",
+        "description": "Cerberus Review: WARN",
+        "state": "success",
+        "target_url": "https://github.com/misty-step/cerberus/pull/466"
+      }
+    },
+    {
+      "id": "create-summary-comment",
+      "method": "POST",
+      "path": "/repos/misty-step/cerberus/issues/466/comments",
+      "description": "Create Cerberus PR summary comment",
+      "idempotency_key": "<!-- cerberus:review-pr:v1 repo=misty-step/cerberus pr=466 head=c54e947a9aa1d3f97b62128e7dea2603ac3bea23 -->",
+      "body": {
+        "body": "# Cerberus Review: WARN\n\n**Artifact:** `artifact-github-pr-466-c54e947a`  \n**Request:** `github-pr-466-c54e947a9aa1`  \n**Lifecycle:** `Completed`\n\n## Summary\n\n**Self-review tracer bullet: harness grants full toolset; permission config does not honor external_research policy**\n\nThis PR reshapes the backlog around a VISION.md north star and lands the self-review tracer bullet: the OpenCode review agent is empowered to explore autonomously (bash/git/web, no read budget) and the prompt is rewritten to encourage thorough, grounded review. The code surface is small and clean. The schema change making Edit.replacement optional is backward-compatible and has only one construction site, which was updated. The prompt change drops the fixture-era eight-read cap. One defense-in-depth gap warrants a WARN: write_opencode_config unconditionally grants webfetch/websearch (and edit/bash) regardless of request.policy.external_research, so when external_research is Forbid the only enforcement is the prompt instruction. This is acknowledged in-code and deferred to backlog 013 (container isolation), but the permission layer currently provides no guardrail.\n\n### Analysis\n\nInspected src/harness.rs (write_opencode_config, run_command_substrate, RunWorkspace isolation), src/prompt.rs (build_opencode_message rewrite + tests), src/schema.rs (Edit.replacement -> Option<String>), and confirmed via ripgrep that no other code reads Edit.replacement or .edits (render.rs, validation.rs, post.rs, receipt.rs, kernel.rs, main.rs have no consumers). The single Edit construction in prompt.rs:465 was updated to Some(...). Fixture dir has no replacement references. The env scrubbing (env_clear + allowlist), trusted PATH resolution, disposable detached worktree, and private permissions (0o600/0o700) provide solid substrate isolation. The unconditional tool grants are the one substantive concern: external_research policy is enforced at validation.rs:178 (RequireCitations) and surfaced in render.rs, but write_opencode_config never consults it, so web tools remain permitted at the permission layer even when policy is Forbid. For trusted self-review dogfooding this is acceptable; for the general path it is a prompt-only guard until 013 lands.\n\n## Context Capabilities\n\n- diff: `true`\n- repo_head: `true`\n- repo_base: `false`\n- local_runtime: `false`\n- remote_runtime: `false`\n- external_research: `Forbid`\n\n## Findings\n\n### [minor] OpenCode permission config grants web tools unconditionally, ignoring external_research policy\n\n**Category:** `security`  \n**Confidence:** `0.80`  \n**Anchors:** src/harness.rs:349  \n\nwrite_opencode_config always sets webfetch/websearch (and edit/bash) to \"allow\" without consulting request.policy.external_research. When a request sets external_research to Forbid (as this very request does), the agent is told via the prompt not to do network research, but the permission layer still permits webfetch/websearch. A model that ignores or misreads the prompt could perform network egress or fetch arbitrary URLs. The code comment and PR description explicitly defer untrusted-PR network/credential isolation to backlog 013 (container profile), so this is an acknowledged, deferred gap rather than an oversight — but until 013 lands the only enforcement of external_research=Forbid is prompt wording, which is not a hard guardrail. Defense-in-depth would be improved by gating webfetch/websearch on the external_research policy (or at least on a harness-level trust flag) so the permission layer refuses network tools when policy forbids them.\n\nEvidence: src/harness.rs write_opencode_config builds the permission object with static \"webfetch\": \"allow\" and \"websearch\": \"allow\" (and \"bash\": \"allow\", \"edit\": \"allow\") and never reads request.policy.external_research. By contrast, external_research IS consulted elsewhere: validation.rs:178 enforces RequireCitations, and render.rs:28 surfaces it. The policy value Forbid is therefore enforced only by the master prompt instruction, not by the substrate permission config.\n\n## Comments\n\n- `C1` src/harness.rs:349: These four \"allow\" values are granted unconditionally. Consider gating webfetch/websearch on `request.policy.external_research != ExternalResearchPolicy::Forbid` so the permission layer honors the request policy even before container isolation (013) lands. bash/edit are needed for autonomous exploration but web tools are exactly what external_research=Forbid is meant to suppress.\n- `C2` src/schema.rs:406: Schema change is clean: Edit.replacement moved from String to Option<String> with #[serde(default, skip_serializing_if = \"Option::is_none\")]. Old artifacts with a string value still deserialize (Option accepts a present string), and new artifacts omit the field when absent. Confirmed no other code reads Edit.replacement or .edits (render.rs/validation.rs/post.rs/receipt.rs/kernel.rs/main.rs have no consumers); the single construction site at prompt.rs:469 was updated to Some(...).\n- `C3` src/harness.rs: Substrate isolation is otherwise solid: env_clear + explicit allowlist, trusted PATH resolution (resolve_executable_in rejects relative/non-bare binaries), disposable detached git worktree with Drop cleanup, and private file/dir permissions (0o600/0o700). The full-toolset grant is the intended design for autonomous self-review; the only gap is that the grant is not conditioned on the external_research policy.\n\n## Residual Risk\n\n- Did not run cargo build/test/clippy (local_runtime is false); compile correctness is inferred from source inspection only.\n- Did not review the full VISION.md, backlog.d/006-013, or docs/plans/006 HTML for content accuracy; focused on code.\n- Did not inspect opencode's actual handling of permission.bash/webfetch values against the opencode version in use; assumed the granted permissions are honored as written.\n- Container/network isolation for untrusted PRs (backlog 013) is not yet implemented; the current substrate relies on env scrubbing + disposable worktree only.\n\n## Receipts\n\n- `receipt-master` Master via `opencode`: Completed\n\n\n## Contextual Comment Fallbacks\n\n- `C3`: comment is contextual or not anchored inline\n\n\n<!-- cerberus:review-pr:v1 repo=misty-step/cerberus pr=466 head=c54e947a9aa1d3f97b62128e7dea2603ac3bea23 -->"
+      }
+    },
+    {
+      "id": "create-inline-review",
+      "method": "POST",
+      "path": "/repos/misty-step/cerberus/pulls/466/reviews",
+      "description": "Create Cerberus PR review with new inline comments",
+      "idempotency_key": "cerberus:inline-review:misty-step/cerberus:466:c54e947a9aa1d3f97b62128e7dea2603ac3bea23",
+      "body": {
+        "body": "Cerberus inline review comments for head `c54e947a9aa1d3f97b62128e7dea2603ac3bea23`.",
+        "comments": [
+          {
+            "body": "These four \"allow\" values are granted unconditionally. Consider gating webfetch/websearch on `request.policy.external_research != ExternalResearchPolicy::Forbid` so the permission layer honors the request policy even before container isolation (013) lands. bash/edit are needed for autonomous exploration but web tools are exactly what external_research=Forbid is meant to suppress.\n\n<!-- cerberus:inline:v1 head=c54e947a9aa1d3f97b62128e7dea2603ac3bea23 key=harness-opencode-permission-external-research -->",
+            "line": 349,
+            "path": "src/harness.rs",
+            "side": "RIGHT"
+          },
+          {
+            "body": "Schema change is clean: Edit.replacement moved from String to Option<String> with #[serde(default, skip_serializing_if = \"Option::is_none\")]. Old artifacts with a string value still deserialize (Option accepts a present string), and new artifacts omit the field when absent. Confirmed no other code reads Edit.replacement or .edits (render.rs/validation.rs/post.rs/receipt.rs/kernel.rs/main.rs have no consumers); the single construction site at prompt.rs:469 was updated to Some(...).\n\n<!-- cerberus:inline:v1 head=c54e947a9aa1d3f97b62128e7dea2603ac3bea23 key=C2 -->",
+            "line": 406,
+            "path": "src/schema.rs",
+            "side": "RIGHT"
+          }
+        ],
+        "commit_id": "c54e947a9aa1d3f97b62128e7dea2603ac3bea23",
+        "event": "COMMENT"
+      }
+    }
+  ],
+  "unmapped_comments": [
+    {
+      "comment_id": "C3",
+      "reason": "comment is contextual or not anchored inline"
+    }
+  ]
+}

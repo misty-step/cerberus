@@ -400,7 +400,10 @@ pub struct Edit {
     pub path: String,
     pub start_line: u32,
     pub end_line: u32,
-    pub replacement: String,
+    // Optional: only format=replacement edits carry replacement text. Real models
+    // emit instruction/diff fixes with edits whose replacement is null/absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -17,7 +17,8 @@ terminal-first wrapper. OMP remains supported as a local power-user fallback.
 OpenCode, OMP, and fixture-specific options live behind `ReviewSubstrate`
 adapter configs; callers pass a `RunPolicy` into `ReviewKernel::review`.
 
-See [spec.md](spec.md) for the locked MVP contract.
+See [VISION.md](VISION.md) for project direction and what excellent looks like,
+and [spec.md](spec.md) for the locked MVP contract.
 
 ## Verify
 
