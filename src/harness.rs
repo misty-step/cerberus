@@ -334,13 +334,20 @@ fn write_opencode_config(config_home: &Path, workspace_paths: &[PathBuf]) -> Res
         external_directory.insert(workspace, Value::String("allow".to_string()));
         external_directory.insert(workspace_children, Value::String("allow".to_string()));
     }
+    // The review agent explores autonomously with a full toolset (read, grep,
+    // shell for ripgrep/ast-grep/git, web research). Isolation comes from the
+    // disposable detached worktree plus the scrubbed env (only explicitly allowed
+    // vars reach the child), not from denying tools. Untrusted-PR isolation
+    // (network egress + credential handling) is a separate container profile
+    // tracked in backlog 013.
     let config = serde_json::json!({
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "external_directory": external_directory,
-            "edit": {
-                "*": "deny"
-            }
+            "edit": "allow",
+            "bash": "allow",
+            "webfetch": "allow",
+            "websearch": "allow"
         }
     });
     let config_path = config_dir.join("opencode.json");
@@ -1217,7 +1224,7 @@ mod tests {
     }
 
     #[test]
-    fn opencode_config_allows_only_review_workspace_external_directory() {
+    fn opencode_config_grants_full_toolset_within_review_workspace() {
         let temp = tempfile::tempdir().unwrap();
         let workspace = temp.path().join("repo-head");
         fs::create_dir(&workspace).unwrap();
@@ -1227,10 +1234,15 @@ mod tests {
         let config_path = temp.path().join("opencode/opencode.json");
         let config: Value =
             serde_json::from_str(&fs::read_to_string(config_path).unwrap()).unwrap();
-        assert_eq!(
-            config.pointer("/permission/edit/*").and_then(Value::as_str),
-            Some("deny")
-        );
+        for tool in ["edit", "bash", "webfetch", "websearch"] {
+            assert_eq!(
+                config
+                    .pointer(&format!("/permission/{tool}"))
+                    .and_then(Value::as_str),
+                Some("allow"),
+                "review agent should have {tool} allowed for autonomous exploration"
+            );
+        }
         let escaped_workspace = workspace
             .display()
             .to_string()
