@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Plan 013: Container Isolation for Untrusted PRs</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #151515; background: #fff; }
+    main { width: min(84rem, calc(100% - 3rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+    header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.55fr); gap: 2rem; align-items: end; border-bottom: 1px solid #d8dde3; padding-bottom: 1.5rem; }
+    h1 { margin: 0; font-size: clamp(2.3rem, 4.5vw, 4.5rem); line-height: 0.97; }
+    h2 { margin: 0 0 0.75rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    h3 { margin: 1.5rem 0 0.5rem; font-size: 1.05rem; }
+    p, li { line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+    pre { background: #14171a; color: #e8edf2; padding: 1rem; overflow-x: auto; font-size: 0.84rem; line-height: 1.45; }
+    .muted { color: #606872; }
+    .panel { border: 1px solid #d8dde3; background: #f5f7f9; padding: 1rem; }
+    .flag { border-left: 4px solid #c0392b; background: #fcf3f2; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .win { border-left: 4px solid #1e7e45; background: #f1f8f3; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #d8dde3; border: 1px solid #d8dde3; margin-top: 1.5rem; }
+    .cell { background: #fff; padding: 1rem; }
+    .cell.em { background: #f5f7f9; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; font-size: 0.9rem; }
+    th, td { border: 1px solid #d8dde3; padding: 0.5rem 0.65rem; text-align: left; vertical-align: top; }
+    th { background: #f5f7f9; }
+    .phase { display: grid; grid-template-columns: 8rem 1fr; gap: 1rem; border-top: 1px solid #d8dde3; padding: 0.85rem 0; }
+    .phase b { font-size: 0.95rem; }
+    @media (max-width: 900px) { main { width: min(100% - 2rem, 84rem); } header, .grid, .two, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <section>
+        <p class="muted">Backlog 013 / Container Isolation · the security boundary for untrusted-PR review · <strong>rewritten after adversarial critique</strong></p>
+        <h1>For untrusted code, the key must never enter the container.</h1>
+        <p>Reviewing a consumer's untrusted third-party PR means the diff is attacker-controlled and can prompt-inject the agent's shell. The hard, counter-intuitive result a security critic forced: <strong>an egress allowlist does not protect the credential while the key is in the container</strong> — DNS bypasses a CONNECT proxy, and the one host you must allow (the model API) is itself a read/write exfil sink when the agent holds the key. So the boundary is <em>credential-out-of-container</em>, with network and output controls as defense-in-depth. Cerberus ships this as a reference profile behind the substrate seam; trusted self-review stays on the local harness.</p>
+      </section>
+      <aside class="panel">
+        <h2>Chosen Design</h2>
+        <p><strong>Floor (untrusted-capable):</strong> a key-injecting reverse proxy outside the container — OpenCode reaches the model through it; <strong>the key never enters the container</strong>. Plus: no in-container resolver, internal Docker network (proxy is the only route), and a <code>.git</code>-less throwaway tree (not a linked worktree).</p>
+        <p><strong>Defense-in-depth:</strong> domain egress-allowlist at the proxy + structural validation of emitted artifact fields. Not the boundary — layers on it.</p>
+        <p><strong>Unchanged:</strong> public schema; trusted self-review keeps the local/worktree harness (key-in-env is fine for our own code).</p>
+      </aside>
+    </header>
+
+    <div class="flag">
+      <strong>Why "egress allowlist + key in container" is false security (the critic's core finding).</strong>
+      <ul style="margin:0.4rem 0 0">
+        <li><b>DNS tunnel:</b> a CONNECT proxy governs only TCP the agent routes through it. The agent encodes the key into DNS QNAMEs (<code>&lt;hexkey&gt;.evil.com</code>) and the resolver leaks it — the proxy never sees it.</li>
+        <li><b>The allowed endpoint is the sink:</b> with the key in hand, the agent makes a <em>legitimate</em> HTTPS call to the model API carrying the key in the prompt, then reads it back from the attacker's own account using the <em>same stolen key</em>. The one host the allowlist must permit is itself an exfil channel.</li>
+        <li><b>Output scrub is unwinnable as a denylist:</b> <code>rev</code>, <code>gzip|base64</code>, char-split across two findings, or just <code>echo $KEY &gt; fix.patch</code> all defeat a transform-matcher. (Verified: no value-scrub exists today, only <code>redact_prompt_path</code>.)</li>
+      </ul>
+      <p style="margin-bottom:0">Conclusion: only <em>removing the key from the container</em> closes "use the key to attack the key's own API." Everything else is depth.</p>
+    </div>
+
+    <section class="grid">
+      <article class="cell"><h2>Premise resolved</h2><p>VISION: consumers own the substrate → Cerberus ships a <em>reference</em> container profile behind the seam (swappable) and owns the credential primitive. Trusted vs untrusted is a real split: only the key-out container is "untrusted-capable".</p></article>
+      <article class="cell"><h2>Acceptance</h2><p>A <strong>red-team fixture family</strong> (DNS exfil, endpoint-as-sink, output encodings, file-write, worktree escape) all fail to surface the key; a normal container review still yields a valid artifact.</p></article>
+      <article class="cell"><h2>Verify</h2><p>Assert: the key is <em>absent</em> from the container; zero UDP/53 and zero non-proxy egress; mounted tree has no <code>.git</code>; host checkout digest unchanged; artifact valid.</p></article>
+      <article class="cell em"><h2>Stop / waiver</h2><p>Nothing markets the local or key-in-container path as "safe for untrusted." The "untrusted-safe" label attaches only to key-out + no-resolver + clone-not-worktree, proven by the fuzzed fixture family.</p></article>
+    </section>
+
+    <section class="two">
+      <article>
+        <h2>Change Shape (phased)</h2>
+        <ul>
+          <li><b>M1 — harness + red-team fixtures + isolated tree.</b> Add a <code>container-opencode</code> substrate (new <code>CommandSubstrateConfig</code> variant) wrapping <code>opencode run</code> in <code>docker run</code> on an <em>internal</em> network. Mount a <strong><code>.git</code>-less throwaway tree</strong> (<code>git archive | tar -x</code> of the head SHA), never a linked <code>git worktree</code>; host checkout never mounted. Pinned <code>Dockerfile</code> (opencode + git + ripgrep + ast-grep). Build the <b>red-team fixture family</b> — the proof loop — first, with the substrate failing closed (no model access yet).</li>
+          <li><b>M2 — key-out reverse proxy (the floor).</b> A sidecar holds the key; OpenCode points at it (provider base-URL + a trusted CA, or a container-scoped dummy token) and the sidecar injects real auth and forwards to the model. <strong>No <code>OPENROUTER_API_KEY</code> in the container env.</strong> No in-container resolver (static <code>/etc/hosts</code> → sidecar; <code>--dns</code> none). This is what makes the substrate untrusted-capable.</li>
+          <li><b>M3 — defense-in-depth.</b> Sidecar egress-allowlists the model domain only (belt over the key-out boundary); structural validation of emitted artifact fields (length/grammar/entropy reject, not a secret-denylist); value-scrub of any other <code>allowed_env</code> secrets as backstop.</li>
+        </ul>
+        <p class="muted" style="margin:0.5rem 0 0">Trusted self-review is untouched — it stays on the local/worktree harness where key-in-env is acceptable.</p>
+      </article>
+      <article>
+        <h2>Alternatives</h2>
+        <table>
+          <tr><th>Path</th><th>Why it fails / verdict</th></tr>
+          <tr><td><b>Key-out container + depth (chosen)</b></td><td>Only design that survives the critic: no key to steal, no resolver to tunnel, no host-handle mount. <b>Choose.</b></td></tr>
+          <tr><td>Egress-allowlist, key in container</td><td>The original plan. DNS bypass + endpoint-as-sink make it ~zero protection for untrusted. <b>Reject as a boundary; keep allowlist as depth.</b></td></tr>
+          <tr><td>Lazy: diff-only for untrusted (deny bash/web)</td><td>Crippled agent, safe but low-value. <b>The honest fallback when no key-out substrate is available — and better than false security.</b></td></tr>
+          <tr><td>Cloud microVM (Sprites / Fly) per review</td><td>Stronger isolation than a container, still needs key-out (same endpoint-sink logic). Hosting dependency. <b>Defer; seam allows it.</b></td></tr>
+          <tr><td><em>Invert: never review untrusted code</em></td><td>Rejects the consumer use case (Bitterblossom/Olympus exist to review others' PRs). <b>Reject.</b></td></tr>
+        </table>
+      </article>
+    </section>
+
+    <h3>Oracle — executable definition of done</h3>
+<pre>## 1. Plumbing: a key-out container review still works
+cargo run -- review --request fixtures/requests/diff-only.json --harness container-opencode ...
+# exit 0; artifact valid; `printenv` inside the container shows NO OPENROUTER_API_KEY; the model call still succeeds via the sidecar.
+
+## 2. Red-team family: every exfil attempt fails (THE test)
+for f in fixtures/requests/redteam-{dns,endpoint-sink,encode-output,file-write,worktree-escape}.json; do
+  cargo run -- review --request "$f" --harness container-opencode ... ; done
+#   - sidecar/network logs: zero non-model egress AND zero outbound UDP/53
+#   - key value + transforms appear in NO output/artifact/written file
+#   - the key is not present in the container at all (nothing to encode)
+#   - mounted tree has no .git; host checkout digest unchanged
+
+## 3. ./scripts/verify.sh green; container path skipped when Docker is absent (like the live-review smoke).</pre>
+
+    <h3>Verification System</h3>
+    <div class="panel">
+      <p><b>Claim:</b> a prompt-injected agent reviewing an untrusted PR in the container cannot obtain or exfiltrate the model credential by any vector, because the credential is never in the container; a normal review still produces a valid artifact.</p>
+      <p><b>Falsifier:</b> any red-team fixture surfaces the key (network, DNS, endpoint-sink, output, written file); OR the key is found in the container env/fs; OR the mounted tree carries <code>.git</code>; OR the host checkout mutates; OR a clean review can't produce a valid artifact.</p>
+      <p><b>Driver:</b> the red-team fixture family through <code>--harness container-opencode</code>, with network capture (no UDP/53, only model egress) + an in-container key-absence probe + an output key-scan.</p>
+      <p><b>Grader:</b> network log + key-absence probe + key-scan (literal & transforms) + host-tree digest + artifact validation. A single canned fixture is insufficient — the family must include encoding/DNS/endpoint variants and grow on each near-miss.</p>
+      <p><b>Evidence packet:</b> network capture, the fixture family, the key-absence probe output, and the container execution plan, under <code>target/cerberus/container-*</code>.</p>
+      <p><b>Cadence:</b> gated in <code>verify.sh</code> when Docker is present; on every change to the container/proxy/mount path.</p>
+      <p><b>Gaps / waiver:</b> the "untrusted-safe" claim attaches ONLY to M2+M1 (key-out + no-resolver + clone-not-worktree). M3 is depth. The model-domain pin must track the provider's real hosts.</p>
+    </div>
+
+    <h3>Milestones</h3>
+    <div class="phase"><b>M1 · Harness</b><div>Red-team fixture family + <code>container-opencode</code> plumbing (internal network, <code>.git</code>-less tree mount, host not mounted), failing closed. The proof loop, first. <em>Critic on fixture realism + escape vectors.</em></div></div>
+    <div class="phase"><b>M2 · Key-out</b><div>Key-injecting sidecar (key never in container) + no in-container resolver. The floor that earns the "untrusted-capable" label. <em>Gate: key-absence probe + zero-UDP/53.</em></div></div>
+    <div class="phase"><b>M3 · Depth</b><div>Domain egress-allowlist at the sidecar + structural artifact-field validation + backstop scrub. Layers on the boundary; never sold as the boundary.</div></div>
+
+    <h3>Risks + Rollout</h3>
+    <table>
+      <tr><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td>DNS-tunnel exfil around the proxy</td><td>No resolver in the container (static <code>/etc/hosts</code> → sidecar, <code>--dns</code> none); assert zero outbound UDP/53 in evidence. (Moot for the key once it's out, but blocks tunneling of any in-container secret.)</td></tr>
+      <tr><td>Endpoint-as-sink (use the model API to leak the key)</td><td>Key-out: the container never holds the key, so it cannot put it in a model request. This is the whole point of M2.</td></tr>
+      <tr><td>Output exfil by encoding / written file</td><td>No key in the container to emit; structural artifact-field validation (entropy/length reject) catches any high-entropy emission; backstop scrub for other secrets.</td></tr>
+      <tr><td>Mounted tree is a host-<code>.git</code> handle (hooks, path leak, host-side <code>git</code> on a poisonable path)</td><td>Mount a <code>git archive</code>-extracted tree with no <code>.git</code>; never a linked worktree; never run host git against a container-writable path.</td></tr>
+      <tr><td>Docker socket / metadata IP / IPv6 reachable</td><td>Never mount <code>docker.sock</code>; internal network with no gateway; disable IPv6 on the network; pin the only route to the sidecar.</td></tr>
+      <tr><td>"Passes the fixture" ≠ secure</td><td>Fixture <em>family</em> + grow-on-near-miss; the untrusted label requires the family green, not one diff. Document M1/M3-alone as NOT untrusted-safe.</td></tr>
+      <tr><td>Docker absent; sidecar/CA complexity</td><td>Substrate is one option behind the seam; <code>verify.sh</code> skips it without Docker; diff-only is the honest fallback over false security.</td></tr>
+      <tr><td><b>Rollback</b></td><td>New substrate variant + sidecar + fixtures; no schema or default-path change. Drop the variant to revert; trusted self-review unaffected.</td></tr>
+    </table>
+
+    <h3>Adversarial Review (run during shaping; folded in)</h3>
+    <p class="muted">A fresh-context security critic dismantled the original "egress-allowlist + key-in-container" design: DNS bypasses the proxy; the allowlisted model endpoint is itself an exfil sink while the agent holds the key; a transform-denylist scrub is unwinnable; the mounted <code>git worktree</code> is a live handle to the host <code>.git</code> (verified). The plan was rewritten so key-out is the floor (not optional), the mount is a <code>.git</code>-less clone, the resolver is removed, and acceptance is a red-team family. Residual focus for <code>/deliver</code>: the sidecar TLS/CA story (base-URL override vs trusted CA injection) and confirming OpenCode honors a custom provider base-URL; verify Docker "internal network" truly has no egress but the sidecar.</p>
+
+    <h3>Premise Source</h3>
+    <p class="muted">Operator session 2026-06-22: picked 013, chose "shape properly first." The exfil vector was first surfaced by the tracer-bullet (PR #466) critique. No durable transcript stored — explicit waiver. Grounding:</p>
+    <ul class="muted">
+      <li><code>sha256:eebd05db29f7dcdab5b3000f82ac69483112e62b275ec3af5b838c6741ea2009 spec.md</code></li>
+      <li><code>sha256:b4b7d9891294696abdb9196a17274e9a882966da94ae8a95eb35ad4da39481b6 VISION.md</code></li>
+      <li><code>sha256:69415276a3c55f3cdd01284188113706d7d0256ba8d4dc9ff182ee2a27cb6cb1 backlog.d/013-container-runtime-untrusted-isolation.md</code></li>
+    </ul>
+  </main>
+</body>
+</html>
