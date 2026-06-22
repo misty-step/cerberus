@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Plan 006: Self-Review Tracer Bullet</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #151515; background: #fff; }
+    main { width: min(84rem, calc(100% - 3rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+    header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.55fr); gap: 2rem; align-items: end; border-bottom: 1px solid #d8dde3; padding-bottom: 1.5rem; }
+    h1 { margin: 0; font-size: clamp(2.5rem, 5vw, 5rem); line-height: 0.95; letter-spacing: 0; }
+    h2 { margin: 0 0 0.75rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    h3 { margin: 1.5rem 0 0.5rem; font-size: 1.05rem; }
+    p, li { line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+    pre { background: #14171a; color: #e8edf2; padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.45; }
+    .muted { color: #606872; }
+    .panel { border: 1px solid #d8dde3; background: #f5f7f9; padding: 1rem; }
+    .flag { border-left: 4px solid #c0392b; background: #fcf3f2; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .win { border-left: 4px solid #1e7e45; background: #f1f8f3; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #d8dde3; border: 1px solid #d8dde3; margin-top: 1.5rem; }
+    .cell { background: #fff; padding: 1rem; }
+    .cell.em { background: #f5f7f9; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; font-size: 0.9rem; }
+    th, td { border: 1px solid #d8dde3; padding: 0.5rem 0.65rem; text-align: left; vertical-align: top; }
+    th { background: #f5f7f9; }
+    .phase { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; border-top: 1px solid #d8dde3; padding: 0.85rem 0; }
+    .phase b { font-size: 0.95rem; }
+    @media (max-width: 900px) { main { width: min(100% - 2rem, 84rem); } header, .grid, .two, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <section>
+        <p class="muted">Backlog 006 / Self-Review Tracer Bullet · supersedes the shipped <code>pr-review-tracer-bullet</code> slice · scoped after adversarial critique + operator direction</p>
+        <h1>Cerberus reviews its own pull requests.</h1>
+        <p>The whole pipeline is built and fixture-tested: <code>review-pr</code> acquires a PR, the OpenCode harness runs in a disposable worktree with a scrubbed env, the artifact is validated, and <code>post.rs</code> posts an idempotent per-head-SHA summary plus inline comments. <strong>It has never met a real model.</strong> This bullet drops a real, fully-capable GLM&nbsp;5.2 agent into that pipe, lets it explore the whole repo autonomously, and posts a genuine review to a real Cerberus PR — the cleanest possible dogfood and the first proof the reviewing brain works at all.</p>
+      </section>
+      <aside class="panel">
+        <h2>Chosen Design</h2>
+        <p><strong>Empower the agent:</strong> full toolset (bash → <code>rg</code>/<code>ast-grep</code>/<code>git log</code>/<code>diff</code>/<code>blame</code>, webfetch, websearch) and <strong>no exploration cap</strong> — bounded only by wall-clock.</p>
+        <p><strong>Safety by architecture:</strong> the worktree is disposable (writes are thrown away); hard isolation for untrusted PRs is the container's job (ticket 013), not a tool restriction.</p>
+        <p><strong>Reuse:</strong> <code>review-pr</code> → harness (worktree + history, isolated env) → validation → <code>post.rs</code> idempotent summary + inline.</p>
+        <p><strong>Avoid:</strong> subagent orchestration, container runtime, new schema, first-party agent loop.</p>
+      </aside>
+    </header>
+
+    <section class="grid">
+      <article class="cell"><h2>Standards</h2><p>One master agent, no static roster. <strong>Fully capable</strong>: bash, git, rg/ast-grep, web. The diff is a hint; the agent reads the real tree + history. Findings grounded in inspected anchors. Idempotent per-head-SHA posting. Filesystem safety comes from worktree disposability, not tool denial.</p></article>
+      <article class="cell"><h2>Acceptance</h2><p>A real GLM&nbsp;5.2 review of the branched vision+groom PR posts a schema-valid summary + ≥1 inline comment on a changed line; a rerun (frozen head) updates, not duplicates; a human confirms every finding's <em>claim</em> — not just its anchor — is real.</p></article>
+      <article class="cell"><h2>Verify</h2><p><code>./scripts/verify.sh</code> stays green; the operator-gated live run (<code>--dry-run</code> then <code>--post</code>) posts to a real PR; evidence committed under <code>evidence/self-review-001/</code>.</p></article>
+      <article class="cell em"><h2>Stop If</h2><p>Exploration never converges within the timeout, findings cite lines that don't exist, reruns duplicate comments, or the human read finds confident hallucinations. (Key-exfil is out of scope here — we review our own code; ticket 013 isolates untrusted PRs.)</p></article>
+    </section>
+
+    <div class="flag">
+      <strong>Load-bearing surprise — the agent is throttled to a shallow review.</strong> <code>build_opencode_message</code> (src/prompt.rs:261) caps it at <em>"at most one tool-call round and at most eight targeted file reads… stop tool use and produce the final artifact immediately."</em> That is fixture-era shallow-by-design — the opposite of autonomous exploration. <strong>Remove the cap entirely.</strong> The agent should roam the full repo and history (this is also how the "prohibitively large diff" problem is solved — explore the tree, don't stuff the diff into the prompt). <strong>Tension:</strong> more <em>flat</em> context can dilute attention (SWE-PRBench) — but that argues for the agent <em>actively navigating</em> (grep/ast-grep/git) rather than being force-fed context, plus re-anchoring discipline and a human read. Enforced grounding gate is ticket 007.
+    </div>
+
+    <div class="win">
+      <strong>Security, scoped correctly (after adversarial critique).</strong> A critic noted the generated <code>opencode.json</code> denies only <code>edit</code>, leaving bash/network open with <code>OPENROUTER_API_KEY</code> in the child env — an exfil path. That matters for <em>untrusted third-party PRs</em>, where a malicious diff could prompt-inject the agent. It does <strong>not</strong> gate this bullet: we review <em>our own</em> code, and the worktree is disposable so writes are harmless. The real fix is network-egress isolation + credential handling in the <strong>container (ticket 013)</strong>, which is where untrusted-code isolation belongs — not crippling the reviewer's tools. We keep the critic's other catches: <code>--timeout-seconds</code> (not <code>--timeout</code>), and per-head-SHA idempotency needs a frozen-head PR.
+    </div>
+
+    <section class="two">
+      <article>
+        <h2>Change Shape</h2>
+        <ul>
+          <li><b>1. Prompt (src/prompt.rs).</b> Remove the 1-round/≤8-read/stop cap in <code>build_opencode_message</code>; instruct autonomous full-repo exploration (use git history, grep, ast-grep; the diff is a starting hint) bounded by wall-clock with "converge and emit one artifact". Add reviewer-craft: prioritize correctness/security/regressions, calibrate severity, prefer few high-signal findings, re-anchor every finding to an inspected line, state what was not inspected. Keep the artifact contract verbatim.</li>
+          <li><b>2. Permissive substrate (src/harness.rs).</b> In <code>write_opencode_config</code> stop denying <code>edit</code> and allow the full toolset (or pass <code>--dangerously-skip-permissions</code>) so the agent runs bash/git/web without permission prompts (also avoids the headless <code>external_directory: ask</code> hang). Ensure the worktree exposes full git history.</li>
+          <li><b>3. Wiring.</b> <code>--model openrouter/&lt;glm-5.2-slug&gt;</code>, <code>--allow-env OPENROUTER_API_KEY</code>, generous <code>--timeout-seconds</code> (≈1800; the only governor — opencode has no turn/timeout flag).</li>
+          <li><b>4. Live path (scripts/verify.sh).</b> Extend the <code>CERBERUS_LIVE_REVIEW_PR</code> block to pass model + allow-env + timeout-seconds.</li>
+          <li><b>5. First PR + evidence.</b> Branch the uncommitted VISION.md + backlog 006–013 + archives; open the PR; <code>--dry-run</code>, human-read, then <code>--post</code>; commit <code>evidence/self-review-001/*</code> + posted comment permalinks.</li>
+        </ul>
+      </article>
+      <article>
+        <h2>Alternatives</h2>
+        <table>
+          <tr><th>Path</th><th>Why it fails / verdict</th></tr>
+          <tr><td><b>Fully capable agent + worktree, isolate untrusted later</b></td><td>Reuses the whole pipe, gives the reviewer real tools, proves the brain in days. <b>Choose.</b></td></tr>
+          <tr><td>Lock down bash/network now</td><td>Defends an untrusted-code threat that doesn't apply to self-review; guts the reviewer. <b>Reject — re-scope to ticket 013 (container).</b></td></tr>
+          <tr><td>Container runtime first</td><td>The right home for untrusted-PR isolation, but slower and unneeded to review our own code. <b>Fast-follow = ticket 013.</b></td></tr>
+          <tr><td>Subagent orchestration now</td><td>Full master-spawns-lanes vision; cost+complexity before single-agent proof. Operator deferred. <b>Reject (v1).</b></td></tr>
+          <tr><td><em>Invert: keep the shallow budget</em></td><td>Tests whether exploration helps. Rejected — repo_head + git history exist precisely to inspect beyond the diff. <b>Reject, keep the re-anchoring lesson.</b></td></tr>
+        </table>
+      </article>
+    </section>
+
+    <h3>Oracle — executable definition of done</h3>
+<pre>## 1. No regression
+./scripts/verify.sh            # green
+
+## 2. Real self-review posts (operator-gated, frozen-head PR)
+cargo run --locked -- review-pr \
+  --number &lt;PR&gt; --repo misty-step/cerberus \
+  --model openrouter/&lt;glm-5.2-slug&gt; \
+  --allow-env OPENROUTER_API_KEY \
+  --timeout-seconds 1800 --summary-target status \
+  --out-dir target/cerberus/self-review --dry-run   # READ the artifact first
+# then re-run with --post
+# exit 0; artifact passes ReviewArtifact.v1; PR shows a Cerberus summary + >=1 inline comment on a changed line.
+
+## 3. Idempotency (head unchanged between runs)
+# re-run the --post command -> summary + inline comments UPDATED, not duplicated.
+
+## 4. Human grade (the real target; no exit code proves it)
+# read review.md: every finding's CLAIM is true (not just its anchor valid),
+# the agent actually used git/grep to explore beyond the diff, signal &gt; noise.</pre>
+
+    <h3>Verification System</h3>
+    <div class="panel">
+      <p><b>Claim:</b> a real, fully-capable GLM&nbsp;5.2 agent exploring the worktree + history autonomously produces a valid, grounded, useful <code>ReviewArtifact.v1</code> for a real Cerberus PR and posts it idempotently.</p>
+      <p><b>Falsifier:</b> artifact invalid · findings cite nonexistent lines · reruns duplicate · agent never explores beyond the diff · exploration never converges within the timeout.</p>
+      <p><b>Driver:</b> the <code>review-pr … --dry-run</code> then <code>--post</code> command, run twice (frozen head).</p>
+      <p><b>Grader:</b> <code>ReviewArtifact.v1</code> validation (machine) + a human read that each finding's claim is real and the transcript shows real exploration + the GitHub diff showing no duplicate threads.</p>
+      <p><b>Evidence packet:</b> committed <code>evidence/self-review-001/*</code> (incl. transcript proving git/grep use) + posted PR comment permalinks.</p>
+      <p><b>Cadence:</b> once now (proof-of-life); then on every prompt/model change.</p>
+      <p><b>Gaps / waiver:</b> automated groundedness enforcement + quality measurement are <strong>ticket 007</strong> — here a finding's claim is checked by a mandatory human read on the <code>--dry-run</code> artifact before any <code>--post</code>. Untrusted-PR isolation (network egress + credential handling) is <strong>ticket 013</strong>. GLM-5.2 validity-rate over N runs is a 006 follow-on.</p>
+    </div>
+
+    <h3>Milestones</h3>
+    <div class="phase"><b>M0 · Pre-flight</b><div>Confirm the exact OpenRouter GLM-5.2 slug and that <code>opencode run --model openrouter/&lt;slug&gt; "hi"</code> authenticates from <code>OPENROUTER_API_KEY</code> (env-source auth is verified to work — quick confirm). Confirm the disposable worktree exposes full git history for <code>git log/blame</code>. <em>Spike.</em></div></div>
+    <div class="phase"><b>M1 · Empower</b><div>Remove the exploration cap and add reviewer-craft in <code>prompt.rs</code>; make <code>write_opencode_config</code> permissive (full toolset, no edit-deny / skip-permissions). Existing prompt tests pass; add one asserting the read-cap language is gone. <em>Fresh-context critic on the prompt diff.</em></div></div>
+    <div class="phase"><b>M2 · Wire + run</b><div>Branch vision+groom → PR. Live <code>--dry-run</code> first; human-read the artifact and the transcript (did it really explore?); iterate prompt/timeout; then <code>--post</code>. <em>Human claim-check is the gate.</em></div></div>
+    <div class="phase"><b>M3 · Idempotency + evidence</b><div>Rerun on the frozen-head PR; confirm update-not-duplicate; commit evidence; extend <code>verify.sh</code> live block. <em>Done = oracle 1–4 pass.</em></div></div>
+
+    <h3>Risks + Rollout</h3>
+    <table>
+      <tr><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td>Confidently-wrong reviewer (attention dilution) posts to a real PR</td><td>Mandatory <code>--dry-run</code> + human claim-check before any <code>--post</code>; ticket 007 adds the enforced grounding gate. Oracle item 4 is a hard gate.</td></tr>
+      <tr><td>No exploration cap → cost / latency / non-convergence (no opencode-side turn limit)</td><td>Generous <code>--timeout-seconds</code> wall-clock + explicit "converge and emit one artifact" instruction; watch cost on the first runs and tune.</td></tr>
+      <tr><td>Key exfil via bash+network (untrusted PRs only)</td><td>Out of scope for self-review (our own code, disposable worktree). Closed for consumers by <b>ticket 013</b> (container network-egress allowlist + key isolation).</td></tr>
+      <tr><td>Idempotency proof fails on a moving head</td><td>Per-head-SHA by design; run the rerun proof on a frozen-head PR you are not concurrently pushing to.</td></tr>
+      <tr><td>GLM-5.2 won't reliably emit strict raw-JSON artifact</td><td>Harness has defensive marker/XML/raw extraction; measure validity rate; iterate prompt — the point of dogfooding.</td></tr>
+      <tr><td>git unusable in the worktree (no history / safe.directory)</td><td>M0 confirms history access; set git <code>safe.directory</code> for the worktree if needed.</td></tr>
+      <tr><td><b>Rollback</b></td><td>Prompt + config + CLI flags + a branch. Revert one commit; the fixture pipeline is untouched. No schema or posting-logic change.</td></tr>
+    </table>
+
+    <h3>Adversarial Review (run during shaping)</h3>
+    <p class="muted">A fresh-context critic verified claims against live code and caught: the bash/network exfil path (re-scoped to ticket 013 — it's an untrusted-code concern, not a self-review one), the <code>--timeout</code> oracle bug (fixed → <code>--timeout-seconds</code>), the headless <code>external_directory: ask</code> hang (avoided by going permissive), and the frozen-head idempotency caveat (folded in). Residual focus for <code>/deliver</code>: confirm OpenCode's permission-config shape for a fully-permissive agent on the running version; watch real-run cost now that the cap is gone.</p>
+
+    <h3>Premise Source</h3>
+    <p class="muted">Operator voice brief in session 2026-06-22 (sprint-to-dogfood; GLM 5.2; single agent; fully-capable — bash/git/web, no exploration cap; worktree-now/container-soon; summary+inline; branch the vision+groom work). No durable transcript artifact stored — explicit waiver. Grounding artifacts:</p>
+    <ul class="muted">
+      <li><code>sha256:eebd05db29f7dcdab5b3000f82ac69483112e62b275ec3af5b838c6741ea2009 spec.md</code></li>
+      <li><code>sha256:4156b8a08a68fe8e56bb983020403e6bc4fa2ba6eb6c48e189d4a0cca4592b13 VISION.md</code></li>
+      <li><code>sha256:a037ad81a79f6d9040c9cbdf4459c452d2f4b70334aa3933914c58d228a7f285 docs/adr/0002-opencode-as-default-review-substrate.md</code></li>
+    </ul>
+  </main>
+</body>
+</html>
