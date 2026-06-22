@@ -22,5 +22,13 @@ Cerberus posts its reviews under a branded `Cerberus[bot]` identity (not the ope
 4. **Check-run upgrade** — default `--summary-target check-run` when an App token is present; keep `status` as the user-token fallback.
 5. **Consumer doc** — how Bitterblossom / Olympus install the App (or use their own) and inject the token.
 
+## Verification System
+- Claim: Cerberus posts reviews as `Cerberus[bot]` via a GitHub App installation token, and refuses to post under ambient user auth.
+- Falsifier: a posted comment/check shows a human author; or `--post` succeeds using only keyring/user auth with no explicit token; or check-run creation fails with the App token.
+- Driver: `GH_TOKEN=<app-installation-token> cerberus review-pr --post` against a throwaway PR; then `--post` with no explicit token to confirm refusal.
+- Grader: `gh api .../comments|.../check-runs` author login == the App's `*[bot]` identity; the no-token `--post` exits non-zero.
+- Evidence packet: posted comment/check author JSON + the refused-ambient-auth transcript.
+- Cadence: once at App setup; then on any change to the posting/auth path.
+
 ## Notes
 **Why:** the dogfood (PR #466) posted as `phrazzld` because `gh` fell back to keyring auth. The posting path already honors `GH_TOKEN`, so the only gap is identity: a GitHub App gives `Cerberus[bot]` + check-runs + short-lived scoped tokens with no seat — how CodeRabbit/Dependabot work, and aligned with VISION (identity is the destination's concern; Cerberus stays the engine). App creation is operator-gated (browser/manifest); everything else is Cerberus-side. Decided 2026-06-22 (brainstorm: App over machine-user / Actions-bot).
