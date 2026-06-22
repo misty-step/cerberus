@@ -466,7 +466,7 @@ mod tests {
                     path: "src/lib.rs".to_string(),
                     start_line: 1,
                     end_line: 1,
-                    replacement: "replacement".to_string(),
+                    replacement: Some("replacement".to_string()),
                 }],
                 diff: Some("diff --git a/src/lib.rs b/src/lib.rs\n".to_string()),
             }],
