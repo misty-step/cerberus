@@ -44,7 +44,11 @@ These are load-bearing. Implementation may change underneath them; these do not.
 - **Rust owns the contract; the substrate owns judgment.** Rust owns contracts,
   capability boundaries, execution receipts, artifact validation, and rendering.
   The agent substrate (OpenCode default, OMP fallback, fixture for tests) owns
-  reviewer reasoning and any runtime lane design.
+  reviewer reasoning and any runtime lane design. The line between what Rust may
+  enforce (oracle-checkable contracts, safety, posting, citation resolution) and
+  what only the model + evals may judge (faithfulness) is **ADR 0003**; review
+  *quality* is earned by harness engineering and measured by evals, never by
+  deterministic heuristics.
 - **Evidence discipline.** Every finding cites a concrete anchor: a diff hunk,
   an inspected file, command/test/log output, or an external URL with an
   observation time. Model memory alone is never evidence.
