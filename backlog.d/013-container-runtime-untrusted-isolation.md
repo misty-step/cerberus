@@ -11,7 +11,7 @@ Let a fully-capable Cerberus agent review UNTRUSTED third-party PRs safely by br
 - Never call the local/un-scoped path "untrusted-safe."
 
 ## Oracle
-- [ ] Each untrusted review mints a per-review OpenRouter key with a USD `limit` (provisioning API), injects it, and `DELETE`s it on teardown.
+- [ ] Each untrusted review mints a per-review OpenRouter key with a ~$5 USD `limit` (wiggle-room starting value, right-sized later from cost telemetry) via the provisioning API, injects it, and `DELETE`s it on teardown.
 - [ ] **Steal-and-replay:** a key captured mid-run FAILS after teardown (401 revoked / 402 over-cap); the minted key GET returns 404/disabled.
 - [ ] **Crash safety:** killing the run mid-review leaves no usable key — an orphan-key sweeper revokes review-tagged keys on the next run.
 - [ ] The container blocks non-model egress (`curl evil.com` fails), mounts a `.git`-less `git archive` tree (not a worktree), never mounts the host checkout; host digest unchanged.

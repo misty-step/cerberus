@@ -40,7 +40,7 @@
       </section>
       <aside class="panel">
         <h2>Chosen Design</h2>
-        <p><strong>Floor — scoped ephemeral key.</strong> Cerberus mints a per-review OpenRouter key capped at ~$0.50 via the provisioning API, hands it to the agent (in-container is fine), and <code>DELETE</code>s it after — crash-safe teardown + an orphan-key sweeper.</p>
+        <p><strong>Floor — scoped ephemeral key.</strong> Cerberus mints a per-review OpenRouter key capped at ~$5 (a wiggle-room starting value, right-sized later from cost telemetry) via the provisioning API, hands it to the agent (in-container is fine), and <code>DELETE</code>s it after — crash-safe teardown + an orphan-key sweeper.</p>
         <p><strong>Depth — lightweight container.</strong> <code>.git</code>-less tree mount, host checkout not mounted, non-model egress blocked. Stops the <em>other</em> damage a worthless key doesn't cover.</p>
         <p><strong>Demoted to options:</strong> the key-out proxy, managed sandbox, self-microVM. <strong>North star:</strong> the tool-execution split (C).</p>
       </aside>
@@ -120,7 +120,7 @@ cargo run -- review --request fixtures/requests/redteam-*.json --harness contain
       <tr><th>Risk</th><th>Mitigation</th></tr>
       <tr><td>No key TTL → an orphaned key lingers after a crash</td><td>Teardown guard (revoke in a <code>finally</code>/<code>Drop</code>) <em>and</em> a sweeper that lists+revokes review-tagged keys older than N minutes on each run. This is THE thing to get right.</td></tr>
       <tr><td>Provisioning key (secret-zero) leaks</td><td>It never enters the container; stored host-side like any deploy secret; rotate independently.</td></tr>
-      <tr><td>Worthless-key residual (cap × revoke window)</td><td>Cap ~$0.50, delete ASAP; document the seconds-of-cents residual as accepted.</td></tr>
+      <tr><td>Worthless-key residual (cap × revoke window)</td><td>Cap ~$5 (starting value; right-size from per-review cost telemetry in the receipt bundle), delete ASAP; the brief residual is accepted. Cap + sandbox design iterate on real telemetry/analytics as consumers come online.</td></tr>
       <tr><td>Scoped key doesn't stop non-credential damage (SSRF, other secrets, trashing)</td><td>That's M2's job — non-model egress block + fs isolation + <code>.git</code>-less mount.</td></tr>
       <tr><td>Provider lock-in (relies on OpenRouter provisioning API)</td><td>Behind the substrate seam; option B (key-out proxy) is the provider-agnostic fallback.</td></tr>
       <tr><td><b>Rollback</b></td><td>Credential-lifecycle is additive; container is a new substrate variant; no schema/default change. Trusted self-review unaffected.</td></tr>
