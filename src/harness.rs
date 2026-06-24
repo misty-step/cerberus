@@ -247,28 +247,25 @@ pub(crate) fn run_command_substrate(
     let mut transcript = runtime_probe_transcript(&runtime_receipts);
     append_attempt_transcript(&mut transcript, "initial", None, &output);
 
-    // Read the emitted file and validate it. On a missing/invalid emission, ask
-    // the same OpenCode session to fix it, carrying the exact reason. Bounded and
-    // fail-closed: only a session can be re-asked, so omp/fixture get one shot.
+    // Read the emitted file and check it. While it is unacceptable, ask the same
+    // OpenCode session to fix it, carrying the exact reason. Bounded and
+    // fail-closed: only OpenCode can be re-asked (opencode_reask_args returns None
+    // otherwise), so omp/fixture get one shot and a still-bad artifact falls
+    // through to the validation gate below — never silently accepted.
     let mut artifact_result = read_artifact_file(&out_path);
-    let mut session_id = capture_opencode_session_id(substrate, &output.stdout);
     let mut attempt = 0;
-    while attempt < MAX_REASK_RETRIES && !is_acceptable(&artifact_result, request) {
-        let Some(session) = session_id.clone() else {
+    while let Err(reason) = evaluate_emission(&artifact_result, request) {
+        if attempt >= MAX_REASK_RETRIES {
             break;
-        };
-        let reason = emission_failure_reason(&artifact_result, request);
-        let reask_args =
-            opencode_reask_args(substrate, &session, &reason, &out_path, &request_path);
-        let Some(reask_args) = reask_args else {
+        }
+        let Some(reask_args) =
+            opencode_reask_args(substrate, &output.stdout, &reason, &out_path, &request_path)
+        else {
             break;
         };
         attempt += 1;
         output = spawn_attempt(&reask_args).with_context(|| "run opencode re-ask")?;
         append_attempt_transcript(&mut transcript, "re-ask", Some(&reason), &output);
-        if let Some(next) = capture_opencode_session_id(substrate, &output.stdout) {
-            session_id = Some(next);
-        }
         artifact_result = read_artifact_file(&out_path);
     }
 
@@ -301,64 +298,45 @@ fn read_artifact_file(out_path: &Path) -> Result<ReviewArtifact> {
         .with_context(|| format!("parse ReviewArtifact.v1 emitted at {}", out_path.display()))
 }
 
-/// An emission is acceptable only if it parsed AND validates against the request.
-fn is_acceptable(artifact_result: &Result<ReviewArtifact>, request: &ReviewRequest) -> bool {
-    artifact_result
-        .as_ref()
-        .map(|artifact| validate_artifact_for_request(artifact, request).is_ok())
-        .unwrap_or(false)
-}
-
-/// The exact reason an emission was rejected, to carry back into the re-ask so
-/// the agent fixes the real problem rather than guessing.
-fn emission_failure_reason(
+/// Evaluate an emitted artifact: `Ok(())` if it parsed and validates against the
+/// request, `Err(reason)` carrying the exact failure to feed back into a re-ask
+/// so the agent fixes the real problem rather than guessing.
+fn evaluate_emission(
     artifact_result: &Result<ReviewArtifact>,
     request: &ReviewRequest,
-) -> String {
-    match artifact_result {
-        Err(err) => {
-            format!("the artifact file was missing or not valid ReviewArtifact.v1 JSON ({err:#})")
-        }
-        Ok(artifact) => match validate_artifact_for_request(artifact, request) {
-            Err(err) => format!("the artifact failed validation: {err}"),
-            Ok(()) => "the artifact was accepted".to_string(),
-        },
-    }
+) -> std::result::Result<(), String> {
+    let artifact = artifact_result.as_ref().map_err(|err| {
+        format!("the artifact file was missing or not valid ReviewArtifact.v1 JSON ({err:#})")
+    })?;
+    validate_artifact_for_request(artifact, request)
+        .map_err(|err| format!("the artifact failed validation: {err}"))
 }
 
-/// Capture the OpenCode session id from its JSON event stream so the re-ask can
-/// continue the same conversation. Every event carries a top-level `sessionID`,
-/// and the first one is the run's root session: a session must exist before it
-/// can spawn a subagent, so the root's first event always precedes any child's.
-/// If that ever did not hold, the re-ask would continue the wrong session and
-/// re-read a still-invalid file — bounded retries then fail closed, never a
-/// silent accept. Only OpenCode is session-based; omp/fixture return `None`.
-fn capture_opencode_session_id(
-    substrate: CommandSubstrateConfig<'_>,
-    stdout: &[u8],
-) -> Option<String> {
-    if !matches!(substrate, CommandSubstrateConfig::Opencode(_)) {
-        return None;
-    }
-    for line in String::from_utf8_lossy(stdout).lines() {
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if let Some(session) = value.get("sessionID").and_then(Value::as_str) {
-            if !session.is_empty() {
-                return Some(session.to_string());
-            }
-        }
-    }
-    None
+/// First `sessionID` in an OpenCode JSON event stream — the run's root session.
+/// A session must exist before it can spawn a subagent, so the root's first event
+/// always precedes any child's. Even if that did not hold, continuing the wrong
+/// session would re-read a still-invalid file and fail closed, never silently
+/// accept.
+fn first_opencode_session_id(stdout: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(stdout).lines().find_map(|line| {
+        serde_json::from_str::<Value>(line)
+            .ok()?
+            .get("sessionID")
+            .and_then(Value::as_str)
+            .filter(|session| !session.is_empty())
+            .map(str::to_string)
+    })
 }
 
-/// Build the `opencode run --session <id>` re-ask command that continues the
-/// review session and asks it to rewrite the out-path. Returns `None` for
-/// substrates that cannot continue a session.
+/// Build the `opencode run --session <id>` re-ask that continues the review
+/// session (captured from its prior output) and asks it to rewrite the out-path,
+/// carrying the exact `reason`. Returns `None` for substrates that cannot
+/// continue a session (omp/fixture) or when no session id was emitted — either
+/// way the caller stops re-asking. This is the single gate that makes the re-ask
+/// OpenCode-only.
 fn opencode_reask_args(
     substrate: CommandSubstrateConfig<'_>,
-    session: &str,
+    stdout: &[u8],
     reason: &str,
     out_path: &Path,
     request_path: &Path,
@@ -366,6 +344,7 @@ fn opencode_reask_args(
     let CommandSubstrateConfig::Opencode(config) = substrate else {
         return None;
     };
+    let session = first_opencode_session_id(stdout)?;
     let message = format!(
         "Your previous {filename} was rejected: {reason}. Fix exactly that problem and rewrite the COMPLETE corrected ReviewArtifact.v1 as a single raw JSON object to {out_path}, overwriting it. Write nothing else to that file — no Markdown fences, no prose.",
         filename = ARTIFACT_FILENAME,
@@ -376,7 +355,7 @@ fn opencode_reask_args(
         "run".to_string(),
         message,
         "--session".to_string(),
-        session.to_string(),
+        session,
         "--format".to_string(),
         "json".to_string(),
         "--dir".to_string(),
@@ -1262,35 +1241,21 @@ mod tests {
 
     #[test]
     fn captures_root_session_id_from_opencode_events() {
-        let config = test_opencode_config();
         let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\",\"part\":{}}\n{\"type\":\"step_finish\",\"sessionID\":\"ses_root\"}\n";
 
-        let session =
-            capture_opencode_session_id(CommandSubstrateConfig::Opencode(&config), stdout);
-
-        assert_eq!(session.as_deref(), Some("ses_root"));
-    }
-
-    #[test]
-    fn omp_substrate_has_no_session_to_continue() {
-        let config = OmpSubstrateConfig {
-            binary: "omp".to_string(),
-            model: None,
-        };
-        let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\"}\n";
-
-        assert!(
-            capture_opencode_session_id(CommandSubstrateConfig::Omp(&config), stdout).is_none()
+        assert_eq!(
+            first_opencode_session_id(stdout).as_deref(),
+            Some("ses_root")
         );
     }
 
     #[test]
-    fn emission_failure_reason_carries_the_validation_error() {
+    fn evaluate_emission_carries_the_validation_error() {
         let request = test_request();
         // Parses fine but its request_digest cannot match the request digest.
         let artifact: ReviewArtifact = serde_json::from_str(&minimal_artifact_json()).unwrap();
 
-        let reason = emission_failure_reason(&Ok(artifact), &request);
+        let reason = evaluate_emission(&Ok(artifact), &request).unwrap_err();
 
         assert!(
             reason.contains("failed validation"),
@@ -1303,11 +1268,11 @@ mod tests {
     }
 
     #[test]
-    fn emission_failure_reason_carries_the_parse_error() {
+    fn evaluate_emission_carries_the_parse_error() {
         let request = test_request();
         let parse_error = read_artifact_file(Path::new("/cerberus/does-not-exist.json"));
 
-        let reason = emission_failure_reason(&parse_error, &request);
+        let reason = evaluate_emission(&parse_error, &request).unwrap_err();
 
         assert!(
             reason.contains("missing or not valid"),
@@ -1316,14 +1281,26 @@ mod tests {
     }
 
     #[test]
+    fn evaluate_emission_accepts_a_valid_artifact() {
+        let request = test_request();
+        let mut artifact: ReviewArtifact = serde_json::from_str(&minimal_artifact_json()).unwrap();
+        artifact.request_id = request.request_id.clone();
+        artifact.request_digest = request_digest(&request).unwrap();
+        artifact.context_capabilities = ContextCapabilities::from_request(&request);
+
+        assert!(evaluate_emission(&Ok(artifact), &request).is_ok());
+    }
+
+    #[test]
     fn opencode_reask_continues_the_session_and_names_the_out_path() {
         let config = test_opencode_config();
+        let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\"}\n";
         let out_path = Path::new("/work/repo/review-artifact.json");
         let request_path = Path::new("/tmp/cerberus/review-request.json");
 
         let args = opencode_reask_args(
             CommandSubstrateConfig::Opencode(&config),
-            "ses_root",
+            stdout,
             "the artifact failed validation: artifact request digest mismatch",
             out_path,
             request_path,
@@ -1346,9 +1323,10 @@ mod tests {
             binary: "omp".to_string(),
             model: None,
         };
+        let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\"}\n";
         assert!(opencode_reask_args(
             CommandSubstrateConfig::Omp(&config),
-            "ses_root",
+            stdout,
             "reason",
             Path::new("/work/review-artifact.json"),
             Path::new("/tmp/request.json"),
