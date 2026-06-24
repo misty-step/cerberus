@@ -1,6 +1,3 @@
-Cerberus invalid fixture transcript: finding references an unknown suggested fix.
-
------BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
 {
   "schema_version": "cerberus.review_artifact.v1",
   "artifact_id": "{{artifact_id}}",
@@ -59,4 +56,3 @@ Cerberus invalid fixture transcript: finding references an unknown suggested fix
   },
   "errors": []
 }
------END CERBERUS_REVIEW_ARTIFACT_V1-----

@@ -1,7 +1,6 @@
-use crate::schema::{ContextCapabilities, ReviewRequest};
+use std::path::Path;
 
-pub const ARTIFACT_BEGIN: &str = "-----BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----";
-pub const ARTIFACT_END: &str = "-----END CERBERUS_REVIEW_ARTIFACT_V1-----";
+use crate::schema::{ContextCapabilities, ReviewRequest};
 
 const ARTIFACT_FIELD_PATHS: &[&str] = &[
     "schema_version",
@@ -181,10 +180,12 @@ pub fn build_master_prompt(
     request: &ReviewRequest,
     capabilities: &ContextCapabilities,
     request_digest: &str,
+    out_path: &Path,
 ) -> Result<String, serde_json::Error> {
     let request_json = serde_json::to_string_pretty(request)?;
     let capabilities_json = serde_json::to_string_pretty(capabilities)?;
     let contract_checklist = artifact_contract_checklist();
+    let out_path = out_path.display();
     Ok(format!(
         r#"You are Cerberus, the master code reviewer.
 
@@ -202,9 +203,7 @@ Mission:
 - External research is allowed only if the request policy permits it. External claims require citations.
 - Blocking findings must cite concrete anchors.
 - PASS requires enough inspected evidence for the available context. If repo_head is true but direct checkout inspection fails or is skipped, use completed_degraded or WARN and record why.
-- Produce exactly one raw JSON artifact and nothing else.
-- The first output character must be `{{` and the last output character must be `}}`.
-- Do not wrap the artifact in Markdown fences or marker text.
+- Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool. That file is your only deliverable: it must hold exactly one raw JSON object and nothing else — no Markdown fences, no prose. Overwrite it completely if it already exists.
 
 Required ReviewArtifact.v1 fields:
 - schema_version: "cerberus.review_artifact.v1"
@@ -254,15 +253,17 @@ pub fn build_opencode_message(
     request: &ReviewRequest,
     capabilities: &ContextCapabilities,
     request_digest: &str,
+    out_path: &Path,
 ) -> Result<String, serde_json::Error> {
     let capabilities_json = serde_json::to_string(capabilities)?;
     let contract_checklist = artifact_contract_checklist();
     Ok(format!(
-        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. Final response contract: return exactly one raw JSON ReviewArtifact.v1 object and nothing else; first character must be {{ and last character must be }}. If repo_head is true, explore the repository thoroughly and autonomously: use read, grep, glob, and the shell (ripgrep, ast-grep, git log/diff/blame) to understand the change in the context of the whole codebase and its history. The attached diff is a starting point, not your only evidence, and there is no fixed read budget. Be thorough but decisive: inspect the changed files and the code they directly touch — callers, callees, tests, and related config — then STOP exploring and emit your artifact. You do not need to read the entire repository, and you are on a wall-clock limit: producing one complete, grounded artifact is the objective, and an exploration that never emits an artifact is a failed review. If repo_base is true, compare relevant base files before making regression or behavior-change claims. Review like a senior engineer: prioritize correctness, security, and behavior regressions over style; ground every finding in a specific line you actually inspected and anchor it there; prefer a few high-signal findings over many low-value ones; never invent issues, and if the change is clean return PASS with empty findings; calibrate severity honestly and record what you did not inspect in summary.residual_risk. Use the shell only for read-only exploration; do not run builds, tests, applications, or network probes as evidence, and do not claim test, build, runtime, or QA results, unless local_runtime or remote_runtime is true (then rely only on the attached transcripts). Strict schema: lifecycle_state is completed/completed_degraded/failed/skipped/cancelled/stale; verdict is PASS/WARN/FAIL/SKIP; severity is info/minor/major/critical. summary must be an object {{\"title\",\"body\",\"analysis\",\"residual_risk\":[]}}. findings must be objects {{\"id\",\"severity\",\"category\",\"title\",\"description\",\"evidence\",\"confidence\":0.0,\"anchors\":[],\"citations\":[],\"suggested_fixes\":[]}}, where citations and suggested_fixes are arrays of string ids only. comments must be objects {{\"id\",\"kind\":\"inline|contextual\",\"intent\":\"finding|note|question|summary\",\"finding_id\":null,\"body\",\"anchor\":{{\"kind\":\"inline|file|change|run\",\"path\":null,\"line\":null}},\"dedupe_key\":null,\"suggested_fixes\":[]}}, where suggested_fixes is an array of string ids only. Top-level suggested_fixes must be objects {{\"id\",\"finding_id\":null,\"applicability\":\"safe|needs_review\",\"format\":\"instructions|replacement|unified_diff\",\"edits\":[],\"diff\":null}}. citations must be [] unless needed; citation.used_by may contain only exact finding.id values, never comment ids or citation ids; URL citations require observed_at. receipts must include {{\"id\":\"receipt-master\",\"role\":\"master\",\"harness\":\"opencode\",\"status\":\"completed\",\"verdict\":verdict,\"summary\":\"evidence inspected\",\"artifact_digest\":null,\"transcript_uri\":null,\"usage\":null}}. run must include {{\"engine_version\":\"cerberus-opencode\",\"config_digest\":\"sha256:prompt-only\",\"started_at\":\"0\",\"finished_at\":\"0\",\"duration_ms\":0,\"cost_usd\":null,\"coverage\":{{\"files_reviewed\":[],\"files_with_findings\":[]}}}}. {contract_checklist} Set run.coverage.files_reviewed to only files you actually inspected; if you skip changed files because of limits, record that reduced scope in lifecycle_state and summary.residual_risk. Prefer empty arrays over malformed objects.",
+        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. If repo_head is true, explore the repository thoroughly and autonomously: use read, grep, glob, and the shell (ripgrep, ast-grep, git log/diff/blame) to understand the change in the context of the whole codebase and its history. The attached diff is a starting point, not your only evidence, and there is no fixed read budget. Be thorough but decisive: inspect the changed files and the code they directly touch — callers, callees, tests, and related config — then STOP exploring and emit your artifact. You do not need to read the entire repository, and you are on a wall-clock limit: producing one complete, grounded artifact is the objective, and an exploration that never emits an artifact is a failed review. If repo_base is true, compare relevant base files before making regression or behavior-change claims. Review like a senior engineer: prioritize correctness, security, and behavior regressions over style; ground every finding in a specific line you actually inspected and anchor it there; prefer a few high-signal findings over many low-value ones; never invent issues, and if the change is clean return PASS with empty findings; calibrate severity honestly and record what you did not inspect in summary.residual_risk. Use the shell only for read-only exploration; do not run builds, tests, applications, or network probes as evidence, and do not claim test, build, runtime, or QA results, unless local_runtime or remote_runtime is true (then rely only on the attached transcripts). Set run.coverage.files_reviewed to only files you actually inspected; if you skip changed files because of limits, record that reduced scope in lifecycle_state and summary.residual_risk. {contract_checklist} Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool — that file is your only deliverable. It must hold exactly one raw JSON object and nothing else: no Markdown fences, no prose, no surrounding text. Set request_id and request_digest to the exact values above. Overwrite the file completely if it already exists, and once it holds the complete valid artifact you are done.",
         request_id = request.request_id.as_str(),
         request_digest = request_digest,
         capabilities_json = capabilities_json,
-        contract_checklist = contract_checklist
+        contract_checklist = contract_checklist,
+        out_path = out_path.display(),
     ))
 }
 
@@ -270,6 +271,11 @@ pub fn build_opencode_message(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    use std::path::Path;
+
+    fn out_path() -> &'static Path {
+        Path::new("/work/repo/review-artifact.json")
+    }
 
     use crate::schema::{
         Anchor, AnchorKind, Citation, CitationKind, Comment, CommentIntent, CommentKind, Coverage,
@@ -283,8 +289,10 @@ mod tests {
     fn prompts_embed_generated_artifact_contract() {
         let request = minimal_request();
         let capabilities = ContextCapabilities::from_request(&request);
-        let prompt = build_master_prompt(&request, &capabilities, "sha256:test").unwrap();
-        let message = build_opencode_message(&request, &capabilities, "sha256:test").unwrap();
+        let prompt =
+            build_master_prompt(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
         let contract = artifact_contract_checklist();
 
         assert!(prompt.contains(&contract));
@@ -307,7 +315,8 @@ mod tests {
     fn opencode_message_drops_exploration_cap_and_adds_review_craft() {
         let request = minimal_request();
         let capabilities = ContextCapabilities::from_request(&request);
-        let message = build_opencode_message(&request, &capabilities, "sha256:test").unwrap();
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
         assert!(
             !message.contains("at most eight"),
             "the fixture-era read cap must be gone"
@@ -318,6 +327,29 @@ mod tests {
         );
         assert!(message.contains("explore the repository thoroughly and autonomously"));
         assert!(message.contains("Review like a senior engineer"));
+    }
+
+    #[test]
+    fn prompts_instruct_file_emission_not_raw_stdout() {
+        let request = minimal_request();
+        let capabilities = ContextCapabilities::from_request(&request);
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        let master =
+            build_master_prompt(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        for prompt in [&message, &master] {
+            assert!(
+                prompt.contains("/work/repo/review-artifact.json"),
+                "emission target path must be named in the prompt"
+            );
+            assert!(
+                prompt.contains("your write tool"),
+                "the agent must be told to write the artifact as a file"
+            );
+        }
+        // The raw-stdout / first-character marker contract is gone: emission is a file now.
+        assert!(!message.contains("first character must be"));
+        assert!(!master.contains("first output character must be"));
     }
 
     #[test]

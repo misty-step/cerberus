@@ -18,6 +18,7 @@ template="$repo_root/fixtures/harness/valid-review.txt"
 original_args="$*"
 request_file=""
 workdir=""
+session_id=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     run)
@@ -35,6 +36,10 @@ while [[ $# -gt 0 ]]; do
       request_file="${2:-}"
       shift 2
       ;;
+    --session)
+      session_id="${2:-}"
+      shift 2
+      ;;
     --model|--attach|--agent)
       shift 2
       ;;
@@ -48,7 +53,15 @@ test -n "$request_file"
 test -s "$request_file"
 test -n "$workdir"
 
+# The initial run carries the request digest in its argv message; the re-ask
+# continuation does not, so persist it in the workspace and read it back.
+digest_sidecar="$workdir/.cerberus-fake-request-digest"
 request_digest="$(printf '%s\n' "$original_args" | sed -n 's/.*Request digest: \(sha256:[a-f0-9]*\).*/\1/p' | head -1)"
+if [[ -n "$request_digest" ]]; then
+  printf '%s' "$request_digest" > "$digest_sidecar"
+elif [[ -f "$digest_sidecar" ]]; then
+  request_digest="$(cat "$digest_sidecar")"
+fi
 test -n "$request_digest"
 request_id="$(sed -n 's/.*"request_id": "\([^"]*\)".*/\1/p' "$request_file" | head -1)"
 test -n "$request_id"
@@ -119,37 +132,26 @@ print(json.dumps(payload, separators=(",", ":")))
 PY
 )"
 
-rendered="$(mktemp)"
-trap 'rm -f "$rendered"' EXIT
+# Emit the review by writing the artifact file in the workspace, exactly as the
+# prompt instructs a real agent to. Nothing on stdout is parsed for the artifact;
+# stdout only carries the session id (for the re-ask) and telemetry.
+#
+# Optional re-ask drill: with CERBERUS_FAKE_OPENCODE_FIRST_INVALID=1 the initial
+# emission writes a deliberately-wrong request_digest (which fails validation),
+# and the session-continued re-ask writes the correct one. This exercises the
+# validate-and-re-ask loop end to end against the real OpenCode session surface.
+artifact_digest="$request_digest"
+if [[ "${CERBERUS_FAKE_OPENCODE_FIRST_INVALID:-}" == "1" && -z "$session_id" ]]; then
+  artifact_digest="sha256:0000000000000000000000000000000000000000000000000000000000000000"
+fi
 
 sed \
   -e "s/{{request_id}}/$request_id/g" \
-  -e "s#{{request_digest}}#$request_digest#g" \
+  -e "s#{{request_digest}}#$artifact_digest#g" \
   -e "s#{{context_capabilities}}#$capabilities#g" \
   -e "s/{{artifact_id}}/artifact-fake-opencode/g" \
   -e "s/{{now}}/0/g" \
-  "$template" > "$rendered"
+  "$template" > "$workdir/review-artifact.json"
 
-python3 - "$rendered" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    body = fh.read()
-
-print(json.dumps({
-    "type": "metadata",
-    "model": "fake/opencode-reviewer",
-    "usage": {
-        "prompt_tokens": 123,
-        "completion_tokens": 45,
-        "cost_usd": 0.0042,
-    },
-}))
-print(json.dumps({
-    "type": "text",
-    "part": {
-        "text": body,
-    },
-}))
-PY
+printf '%s\n' '{"type":"step_start","sessionID":"ses_fake_opencode"}'
+printf '%s\n' '{"type":"metadata","sessionID":"ses_fake_opencode","model":"fake/opencode-reviewer","usage":{"prompt_tokens":123,"completion_tokens":45,"cost_usd":0.0042}}'

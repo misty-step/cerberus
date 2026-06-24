@@ -48,60 +48,53 @@ expect_review_failure() {
   fi
 }
 
-cat fixtures/harness/pass-review.txt fixtures/harness/pass-review.txt \
-  > target/cerberus/invalid-duplicate-artifacts.txt
-artifact_json="$(awk '
-  /-----BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----/ { inside = 1; next }
-  /-----END CERBERUS_REVIEW_ARTIFACT_V1-----/ { inside = 0 }
-  inside { print }
-' fixtures/harness/pass-review.txt)"
-{
-  cat fixtures/harness/pass-review.txt
-  printf '\n<CERBERUS_REVIEW_ARTIFACT_V1>\n%s\n</CERBERUS_REVIEW_ARTIFACT_V1>\n' "$artifact_json"
-} > target/cerberus/invalid-duplicate-marker-xml-artifacts.txt
-{
-  cat fixtures/harness/pass-review.txt
-  printf '\n%s\n' "$artifact_json"
-} > target/cerberus/invalid-duplicate-marker-raw-artifacts.txt
-{
-  printf '<CERBERUS_REVIEW_ARTIFACT_V1>\n%s\n</CERBERUS_REVIEW_ARTIFACT_V1>\n' "$artifact_json"
-  printf '<CERBERUS_REVIEW_ARTIFACT_V1>\n%s\n</CERBERUS_REVIEW_ARTIFACT_V1>\n' "$artifact_json"
-} > target/cerberus/invalid-duplicate-xml-artifacts.txt
-{
-  printf '<CERBERUS_REVIEW_ARTIFACT_V1>\n%s\n</CERBERUS_REVIEW_ARTIFACT_V1>\n' "$artifact_json"
-  printf '%s\n' "$artifact_json"
-} > target/cerberus/invalid-duplicate-xml-raw-artifacts.txt
-printf '%s\n%s\n' "$artifact_json" "$artifact_json" \
-  > target/cerberus/invalid-duplicate-raw-artifacts.txt
+# The agent now emits one artifact file, so the old marker/XML/raw "duplicate
+# candidate" cases no longer have a parser to defeat — a file holds exactly one
+# artifact. The meaningful adversarial floor is the validator: an emission that
+# parses but overstates context or dangles a reference must still be rejected.
+# Fixtures are bare ReviewArtifact.v1 JSON templates; the fixture substrate
+# writes them to the out-path and reads them back, then validation runs.
 sed 's#{{context_capabilities}}#{"diff":true,"repo_head":false,"repo_base":true,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}#' \
   fixtures/harness/pass-review.txt \
   > target/cerberus/invalid-overstated-base.txt
 sed 's#{{context_capabilities}}#{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":true,"remote_runtime":false,"external_research":"forbid"}#' \
   fixtures/harness/pass-review.txt \
   > target/cerberus/invalid-overstated-runtime.txt
-expect_review_failure duplicate-artifacts target/cerberus/invalid-duplicate-artifacts.txt
-expect_review_failure duplicate-marker-xml-artifacts target/cerberus/invalid-duplicate-marker-xml-artifacts.txt
-expect_review_failure duplicate-marker-raw-artifacts target/cerberus/invalid-duplicate-marker-raw-artifacts.txt
-expect_review_failure duplicate-xml-artifacts target/cerberus/invalid-duplicate-xml-artifacts.txt
-expect_review_failure duplicate-xml-raw-artifacts target/cerberus/invalid-duplicate-xml-raw-artifacts.txt
-expect_review_failure duplicate-raw-artifacts target/cerberus/invalid-duplicate-raw-artifacts.txt
 expect_review_failure overstated-base target/cerberus/invalid-overstated-base.txt
 expect_review_failure overstated-runtime target/cerberus/invalid-overstated-runtime.txt
 expect_review_failure unknown-finding-id fixtures/harness/invalid-unknown-finding-id.txt
 expect_review_failure unknown-suggested-fix fixtures/harness/invalid-unknown-suggested-fix.txt
 expect_review_failure orphan-suggested-fix fixtures/harness/invalid-orphan-suggested-fix.txt
 
-grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-artifacts.stderr
-grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-marker-xml-artifacts.stderr
-grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-marker-raw-artifacts.stderr
-grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-xml-artifacts.stderr
-grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-xml-raw-artifacts.stderr
-grep -q 'expected exactly one ReviewArtifact.v1 candidate' target/cerberus/duplicate-raw-artifacts.stderr
 grep -q 'artifact context capabilities overstate the request' target/cerberus/overstated-base.stderr
 grep -q 'artifact context capabilities overstate the request' target/cerberus/overstated-runtime.stderr
 grep -q 'references unknown finding id' target/cerberus/unknown-finding-id.stderr
 grep -q 'references unknown suggested fix id' target/cerberus/unknown-suggested-fix.stderr
 grep -q 'top-level suggested fix is not attached' target/cerberus/orphan-suggested-fix.stderr
+
+# THE re-ask test (Oracle #1): the fake agent writes an INVALID artifact (wrong
+# request digest) on its first emission, then a VALID one when the harness
+# continues its OpenCode session. The review must succeed only via the re-ask,
+# and the transcript must show the exact validation error carried back.
+GH_TOKEN=should-not-leak CERBERUS_FAKE_OPENCODE_FIRST_INVALID=1 cargo run --locked -- review \
+  --request fixtures/requests/diff-only-reask.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --out target/cerberus/reask-artifact.json \
+  --execution-plan target/cerberus/reask-execution_plan.json \
+  --transcript target/cerberus/reask-transcript.txt \
+  --receipt-bundle target/cerberus/receipts/reask.json
+
+test -s target/cerberus/reask-artifact.json
+grep -q '"trusted_for_posting": true' target/cerberus/receipts/reask.json
+grep -q '\[attempt: re-ask\]' target/cerberus/reask-transcript.txt
+grep -q 'artifact request digest mismatch' target/cerberus/reask-transcript.txt
+# The recovered artifact carries the correct digest, not the deliberately-wrong one.
+if grep -q 'sha256:0000000000000000000000000000000000000000000000000000000000000000' \
+  target/cerberus/reask-artifact.json; then
+  echo "re-ask accepted the invalid first emission" >&2
+  exit 1
+fi
 
 printf 'stale receipt should be removed before a failed run\n' \
   > target/cerberus/receipts/stale-before-failed-review.json
