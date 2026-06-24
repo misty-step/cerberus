@@ -327,8 +327,12 @@ fn emission_failure_reason(
 }
 
 /// Capture the OpenCode session id from its JSON event stream so the re-ask can
-/// continue the same conversation. Every event carries a top-level `sessionID`;
-/// the first one is the run's root session. Only OpenCode is session-based.
+/// continue the same conversation. Every event carries a top-level `sessionID`,
+/// and the first one is the run's root session: a session must exist before it
+/// can spawn a subagent, so the root's first event always precedes any child's.
+/// If that ever did not hold, the re-ask would continue the wrong session and
+/// re-read a still-invalid file — bounded retries then fail closed, never a
+/// silent accept. Only OpenCode is session-based; omp/fixture return `None`.
 fn capture_opencode_session_id(
     substrate: CommandSubstrateConfig<'_>,
     stdout: &[u8],
@@ -601,6 +605,13 @@ impl RunWorkspace {
         set_private_permissions(&diff_path)?;
 
         if request.change.diff.body.trim().is_empty() {
+            // Degenerate path: an empty diff has nothing to review. The agent now
+            // emits its artifact into the workspace, so this fallback would write
+            // review-artifact.json into the real cwd. That is gated shut today —
+            // validate_request rejects an empty diff before any binary reaches the
+            // kernel — so it is unreachable in practice; only a library caller that
+            // skips validation could hit it. Removing the dead fallback/cwd
+            // plumbing is tracked in backlog 017.
             Ok(Self::with_packet_or_fallback(
                 fallback_cwd.to_path_buf(),
                 "fallback_empty_diff",
