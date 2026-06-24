@@ -1,6 +1,3 @@
-Cerberus invalid fixture transcript: top-level suggested fix is orphaned.
-
------BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
 {
   "schema_version": "cerberus.review_artifact.v1",
   "artifact_id": "{{artifact_id}}",
@@ -44,4 +41,3 @@ Cerberus invalid fixture transcript: top-level suggested fix is orphaned.
   },
   "errors": []
 }
------END CERBERUS_REVIEW_ARTIFACT_V1-----

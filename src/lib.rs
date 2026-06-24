@@ -12,8 +12,7 @@ pub mod validation;
 
 pub use digest::{request_digest, sha256_digest};
 pub use harness::{
-    extract_marked_artifact, FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig,
-    OpenCodeSubstrateConfig,
+    FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
 pub use kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
 pub use post::{build_post_plan, GithubClient, PostPlan, SummaryTarget};

@@ -48,10 +48,13 @@ test -n "$request_digest"
 
 capabilities='{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}'
 
+# Emit the review by writing the artifact file in the workspace, exactly as the
+# prompt now instructs a real agent to. The harness reads it back; nothing on
+# stdout is parsed for the artifact.
 sed \
   -e "s/{{request_id}}/fixture-diff-only-001/g" \
   -e "s#{{request_digest}}#$request_digest#g" \
   -e "s#{{context_capabilities}}#$capabilities#g" \
   -e "s/{{artifact_id}}/artifact-fake-omp/g" \
   -e "s/{{now}}/0/g" \
-  "$template"
+  "$template" > "$workdir/review-artifact.json"

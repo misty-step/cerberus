@@ -1,6 +1,3 @@
-Cerberus invalid fixture transcript: comment references an unknown finding.
-
------BEGIN CERBERUS_REVIEW_ARTIFACT_V1-----
 {
   "schema_version": "cerberus.review_artifact.v1",
   "artifact_id": "{{artifact_id}}",
@@ -71,4 +68,3 @@ Cerberus invalid fixture transcript: comment references an unknown finding.
   },
   "errors": []
 }
------END CERBERUS_REVIEW_ARTIFACT_V1-----

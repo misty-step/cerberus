@@ -12,12 +12,23 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::digest::{request_digest, sha256_digest};
-use crate::prompt::{build_master_prompt, build_opencode_message, ARTIFACT_BEGIN, ARTIFACT_END};
+use crate::prompt::{build_master_prompt, build_opencode_message};
 use crate::schema::{
     ContextArtifact, ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact,
-    ReviewRequest, ReviewTelemetry, RuntimeTarget, REVIEW_ARTIFACT_SCHEMA,
+    ReviewRequest, ReviewTelemetry, RuntimeTarget,
 };
 use crate::telemetry::{omp_telemetry, opencode_telemetry};
+use crate::validation::validate_artifact_for_request;
+
+/// Filename the review agent writes its `ReviewArtifact.v1` JSON to, inside the
+/// disposable review workspace (`--dir`). The harness reads it back and parses
+/// it; there is no transcript scraping.
+const ARTIFACT_FILENAME: &str = "review-artifact.json";
+
+/// Maximum re-ask retries after an invalid or missing emission. Research puts
+/// first-retry recovery near 80% and second-retry above 99%; a third is wasted
+/// tokens. The loop is fail-closed: an artifact that never validates is an error.
+const MAX_REASK_RETRIES: usize = 2;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum HarnessKind {
@@ -87,13 +98,20 @@ pub(crate) fn run_fixture_substrate(
     let mut child_request = request_with_workspace_paths(request, &workspace);
     let runtime_receipts =
         run_local_runtime_probes(&mut child_request, &workspace, temp.path(), timeout)?;
-    let fixture_transcript = apply_fixture_template(&raw, request, &request_digest, &capabilities)?;
+    // The fixture stands in for the agent: render its template and write the
+    // result to the same out-path a real substrate would, then read it back
+    // through the one shared parse path. No markers, no transcript scraping.
+    let emitted = apply_fixture_template(&raw, request, &request_digest, &capabilities)?;
+    let out_path = workspace.path().join(ARTIFACT_FILENAME);
+    fs::write(&out_path, emitted.as_bytes())
+        .with_context(|| format!("write fixture artifact {}", out_path.display()))?;
     let transcript = format!(
-        "{}{}",
+        "{}fixture wrote artifact to {}\n\n{}",
         runtime_probe_transcript(&runtime_receipts),
-        fixture_transcript
+        out_path.display(),
+        emitted
     );
-    let artifact = extract_marked_artifact(&transcript)?;
+    let artifact = read_artifact_file(&out_path)?;
     let plan = ExecutionPlan {
         harness: "fixture".to_string(),
         command: fixture_path.display().to_string(),
@@ -150,7 +168,11 @@ pub(crate) fn run_command_substrate(
     let mut child_request = request_with_workspace_paths(request, &workspace);
     let runtime_receipts =
         run_local_runtime_probes(&mut child_request, &workspace, temp.path(), timeout)?;
-    let prompt = build_master_prompt(&child_request, &capabilities, &request_digest)?;
+    // The agent writes its artifact here, inside the workspace it already has
+    // write access to; the harness reads it back. One unambiguous file, not a
+    // span scraped out of the transcript.
+    let out_path = workspace.path().join(ARTIFACT_FILENAME);
+    let prompt = build_master_prompt(&child_request, &capabilities, &request_digest, &out_path)?;
     let prompt_path = temp.path().join("master-prompt.md");
     fs::write(&prompt_path, prompt).context("write master prompt")?;
     set_private_permissions(&prompt_path)?;
@@ -171,6 +193,7 @@ pub(crate) fn run_command_substrate(
             cwd: workspace.path(),
             prompt_path: &prompt_path,
             request_path: &request_path,
+            out_path: &out_path,
             request,
             capabilities: &capabilities,
             request_digest: &request_digest,
@@ -197,37 +220,56 @@ pub(crate) fn run_command_substrate(
             .collect(),
     };
 
-    let start = Instant::now();
-    let mut command = Command::new(&executable);
-    command
-        .args(&args)
-        .current_dir(workspace.path())
-        .stdin(Stdio::null())
-        .env_clear();
-    for (key, value) in allowed_child_env(&request.policy.allowed_env) {
-        command.env(key, value);
-    }
-    command.env("PATH", join_search_path(&trusted_search_path));
-    command.env("HOME", &child_home);
-    command.env("XDG_CACHE_HOME", &child_cache);
-    command.env("XDG_CONFIG_HOME", &child_config);
-    command.env("XDG_DATA_HOME", &child_data);
-    configure_process_group(&mut command);
+    let spawn_attempt = |attempt_args: &[String]| -> Result<CommandOutput> {
+        let start = Instant::now();
+        let mut command = Command::new(&executable);
+        command
+            .args(attempt_args)
+            .current_dir(workspace.path())
+            .stdin(Stdio::null())
+            .env_clear();
+        for (key, value) in allowed_child_env(&request.policy.allowed_env) {
+            command.env(key, value);
+        }
+        command.env("PATH", join_search_path(&trusted_search_path));
+        command.env("HOME", &child_home);
+        command.env("XDG_CACHE_HOME", &child_cache);
+        command.env("XDG_CONFIG_HOME", &child_config);
+        command.env("XDG_DATA_HOME", &child_data);
+        configure_process_group(&mut command);
+        let mut output = run_with_timeout(command, timeout)?;
+        output.elapsed_ms = start.elapsed().as_millis();
+        Ok(output)
+    };
 
-    let output = run_with_timeout(command, timeout)
-        .with_context(|| format!("run {plan_harness} harness"))?;
-    let elapsed_ms = start.elapsed().as_millis();
-    let transcript = format!(
-        "{}exit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}",
-        runtime_probe_transcript(&runtime_receipts),
-        output.status,
-        elapsed_ms,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let artifact_text = artifact_text_for_substrate(substrate, &output.stdout, &transcript);
+    let mut output = spawn_attempt(&args).with_context(|| format!("run {plan_harness} harness"))?;
     let telemetry = telemetry_for_substrate(substrate, &output.stdout);
-    let artifact = match extract_marked_artifact(&artifact_text) {
+    let mut transcript = runtime_probe_transcript(&runtime_receipts);
+    append_attempt_transcript(&mut transcript, "initial", None, &output);
+
+    // Read the emitted file and check it. While it is unacceptable, ask the same
+    // OpenCode session to fix it, carrying the exact reason. Bounded and
+    // fail-closed: only OpenCode can be re-asked (opencode_reask_args returns None
+    // otherwise), so omp/fixture get one shot and a still-bad artifact falls
+    // through to the validation gate below — never silently accepted.
+    let mut artifact_result = read_artifact_file(&out_path);
+    let mut attempt = 0;
+    while let Err(reason) = evaluate_emission(&artifact_result, request) {
+        if attempt >= MAX_REASK_RETRIES {
+            break;
+        }
+        let Some(reask_args) =
+            opencode_reask_args(substrate, &output.stdout, &reason, &out_path, &request_path)
+        else {
+            break;
+        };
+        attempt += 1;
+        output = spawn_attempt(&reask_args).with_context(|| "run opencode re-ask")?;
+        append_attempt_transcript(&mut transcript, "re-ask", Some(&reason), &output);
+        artifact_result = read_artifact_file(&out_path);
+    }
+
+    let artifact = match artifact_result {
         Ok(artifact) => artifact,
         Err(err) => {
             write_failure_transcript(failure_transcript, &transcript)?;
@@ -246,15 +288,135 @@ pub(crate) fn run_command_substrate(
     })
 }
 
+/// Read and parse the artifact the agent emitted to its out-path. A missing or
+/// unparseable file is an error (the agent never produced a deliverable), which
+/// the re-ask loop treats as a reason to ask again.
+fn read_artifact_file(out_path: &Path) -> Result<ReviewArtifact> {
+    let raw = fs::read_to_string(out_path)
+        .with_context(|| format!("read emitted review artifact {}", out_path.display()))?;
+    serde_json::from_str(&raw)
+        .with_context(|| format!("parse ReviewArtifact.v1 emitted at {}", out_path.display()))
+}
+
+/// Evaluate an emitted artifact: `Ok(())` if it parsed and validates against the
+/// request, `Err(reason)` carrying the exact failure to feed back into a re-ask
+/// so the agent fixes the real problem rather than guessing.
+fn evaluate_emission(
+    artifact_result: &Result<ReviewArtifact>,
+    request: &ReviewRequest,
+) -> std::result::Result<(), String> {
+    let artifact = artifact_result.as_ref().map_err(|err| {
+        format!("the artifact file was missing or not valid ReviewArtifact.v1 JSON ({err:#})")
+    })?;
+    validate_artifact_for_request(artifact, request)
+        .map_err(|err| format!("the artifact failed validation: {err}"))
+}
+
+/// First `sessionID` in an OpenCode JSON event stream — the run's root session.
+/// A session must exist before it can spawn a subagent, so the root's first event
+/// always precedes any child's. Even if that did not hold, continuing the wrong
+/// session would re-read a still-invalid file and fail closed, never silently
+/// accept.
+fn first_opencode_session_id(stdout: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(stdout).lines().find_map(|line| {
+        serde_json::from_str::<Value>(line)
+            .ok()?
+            .get("sessionID")
+            .and_then(Value::as_str)
+            .filter(|session| !session.is_empty())
+            .map(str::to_string)
+    })
+}
+
+/// Build the `opencode run --session <id>` re-ask that continues the review
+/// session (captured from its prior output) and asks it to rewrite the out-path,
+/// carrying the exact `reason`. Returns `None` for substrates that cannot
+/// continue a session (omp/fixture) or when no session id was emitted — either
+/// way the caller stops re-asking. This is the single gate that makes the re-ask
+/// OpenCode-only.
+fn opencode_reask_args(
+    substrate: CommandSubstrateConfig<'_>,
+    stdout: &[u8],
+    reason: &str,
+    out_path: &Path,
+    request_path: &Path,
+) -> Option<Vec<String>> {
+    let CommandSubstrateConfig::Opencode(config) = substrate else {
+        return None;
+    };
+    let session = first_opencode_session_id(stdout)?;
+    let message = format!(
+        "Your previous {filename} was rejected: {reason}. Fix exactly that problem and rewrite the COMPLETE corrected ReviewArtifact.v1 as a single raw JSON object to {out_path}, overwriting it. Write nothing else to that file — no Markdown fences, no prose.",
+        filename = ARTIFACT_FILENAME,
+        reason = reason,
+        out_path = out_path.display(),
+    );
+    let mut args = vec![
+        "run".to_string(),
+        message,
+        "--session".to_string(),
+        session,
+        "--format".to_string(),
+        "json".to_string(),
+        "--dir".to_string(),
+        out_path.parent().unwrap_or(out_path).display().to_string(),
+        "--file".to_string(),
+        request_path.display().to_string(),
+    ];
+    push_opencode_optional_flags(&mut args, config);
+    Some(args)
+}
+
+/// Append the optional `--model`/`--agent`/`--attach` flags an OpenCode run
+/// carries. Shared by the initial command and the re-ask so the two cannot drift.
+fn push_opencode_optional_flags(args: &mut Vec<String>, config: &OpenCodeSubstrateConfig) {
+    for (flag, value) in [
+        ("--model", &config.model),
+        ("--agent", &config.agent),
+        ("--attach", &config.attach),
+    ] {
+        if let Some(value) = value {
+            args.push(flag.to_string());
+            args.push(value.clone());
+        }
+    }
+}
+
+/// Append one attempt's command result to the running transcript. The re-ask
+/// reason is recorded so the evidence shows the exact error that was carried
+/// back into the next turn.
+fn append_attempt_transcript(
+    transcript: &mut String,
+    label: &str,
+    reason: Option<&str>,
+    output: &CommandOutput,
+) {
+    transcript.push_str(&format!("[attempt: {label}]\n"));
+    if let Some(reason) = reason {
+        transcript.push_str(&format!("re-ask reason: {reason}\n"));
+    }
+    transcript.push_str(&format!(
+        "exit_status: {}\nelapsed_ms: {}\n\n[stdout]\n{}\n\n[stderr]\n{}\n\n",
+        output.status,
+        output.elapsed_ms,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ));
+}
+
 fn command_for_substrate(
     substrate: CommandSubstrateConfig<'_>,
     input: CommandInput<'_>,
 ) -> Result<(String, Vec<String>, &'static str, &'static str)> {
     match substrate {
         CommandSubstrateConfig::Opencode(config) => {
-            let message =
-                build_opencode_message(input.request, input.capabilities, input.request_digest)
-                    .context("build opencode message")?;
+            let message = build_opencode_message(
+                input.request,
+                input.capabilities,
+                input.request_digest,
+                input.out_path,
+            )
+            .context("build opencode message")?;
             let mut args = vec![
                 "run".to_string(),
                 message,
@@ -265,18 +427,7 @@ fn command_for_substrate(
                 "--file".to_string(),
                 input.request_path.display().to_string(),
             ];
-            if let Some(model) = &config.model {
-                args.push("--model".to_string());
-                args.push(model.clone());
-            }
-            if let Some(agent) = &config.agent {
-                args.push("--agent".to_string());
-                args.push(agent.clone());
-            }
-            if let Some(attach) = &config.attach {
-                args.push("--attach".to_string());
-                args.push(attach.clone());
-            }
+            push_opencode_optional_flags(&mut args, config);
             Ok((
                 config.binary.clone(),
                 args,
@@ -433,6 +584,13 @@ impl RunWorkspace {
         set_private_permissions(&diff_path)?;
 
         if request.change.diff.body.trim().is_empty() {
+            // Degenerate path: an empty diff has nothing to review. The agent now
+            // emits its artifact into the workspace, so this fallback would write
+            // review-artifact.json into the real cwd. That is gated shut today —
+            // validate_request rejects an empty diff before any binary reaches the
+            // kernel — so it is unreachable in practice; only a library caller that
+            // skips validation could hit it. Removing the dead fallback/cwd
+            // plumbing is tracked in backlog 017.
             Ok(Self::with_packet_or_fallback(
                 fallback_cwd.to_path_buf(),
                 "fallback_empty_diff",
@@ -709,6 +867,7 @@ struct CommandInput<'a> {
     cwd: &'a Path,
     prompt_path: &'a Path,
     request_path: &'a Path,
+    out_path: &'a Path,
     request: &'a ReviewRequest,
     capabilities: &'a ContextCapabilities,
     request_digest: &'a str,
@@ -719,6 +878,7 @@ struct CommandOutput {
     status: String,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+    elapsed_ms: u128,
 }
 
 fn validate_process_status_matches_artifact(status: &str, artifact: &ReviewArtifact) -> Result<()> {
@@ -766,6 +926,7 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<CommandOu
                 status: status.to_string(),
                 stdout: read_capped_file(stdout_capture.path()).context("read stdout capture")?,
                 stderr: read_capped_file(stderr_capture.path()).context("read stderr capture")?,
+                elapsed_ms: 0,
             });
         }
         if start.elapsed() >= timeout {
@@ -775,6 +936,7 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<CommandOu
                 status: "timeout".to_string(),
                 stdout: read_capped_file(stdout_capture.path()).context("read stdout capture")?,
                 stderr: read_capped_file(stderr_capture.path()).context("read stderr capture")?,
+                elapsed_ms: 0,
             });
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -903,25 +1065,6 @@ fn kill_process_tree(child: &mut std::process::Child) {
 const OUTPUT_CAPTURE_CAP: usize = 64_000_000;
 const OUTPUT_TRUNCATION_MARKER: &[u8] = b"\n...[cerberus truncated middle]...\n";
 
-#[cfg(test)]
-fn cap_bytes(bytes: Vec<u8>) -> Vec<u8> {
-    if bytes.len() <= OUTPUT_CAPTURE_CAP {
-        return bytes;
-    }
-    let available = OUTPUT_CAPTURE_CAP.saturating_sub(OUTPUT_TRUNCATION_MARKER.len());
-    if available == 0 {
-        bytes[bytes.len() - OUTPUT_CAPTURE_CAP..].to_vec()
-    } else {
-        let head_len = available / 2;
-        let tail_len = available - head_len;
-        let mut capped = Vec::with_capacity(OUTPUT_CAPTURE_CAP);
-        capped.extend_from_slice(&bytes[..head_len]);
-        capped.extend_from_slice(OUTPUT_TRUNCATION_MARKER);
-        capped.extend_from_slice(&bytes[bytes.len() - tail_len..]);
-        capped
-    }
-}
-
 fn read_capped_file(path: &Path) -> Result<Vec<u8>> {
     let mut file = fs::File::open(path)?;
     let len = file.metadata()?.len() as usize;
@@ -951,41 +1094,6 @@ fn read_capped_file(path: &Path) -> Result<Vec<u8>> {
     file.read_exact(&mut tail)?;
     bytes.extend_from_slice(&tail);
     Ok(bytes)
-}
-
-fn artifact_text_for_substrate(
-    substrate: CommandSubstrateConfig<'_>,
-    stdout: &[u8],
-    transcript: &str,
-) -> String {
-    match substrate {
-        CommandSubstrateConfig::Opencode(_) => extract_opencode_text_events(stdout)
-            .filter(|text| !text.trim().is_empty())
-            .unwrap_or_else(|| transcript.to_string()),
-        CommandSubstrateConfig::Omp(_) => transcript.to_string(),
-    }
-}
-
-fn extract_opencode_text_events(stdout: &[u8]) -> Option<String> {
-    let raw = String::from_utf8_lossy(stdout);
-    let mut text = String::new();
-    for line in raw.lines() {
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(Value::as_str) != Some("text") {
-            continue;
-        }
-        if let Some(part_text) = value.pointer("/part/text").and_then(Value::as_str) {
-            text.push_str(part_text);
-            text.push('\n');
-        }
-    }
-    if text.trim().is_empty() {
-        None
-    } else {
-        Some(text)
-    }
 }
 
 fn telemetry_for_substrate(
@@ -1055,121 +1163,6 @@ fn unix_timestamp_string() -> String {
     format!("{seconds}")
 }
 
-pub fn extract_marked_artifact(transcript: &str) -> Result<ReviewArtifact> {
-    let mut candidates = Vec::new();
-    let marker_candidates =
-        extract_json_between_markers(transcript, ARTIFACT_BEGIN, ARTIFACT_END, "marker");
-    let xml_candidates = extract_json_between_markers(
-        transcript,
-        "<CERBERUS_REVIEW_ARTIFACT_V1>",
-        "</CERBERUS_REVIEW_ARTIFACT_V1>",
-        "xml",
-    );
-    let explicit_spans = marker_candidates
-        .iter()
-        .chain(xml_candidates.iter())
-        .map(|candidate| (candidate.start, candidate.end))
-        .collect::<Vec<_>>();
-    let raw_candidates = extract_unmarked_artifact_json(transcript, &explicit_spans);
-    let marker_count = marker_candidates.len();
-    let xml_count = xml_candidates.len();
-    let raw_count = raw_candidates.len();
-    candidates.extend(marker_candidates);
-    candidates.extend(xml_candidates);
-    candidates.extend(raw_candidates);
-
-    if candidates.len() != 1 {
-        let begin_count = transcript.matches(ARTIFACT_BEGIN).count();
-        let end_count = transcript.matches(ARTIFACT_END).count();
-        let xml_begin_count = transcript.matches("<CERBERUS_REVIEW_ARTIFACT_V1>").count();
-        let xml_end_count = transcript.matches("</CERBERUS_REVIEW_ARTIFACT_V1>").count();
-        return Err(anyhow!(
-            "expected exactly one ReviewArtifact.v1 candidate, found {marker_count} marker, {xml_count} xml, and {raw_count} raw candidates ({begin_count} begin markers, {end_count} end markers, {xml_begin_count} xml begin markers, {xml_end_count} xml end markers)"
-        ));
-    }
-    serde_json::from_str(&candidates.remove(0).json).context("parse ReviewArtifact.v1 block")
-}
-
-#[derive(Debug)]
-struct ArtifactCandidate {
-    json: String,
-    start: usize,
-    end: usize,
-}
-
-fn extract_json_between_markers(
-    transcript: &str,
-    begin: &str,
-    end: &str,
-    _format: &'static str,
-) -> Vec<ArtifactCandidate> {
-    let mut candidates = Vec::new();
-    let mut cursor = 0;
-    while let Some(relative_start) = transcript[cursor..].find(begin) {
-        let block_start = cursor + relative_start;
-        let content_start = block_start + begin.len();
-        let Some(relative_end) = transcript[content_start..].find(end) else {
-            break;
-        };
-        let content_end = content_start + relative_end;
-        let block_end = content_end + end.len();
-        let candidate = strip_markdown_json_fence(&transcript[content_start..content_end]);
-        if !candidate.is_empty() {
-            candidates.push(ArtifactCandidate {
-                json: candidate.to_string(),
-                start: block_start,
-                end: block_end,
-            });
-        }
-        cursor = block_end;
-    }
-    candidates
-}
-
-fn extract_unmarked_artifact_json(
-    transcript: &str,
-    excluded_spans: &[(usize, usize)],
-) -> Vec<ArtifactCandidate> {
-    let mut candidates = Vec::new();
-    for (start, _) in transcript.match_indices('{') {
-        if excluded_spans
-            .iter()
-            .any(|(span_start, span_end)| start >= *span_start && start < *span_end)
-        {
-            continue;
-        }
-        let slice = &transcript[start..];
-        let mut deserializer = serde_json::Deserializer::from_str(slice);
-        let Ok(value) = Value::deserialize(&mut deserializer) else {
-            continue;
-        };
-        if value.get("schema_version").and_then(Value::as_str) == Some(REVIEW_ARTIFACT_SCHEMA) {
-            candidates.push(ArtifactCandidate {
-                json: value.to_string(),
-                start,
-                end: start,
-            });
-        }
-    }
-    candidates
-}
-
-fn strip_markdown_json_fence(raw: &str) -> &str {
-    let trimmed = raw.trim();
-    let Some(without_prefix) = trimmed.strip_prefix("```") else {
-        return trimmed;
-    };
-    let without_language = without_prefix
-        .strip_prefix("json")
-        .or_else(|| without_prefix.strip_prefix("JSON"))
-        .unwrap_or(without_prefix)
-        .trim_start_matches([' ', '\t', '\r', '\n']);
-    without_language
-        .strip_suffix("```")
-        .unwrap_or(without_language)
-        .trim()
-}
-
 #[cfg(unix)]
 fn set_private_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -1201,13 +1194,144 @@ fn set_private_directory_permissions(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prompt::{ARTIFACT_BEGIN, ARTIFACT_END};
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    fn test_request() -> ReviewRequest {
+        serde_json::from_value::<ReviewRequest>(serde_json::json!({
+            "schema_version": "cerberus.review_request.v1",
+            "request_id": "req-1",
+            "source": {"kind": "fixture", "metadata": {}},
+            "change": {
+                "title": "change",
+                "diff": {"format": "unified", "body": "diff --git a/src/lib.rs b/src/lib.rs\n"},
+                "files": []
+            },
+            "context": {},
+            "policy": {}
+        }))
+        .unwrap()
+    }
+
     #[test]
-    fn rejects_missing_marker_block() {
-        assert!(extract_marked_artifact("{}").is_err());
+    fn reads_artifact_emitted_to_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let out_path = temp.path().join(ARTIFACT_FILENAME);
+        fs::write(&out_path, minimal_artifact_json()).unwrap();
+
+        let artifact = read_artifact_file(&out_path).unwrap();
+
+        assert_eq!(artifact.request_id, "req-1");
+    }
+
+    #[test]
+    fn missing_emission_file_is_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(read_artifact_file(&temp.path().join("absent.json")).is_err());
+    }
+
+    #[test]
+    fn unparseable_emission_file_is_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let out_path = temp.path().join(ARTIFACT_FILENAME);
+        fs::write(&out_path, "this is not a review artifact").unwrap();
+
+        assert!(read_artifact_file(&out_path).is_err());
+    }
+
+    #[test]
+    fn captures_root_session_id_from_opencode_events() {
+        let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\",\"part\":{}}\n{\"type\":\"step_finish\",\"sessionID\":\"ses_root\"}\n";
+
+        assert_eq!(
+            first_opencode_session_id(stdout).as_deref(),
+            Some("ses_root")
+        );
+    }
+
+    #[test]
+    fn evaluate_emission_carries_the_validation_error() {
+        let request = test_request();
+        // Parses fine but its request_digest cannot match the request digest.
+        let artifact: ReviewArtifact = serde_json::from_str(&minimal_artifact_json()).unwrap();
+
+        let reason = evaluate_emission(&Ok(artifact), &request).unwrap_err();
+
+        assert!(
+            reason.contains("failed validation"),
+            "reason should name the validation failure: {reason}"
+        );
+        assert!(
+            reason.contains("request digest"),
+            "reason should carry the exact validator message: {reason}"
+        );
+    }
+
+    #[test]
+    fn evaluate_emission_carries_the_parse_error() {
+        let request = test_request();
+        let parse_error = read_artifact_file(Path::new("/cerberus/does-not-exist.json"));
+
+        let reason = evaluate_emission(&parse_error, &request).unwrap_err();
+
+        assert!(
+            reason.contains("missing or not valid"),
+            "reason should explain the file was unusable: {reason}"
+        );
+    }
+
+    #[test]
+    fn evaluate_emission_accepts_a_valid_artifact() {
+        let request = test_request();
+        let mut artifact: ReviewArtifact = serde_json::from_str(&minimal_artifact_json()).unwrap();
+        artifact.request_id = request.request_id.clone();
+        artifact.request_digest = request_digest(&request).unwrap();
+        artifact.context_capabilities = ContextCapabilities::from_request(&request);
+
+        assert!(evaluate_emission(&Ok(artifact), &request).is_ok());
+    }
+
+    #[test]
+    fn opencode_reask_continues_the_session_and_names_the_out_path() {
+        let config = test_opencode_config();
+        let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\"}\n";
+        let out_path = Path::new("/work/repo/review-artifact.json");
+        let request_path = Path::new("/tmp/cerberus/review-request.json");
+
+        let args = opencode_reask_args(
+            CommandSubstrateConfig::Opencode(&config),
+            stdout,
+            "the artifact failed validation: artifact request digest mismatch",
+            out_path,
+            request_path,
+        )
+        .unwrap();
+
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--session", "ses_root"]));
+        assert!(args.windows(2).any(|pair| pair == ["--format", "json"]));
+        assert!(args.windows(2).any(|pair| pair == ["--dir", "/work/repo"]));
+        let message = &args[1];
+        assert!(message.contains("/work/repo/review-artifact.json"));
+        assert!(message.contains("request digest mismatch"));
+    }
+
+    #[test]
+    fn omp_substrate_cannot_be_re_asked() {
+        let config = OmpSubstrateConfig {
+            binary: "omp".to_string(),
+            model: None,
+        };
+        let stdout = b"{\"type\":\"step_start\",\"sessionID\":\"ses_root\"}\n";
+        assert!(opencode_reask_args(
+            CommandSubstrateConfig::Omp(&config),
+            stdout,
+            "reason",
+            Path::new("/work/review-artifact.json"),
+            Path::new("/tmp/request.json"),
+        )
+        .is_none());
     }
 
     #[cfg(unix)]
@@ -1284,149 +1408,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_multiple_marker_blocks() {
-        let artifact = minimal_artifact_json();
-        let transcript = format!(
-            "{begin}{artifact}{end}\n{begin}{artifact}{end}",
-            begin = ARTIFACT_BEGIN,
-            artifact = artifact,
-            end = ARTIFACT_END
-        );
-        assert!(extract_marked_artifact(&transcript).is_err());
-    }
-
-    #[test]
-    fn rejects_marker_and_xml_artifact_candidates_together() {
-        let artifact = minimal_artifact_json();
-        let transcript = format!(
-            "{begin}{artifact}{end}\n<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>",
-            begin = ARTIFACT_BEGIN,
-            artifact = artifact,
-            end = ARTIFACT_END
-        );
-        assert!(extract_marked_artifact(&transcript).is_err());
-    }
-
-    #[test]
-    fn rejects_marker_and_raw_artifact_candidates_together() {
-        let artifact = minimal_artifact_json();
-        let transcript = format!(
-            "{begin}{artifact}{end}\n{artifact}",
-            begin = ARTIFACT_BEGIN,
-            artifact = artifact,
-            end = ARTIFACT_END
-        );
-        assert!(extract_marked_artifact(&transcript).is_err());
-    }
-
-    #[test]
-    fn rejects_multiple_xml_artifact_candidates() {
-        let artifact = minimal_artifact_json();
-        let transcript = format!(
-            "<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>\n<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>",
-            artifact = artifact
-        );
-        assert!(extract_marked_artifact(&transcript).is_err());
-    }
-
-    #[test]
-    fn rejects_xml_and_raw_artifact_candidates_together() {
-        let artifact = minimal_artifact_json();
-        let transcript = format!(
-            "<CERBERUS_REVIEW_ARTIFACT_V1>{artifact}</CERBERUS_REVIEW_ARTIFACT_V1>\n{artifact}",
-            artifact = artifact
-        );
-        assert!(extract_marked_artifact(&transcript).is_err());
-    }
-
-    #[test]
-    fn rejects_multiple_raw_artifact_candidates() {
-        let artifact = minimal_artifact_json();
-        let transcript = format!("first\n{artifact}\nsecond\n{artifact}", artifact = artifact);
-        assert!(extract_marked_artifact(&transcript).is_err());
-    }
-
-    #[test]
-    fn extracts_artifact_inside_markdown_json_fence() {
-        let transcript = format!(
-            "{begin}\n```json\n{json}\n```\n{end}",
-            begin = ARTIFACT_BEGIN,
-            json = minimal_artifact_json(),
-            end = ARTIFACT_END
-        );
-        assert_eq!(
-            extract_marked_artifact(&transcript).unwrap().request_id,
-            "req-1"
-        );
-    }
-
-    #[test]
-    fn extracts_artifact_from_opencode_xml_wrapper_variant() {
-        let transcript = format!(
-            "```json\n<CERBERUS_REVIEW_ARTIFACT_V1>\n{json}\n</CERBERUS_REVIEW_ARTIFACT_V1>\n```",
-            json = minimal_artifact_json()
-        );
-        assert_eq!(
-            extract_marked_artifact(&transcript).unwrap().request_id,
-            "req-1"
-        );
-    }
-
-    #[test]
-    fn extracts_unmarked_review_artifact_json_from_prose() {
-        let transcript = format!(
-            "Here is the review.\n```json\n{json}\n```\nDone.",
-            json = minimal_artifact_json()
-        );
-        assert_eq!(
-            extract_marked_artifact(&transcript).unwrap().request_id,
-            "req-1"
-        );
-    }
-
-    #[test]
-    fn extracts_raw_review_artifact_json_after_prose_prefix() {
-        let transcript = format!(
-            "I have enough evidence.\n\n{json}",
-            json = minimal_artifact_json()
-        );
-
-        assert_eq!(
-            extract_marked_artifact(&transcript).unwrap().request_id,
-            "req-1"
-        );
-    }
-
-    #[test]
-    fn opencode_json_events_are_reduced_to_text_before_artifact_scan() {
-        let artifact = minimal_artifact_json();
-        let event = serde_json::json!({
-            "type": "text",
-            "part": {
-                "text": format!(
-                    "{begin}\n{artifact}\n{end}",
-                    begin = ARTIFACT_BEGIN,
-                    artifact = artifact,
-                    end = ARTIFACT_END
-                )
-            }
-        });
-        let stdout = format!(
-            "{{\"type\":\"start\"}}\n{}\nnot json\n",
-            serde_json::to_string(&event).unwrap()
-        );
-        let config = test_opencode_config();
-        let text = artifact_text_for_substrate(
-            CommandSubstrateConfig::Opencode(&config),
-            stdout.as_bytes(),
-            "fallback",
-        );
-        assert!(text.contains(ARTIFACT_BEGIN));
-        assert!(!text.contains("\"type\":\"text\""));
-        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
-    }
-
-    #[test]
     fn bare_substrate_binary_resolves_only_from_trusted_search_path() {
         let temp = tempfile::tempdir().unwrap();
         let hostile_dir = temp.path().join("hostile-bin");
@@ -1460,52 +1441,6 @@ mod tests {
 
     #[cfg(not(unix))]
     fn set_executable(_path: &Path) {}
-
-    #[test]
-    fn opencode_artifact_scan_falls_back_to_transcript_without_text_events() {
-        let stdout = b"{\"type\":\"start\"}\n{\"type\":\"end\"}\n";
-        let transcript = format!(
-            "{begin}\n{artifact}\n{end}",
-            begin = ARTIFACT_BEGIN,
-            artifact = minimal_artifact_json(),
-            end = ARTIFACT_END
-        );
-
-        let config = test_opencode_config();
-        let text = artifact_text_for_substrate(
-            CommandSubstrateConfig::Opencode(&config),
-            stdout,
-            &transcript,
-        );
-
-        assert_eq!(text, transcript);
-        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
-    }
-
-    #[test]
-    fn opencode_artifact_survives_large_stdout_tail_capture() {
-        let artifact = minimal_artifact_json();
-        let event = serde_json::json!({
-            "type": "text",
-            "part": {
-                "text": artifact
-            }
-        });
-        let mut stdout = vec![b'a'; OUTPUT_CAPTURE_CAP + 250_000];
-        stdout.extend_from_slice(b"\n");
-        stdout.extend_from_slice(serde_json::to_string(&event).unwrap().as_bytes());
-        stdout.extend_from_slice(b"\n");
-
-        let capped = cap_bytes(stdout);
-        assert!(String::from_utf8_lossy(&capped).contains("cerberus truncated middle"));
-        let config = test_opencode_config();
-        let text = artifact_text_for_substrate(
-            CommandSubstrateConfig::Opencode(&config),
-            &capped,
-            "fallback",
-        );
-        assert_eq!(extract_marked_artifact(&text).unwrap().request_id, "req-1");
-    }
 
     #[cfg(unix)]
     #[test]
@@ -1615,6 +1550,7 @@ mod tests {
                 cwd: Path::new("/work/repo"),
                 prompt_path: Path::new("/tmp/cerberus-test/master-prompt.md"),
                 request_path: Path::new("/tmp/cerberus-test/review-request.json"),
+                out_path: Path::new("/work/repo/review-artifact.json"),
                 request: &request,
                 capabilities: &capabilities,
                 request_digest: &request_digest,
@@ -1638,6 +1574,11 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--attach", "http://127.0.0.1:4096"]));
+        assert!(
+            args.iter()
+                .any(|arg| arg.contains("/work/repo/review-artifact.json")),
+            "the opencode message must name the artifact out-path"
+        );
     }
 
     fn test_opencode_config() -> OpenCodeSubstrateConfig {
