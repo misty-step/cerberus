@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Plan 016: Review Emission — emit, validate, re-ask</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #151515; background: #fff; }
+    main { width: min(84rem, calc(100% - 3rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+    header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.55fr); gap: 2rem; align-items: end; border-bottom: 1px solid #d8dde3; padding-bottom: 1.5rem; }
+    h1 { margin: 0; font-size: clamp(2.2rem, 4.3vw, 4.2rem); line-height: 0.98; }
+    h2 { margin: 0 0 0.75rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    h3 { margin: 1.5rem 0 0.5rem; font-size: 1.05rem; }
+    p, li { line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+    pre { background: #14171a; color: #e8edf2; padding: 1rem; overflow-x: auto; font-size: 0.84rem; line-height: 1.45; }
+    .muted { color: #606872; }
+    .panel { border: 1px solid #d8dde3; background: #f5f7f9; padding: 1rem; }
+    .flag { border-left: 4px solid #c0392b; background: #fcf3f2; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .win { border-left: 4px solid #1e7e45; background: #f1f8f3; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #d8dde3; border: 1px solid #d8dde3; margin-top: 1.5rem; }
+    .cell { background: #fff; padding: 1rem; }
+    .cell.em { background: #f5f7f9; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; font-size: 0.9rem; }
+    th, td { border: 1px solid #d8dde3; padding: 0.5rem 0.65rem; text-align: left; vertical-align: top; }
+    th { background: #f5f7f9; }
+    .phase { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; border-top: 1px solid #d8dde3; padding: 0.85rem 0; }
+    .phase b { font-size: 0.95rem; }
+    @media (max-width: 900px) { main { width: min(100% - 2rem, 84rem); } header, .grid, .two, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <section>
+        <p class="muted">Backlog 016 / Review Emission · supersedes the "structured output" and "custom MCP" framings</p>
+        <h1>Stop fighting the model into a format. Emit, validate, re-ask.</h1>
+        <p>Today the agent must type the whole review as one JSON blob in its final message, and a defensive marker/XML/raw parser tries to recover it (it has failed twice live). Three drafts converged — structured output (OpenCode can't), a custom MCP tool surface (overkill for one agent we control) — onto the simplest thing that works: the agent writes the artifact to a <strong>file with its existing write tool</strong>, Cerberus validates it, and on failure <strong>continues the OpenCode session with the exact error</strong> and asks it to fix. The caller-neutral <code>ReviewArtifact.v1</code> stays; <code>post.rs</code> keeps posting. No MCP, no new dependency. This change <strong>deletes more than it adds.</strong></p>
+      </section>
+      <aside class="panel">
+        <h2>Chosen Design</h2>
+        <p><strong>Emit:</strong> agent writes <code>ReviewArtifact.v1</code> JSON to <code>&lt;workspace&gt;/review-artifact.json</code> (its existing write tool); harness reads + <code>serde</code>-parses it.</p>
+        <p><strong>Re-ask:</strong> validate against the request; on miss/invalid, <code>opencode run --session &lt;id&gt; "&lt;exact error&gt;, fix and rewrite"</code>, ≤2 retries.</p>
+        <p><strong>Delete:</strong> the marker/XML/raw extraction (<code>extract_marked_artifact</code> et al.) + the <code>ARTIFACT_BEGIN/END</code> markers + the ~1800-char prompt lecture.</p>
+        <p><strong>Unchanged:</strong> the artifact contract, <code>validation.rs</code>, and <code>post.rs</code> (Cerberus still posts; agent never touches GitHub).</p>
+      </aside>
+    </header>
+
+    <div class="win">
+      <strong>Why keep the neutral artifact (it is not premature).</strong> A thin typed data object is Fowler's explicit YAGNI <em>exemption</em> — cheap even at one consumer, testable by value, no GitHub mock. It is exactly the layer that gives idempotency + validation <em>for free</em> — the very things direct-posters had to rebuild (reviewdog/Danger built dedup because naive posting stacks duplicates; GitHub's own review MCP silently drops comments on bad line numbers). Every mature reviewer (PR-Agent — 9 providers behind one interface; CodeRabbit; Greptile) produces-then-posts and treats the host call as a dumb sink. We are already in good company; we keep `post.rs`.
+    </div>
+
+    <div class="flag">
+      <strong>What we deliberately defer / reject.</strong> The multi-destination <em>adapter framework</em> waits for a real second consumer (rule of three — we have one GitHub adapter, that is plenty; building the abstraction now is the textbook wrong-abstraction). We do <strong>not</strong> hand the agent a GitHub-writing tool (loses idempotency/validation and makes Cerberus GitHub-only). And the custom MCP is dropped: for a single agent we control, MCP and write-a-file <em>terminate at the same validator</em> — MCP's only edge is cross-process reuse we don't need yet.
+    </div>
+
+    <section class="grid">
+      <article class="cell"><h2>Standards</h2><p>Per ADR 0003: the artifact contract + validation stay deterministic (oracle-checkable); <em>reliable emission</em> is harness engineering (re-ask), not a quality gate. Agnostic: the agent never knows the destination.</p></article>
+      <article class="cell"><h2>Acceptance</h2><p>A malformed-then-corrected emission fixture proves the re-ask loop recovers; the live dogfood self-review produces a valid, posted artifact with the old parser deleted.</p></article>
+      <article class="cell"><h2>Verify</h2><p><code>./scripts/verify.sh</code> green (fixture + OMP paths moved to file emission); a unit test drives the re-ask loop; one real <code>review-pr</code> dogfood.</p></article>
+      <article class="cell em"><h2>Stop / waiver</h2><p>If OpenCode session continuation (<code>--session</code>) proves unreliable for the re-ask turn, fall back to a fresh run that re-states prior findings, or cap at one retry — don't silently accept an invalid artifact.</p></article>
+    </section>
+
+    <section class="two">
+      <article>
+        <h2>Change Shape (ordered)</h2>
+        <ul>
+          <li><b>M1 — file emission + delete the parser.</b> Slim <code>build_opencode_message</code> (prompt.rs): drop the field-by-field JSON lecture + marker rules; instruct "write your final <code>ReviewArtifact.v1</code> JSON to <code>&lt;out-path&gt;</code>." Harness reads the file and <code>serde</code>-parses it. <strong>Delete</strong> <code>extract_marked_artifact</code> / <code>extract_opencode_text_events</code> / <code>extract_json_between_markers</code> / <code>extract_unmarked_artifact_json</code> (harness.rs:969–1090) + the <code>ARTIFACT_BEGIN/END</code> constants. Move the fixture + OMP emission to write the artifact file too (their tests follow). verify.sh green.</li>
+          <li><b>M2 — validate-and-re-ask loop.</b> Move <code>validate_artifact_for_request</code> into the run loop (today post-hoc at main.rs:365/447). Capture the OpenCode <code>sessionID</code> from the JSON events; on missing/invalid artifact, <code>opencode run --session &lt;id&gt; "&lt;validation error&gt;: fix and rewrite &lt;out-path&gt;"</code>; re-read + re-validate; <strong>≤2 retries</strong>, then fail. The loop belongs where request + harness + validator meet (kernel or a thin orchestration layer); the harness gains "continue this session with a message."</li>
+        </ul>
+      </article>
+      <article>
+        <h2>Alternatives</h2>
+        <table>
+          <tr><th>Path</th><th>Why it fails / verdict</th></tr>
+          <tr><td><b>File emit + validate-and-re-ask</b></td><td>Simplest reliable path; deletes the parser; no deps; keeps neutrality. <b>Choose.</b></td></tr>
+          <tr><td>Custom MCP submit tools</td><td>Same validator endpoint; overkill for one agent we control; adds rmcp+tokio to a lean sync codebase. <b>Reject (research).</b></td></tr>
+          <tr><td>Agent posts via GitHub MCP / <code>gh</code></td><td>Drops the neutral artifact → GitHub-only; loses idempotency/validation (GitHub's MCP silently drops bad-line comments). <b>Reject.</b></td></tr>
+          <tr><td>Provider structured output (<code>response_format</code>)</td><td>OpenCode doesn't expose it; contested in agent loops anyway. <b>Reject (infeasible).</b></td></tr>
+          <tr><td><em>Boring: keep the JSON-blob final message + re-ask</em></td><td>Works, but the final-message text is ambiguous (which span is the artifact?) and keeps the fuzzy parser. A file is unambiguous. <b>Reject the blob; keep the re-ask idea.</b></td></tr>
+        </table>
+      </article>
+    </section>
+
+    <h3>Oracle — executable definition of done</h3>
+<pre>## 1. Re-ask recovers (THE test, deterministic)
+# a fixture "agent" that writes an INVALID artifact on attempt 1 and a VALID one on attempt 2
+# -> the review succeeds; the transcript shows the re-ask carried the exact validation error.
+
+## 2. Parser is gone
+rg -n 'extract_marked_artifact|ARTIFACT_BEGIN|extract_unmarked_artifact_json' src/   # -> no production hits
+
+## 3. No regression + no new deps
+./scripts/verify.sh            # green (fixture + OMP paths on file emission)
+git diff Cargo.toml            # no new dependency
+
+## 4. Live dogfood (operator-gated)
+cargo run -- review-pr --number <PR> --repo misty-step/cerberus --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY --timeout-seconds 1800 --post
+# valid artifact posted; if the first emission was invalid, the receipt/transcript shows a recovered retry.</pre>
+
+    <h3>Verification System</h3>
+    <div class="panel">
+      <p><b>Claim:</b> the agent reliably yields a valid <code>ReviewArtifact.v1</code> via file emission + a bounded validate-and-re-ask loop, with the defensive parser deleted and no new dependency.</p>
+      <p><b>Falsifier:</b> an invalid first emission is silently accepted; the re-ask doesn't carry the real validation error; verify.sh regresses; a new dep appears; the agent can reach GitHub directly.</p>
+      <p><b>Driver:</b> the malformed-then-corrected fixture through the review path (deterministic) + one real <code>review-pr</code> dogfood.</p>
+      <p><b>Grader:</b> the fixture review succeeds only via the retry; <code>rg</code> shows the parser gone; <code>verify.sh</code> exit 0; the dogfood posts a valid artifact.</p>
+      <p><b>Evidence packet:</b> the fixture + its transcript showing the carried error; the dogfood artifact/receipt under <code>target/cerberus/</code>.</p>
+      <p><b>Cadence:</b> the fixture in <code>verify.sh</code> always; the dogfood on prompt/emission change.</p>
+      <p><b>Gaps/waiver:</b> faithfulness/quality is out of scope (that's 015); this is about *valid structure*, reliably.</p>
+    </div>
+
+    <h3>Milestones</h3>
+    <div class="phase"><b>M1 · Emit</b><div>File emission + delete the parser/markers + slim the prompt + move fixture/OMP to file emission. Net-neutral on reliability, big on simplicity. <em>Gate: verify.sh green, parser gone.</em></div></div>
+    <div class="phase"><b>M2 · Re-ask</b><div>Validate-in-loop + OpenCode session-continue retry (≤2) carrying the exact error. The reliability win. <em>Gate: malformed-then-corrected fixture recovers.</em></div></div>
+
+    <h3>Risks + Rollout</h3>
+    <table>
+      <tr><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td>OpenCode <code>--session</code> continuation doesn't reliably resume for the re-ask turn</td><td>Spike it in M2 first; fallback = a fresh run that re-states prior findings, or cap at 1 retry. Never accept an invalid artifact.</td></tr>
+      <tr><td>Fixture/OMP ripple is bigger than expected (tests on marker extraction)</td><td>M1 explicitly owns moving those to file emission + updating their tests; verify.sh is the gate.</td></tr>
+      <tr><td>Retry cost/latency (extra model turns)</td><td>Cap at 2 (research: &gt;99% recovered by the 2nd; the 3rd is wasted tokens); the retry only fires on a real failure.</td></tr>
+      <tr><td>Agent writes the file outside the workspace / wrong path</td><td>Out-path is inside the <code>--dir</code> workspace; the prompt states the exact path; missing file triggers a re-ask.</td></tr>
+      <tr><td><b>Rollback</b></td><td>Prompt + harness change + deleted code; no schema/contract/dep change. Revert the commit; the contract + post.rs are untouched.</td></tr>
+    </table>
+
+    <h3>Adversarial Review Focus</h3>
+    <p class="muted">For <code>/deliver</code>'s diverse-provider review (artifact + oracle only): (1) Does deleting the marker/XML/raw parser lose a real recovery path the file approach doesn't cover (e.g., the agent writes the file <em>and</em> chatters JSON)? (2) Is the re-ask loop bounded and fail-closed — can it ever silently accept invalid, or loop unbounded on a stubborn model? (3) Does moving validation into the loop change any existing behavior at main.rs:365/447 (degraded/skip lifecycle, posting decisions)? (4) Did the fixture/OMP move to file emission actually keep verify.sh's adversarial cases (overstated tier, duplicate artifact) meaningful?</p>
+
+    <h3>Premise Source</h3>
+    <p class="muted">Operator session 2026-06-23/24: questioned whether a custom tool is needed vs. stitching existing tools; research lane (PR-Agent/CodeRabbit/reviewdog produce-then-post + agnostic; custom MCP overkill for a single agent; validate-and-re-ask ~80%/&gt;99% recovery; Fowler YAGNI exemption; Metz wrong-abstraction). No durable transcript stored — explicit waiver. Grounding:</p>
+    <ul class="muted">
+      <li><code>sha256:eebd05db29f7dcdab5b3000f82ac69483112e62b275ec3af5b838c6741ea2009 spec.md</code></li>
+      <li><code>sha256:01105c3b622f3d4fdd7feedefaf5d13ab4753abb8f4a685e12d4a0f2e7983899 VISION.md</code></li>
+      <li><code>sha256:44ae1b380aa17e1c1ac624c2b4dc377efef405d17b7928f1d3edf2b31643eaaf docs/adr/0003-deterministic-waist-vs-model-judgment.md</code></li>
+    </ul>
+  </main>
+</body>
+</html>
