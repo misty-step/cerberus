@@ -523,19 +523,19 @@ struct GhPullRequest {
 #[derive(Debug, Deserialize)]
 struct GhPrFile {
     path: String,
-    #[serde(rename = "changeType")]
-    change_type: String,
+    #[serde(default, rename = "changeType")]
+    change_type: Option<String>,
     additions: Option<u32>,
     deletions: Option<u32>,
 }
 
 impl From<GhPrFile> for ChangedFile {
     fn from(file: GhPrFile) -> Self {
-        let status = match file.change_type.as_str() {
-            "ADDED" => FileStatus::Added,
-            "DELETED" => FileStatus::Removed,
-            "RENAMED" => FileStatus::Renamed,
-            "COPIED" => FileStatus::Copied,
+        let status = match file.change_type.as_deref() {
+            Some("ADDED") => FileStatus::Added,
+            Some("DELETED") => FileStatus::Removed,
+            Some("RENAMED") => FileStatus::Renamed,
+            Some("COPIED") => FileStatus::Copied,
             _ => FileStatus::Modified,
         };
         Self {
@@ -623,6 +623,36 @@ mod tests {
             parse_github_slug("git@github.com:misty-step/cerberus.git"),
             Some("misty-step/cerberus".to_string())
         );
+    }
+
+    #[test]
+    fn treats_missing_github_file_change_type_as_modified() {
+        let pr: GhPullRequest = serde_json::from_str(
+            r#"{
+                "number": 7,
+                "title": "title",
+                "body": null,
+                "url": "https://github.com/example/fixture/pull/7",
+                "baseRefName": "main",
+                "baseRefOid": "def456",
+                "headRefName": "branch",
+                "headRefOid": "abc123",
+                "files": [
+                    {
+                        "path": "src/lib.rs",
+                        "additions": 3,
+                        "deletions": 1
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let file = ChangedFile::from(pr.files.into_iter().next().unwrap());
+        assert_eq!(file.path, "src/lib.rs");
+        assert_eq!(file.status, FileStatus::Modified);
+        assert_eq!(file.additions, Some(3));
+        assert_eq!(file.deletions, Some(1));
     }
 
     #[test]
