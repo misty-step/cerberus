@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Plan 018: Agent-native review handoff</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #151515; background: #fff; }
+    main { width: min(84rem, calc(100% - 3rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+    header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.55fr); gap: 2rem; align-items: end; border-bottom: 1px solid #d8dde3; padding-bottom: 1.5rem; }
+    h1 { margin: 0; font-size: clamp(2.1rem, 4vw, 3.8rem); line-height: 1.0; }
+    h2 { margin: 0 0 0.75rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    h3 { margin: 1.5rem 0 0.5rem; font-size: 1.05rem; }
+    p, li { line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+    pre { background: #14171a; color: #e8edf2; padding: 1rem; overflow-x: auto; font-size: 0.84rem; line-height: 1.45; }
+    .muted { color: #606872; }
+    .panel { border: 1px solid #d8dde3; background: #f5f7f9; padding: 1rem; }
+    .win { border-left: 4px solid #1e7e45; background: #f1f8f3; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .flag { border-left: 4px solid #c0392b; background: #fcf3f2; padding: 0.75rem 1rem; margin: 1.5rem 0; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #d8dde3; border: 1px solid #d8dde3; margin-top: 1.5rem; }
+    .cell { background: #fff; padding: 1rem; }
+    .cell.em { background: #f5f7f9; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; font-size: 0.9rem; }
+    th, td { border: 1px solid #d8dde3; padding: 0.5rem 0.65rem; text-align: left; vertical-align: top; }
+    th { background: #f5f7f9; }
+    .phase { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; border-top: 1px solid #d8dde3; padding: 0.85rem 0; }
+    .phase b { font-size: 0.95rem; }
+    @media (max-width: 900px) { main { width: min(100% - 2rem, 84rem); } header, .grid, .two, .phase { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <section>
+        <p class="muted">Backlog 018 / Agent-native handoff · the primary form factor, made first-class</p>
+        <h1>Spawn Cerberus. Read the review. Branch on the exit code.</h1>
+        <p>The way Cerberus is actually used on our own repos: an agent working in the repo dispatches it as a subprocess, gets a review of the current changes, and decides what's blocking. The engine already produces the review — <code>cerberus review</code> → <code>ReviewArtifact.v1</code> + <code>render_markdown</code>. Two gaps make it clumsy: <strong>(1) a <code>FAIL</code> verdict still exits 0</strong>, so an agent can't gate without parsing; <strong>(2) reviewing a local range is a two-command dance</strong> through a temp request file. Close both: a verdict-gated exit code, and one no-GitHub command that hands the review back on stdout. No token, no posting — that's the consumer's layer (014).</p>
+      </section>
+      <aside class="panel">
+        <h2>Chosen Design</h2>
+        <p><strong>Gate:</strong> <code>--fail-on &lt;none|warn|fail&gt;</code> on <code>review</code> + <code>review-diff</code>. Exit <code>0</code> proceed · <code>1</code> blocking verdict · <code>2</code> Cerberus error.</p>
+        <p><strong>Entry:</strong> <code>cerberus review-diff --base &lt;ref&gt; [--head HEAD]</code> fuses <code>build_git_range_request</code> + kernel + render; review markdown to <strong>stdout</strong> by default.</p>
+        <p><strong>Reuse:</strong> no new review logic — request-builder, <code>ReviewKernel</code>, <code>render_markdown</code> unchanged.</p>
+        <p><strong>Out of scope:</strong> GitHub/posting (014); MCP wrapper (later); uncommitted working-tree diff (follow-on).</p>
+      </aside>
+    </header>
+
+    <div class="win">
+      <strong>Why exit codes, not just the artifact.</strong> Prior art is unanimous — reviewdog <code>-fail-level</code>, linters, Claude Code hooks: an orchestrating agent needs two channels, the full machine-readable review <em>and</em> a one-bit block/proceed signal. The load-bearing subtlety: a blocking verdict (a <em>successful</em> review that found issues) must be distinguishable from a tool error (no review produced). Today both would collide on exit 1, so this moves tool errors to <strong>exit 2</strong> and reserves <strong>exit 1</strong> for "blocked — read the review."
+    </div>
+
+    <section class="grid">
+      <article class="cell"><h2>Standards</h2><p>Caller-neutral artifact + a host-neutral handoff. No GitHub, no token in this path. <code>ReviewRequest.v1 → ReviewArtifact.v1</code> and <code>validation.rs</code> untouched; existing <code>review</code> stays back-compatible without <code>--fail-on</code>.</p></article>
+      <article class="cell"><h2>Acceptance</h2><p>A fixture exit-code matrix in <code>verify.sh</code> (PASS/WARN/FAIL × <code>--fail-on</code> × error path) plus one live <code>review-diff</code> on a real branch returning review-on-stdout + a branchable code.</p></article>
+      <article class="cell"><h2>Verify</h2><p><code>./scripts/verify.sh</code> green; each fixture's <code>$?</code> equals the matrix; stdout carries only the review; <code>review-diff --help</code> + a README handoff section exist.</p></article>
+      <article class="cell em"><h2>Stop / waiver</h2><p>If "diff" misleads toward uncommitted changes, rename <code>review-diff</code> → <code>review-range</code>. Keep this a dumb handoff — measuring review <em>quality</em> is Daedalus, not here.</p></article>
+    </section>
+
+    <section class="two">
+      <article>
+        <h2>Exit-code contract (load-bearing)</h2>
+        <table>
+          <tr><th>Exit</th><th>Means</th><th>When</th></tr>
+          <tr><td><b>0</b></td><td>clean / proceed</td><td>valid artifact; verdict below <code>--fail-on</code> (or <code>none</code>, default)</td></tr>
+          <tr><td><b>1</b></td><td>blocking — read it</td><td>valid artifact; verdict ≥ threshold (<code>fail</code>⇒FAIL; <code>warn</code>⇒WARN/FAIL)</td></tr>
+          <tr><td><b>2</b></td><td>Cerberus error</td><td>harness/validation/IO failure; untrusted lifecycle; no valid artifact</td></tr>
+        </table>
+        <p class="muted">SKIP ("couldn't review") is not blocking ⇒ exit 0 unless explicitly gated; the agent reads the verdict field for nuance. Today <code>main()</code> returns <code>Result</code> (Err⇒1); introduce explicit <code>process::exit</code> codes.</p>
+      </article>
+      <article>
+        <h2>Alternatives</h2>
+        <table>
+          <tr><th>Path</th><th>Verdict</th></tr>
+          <tr><td><b>CLI: artifact + gated exit code</b></td><td>Cheapest, composable, pretraining-aligned, stateless. <b>Choose.</b></td></tr>
+          <tr><td>MCP server tool</td><td>Same validator endpoint; ~4–32× tokens; build the CLI first, wrap later. <b>Defer.</b></td></tr>
+          <tr><td>Exit code only (no artifact on stdout)</td><td>Loses "what to fix"; agent can't act, only gate. <b>Reject.</b></td></tr>
+          <tr><td>Keep two-step <code>request</code>+<code>review</code></td><td>Works but clunky per call; the primary entry should be one command. <b>Reject the friction, keep the pieces.</b></td></tr>
+        </table>
+      </article>
+    </section>
+
+    <h3>Milestones</h3>
+    <div class="phase"><b>M1 · Gate</b><div><code>--fail-on</code> + the exit-code matrix on <code>review</code>; move tool-errors to exit 2; keep no-flag back-compat. <em>Gate: fixture matrix in verify.sh passes; <code>expect_review_failure</code> (non-zero) still green.</em></div></div>
+    <div class="phase"><b>M2 · Entry</b><div><code>review-diff</code> — fuse <code>build_git_range_request</code> + kernel + render; markdown→stdout default, <code>--json</code>/<code>--out</code>/<code>--markdown</code> options; clean stdout (logs→stderr). <em>Gate: one-command local review, no token, exit code per matrix.</em></div></div>
+    <div class="phase"><b>M3 · Doc</b><div>README/spec "Agent-native handoff" section: spawn → read stdout → branch on exit code, with the one example an orchestrator needs. <em>Gate: <code>--help</code> documents codes; section exists.</em></div></div>
+
+    <h3>Risks + Rollout</h3>
+    <table>
+      <tr><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td>Exit 1→2 move surprises a caller asserting <code>== 1</code></td><td><code>verify.sh</code> only checks non-zero (safe); audit for any <code>== 1</code> assumption. Revert-safe; artifact seam untouched.</td></tr>
+      <tr><td>stdout pollution breaks the handoff</td><td>Logs/errors strictly to stderr in <code>review-diff</code>; verify.sh asserts stdout-only-review + no secret leak.</td></tr>
+      <tr><td>Scope drift into eval/quality scoring</td><td>This is a dumb handoff. Quality measurement is Daedalus (closed 015). Hold the line.</td></tr>
+      <tr><td><b>Rollback</b></td><td>Additive subcommand + an opt-in flag; revert the commit. No schema/contract/dep change.</td></tr>
+    </table>
+
+    <h3>Adversarial Review Focus</h3>
+    <p class="muted">For diverse-provider review (artifact + oracle only): (1) Can a blocking verdict and a tool error ever collide on the same exit code? (2) Does <code>--fail-on none</code> truly preserve existing <code>review</code> exit behavior (no silent break of current callers / verify.sh)? (3) Is <code>review-diff</code> stdout genuinely review-only under a real OpenCode run (no log/telemetry bleed)? (4) Does <code>review-diff</code> reuse the request-builder + kernel verbatim, or did it fork review logic?</p>
+  </main>
+</body>
+</html>
