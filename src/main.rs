@@ -142,14 +142,11 @@ struct PullRequestArgs {
     timeout_seconds: u64,
 }
 
+/// Substrate selection flags shared by every command that runs a review
+/// (`review`, `review-pr`, `review-diff`). Flattened into each so the CLI
+/// surface stays identical while the declaration lives in one place.
 #[derive(Debug, Args)]
-struct ReviewArgs {
-    #[arg(long)]
-    request: PathBuf,
-    #[arg(long)]
-    out: PathBuf,
-    #[arg(long)]
-    markdown: Option<PathBuf>,
+struct SubstrateArgs {
     #[arg(long, value_enum, default_value_t = HarnessKind::Opencode)]
     harness: HarnessKind,
     #[arg(long)]
@@ -164,6 +161,18 @@ struct ReviewArgs {
     omp_binary: String,
     #[arg(long)]
     model: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct ReviewArgs {
+    #[arg(long)]
+    request: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+    #[command(flatten)]
+    substrate: SubstrateArgs,
     #[arg(long)]
     cwd: Option<PathBuf>,
     #[arg(long)]
@@ -215,20 +224,8 @@ struct ReviewPrArgs {
     allowed_env: Vec<String>,
     #[arg(long, default_value_t = 120)]
     timeout_seconds: u64,
-    #[arg(long, value_enum, default_value_t = HarnessKind::Opencode)]
-    harness: HarnessKind,
-    #[arg(long)]
-    fixture_output: Option<PathBuf>,
-    #[arg(long, default_value = "opencode")]
-    opencode_binary: String,
-    #[arg(long)]
-    opencode_attach: Option<String>,
-    #[arg(long, default_value = "build")]
-    opencode_agent: Option<String>,
-    #[arg(long, default_value = "omp")]
-    omp_binary: String,
-    #[arg(long)]
-    model: Option<String>,
+    #[command(flatten)]
+    substrate: SubstrateArgs,
     #[arg(long)]
     cwd: Option<PathBuf>,
     #[arg(long)]
@@ -274,20 +271,8 @@ struct ReviewDiffArgs {
     allowed_env: Vec<String>,
     #[arg(long, default_value_t = 120)]
     timeout_seconds: u64,
-    #[arg(long, value_enum, default_value_t = HarnessKind::Opencode)]
-    harness: HarnessKind,
-    #[arg(long)]
-    fixture_output: Option<PathBuf>,
-    #[arg(long, default_value = "opencode")]
-    opencode_binary: String,
-    #[arg(long)]
-    opencode_attach: Option<String>,
-    #[arg(long, default_value = "build")]
-    opencode_agent: Option<String>,
-    #[arg(long, default_value = "omp")]
-    omp_binary: String,
-    #[arg(long)]
-    model: Option<String>,
+    #[command(flatten)]
+    substrate: SubstrateArgs,
     #[arg(long, value_enum, default_value_t = FailOn::None)]
     fail_on: FailOn,
     /// Also write the artifact JSON to this path (still printed to stdout).
@@ -390,15 +375,16 @@ fn runtime_targets(commands: Vec<String>) -> Vec<RuntimeTarget> {
         .collect()
 }
 
-fn review_substrate(
-    harness: HarnessKind,
-    fixture_output: Option<PathBuf>,
-    opencode_binary: String,
-    opencode_attach: Option<String>,
-    opencode_agent: Option<String>,
-    omp_binary: String,
-    model: Option<String>,
-) -> Result<ReviewSubstrate> {
+fn review_substrate(args: SubstrateArgs) -> Result<ReviewSubstrate> {
+    let SubstrateArgs {
+        harness,
+        fixture_output,
+        opencode_binary,
+        opencode_attach,
+        opencode_agent,
+        omp_binary,
+        model,
+    } = args;
     match harness {
         HarnessKind::Fixture => {
             let output = fixture_output
@@ -423,13 +409,7 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         request,
         out,
         markdown,
-        harness,
-        fixture_output,
-        opencode_binary,
-        opencode_attach,
-        opencode_agent,
-        omp_binary,
-        model,
+        substrate,
         cwd,
         timeout_seconds,
         execution_plan,
@@ -451,15 +431,7 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     let timeout = timeout_seconds
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_millis(request.policy.timeout_ms));
-    let kernel = ReviewKernel::new(review_substrate(
-        harness,
-        fixture_output,
-        opencode_binary,
-        opencode_attach,
-        opencode_agent,
-        omp_binary,
-        model,
-    )?);
+    let kernel = ReviewKernel::new(review_substrate(substrate)?);
     let run_policy = RunPolicy {
         cwd,
         timeout,
@@ -512,15 +484,7 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
     })?;
     validate_request(&request)?;
     let cwd = std::env::current_dir().context("read current directory")?;
-    let kernel = ReviewKernel::new(review_substrate(
-        args.harness,
-        args.fixture_output,
-        args.opencode_binary,
-        args.opencode_attach,
-        args.opencode_agent,
-        args.omp_binary,
-        args.model,
-    )?);
+    let kernel = ReviewKernel::new(review_substrate(args.substrate)?);
     let run_policy = RunPolicy {
         cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
@@ -589,15 +553,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let cwd = args
         .cwd
         .unwrap_or(std::env::current_dir().context("read current directory")?);
-    let kernel = ReviewKernel::new(review_substrate(
-        args.harness,
-        args.fixture_output,
-        args.opencode_binary,
-        args.opencode_attach,
-        args.opencode_agent,
-        args.omp_binary,
-        args.model,
-    )?);
+    let kernel = ReviewKernel::new(review_substrate(args.substrate)?);
     let run_policy = RunPolicy {
         cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
