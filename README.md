@@ -96,7 +96,7 @@ cerberus review-diff --base origin/master --head HEAD \
   |------|---------|------|
   | `0`  | clean — proceed | a valid review was produced and the verdict is below `--fail-on` (or `--fail-on none`, the default) |
   | `1`  | blocking — read the review | a valid review was produced and the verdict is at or above the threshold (`--fail-on fail` ⇒ `FAIL`; `--fail-on warn` ⇒ `WARN`/`FAIL`) |
-  | `2`  | Cerberus error — no review | the harness failed, the artifact did not validate, or no review could be produced |
+  | `2`  | Cerberus error — no review | the harness failed, the artifact did not validate, the invocation was invalid, or no review could be produced |
 
 `--fail-on` is also available on `cerberus review`. Without it, exit status is
 unchanged (`0` on a valid artifact regardless of verdict, `2` on error), so
