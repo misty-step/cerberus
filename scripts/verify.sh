@@ -218,6 +218,48 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
 
 test "$(git -C "$tmp_repo" rev-parse HEAD)" = "$head_sha"
 
+# --- 018: agent-native review-diff exit-code matrix --------------------------
+# review-diff fuses request + review locally (no GitHub, no token), prints the
+# review to stdout, and gates the exit code on the verdict via --fail-on:
+#   0 clean/proceed | 1 blocking verdict | 2 Cerberus error (no valid artifact).
+sed 's/"verdict": "WARN"/"verdict": "FAIL"/' fixtures/harness/valid-review.txt \
+  > target/cerberus/review-diff-fail-fixture.txt
+printf 'not a review artifact\n' > target/cerberus/review-diff-invalid-fixture.txt
+
+expect_exit() {
+  local want="$1" name="$2"
+  shift 2
+  local rc=0
+  "$@" > "target/cerberus/review-diff-${name}.stdout" \
+    2> "target/cerberus/review-diff-${name}.stderr" || rc=$?
+  if [ "$rc" -ne "$want" ]; then
+    echo "review-diff exit-code: ${name} wanted ${want}, got ${rc}" >&2
+    exit 1
+  fi
+}
+
+rd() {
+  cargo run --locked -- review-diff \
+    --repo-path "$tmp_repo" --base "$base_sha" --head "$head_sha" \
+    --harness fixture --fixture-output "$1" "${@:2}"
+}
+
+# WARN fixture (valid-review.txt): below 'fail' threshold => 0; at 'warn' => 1.
+expect_exit 0 warn-failon-fail rd fixtures/harness/valid-review.txt --fail-on fail
+expect_exit 1 warn-failon-warn rd fixtures/harness/valid-review.txt --fail-on warn
+# FAIL fixture: blocking under 'fail' => 1; default (no --fail-on) => 0 (back-compat).
+expect_exit 1 fail-failon-fail rd target/cerberus/review-diff-fail-fixture.txt --fail-on fail
+expect_exit 0 fail-default rd target/cerberus/review-diff-fail-fixture.txt
+# Unparseable emission: a Cerberus error, not a verdict => 2 (distinct from blocking).
+expect_exit 2 invalid rd target/cerberus/review-diff-invalid-fixture.txt --fail-on fail
+# stdout carries the rendered review (Markdown), not logs.
+grep -q 'Cerberus Review:' target/cerberus/review-diff-warn-failon-fail.stdout
+# --fail-on also gates plain `review`, and a blocking verdict is exit 1 there too.
+expect_exit 1 review-failon-fail cargo run --locked -- review \
+  --request target/cerberus/git-range-request.json \
+  --harness fixture --fixture-output target/cerberus/review-diff-fail-fixture.txt \
+  --out target/cerberus/review-failon-artifact.json --fail-on fail
+
 if cargo run --locked -- request git-range \
   --repo-path "$tmp_repo" \
   --base "$base_sha" \

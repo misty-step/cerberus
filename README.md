@@ -69,7 +69,39 @@ cerberus review-pr --number 123 --repo owner/name \
   --out-dir target/cerberus/review-pr \
   --summary-target check-run \
   --post
+
+# Agent-native: review the current branch against a base in one command,
+# review printed to stdout, no GitHub and no token.
+cerberus review-diff --base origin/master --fail-on fail
 ```
+
+## Agent-native handoff
+
+The primary way to call Cerberus from another agent (or CI, or a script) is to
+spawn it on a local diff, read the review off **stdout**, and branch on the
+**exit code** — no GitHub, no token, no intermediate request file:
+
+```sh
+cerberus review-diff --base origin/master --head HEAD \
+  --harness opencode --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --fail-on fail
+```
+
+- **stdout** carries only the review (rendered Markdown; pass `--json` for the
+  raw `ReviewArtifact.v1`). Logs and errors go to stderr.
+- The **exit code** is the gate a calling agent branches on:
+
+  | Exit | Meaning | When |
+  |------|---------|------|
+  | `0`  | clean — proceed | a valid review was produced and the verdict is below `--fail-on` (or `--fail-on none`, the default) |
+  | `1`  | blocking — read the review | a valid review was produced and the verdict is at or above the threshold (`--fail-on fail` ⇒ `FAIL`; `--fail-on warn` ⇒ `WARN`/`FAIL`) |
+  | `2`  | Cerberus error — no review | the harness failed, the artifact did not validate, or no review could be produced |
+
+`--fail-on` is also available on `cerberus review`. Without it, exit status is
+unchanged (`0` on a valid artifact regardless of verdict, `2` on error), so
+existing callers are unaffected. Use `--out`/`--markdown` to also persist the
+artifact and Markdown to files while still printing to stdout.
 
 Git range requests include disposable base and head worktree capability from
 the supplied refs. PR requests may include `--head-workspace` and

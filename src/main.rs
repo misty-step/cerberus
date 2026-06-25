@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -13,11 +14,44 @@ use cerberus::request::{
     build_git_range_request, build_pull_request, fetch_pull_request_head_sha,
     GitRangeRequestOptions, PullRequestOptions, RequestOptions,
 };
-use cerberus::schema::RuntimeTarget;
+use cerberus::schema::{RuntimeTarget, Verdict};
 use cerberus::{
     render_markdown, validate_artifact_for_request, validate_request, ReviewArtifact, ReviewRequest,
 };
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+
+/// Maps a review verdict to a process exit code so a calling agent can gate on
+/// it. A blocking verdict (exit 1) is a *successful* review that found issues —
+/// distinct from a Cerberus error (exit 2), which means no valid review at all.
+#[derive(Debug, Clone, Copy, Default, ValueEnum, PartialEq, Eq)]
+enum FailOn {
+    /// Never block on the verdict; exit 0 on any valid artifact (back-compat).
+    #[default]
+    None,
+    /// Block (exit 1) when the verdict is WARN or FAIL.
+    Warn,
+    /// Block (exit 1) when the verdict is FAIL.
+    Fail,
+}
+
+fn is_blocking(verdict: &Verdict, fail_on: FailOn) -> bool {
+    match fail_on {
+        FailOn::None => false,
+        FailOn::Warn => matches!(verdict, Verdict::Warn | Verdict::Fail),
+        FailOn::Fail => matches!(verdict, Verdict::Fail),
+    }
+}
+
+/// Exit code for a review that produced a valid artifact: 1 if the verdict is
+/// blocking under `fail_on`, else 0. Cerberus errors never reach here — they
+/// propagate as `Err` and `main` maps them to exit 2.
+fn verdict_exit_code(verdict: &Verdict, fail_on: FailOn) -> ExitCode {
+    if is_blocking(verdict, fail_on) {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "cerberus")]
@@ -31,6 +65,7 @@ struct Cli {
 enum Command {
     Request(Box<RequestArgs>),
     Review(Box<ReviewArgs>),
+    ReviewDiff(Box<ReviewDiffArgs>),
     ReviewPr(Box<ReviewPrArgs>),
     Render(RenderArgs),
 }
@@ -139,6 +174,8 @@ struct ReviewArgs {
     transcript: Option<PathBuf>,
     #[arg(long)]
     receipt_bundle: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = FailOn::None)]
+    fail_on: FailOn,
 }
 
 #[derive(Debug, Args)]
@@ -206,13 +243,85 @@ struct RenderArgs {
     markdown: PathBuf,
 }
 
-fn main() -> Result<()> {
+/// Agent-native: build a git-range request and review it in one command, with
+/// no GitHub and no token. The review is printed to stdout (Markdown, or the raw
+/// artifact under `--json`); the exit code gates on the verdict via `--fail-on`.
+#[derive(Debug, Args)]
+struct ReviewDiffArgs {
+    #[arg(long, default_value = ".")]
+    repo_path: PathBuf,
+    #[arg(long)]
+    base: String,
+    #[arg(long, default_value = "HEAD")]
+    head: String,
+    #[arg(long)]
+    base_workspace: Option<PathBuf>,
+    #[arg(long)]
+    title: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long)]
+    request_id: Option<String>,
+    #[arg(long)]
+    repo: Option<String>,
+    #[arg(long = "instruction")]
+    instructions: Vec<String>,
+    #[arg(long = "local-runtime-command")]
+    local_runtime_commands: Vec<String>,
+    #[arg(long)]
+    allow_local_runtime: bool,
+    #[arg(long = "allow-env")]
+    allowed_env: Vec<String>,
+    #[arg(long, default_value_t = 120)]
+    timeout_seconds: u64,
+    #[arg(long, value_enum, default_value_t = HarnessKind::Opencode)]
+    harness: HarnessKind,
+    #[arg(long)]
+    fixture_output: Option<PathBuf>,
+    #[arg(long, default_value = "opencode")]
+    opencode_binary: String,
+    #[arg(long)]
+    opencode_attach: Option<String>,
+    #[arg(long, default_value = "build")]
+    opencode_agent: Option<String>,
+    #[arg(long, default_value = "omp")]
+    omp_binary: String,
+    #[arg(long)]
+    model: Option<String>,
+    #[arg(long, value_enum, default_value_t = FailOn::None)]
+    fail_on: FailOn,
+    /// Also write the artifact JSON to this path (still printed to stdout).
+    #[arg(long)]
+    out: Option<PathBuf>,
+    /// Also write the rendered Markdown to this path.
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+    /// Print the raw ReviewArtifact.v1 JSON to stdout instead of Markdown.
+    #[arg(long)]
+    json: bool,
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => code,
+        // Any error means Cerberus produced no valid review: exit 2, distinct
+        // from a blocking verdict (exit 1). Preserve the anyhow Debug chain so
+        // the stderr messages callers/verify.sh match on are unchanged.
+        Err(err) => {
+            eprintln!("Error: {err:?}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Request(args) => request(*args),
+        Command::Request(args) => request(*args).map(|()| ExitCode::SUCCESS),
         Command::Review(args) => review(*args),
-        Command::ReviewPr(args) => review_pr(*args),
-        Command::Render(args) => render(args),
+        Command::ReviewDiff(args) => review_diff(*args),
+        Command::ReviewPr(args) => review_pr(*args).map(|()| ExitCode::SUCCESS),
+        Command::Render(args) => render(args).map(|()| ExitCode::SUCCESS),
     }
 }
 
@@ -309,7 +418,7 @@ fn review_substrate(
     }
 }
 
-fn review(args: ReviewArgs) -> Result<()> {
+fn review(args: ReviewArgs) -> Result<ExitCode> {
     let ReviewArgs {
         request,
         out,
@@ -326,6 +435,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         execution_plan,
         transcript,
         receipt_bundle,
+        fail_on,
     } = args;
     if let Some(receipt_bundle) = &receipt_bundle {
         remove_file_if_exists(receipt_bundle)?;
@@ -379,7 +489,60 @@ fn review(args: ReviewArgs) -> Result<()> {
     if let Some(markdown) = markdown {
         write_text(&markdown, &render_markdown(&run.artifact))?;
     }
-    Ok(())
+    Ok(verdict_exit_code(&run.artifact.verdict, fail_on))
+}
+
+fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
+    let request = build_git_range_request(&GitRangeRequestOptions {
+        repo_path: args.repo_path,
+        base: args.base,
+        head: args.head,
+        base_workspace: args.base_workspace,
+        title: args.title,
+        description: args.description,
+        repo: args.repo,
+        common: RequestOptions {
+            request_id: args.request_id,
+            instructions: args.instructions,
+            local_runtime: runtime_targets(args.local_runtime_commands),
+            allow_local_runtime: args.allow_local_runtime,
+            allowed_env: args.allowed_env,
+            timeout_ms: timeout_ms(args.timeout_seconds)?,
+        },
+    })?;
+    validate_request(&request)?;
+    let cwd = std::env::current_dir().context("read current directory")?;
+    let kernel = ReviewKernel::new(review_substrate(
+        args.harness,
+        args.fixture_output,
+        args.opencode_binary,
+        args.opencode_attach,
+        args.opencode_agent,
+        args.omp_binary,
+        args.model,
+    )?);
+    let run_policy = RunPolicy {
+        cwd,
+        timeout: Duration::from_millis(request.policy.timeout_ms),
+        failure_transcript: None,
+    };
+    let run = kernel.review(&request, &run_policy)?;
+    validate_artifact_for_request(&run.artifact, &request)?;
+
+    // Optional persistence; stdout stays the primary deliverable for the caller.
+    if let Some(out) = &args.out {
+        write_json(out, &run.artifact)?;
+    }
+    let markdown = render_markdown(&run.artifact);
+    if let Some(path) = &args.markdown {
+        write_text(path, &markdown)?;
+    }
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&run.artifact)?);
+    } else {
+        print!("{markdown}");
+    }
+    Ok(verdict_exit_code(&run.artifact.verdict, args.fail_on))
 }
 
 fn review_pr(args: ReviewPrArgs) -> Result<()> {
@@ -610,4 +773,39 @@ fn sibling_path(out: &Path, filename: &str) -> PathBuf {
 #[allow(dead_code)]
 fn _assert_plan_is_serializable(plan: &ExecutionPlan) -> Result<String> {
     serde_json::to_string(plan).context("serialize execution plan")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_VERDICTS: [Verdict; 4] = [Verdict::Pass, Verdict::Warn, Verdict::Fail, Verdict::Skip];
+
+    #[test]
+    fn fail_on_none_never_blocks() {
+        for verdict in ALL_VERDICTS {
+            assert!(!is_blocking(&verdict, FailOn::None));
+        }
+    }
+
+    #[test]
+    fn fail_on_fail_blocks_only_fail() {
+        assert!(is_blocking(&Verdict::Fail, FailOn::Fail));
+        for verdict in [Verdict::Pass, Verdict::Warn, Verdict::Skip] {
+            assert!(!is_blocking(&verdict, FailOn::Fail));
+        }
+    }
+
+    #[test]
+    fn fail_on_warn_blocks_warn_and_fail() {
+        assert!(is_blocking(&Verdict::Warn, FailOn::Warn));
+        assert!(is_blocking(&Verdict::Fail, FailOn::Warn));
+        assert!(!is_blocking(&Verdict::Pass, FailOn::Warn));
+        // SKIP means "could not review", not "blocking".
+        assert!(!is_blocking(&Verdict::Skip, FailOn::Warn));
+    }
+
+    // The ExitCode mapping (blocking -> 1, clean -> 0, error -> 2) is proven
+    // end-to-end by the exit-code matrix in scripts/verify.sh; ExitCode is not
+    // PartialEq, so it cannot be asserted here.
 }
