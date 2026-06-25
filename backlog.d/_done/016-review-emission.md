@@ -1,6 +1,8 @@
 # Reliable review emission: emit to a file, validate, re-ask
 
-Priority: P1 · Status: ready · Estimate: M · Shape: docs/plans/016-review-emission.html
+Priority: P1 · Status: shipped · Estimate: M · Shape: docs/plans/016-review-emission.html
+
+**Shipped 2026-06-24 (PR #476):** file emission (`<workspace>/review-artifact.json`) + a bounded, fail-closed validate-and-re-ask loop; deleted the marker/XML/raw parser and the ~1800-char prompt lecture; no new dependency. Live dogfood (real OpenCode, `openrouter/z-ai/glm-4.6`) recovered a missing first emission via the re-ask. Evidence: `./scripts/verify.sh` + `target/cerberus/dogfood/`.
 
 ## Goal
 Make the agent reliably yield a valid `ReviewArtifact.v1` by writing it to a file with its existing tools and having Cerberus validate-and-re-ask on failure — deleting the fragile marker/XML/raw parser and the ~1800-char prompt lecture, with no new dependency.
