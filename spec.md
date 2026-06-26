@@ -267,7 +267,11 @@ cerberus request pr --number <n> --out <request.json>
 
 cerberus review --request <request.json> --out <artifact.json> \
   [--markdown <review.md>] [--receipt-bundle <bundle.json>] \
-  [--harness opencode|omp|fixture]
+  [--harness opencode|omp|fixture] [--fail-on none|warn|fail]
+
+cerberus review-diff --base <ref> [--head <ref>] [--repo-path <dir>] \
+  [--harness opencode|omp|fixture] [--model <m>] [--allow-env <VAR>] \
+  [--fail-on none|warn|fail] [--out <artifact.json>] [--markdown <review.md>] [--json]
 
 cerberus render --artifact <artifact.json> --markdown <review.md>
 
@@ -281,6 +285,21 @@ cerberus review-pr --number <n> --repo <owner/name> \
 The request commands are acquisition helpers. They produce `ReviewRequest.v1`
 and do not launch the reviewer or post comments. The review command remains
 the only execution boundary.
+
+`review-diff` is the agent-native convenience orchestrator: it fuses the
+git-range acquisition helper and the review boundary into one local command,
+renders the review to stdout (or `--json` for the raw artifact), and writes
+nothing to GitHub. It is the primary form factor for a calling agent that spawns
+Cerberus on a local diff and consumes the review directly.
+
+`--fail-on` makes the exit code a gate a caller can branch on, on both `review`
+and `review-diff`: `0` when a valid review's verdict is below the threshold,
+`1` when the verdict is at or above it (`fail` ⇒ `FAIL`; `warn` ⇒ `WARN`/`FAIL`;
+`SKIP` is never blocking), and `2` for any Cerberus error that yields no valid
+artifact. Without `--fail-on` (default `none`) the exit status is `0` on a valid
+artifact regardless of verdict and `2` on error, so existing callers are
+unaffected. A blocking verdict (exit `1`) is a *successful* review that found
+issues — distinct from a tool error (exit `2`).
 
 `review-pr` is a convenience orchestrator over the existing acquisition and
 review boundaries. It must write the same request, execution plan, transcript,
