@@ -3,10 +3,11 @@
 Status: canonical north star. Lifespan: long-lived product substrate — built to
 outlive its current reviewer model, callers, and provider choices.
 
-Cerberus turns an arbitrary change plus whatever context is *safely* available
-into a trustworthy, replayable review artifact — and, only when asked, projects
-that artifact into the operator's normal review surface without ever overstating
-what it actually inspected.
+Cerberus is the self-contained, highly opinionated code-review harness for Misty
+Step and its adjacent planes. It turns an arbitrary change plus whatever context
+is *safely* available into a trustworthy, replayable review artifact — and, only
+when asked, projects that artifact into the operator's normal review surface
+without ever overstating what it actually inspected.
 
 ## The premise that makes this Cerberus
 
@@ -74,8 +75,8 @@ narrow on purpose.
 - **No GitHub-only boundary.** GitHub is one projection adapter among many, never
   the core execution path.
 - **Not a hosted multi-tenant service.** Local process execution plus ephemeral
-  workspaces is the runtime; containers and hosted workers are later hardening
-  profiles *behind the same kernel contract*, not a pivot.
+  workspaces is the runtime; containers and hosted workers are portability and
+  hardening profiles *behind the same kernel contract*, not a pivot.
 - **No direct provider API orchestration** unless a future ADR proves the
   substrate boundary genuinely cannot carry a needed capability.
 
@@ -93,6 +94,10 @@ These are why the chosen shape should age better than the obvious alternatives.
    labs evaluate models and harnesses while Cerberus stays the runner and
    contract. The reviewer model can be replaced wholesale without breaking
    callers.
+5. Code-review architecture should be optimized like an agent product, not
+   frozen as folklore. Subagent topology, model choice, tool access, skill
+   articulation, system prompt wording, and cost controls are all live variables
+   to evaluate against real review outcomes.
 
 ## What excellent looks like
 
