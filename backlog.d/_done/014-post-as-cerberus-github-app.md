@@ -9,6 +9,11 @@ auth and requires exactly one explicit token source (`--gh-token-file` or
 subprocesses. `./scripts/verify.sh` covers no-token refusal, explicit-token
 fake-gh posting, and idempotent update behavior.
 
+**Follow-up 2026-07-01 (022):** dry-run was pulled under the same explicit-token
+rule because it reads PR state, existing comments, and status/check state
+through GitHub. The original posting-only boundary below is historical; current
+`review-pr` requires exactly one explicit token for dry-run and post.
+
 ## Goal
 When Cerberus posts a review to GitHub (`review-pr --post`), it uses an **explicit, caller-injected token** and **refuses to post under ambient/keyring (`gh`) user auth** — so it never silently posts as a human, and so a bot identity supplied by the caller (a GitHub App installation token) flows through cleanly, including check-runs.
 
@@ -22,7 +27,7 @@ The original ticket proposed creating a "Cerberus" GitHub App and baking `Cerber
 
 ## Oracle
 - [ ] `cerberus review-pr --post` posts **only** with an explicit injected token (`--gh-token-file <path>` or an explicit env var), and the `gh` subprocess uses that token — not the operator's keyring identity.
-- [ ] With no explicit token (only ambient/keyring `gh` auth available), `--post` **refuses**: exits non-zero with an actionable message, posts nothing. (Dry-run / artifact emission still work without a token.)
+- [ ] With no explicit token (only ambient/keyring `gh` auth available), `--post` **refuses**: exits non-zero with an actionable message, posts nothing. Superseded by 022: dry-run now also refuses without an explicit token because it performs GitHub reads; pure artifact emission remains available through non-GitHub `review`/`review-diff`.
 - [ ] When the injected token is a GitHub App installation token, the posted comment/check author is that App's `*[bot]` identity (verified out-of-band) and `--summary-target check-run` succeeds — Cerberus is token-agnostic, so this is the same code path as a PAT with `checks:write`.
 - [ ] `./scripts/verify.sh` green (fake-gh exercises the explicit-token path; the ambient-auth refusal is covered by a fixture that provides no token).
 - [ ] A consumer doc (`docs/` or README) shows how Bitterblossom / CI creates the "Cerberus" App (perms: `pull_requests:write`, `checks:write`, `statuses:write`, `contents:read`; webhook off), mints an installation token, and injects it into `cerberus review-pr --post`.
@@ -34,7 +39,7 @@ The original ticket proposed creating a "Cerberus" GitHub App and baking `Cerber
 
 ## Verification System
 - Claim: Cerberus posts to GitHub only with an explicit injected token and refuses ambient/keyring auth; a caller-supplied App token posts as `*[bot]` and creates check-runs through the same path.
-- Falsifier: `--post` succeeds using only keyring/user auth with no explicit token; a posted comment shows the operator's human account; check-run creation fails with a valid injected token; dry-run/emission breaks without a token.
+- Falsifier: `--post` succeeds using only keyring/user auth with no explicit token; a posted comment shows the operator's human account; check-run creation fails with a valid injected token. Historical note: dry-run no longer belongs in the no-token falsifier because 022 made GitHub reads explicit-token only.
 - Driver: `--gh-token-file <tok>` `review-pr --post` against a throwaway PR (or fake-gh) ⇒ posts; `--post` with no token ⇒ refuses non-zero.
 - Grader: posted author login is the injected identity; the no-token `--post` exits non-zero and wrote nothing; `verify.sh` green.
 - Evidence packet: posted comment/check author JSON + the refused-ambient-auth transcript.
