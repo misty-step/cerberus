@@ -483,7 +483,10 @@ fake_gh_state="target/cerberus/fake-gh-state"
 fake_gh_token="target/cerberus/fake-gh-token.txt"
 printf 'cerberus-fixture-token\n' > "$fake_gh_token"
 rm -rf "$fake_gh_state"
-CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" cargo run --locked -- review-pr \
+CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
+CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-dry-run-gh.log \
+cargo run --locked -- review-pr \
   --number 7 \
   --repo example/fixture \
   --gh-binary "$fake_gh" \
@@ -491,6 +494,7 @@ CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" cargo run --locked -- review-pr \
   --fixture-output fixtures/harness/valid-review.txt \
   --out-dir target/cerberus/review-pr-dry-run \
   --receipt-bundle target/cerberus/receipts/review-pr-dry-run.json \
+  --gh-token-file "$fake_gh_token" \
   --dry-run \
   > target/cerberus/review-pr-dry-run.stdout
 
@@ -500,6 +504,36 @@ grep -q '"path": "/repos/example/fixture/pulls/7/reviews"' target/cerberus/revie
 grep -q '"line": 3' target/cerberus/review-pr-dry-run/post-plan.json
 grep -q '"commit_id": "0123456789abcdef"' target/cerberus/review-pr-dry-run/post-plan.json
 grep -q 'comment-001' target/cerberus/review-pr-dry-run/review.md
+grep -q 'AUTH gh_token=present github_token=absent' target/cerberus/review-pr-dry-run-gh.log
+
+rm -rf "$fake_gh_state"
+mkdir -p target/cerberus/review-pr-dry-run-no-token
+printf 'stale post result\n' > target/cerberus/review-pr-dry-run-no-token/post-result.json
+printf 'stale post plan\n' > target/cerberus/review-pr-dry-run-no-token/post-plan.json
+if GH_TOKEN=ambient-should-not-count \
+  CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-dry-run-no-token-gh.log \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-dry-run-no-token \
+    --summary-target check-run \
+    --dry-run \
+    > target/cerberus/review-pr-dry-run-no-token.stdout \
+    2> target/cerberus/review-pr-dry-run-no-token.stderr; then
+  echo "expected review-pr dry-run to refuse ambient auth without explicit token" >&2
+  exit 1
+fi
+grep -q 'requires an explicit GitHub token' target/cerberus/review-pr-dry-run-no-token.stderr
+test ! -e target/cerberus/review-pr-dry-run-no-token/post-result.json
+test ! -e target/cerberus/review-pr-dry-run-no-token/post-plan.json
+if [[ -s target/cerberus/review-pr-dry-run-no-token-gh.log ]]; then
+  echo "review-pr dry-run read GitHub without explicit token" >&2
+  exit 1
+fi
 
 rm -rf "$fake_gh_state"
 mkdir -p target/cerberus/review-pr-post-no-token
@@ -639,6 +673,7 @@ if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
     --harness fixture \
     --fixture-output fixtures/harness/valid-review.txt \
     --out-dir target/cerberus/review-pr-stale-head \
+    --gh-token-file "$fake_gh_token" \
     --dry-run \
     > target/cerberus/review-pr-stale-head.stdout \
     2> target/cerberus/review-pr-stale-head.stderr; then
@@ -820,19 +855,20 @@ if [[ "${CERBERUS_LIVE_REVIEW_PR:-}" == "1" ]]; then
   : "${CERBERUS_LIVE_REVIEW_NUMBER:?set CERBERUS_LIVE_REVIEW_NUMBER=<pull request number>}"
   live_out="target/cerberus/live-review-pr"
   live_mode=(--dry-run)
+  live_token_args=()
+  if [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE:-}" && -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV:-}" ]]; then
+    echo "set only one of CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE or CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV" >&2
+    exit 1
+  elif [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE:-}" ]]; then
+    live_token_args+=(--gh-token-file "$CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE")
+  elif [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV:-}" ]]; then
+    live_token_args+=(--gh-token-env "$CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV")
+  else
+    echo "live review requires CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE or CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV" >&2
+    exit 1
+  fi
   if [[ "${CERBERUS_LIVE_REVIEW_POST:-}" == "1" ]]; then
     live_mode=(--post)
-    if [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE:-}" && -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV:-}" ]]; then
-      echo "set only one of CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE or CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV" >&2
-      exit 1
-    elif [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE:-}" ]]; then
-      live_mode+=(--gh-token-file "$CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE")
-    elif [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV:-}" ]]; then
-      live_mode+=(--gh-token-env "$CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV")
-    else
-      echo "live review posting requires CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE or CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV" >&2
-      exit 1
-    fi
   fi
   cargo run --locked -- review-pr \
     --number "$CERBERUS_LIVE_REVIEW_NUMBER" \
@@ -840,5 +876,6 @@ if [[ "${CERBERUS_LIVE_REVIEW_PR:-}" == "1" ]]; then
     --out-dir "$live_out" \
     --summary-target "${CERBERUS_LIVE_REVIEW_SUMMARY_TARGET:-status}" \
     --harness "${CERBERUS_LIVE_REVIEW_HARNESS:-opencode}" \
+    "${live_token_args[@]}" \
     "${live_mode[@]}"
 fi
