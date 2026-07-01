@@ -189,6 +189,8 @@ struct ReviewArgs {
     /// Write a Crucible producer manifest sidecar. Requires --receipt-bundle and contains no scores.
     #[arg(long)]
     producer_manifest: Option<PathBuf>,
+    #[arg(long = "allow-env")]
+    allowed_env: Vec<String>,
     #[arg(long, value_enum, default_value_t = FailOn::None)]
     fail_on: FailOn,
 }
@@ -430,6 +432,7 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         transcript,
         receipt_bundle,
         producer_manifest,
+        allowed_env,
         fail_on,
     } = args;
     if producer_manifest.is_some() && receipt_bundle.is_none() {
@@ -443,7 +446,8 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     if let Some(producer_manifest) = &producer_manifest {
         remove_file_if_exists(producer_manifest)?;
     }
-    let request = read_json::<ReviewRequest>(&request)?;
+    let mut request = read_json::<ReviewRequest>(&request)?;
+    extend_review_allowed_env(&mut request, allowed_env);
     validate_request(&request)?;
     let cwd = cwd.unwrap_or(std::env::current_dir().context("read current directory")?);
     let transcript_path = transcript.or_else(|| {
@@ -454,7 +458,9 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     let timeout = timeout_seconds
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_millis(request.policy.timeout_ms));
-    let kernel = ReviewKernel::new(review_substrate(substrate)?);
+    let substrate = review_substrate(substrate)?;
+    require_child_env_for_substrate(&request, &substrate)?;
+    let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
         cwd,
         timeout,
@@ -505,6 +511,45 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     Ok(verdict_exit_code(&run.artifact.verdict, fail_on))
 }
 
+fn extend_review_allowed_env(request: &mut ReviewRequest, allowed_env: Vec<String>) {
+    for key in allowed_env {
+        if !request
+            .policy
+            .allowed_env
+            .iter()
+            .any(|existing| existing == &key)
+        {
+            request.policy.allowed_env.push(key);
+        }
+    }
+}
+
+fn require_child_env_for_substrate(
+    request: &ReviewRequest,
+    substrate: &ReviewSubstrate,
+) -> Result<()> {
+    let ReviewSubstrate::Opencode(config) = substrate else {
+        return Ok(());
+    };
+    let Some(model) = config.model.as_deref() else {
+        return Ok(());
+    };
+    if config.attach.is_some() || !model.starts_with("openrouter/") {
+        return Ok(());
+    }
+    if request
+        .policy
+        .allowed_env
+        .iter()
+        .any(|key| key == "OPENROUTER_API_KEY")
+    {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "opencode OpenRouter model {model:?} requires OPENROUTER_API_KEY in Cerberus's scrubbed child environment; pass --allow-env OPENROUTER_API_KEY or include it in request.policy.allowed_env"
+    ))
+}
+
 fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
     let request = build_git_range_request(&GitRangeRequestOptions {
         repo_path: args.repo_path,
@@ -525,7 +570,9 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
     })?;
     validate_request(&request)?;
     let cwd = std::env::current_dir().context("read current directory")?;
-    let kernel = ReviewKernel::new(review_substrate(args.substrate)?);
+    let substrate = review_substrate(args.substrate)?;
+    require_child_env_for_substrate(&request, &substrate)?;
+    let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
         cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
@@ -609,7 +656,9 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let cwd = args
         .cwd
         .unwrap_or(std::env::current_dir().context("read current directory")?);
-    let kernel = ReviewKernel::new(review_substrate(args.substrate)?);
+    let substrate = review_substrate(args.substrate)?;
+    require_child_env_for_substrate(&request, &substrate)?;
+    let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
         cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
@@ -865,6 +914,66 @@ mod tests {
         assert!(!is_blocking(&Verdict::Pass, FailOn::Warn));
         // SKIP means "could not review", not "blocking".
         assert!(!is_blocking(&Verdict::Skip, FailOn::Warn));
+    }
+
+    #[test]
+    fn review_allow_env_override_extends_request_policy() {
+        let request_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
+        let mut request: ReviewRequest = read_json(&request_path).expect("fixture request loads");
+
+        extend_review_allowed_env(
+            &mut request,
+            vec![
+                "OPENROUTER_API_KEY".to_string(),
+                "OPENROUTER_API_KEY".to_string(),
+                "CERBERUS_RUNTIME_FLAG".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            request.policy.allowed_env,
+            vec![
+                "OPENROUTER_API_KEY".to_string(),
+                "CERBERUS_RUNTIME_FLAG".to_string()
+            ],
+            "review --allow-env should augment a request file without duplicating names"
+        );
+    }
+
+    #[test]
+    fn openrouter_model_without_allowed_key_is_a_clear_preflight_error() {
+        let request_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
+        let request: ReviewRequest = read_json(&request_path).expect("fixture request loads");
+        let substrate = ReviewSubstrate::Opencode(OpenCodeSubstrateConfig {
+            binary: "opencode".to_string(),
+            attach: None,
+            agent: Some("build".to_string()),
+            model: Some("openrouter/z-ai/glm-5.2".to_string()),
+        });
+
+        let err = require_child_env_for_substrate(&request, &substrate).unwrap_err();
+        assert!(
+            err.to_string().contains("--allow-env OPENROUTER_API_KEY"),
+            "error should name the concrete fix: {err}"
+        );
+    }
+
+    #[test]
+    fn openrouter_model_with_allowed_key_passes_preflight() {
+        let request_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
+        let mut request: ReviewRequest = read_json(&request_path).expect("fixture request loads");
+        extend_review_allowed_env(&mut request, vec!["OPENROUTER_API_KEY".to_string()]);
+        let substrate = ReviewSubstrate::Opencode(OpenCodeSubstrateConfig {
+            binary: "opencode".to_string(),
+            attach: None,
+            agent: Some("build".to_string()),
+            model: Some("openrouter/z-ai/glm-5.2".to_string()),
+        });
+
+        require_child_env_for_substrate(&request, &substrate).unwrap();
     }
 
     // The ExitCode mapping (blocking -> 1, clean -> 0, error -> 2) is proven

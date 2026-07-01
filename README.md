@@ -168,6 +168,8 @@ cerberus request git-range --repo-path /path/to/workspace \
 
 cerberus review --request target/cerberus/crucible-producer/request.json \
   --harness opencode \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
   --out target/cerberus/crucible-producer/artifact.json \
   --execution-plan target/cerberus/crucible-producer/execution_plan.json \
   --transcript target/cerberus/crucible-producer/transcript.txt \
