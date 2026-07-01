@@ -54,7 +54,8 @@ cerberus review --request fixtures/requests/diff-only.json \
   --out target/cerberus/artifact.json \
   --markdown target/cerberus/review.md \
   --execution-plan target/cerberus/execution_plan.json \
-  --receipt-bundle target/cerberus/receipts/fixture.json
+  --receipt-bundle target/cerberus/receipts/fixture.json \
+  --producer-manifest target/cerberus/producer-manifest.json
 
 cerberus render --artifact target/cerberus/artifact.json \
   --markdown target/cerberus/review-rendered.md
@@ -154,6 +155,32 @@ latency, capability tier, artifact/transcript URIs, and validation outcome
 without embedding prompt files, request files, secret names, or transcript
 excerpts. Daedalus or another lab can score those bundles without Cerberus
 owning model or harness evaluation.
+
+## Crucible producer handoff
+
+Crucible owns grading, intervals, adjudication, and Harbor export. Cerberus's
+producer side is the two-step request/review path:
+
+```sh
+cerberus request git-range --repo-path /path/to/workspace \
+  --base <base-sha> --head <head-sha> \
+  --out target/cerberus/crucible-producer/request.json
+
+cerberus review --request target/cerberus/crucible-producer/request.json \
+  --harness opencode \
+  --out target/cerberus/crucible-producer/artifact.json \
+  --execution-plan target/cerberus/crucible-producer/execution_plan.json \
+  --transcript target/cerberus/crucible-producer/transcript.txt \
+  --receipt-bundle target/cerberus/crucible-producer/receipt-bundle.json \
+  --producer-manifest target/cerberus/crucible-producer/producer-manifest.json
+```
+
+`producer-manifest.json` is metadata only: it points Crucible at the validated
+`ReviewArtifact.v1` `findings` array, records the redacted receipt bundle digest
+and validation state, and explicitly says the scorer owner is `crucible` with no
+score included. The repo gate writes the same packet under
+`target/cerberus/crucible-producer/` and checks that the artifact is gradeable
+by Crucible's adapter contract.
 
 GitHub Checks writes require a token with Checks write access, usually a GitHub
 App or fine-grained token. Classic user tokens commonly cannot create check

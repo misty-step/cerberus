@@ -9,6 +9,7 @@ use cerberus::harness::{
 };
 use cerberus::kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
 use cerberus::post::{build_post_plan, trusted_lifecycle, GithubClient, SummaryTarget};
+use cerberus::producer::{build_crucible_producer_manifest, CrucibleProducerManifestInput};
 use cerberus::receipt::{build_review_receipt_bundle, ReceiptBundleInput};
 use cerberus::request::{
     build_git_range_request, build_pull_request, fetch_pull_request_head_sha,
@@ -185,6 +186,9 @@ struct ReviewArgs {
     transcript: Option<PathBuf>,
     #[arg(long)]
     receipt_bundle: Option<PathBuf>,
+    /// Write a Crucible producer manifest sidecar. Requires --receipt-bundle and contains no scores.
+    #[arg(long)]
+    producer_manifest: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = FailOn::None)]
     fail_on: FailOn,
 }
@@ -425,10 +429,19 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         execution_plan,
         transcript,
         receipt_bundle,
+        producer_manifest,
         fail_on,
     } = args;
+    if producer_manifest.is_some() && receipt_bundle.is_none() {
+        return Err(anyhow!(
+            "review --producer-manifest requires --receipt-bundle so the packet includes redacted receipt metadata"
+        ));
+    }
     if let Some(receipt_bundle) = &receipt_bundle {
         remove_file_if_exists(receipt_bundle)?;
+    }
+    if let Some(producer_manifest) = &producer_manifest {
+        remove_file_if_exists(producer_manifest)?;
     }
     let request = read_json::<ReviewRequest>(&request)?;
     validate_request(&request)?;
@@ -455,8 +468,8 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     }
     write_json(&out, &run.artifact)?;
     let validation_result = validate_artifact_for_request(&run.artifact, &request);
-    if let Some(receipt_bundle) = &receipt_bundle {
-        write_review_receipt_bundle(
+    let receipt_bundle_value = if let Some(receipt_bundle) = &receipt_bundle {
+        Some(write_review_receipt_bundle(
             receipt_bundle,
             &request,
             &run,
@@ -464,9 +477,27 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
             transcript_path.as_deref(),
             Some(&plan_path),
             validation_result.is_err(),
-        )?;
-    }
+        )?)
+    } else {
+        None
+    };
     validation_result?;
+
+    if let Some(producer_manifest) = &producer_manifest {
+        let receipt_bundle_path = receipt_bundle
+            .as_ref()
+            .expect("--producer-manifest requires --receipt-bundle");
+        let receipt_bundle_value = receipt_bundle_value
+            .as_ref()
+            .expect("receipt bundle was written before producer manifest");
+        let manifest = build_crucible_producer_manifest(CrucibleProducerManifestInput {
+            request: &request,
+            artifact: &run.artifact,
+            receipt_bundle: receipt_bundle_value,
+            receipt_bundle_uri: receipt_bundle_path.display().to_string(),
+        })?;
+        write_json(producer_manifest, &manifest)?;
+    }
 
     if let Some(markdown) = markdown {
         write_text(&markdown, &render_markdown(&run.artifact))?;
@@ -753,7 +784,7 @@ fn write_review_receipt_bundle(
     transcript_path: Option<&Path>,
     execution_plan_path: Option<&Path>,
     validation_failed: bool,
-) -> Result<()> {
+) -> Result<cerberus::ReviewReceiptBundle> {
     let bundle = build_review_receipt_bundle(ReceiptBundleInput {
         request,
         artifact: &run.artifact,
@@ -765,7 +796,8 @@ fn write_review_receipt_bundle(
         execution_plan_uri: execution_plan_path.map(|path| path.display().to_string()),
         validation_failed,
     })?;
-    write_json(path, &bundle)
+    write_json(path, &bundle)?;
+    Ok(bundle)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>

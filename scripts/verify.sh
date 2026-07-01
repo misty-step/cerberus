@@ -11,6 +11,7 @@ cargo run --locked -- review --help > target/cerberus-review-help.txt
 grep -q '\[default: opencode\]' target/cerberus-review-help.txt
 grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.txt
 grep -q -- '--receipt-bundle' target/cerberus-review-help.txt
+grep -q -- '--producer-manifest' target/cerberus-review-help.txt
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
@@ -219,6 +220,83 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --execution-plan target/cerberus/git-range-opencode-execution_plan.json \
   --transcript target/cerberus/git-range-opencode-transcript.txt \
   --receipt-bundle target/cerberus/receipts/git-range-opencode.json
+
+producer_dir="target/cerberus/crucible-producer"
+mkdir -p "$producer_dir"
+cargo run --locked -- request git-range \
+  --repo-path "$tmp_repo" \
+  --base "$base_sha" \
+  --head "$head_sha" \
+  --instruction "Produce a Crucible-gradeable Cerberus packet." \
+  --out "$producer_dir/request.json"
+
+GH_TOKEN=should-not-leak cargo run --locked -- review \
+  --request "$producer_dir/request.json" \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --out "$producer_dir/artifact.json" \
+  --execution-plan "$producer_dir/execution_plan.json" \
+  --transcript "$producer_dir/transcript.txt" \
+  --receipt-bundle "$producer_dir/receipt-bundle.json" \
+  --producer-manifest "$producer_dir/producer-manifest.json"
+
+if cargo run --locked -- review \
+  --request "$producer_dir/request.json" \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out "$producer_dir/no-receipt-artifact.json" \
+  --producer-manifest "$producer_dir/stale-producer-manifest.json" \
+  > "$producer_dir/no-receipt.stdout" \
+  2> "$producer_dir/no-receipt.stderr"; then
+  echo "expected --producer-manifest without --receipt-bundle to fail" >&2
+  exit 1
+fi
+grep -q -- '--producer-manifest requires --receipt-bundle' "$producer_dir/no-receipt.stderr"
+test ! -e "$producer_dir/stale-producer-manifest.json"
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+root = Path("target/cerberus/crucible-producer")
+artifact = json.loads((root / "artifact.json").read_text())
+receipt = json.loads((root / "receipt-bundle.json").read_text())
+manifest = json.loads((root / "producer-manifest.json").read_text())
+
+assert artifact["schema_version"] == "cerberus.review_artifact.v1"
+assert isinstance(artifact["findings"], list)
+for finding in artifact["findings"]:
+    assert finding["id"].strip()
+    assert finding["category"].strip()
+    assert 0.0 <= finding["confidence"] <= 1.0
+    assert finding["title"].strip() or finding["description"].strip()
+
+assert receipt["schema_version"] == "cerberus.review_receipt_bundle.v1"
+assert receipt["validation"]["status"] == "passed"
+assert receipt["validation"]["trusted_for_posting"] is True
+assert receipt["artifact_uri"] == str(root / "artifact.json")
+
+assert manifest["schema_version"] == "cerberus.crucible_producer_manifest.v1"
+assert manifest["consumer"] == "crucible"
+assert manifest["artifact"]["schema_version"] == artifact["schema_version"]
+assert manifest["artifact"]["artifact_digest"] == receipt["artifact_digest"]
+assert manifest["artifact"]["finding_count"] == len(artifact["findings"])
+assert manifest["receipt_bundle"]["schema_version"] == receipt["schema_version"]
+assert manifest["grader_input"]["format"] == "cerberus.review_artifact.v1"
+assert manifest["grader_input"]["artifact_uri"] == str(root / "artifact.json")
+assert manifest["grader_input"]["findings_path"] == "findings"
+assert manifest["grader_input"]["finding_id_path"] == "findings[].id"
+assert manifest["validation"]["status"] == "passed"
+assert manifest["validation"]["trusted_for_grading"] is True
+assert manifest["boundary"]["scorer_owner"] == "crucible"
+assert manifest["boundary"]["includes_score"] is False
+
+for path in [root / "receipt-bundle.json", root / "producer-manifest.json"]:
+    text = path.read_text()
+    for forbidden in ["GH_TOKEN", "should-not-leak", "master-prompt.md", "review-request.json"]:
+        if forbidden in text:
+            raise SystemExit(f"{path} leaked {forbidden}")
+PY
 
 test "$(git -C "$tmp_repo" rev-parse HEAD)" = "$head_sha"
 

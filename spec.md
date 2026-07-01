@@ -267,6 +267,7 @@ cerberus request pr --number <n> --out <request.json>
 
 cerberus review --request <request.json> --out <artifact.json> \
   [--markdown <review.md>] [--receipt-bundle <bundle.json>] \
+  [--producer-manifest <manifest.json>] \
   [--harness opencode|omp|fixture] [--fail-on none|warn|fail]
 
 cerberus review-diff --base <ref> [--head <ref>] [--repo-path <dir>] \
@@ -303,6 +304,14 @@ artifact. Without `--fail-on` (default `none`) the exit status is `0` on a valid
 artifact regardless of verdict and `2` on error, so existing callers are
 unaffected. A blocking verdict (exit `1`) is a *successful* review that found
 issues — distinct from a tool error (exit `2`).
+
+`review --producer-manifest <manifest.json>` writes a
+`cerberus.crucible_producer_manifest.v1` sidecar for upstream eval consumers.
+It requires `--receipt-bundle` so the packet always includes redacted receipt
+metadata. The manifest points Crucible at the validated `ReviewArtifact.v1`
+`findings` array, records request/artifact/receipt digests and validation state,
+and explicitly carries no score; Crucible owns grading, intervals, adjudication,
+and Harbor export.
 
 `review-pr` is a convenience orchestrator over the existing acquisition and
 review boundaries. It must write the same request, execution plan, transcript,
@@ -370,6 +379,7 @@ Evidence packet:
 - `target/cerberus/review.md`
 - `target/cerberus/execution_plan.json`
 - `target/cerberus/receipts/*.json`
+- `target/cerberus/crucible-producer/producer-manifest.json`
 - `target/cerberus/review-pr/post-plan.json`
 - `target/cerberus/review-pr/post-result.json`
 - `target/cerberus/context-tiers/*`
@@ -392,6 +402,8 @@ MVP is complete when:
   and leave transcript evidence;
 - review and review-pr can emit redacted `ReviewReceiptBundle.v1` handoff
   bundles for upstream scoring;
+- review can emit a Crucible producer manifest sidecar that identifies the
+  gradeable artifact/receipt packet without embedding a scorer;
 - Markdown rendering works from stored artifacts;
 - `review-pr` can dry-run and post through fake GitHub fixtures without
   duplicate comments, without inline comments outside changed lines, and without
