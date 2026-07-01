@@ -3,22 +3,29 @@
 Status: canonical north star. Lifespan: long-lived product substrate — built to
 outlive its current reviewer model, callers, and provider choices.
 
-Cerberus is the self-contained, highly opinionated code-review harness for Misty
-Step and its adjacent planes. It turns an arbitrary change plus whatever context
-is *safely* available into a trustworthy, replayable review artifact — and, only
-when asked, projects that artifact into the operator's normal review surface
-without ever overstating what it actually inspected.
+Cerberus is the self-contained, highly opinionated code-review organ for the
+Misty Step Factory and its Weave loop. It turns an arbitrary change plus
+whatever context is *safely* available into a trustworthy, replayable review
+artifact — and, only when asked, projects that artifact into the operator's
+normal review surface without ever overstating what it actually inspected.
+
+Its current authority is advisory. Cerberus may inform humans, local agents,
+CI hooks, and Bitterblossom-triggered PR runs, but it does not become a
+repo-level merge gate until Crucible-measured consistency and false-confidence
+floors justify that authority.
 
 ## The premise that makes this Cerberus
 
 Two bets separate Cerberus from a generic "AI reviews your PR" tool:
 
-1. **One master reviewer with dynamic substrate lanes — never a static roster.**
-   There is exactly one predefined agent, the Cerberus master. It decides at
-   runtime whether to launch focused subagent lanes, how many, and with what
-   scope. We invest in the general reviewing agent, its prompt, its context
-   packaging, and its artifact grammar — not in freezing yesterday's best
-   reviewer personas (correctness/security/QA/…) into product code.
+1. **One orchestrator master with dynamic substrate lanes — never a static
+   roster.** There is exactly one predefined agent, the Cerberus master. It
+   understands the diff, names the review dimensions that matter, decides at
+   runtime whether to launch focused subagent lanes, chooses cost/quality
+   balance, and synthesizes one artifact. We invest in the general reviewing
+   agent, its prompt, its context packaging, its reviewer-planning receipts, and
+   its artifact grammar — not in freezing yesterday's best reviewer personas
+   (correctness/security/QA/…) into product code.
 2. **Context truth is an invariant, not a feature.** Every artifact records the
    exact context tier it could inspect (`diff_only` → `repo_head` →
    `repo_base_and_head` → `local_runtime` → `remote_runtime`), and validation
@@ -27,13 +34,12 @@ Two bets separate Cerberus from a generic "AI reviews your PR" tool:
 
 ## Who would miss it
 
-Operators who want a dependable review agent they can run from any review
-context — a local branch, a GitHub PR, a task-system diff, a hosted worker, a
-future event plane — and get back the *same* validated artifact regardless of
-where the change came from. Misty Step's own repositories are the first proof,
-not the ceiling: the request/artifact contract is built so outside callers and
-future services can adopt it without inheriting our GitHub conventions or our
-substrate choice.
+Operators and calling agents who want a dependable review organ they can run
+from any review context — a local branch, a GitHub PR, a task-system diff, a
+hosted worker, a future event plane — and get back the *same* validated artifact
+regardless of where the change came from. Misty Step's own repositories and
+Factory loop are the first proof and the current ceiling; outside callers are
+welcome only after the factory path is reliable, released, and measured.
 
 ## What must stay true
 
@@ -50,6 +56,12 @@ These are load-bearing. Implementation may change underneath them; these do not.
   what only the model + evals may judge (faithfulness) is **ADR 0003**; review
   *quality* is earned by harness engineering and measured by evals, never by
   deterministic heuristics.
+- **Named dimensions guide the master; they do not become hardcoded personas.**
+  The master must consider product-relevant dimensions, including the mandatory
+  Factory dimension: "heuristic where a model belongs, and model where
+  deterministic code belongs." Rust may require that this dimension is present
+  in prompt/receipt vocabulary; it must not pretend to score the judgment
+  without Crucible evidence.
 - **Evidence discipline.** Every finding cites a concrete anchor: a diff hunk,
   an inspected file, command/test/log output, or an external URL with an
   observation time. Model memory alone is never evidence.
@@ -60,6 +72,9 @@ These are load-bearing. Implementation may change underneath them; these do not.
 - **Verification gates publication.** The loop (`./scripts/verify.sh`) must catch
   likely publication and execution failures *before* Cerberus is trusted as an
   automatic reviewer — not after.
+- **Advisory before blocking.** A FAIL verdict may be useful before it is
+  authoritative. Blocking mode reopens only after pass^k consistency, key-recall,
+  and false-confident finding rates clear a Crucible-owned threshold.
 
 ## What this repo refuses
 
@@ -79,6 +94,9 @@ narrow on purpose.
   hardening profiles *behind the same kernel contract*, not a pivot.
 - **No direct provider API orchestration** unless a future ADR proves the
   substrate boundary genuinely cannot carry a needed capability.
+- **Not a repo-level merge gate yet.** Cerberus stays advisory across local,
+  CI, GitHub, and Bitterblossom-triggered runs until the measured consistency
+  floor holds.
 
 ## Strategic bets
 
@@ -98,18 +116,25 @@ These are why the chosen shape should age better than the obvious alternatives.
    frozen as folklore. Subagent topology, model choice, tool access, skill
    articulation, system prompt wording, and cost controls are all live variables
    to evaluate against real review outcomes.
+6. The Factory's most important review dimension is model-boundary judgment:
+   catch deterministic heuristics where a model is required, and catch model
+   calls where deterministic code should own the behavior.
 
 ## What excellent looks like
 
-- **Near term:** Cerberus is the default code review agent for Misty Step repos.
-  One command reviews a PR inside an isolated review workspace, produces a
-  validated artifact, publishes idempotent GitHub checks/reviews/comments, and
-  preserves receipts. Operators can see what context was used, what was skipped,
-  what time/cost it took, and why each comment exists.
-- **Medium term:** outside callers and task systems map their own sources into
-  `ReviewRequest.v1` without touching Cerberus internals; the substrate is
-  swappable per run; trust is earned by a low rate of false-confident findings,
-  measured against upstream evaluation of real artifacts.
+- **Near term:** the documented path works. One command reviews a PR or local
+  diff inside an isolated review workspace, produces a validated artifact,
+  preserves receipts, and makes timeout, cost, duration, context used, and
+  context skipped visible. Release automation cuts green releases, and GitHub
+  projection has live create/update/idempotence proof.
+- **Medium term:** Cerberus is the default advisory code-review organ for Misty
+  Step repos. Local CLI, CI/pre-push, and Bitterblossom-triggered PR runs all
+  use the same `ReviewRequest.v1 -> ReviewArtifact.v1` kernel. The master can
+  compose dynamic reviewer lanes when the diff justifies them, and every stage
+  leaves receipts that Crucible can score.
+- **Blocking threshold:** trust is earned by a low rate of false-confident
+  findings and a stable pass^k consistency floor measured against real artifacts.
+  Until then, Cerberus comments and artifacts are advisory everywhere.
 - **Long term:** the `ReviewArtifact.v1` contract is the durable asset — a
   substrate- and provider-neutral review primitive that other services build on,
   while the reviewer brain inside keeps improving without forcing callers or
@@ -118,15 +143,19 @@ These are why the chosen shape should age better than the obvious alternatives.
 ## Where it sits
 
 Cerberus is the **consolidation point for all code-review logic, structure, and
-design** in its stack. Consumers pull Cerberus and run it as their reviewer; they
-own what *triggers* a review, what *substrate* it runs on, and *where* results are
-posted — Cerberus is deliberately agnostic to all three. Known consumers:
-**Bitterblossom** (defines its own review triggers and operating substrate, then
-invokes Cerberus as the reviewer) and **Olympus**, which refactors its Argus agent
-to invoke Cerberus rather than reimplement review. **Daedalus** evaluates Cerberus
-runs from emitted receipts. When a capability could belong to Cerberus or to a
-consumer/adjacent system — a trigger, a queue, a posting destination, an eval — it
-belongs to the consumer unless an ADR argues otherwise. Cerberus stays a highly
+design** in its stack. In the Weave loop, Powder and GitHub expose work,
+Bitterblossom triggers and executes reviewer workloads, Cerberus produces the
+advisory review artifact, Crucible measures review quality, and consumers decide
+where to publish the result. Cerberus owns the review organ, not the event plane,
+work queue, release system, or eval lab.
+
+Known consumers: **Bitterblossom** (defines its own review triggers and operating
+substrate, then invokes Cerberus as the reviewer) and **Olympus**, which refactors
+its Argus agent to invoke Cerberus rather than reimplement review. **Crucible**
+and **Daedalus** evaluate Cerberus runs from emitted receipts. When a capability
+could belong to Cerberus or to a consumer/adjacent system — a trigger, a queue, a
+posting destination, an eval, a release workflow — it belongs to the consumer or
+adjacent system unless an ADR argues otherwise. Cerberus stays a highly
 opinionated, optimized review program, not a platform.
 
 The locked MVP contract is `spec.md`. Architectural decisions live in

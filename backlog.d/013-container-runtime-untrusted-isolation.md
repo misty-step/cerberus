@@ -1,6 +1,6 @@
 # Isolate untrusted-PR review: scoped ephemeral credential + light container
 
-Priority: P1 · Status: ready · Estimate: L · Shape: docs/plans/013-container-isolation.html
+Priority: P1 · Status: ready · Estimate: L · Factory epic: 4 · Shape: docs/plans/013-container-isolation.html
 
 ## Goal
 Let a fully-capable Cerberus agent review UNTRUSTED third-party PRs safely by breaking the lethal trifecta at the cheapest leg — make the model credential *worthless* (per-review, capped, revoked) rather than hiding a powerful one — with a lightweight container for non-credential damage.
@@ -27,7 +27,7 @@ Let a fully-capable Cerberus agent review UNTRUSTED third-party PRs safely by br
 - Gaps/waiver: residual = a stolen key usable for seconds up to the cap until DELETE; accepted. Provisioning key is secret-zero (host-side). Provider lock-in → option B (key-out proxy) fallback.
 
 ## Children
-1. **M1 scoped-key lifecycle (floor):** mint-cap-use-revoke + crash-safe teardown (`Drop`/finally) + orphan-key sweeper + the steal-and-replay probe. Testable without a container.
+1. **M1 scoped-key lifecycle (Factory priority):** mint-cap-use-revoke + crash-safe teardown (`Drop`/finally) + orphan-key sweeper + the steal-and-replay probe. Testable without a container.
 2. **M2 lightweight container (depth):** `container-opencode` substrate — `.git`-less archive mount, host not mounted, non-model egress blocked, internal network; red-team fixture family (DNS/endpoint/output/file-write/worktree-escape) for non-credential damage.
 3. **M3 optional upgrades:** key-out proxy (B, providers without scoped keys) or managed sandbox (D, microVM-grade) behind the same seam — no schema change.
 

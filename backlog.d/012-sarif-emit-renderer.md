@@ -1,6 +1,6 @@
 # Add an optional emit-only SARIF renderer (post-MVP)
 
-Priority: P3 · Status: pending · Estimate: M
+Priority: P4 · Status: parked · Estimate: M
 
 ## Goal
 Let callers project a `ReviewArtifact.v1` to SARIF 2.1.0 for GitHub code-scanning interop — as a lossy downstream renderer only, never as the artifact and never as an ingest path.
@@ -12,3 +12,6 @@ Let callers project a `ReviewArtifact.v1` to SARIF 2.1.0 for GitHub code-scannin
 
 ## Notes
 **Why:** lane-exemplars #2 + verdict 1. SARIF is structurally incapable of holding Cerberus's run-level verdict, free-text summary, lifecycle, request provenance, or receipts, so it can only be a downstream projection — exactly where `spec.md` Post-MVP already files "SARIF/check renderers." Emitting buys the GitHub code-scanning UI + free cross-run dedup via `partialFingerprints`. Ingesting SARIF is a non-goal trap: it pulls Cerberus toward linter-aggregation (the 40+ scanner game) and dilutes the one-master-reviewer rule. Low priority; captured for completeness of the interop story. Relates to ticket 007 child 5 (finding fingerprints for idempotent posting borrow SARIF's `partialFingerprints` semantics even though we reject SARIF as the artifact).
+
+Factory groom 2026-07-01: parked because there is still no named consumer.
+Projection proof and advisory deployment outrank optional SARIF output.

@@ -1,6 +1,6 @@
 # Diagnose GLM 5.2 opencode artifact timeout
 
-Priority: P2 · Status: pending · Estimate: S
+Priority: P1 · Status: pending · Estimate: S · Factory child: 022
 
 ## Goal
 
