@@ -3,6 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+grep -q 'misty-step/landmark@v1' .github/workflows/release.yml
+if grep -q '"@semantic-release/git"' .releaserc.json; then
+  echo ".releaserc.json must not use @semantic-release/git; protected master rejects release commits" >&2
+  exit 1
+fi
+if grep -q '"@semantic-release/changelog"' .releaserc.json; then
+  echo ".releaserc.json must not generate CHANGELOG.md during release; releases are GitHub-release only" >&2
+  exit 1
+fi
+
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --locked
