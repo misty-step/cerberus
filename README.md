@@ -63,6 +63,7 @@ cerberus render --artifact target/cerberus/artifact.json \
 cerberus review-pr --number 123 --repo owner/name \
   --harness opencode \
   --out-dir target/cerberus/review-pr \
+  --gh-token-env CERBERUS_GH_TOKEN \
   --dry-run
 
 cerberus review-pr --number 123 --repo owner/name \
@@ -123,9 +124,10 @@ projection. It writes `request.json`, `artifact.json`, `review.md`,
 `post-plan.json` under `--out-dir`. `--dry-run` reads existing GitHub
 comments/checks through `gh api` and prints the exact create/update plan
 without writing. `--post` applies that plan and writes `post-result.json`.
-Posting refuses ambient/keyring `gh` auth: pass exactly one explicit token
-source, either `--gh-token-file <path>` or `--gh-token-env <VAR>`. If the token
-is a GitHub App installation token, Cerberus posts as that app identity; token
+Because dry-run still reads GitHub state, `review-pr` refuses ambient/keyring
+`gh` auth for both reads and writes: pass exactly one explicit token source,
+either `--gh-token-file <path>` or `--gh-token-env <VAR>`. If the token is a
+GitHub App installation token, Cerberus posts as that app identity; token
 minting remains the caller/CI boundary.
 
 ## MCP
@@ -194,7 +196,8 @@ prior Cerberus output instead of duplicating it.
 
 For an operator-gated live smoke, set `CERBERUS_LIVE_REVIEW_PR=1`,
 `CERBERUS_LIVE_REVIEW_REPO=owner/name`, and
-`CERBERUS_LIVE_REVIEW_NUMBER=<pull request number>` before running
-`./scripts/verify.sh`. The live smoke defaults to `--dry-run` and
-`--summary-target status`; set `CERBERUS_LIVE_REVIEW_POST=1` only when the
+`CERBERUS_LIVE_REVIEW_NUMBER=<pull request number>` plus exactly one of
+`CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE` or `CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV`
+before running `./scripts/verify.sh`. The live smoke defaults to `--dry-run`
+and `--summary-target status`; set `CERBERUS_LIVE_REVIEW_POST=1` only when the
 target PR is intentionally allowed to receive Cerberus output.

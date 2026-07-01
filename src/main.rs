@@ -216,10 +216,10 @@ struct ReviewPrArgs {
     summary_target: SummaryTarget,
     #[arg(long, default_value = "gh")]
     gh_binary: String,
-    /// Read the GitHub posting token from this file. Required for --post unless --gh-token-env is used.
+    /// Read the explicit GitHub token from this file. Required unless --gh-token-env is used.
     #[arg(long)]
     gh_token_file: Option<PathBuf>,
-    /// Read the GitHub posting token from this explicitly named env var. Required for --post unless --gh-token-file is used.
+    /// Read the explicit GitHub token from this named env var. Required unless --gh-token-file is used.
     #[arg(long)]
     gh_token_env: Option<String>,
     #[arg(long)]
@@ -611,21 +611,15 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let post_result_path = args.out_dir.join("post-result.json");
     clean_review_pr_post_receipts(&post_plan_path, &post_result_path)?;
     remove_file_if_exists(&receipt_bundle_path)?;
-    let posting_token = if args.post {
-        Some(resolve_post_token(
-            args.gh_token_file.as_deref(),
-            args.gh_token_env.as_deref(),
-        )?)
-    } else {
-        None
-    };
+    let github_token =
+        resolve_github_token(args.gh_token_file.as_deref(), args.gh_token_env.as_deref())?;
     let gh_binary = args.gh_binary.clone();
 
     let request = build_pull_request(&PullRequestOptions {
         number: args.number,
         repo: Some(args.repo.clone()),
         gh_binary: gh_binary.clone(),
-        gh_token: posting_token.clone(),
+        gh_token: Some(github_token.clone()),
         head_workspace: args.head_workspace,
         base_workspace: args.base_workspace,
         common: RequestOptions {
@@ -649,7 +643,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         args.number,
         &args.repo,
         &gh_binary,
-        posting_token.as_deref(),
+        Some(&github_token),
         &head_sha,
     )?;
 
@@ -673,7 +667,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         args.number,
         &args.repo,
         &gh_binary,
-        posting_token.as_deref(),
+        Some(&github_token),
         &head_sha,
     )?;
     if validation_result.is_err() {
@@ -707,9 +701,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     write_text(&markdown_path, &render_markdown(&run.artifact))?;
 
     let mut github = GithubClient::new(gh_binary.clone());
-    if let Some(token) = &posting_token {
-        github = github.with_token(token.clone());
-    }
+    github = github.with_token(github_token.clone());
     let existing =
         github.read_existing_state(&args.repo, args.number, &head_sha, args.summary_target)?;
     let post_plan = build_post_plan(
@@ -727,7 +719,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             args.number,
             &args.repo,
             &gh_binary,
-            posting_token.as_deref(),
+            Some(&github_token),
             &post_plan.head_sha,
         )?;
         write_review_receipt_bundle(
@@ -770,10 +762,10 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
     }
 }
 
-fn resolve_post_token(token_file: Option<&Path>, token_env: Option<&str>) -> Result<String> {
+fn resolve_github_token(token_file: Option<&Path>, token_env: Option<&str>) -> Result<String> {
     match (token_file, token_env) {
         (Some(_), Some(_)) => Err(anyhow!(
-            "review-pr --post accepts exactly one explicit GitHub token source: --gh-token-file or --gh-token-env"
+            "review-pr accepts exactly one explicit GitHub token source: --gh-token-file or --gh-token-env"
         )),
         (Some(path), None) => {
             let raw = fs::read_to_string(path)
@@ -781,7 +773,7 @@ fn resolve_post_token(token_file: Option<&Path>, token_env: Option<&str>) -> Res
             let token = raw.trim_end_matches(['\r', '\n']).to_string();
             if token.trim().is_empty() {
                 return Err(anyhow!(
-                    "GitHub token file {} is empty; refusing to post",
+                    "GitHub token file {} is empty; refusing to read or post",
                     path.display()
                 ));
             }
@@ -792,13 +784,13 @@ fn resolve_post_token(token_file: Option<&Path>, token_env: Option<&str>) -> Res
                 .with_context(|| format!("read explicit GitHub token env var {var}"))?;
             if token.trim().is_empty() {
                 return Err(anyhow!(
-                    "explicit GitHub token env var {var} is empty; refusing to post"
+                    "explicit GitHub token env var {var} is empty; refusing to read or post"
                 ));
             }
             Ok(token)
         }
         (None, None) => Err(anyhow!(
-            "review-pr --post requires an explicit GitHub token via --gh-token-file <path> or --gh-token-env <VAR>; ambient gh auth is refused for posting"
+            "review-pr requires an explicit GitHub token via --gh-token-file <path> or --gh-token-env <VAR>; ambient gh auth is refused for GitHub reads and posting"
         )),
     }
 }
