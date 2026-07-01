@@ -19,7 +19,10 @@ pub use harness::{
     FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
 pub use kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
-pub use orchestration::{build_reviewer_plan, ReviewerPlanReceipt, REVIEWER_PLAN_SCHEMA};
+pub use orchestration::{
+    build_reviewer_plan, launch_planned_child_lanes, ReviewerLaneLaunch, ReviewerLaneReceipt,
+    ReviewerLaneSubstrate, ReviewerPlanReceipt, REVIEWER_LANE_RECEIPT_SCHEMA, REVIEWER_PLAN_SCHEMA,
+};
 pub use post::{build_post_plan, GithubClient, PostPlan, SummaryTarget};
 pub use producer::{
     build_crucible_producer_manifest, CrucibleProducerManifest, CrucibleProducerManifestInput,
