@@ -68,6 +68,8 @@ enum Command {
     ReviewDiff(Box<ReviewDiffArgs>),
     ReviewPr(Box<ReviewPrArgs>),
     Render(RenderArgs),
+    /// Run the Cerberus MCP server over stdio.
+    Mcp,
 }
 
 #[derive(Debug, Args)]
@@ -208,6 +210,12 @@ struct ReviewPrArgs {
     summary_target: SummaryTarget,
     #[arg(long, default_value = "gh")]
     gh_binary: String,
+    /// Read the GitHub posting token from this file. Required for --post unless --gh-token-env is used.
+    #[arg(long)]
+    gh_token_file: Option<PathBuf>,
+    /// Read the GitHub posting token from this explicitly named env var. Required for --post unless --gh-token-file is used.
+    #[arg(long)]
+    gh_token_env: Option<String>,
     #[arg(long)]
     head_workspace: Option<PathBuf>,
     #[arg(long)]
@@ -307,6 +315,7 @@ fn run() -> Result<ExitCode> {
         Command::ReviewDiff(args) => review_diff(*args),
         Command::ReviewPr(args) => review_pr(*args).map(|()| ExitCode::SUCCESS),
         Command::Render(args) => render(args).map(|()| ExitCode::SUCCESS),
+        Command::Mcp => cerberus::mcp::run_stdio().map(|()| ExitCode::SUCCESS),
     }
 }
 
@@ -339,6 +348,7 @@ fn request(args: RequestArgs) -> Result<()> {
                 number: args.number,
                 repo: args.repo,
                 gh_binary: args.gh_binary,
+                gh_token: None,
                 head_workspace: args.head_workspace,
                 base_workspace: args.base_workspace,
                 common: RequestOptions {
@@ -523,12 +533,21 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let post_result_path = args.out_dir.join("post-result.json");
     clean_review_pr_post_receipts(&post_plan_path, &post_result_path)?;
     remove_file_if_exists(&receipt_bundle_path)?;
+    let posting_token = if args.post {
+        Some(resolve_post_token(
+            args.gh_token_file.as_deref(),
+            args.gh_token_env.as_deref(),
+        )?)
+    } else {
+        None
+    };
     let gh_binary = args.gh_binary.clone();
 
     let request = build_pull_request(&PullRequestOptions {
         number: args.number,
         repo: Some(args.repo.clone()),
         gh_binary: gh_binary.clone(),
+        gh_token: posting_token.clone(),
         head_workspace: args.head_workspace,
         base_workspace: args.base_workspace,
         common: RequestOptions {
@@ -548,7 +567,13 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow!("review-pr requires request.change.head_sha"))?
         .to_string();
-    ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, &head_sha)?;
+    ensure_pr_head_unchanged(
+        args.number,
+        &args.repo,
+        &gh_binary,
+        posting_token.as_deref(),
+        &head_sha,
+    )?;
 
     let cwd = args
         .cwd
@@ -564,7 +589,13 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     write_text(&transcript_path, &run.transcript)?;
     write_json(&artifact_path, &run.artifact)?;
     let validation_result = validate_artifact_for_request(&run.artifact, &request);
-    ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, &head_sha)?;
+    ensure_pr_head_unchanged(
+        args.number,
+        &args.repo,
+        &gh_binary,
+        posting_token.as_deref(),
+        &head_sha,
+    )?;
     if validation_result.is_err() {
         write_review_receipt_bundle(
             &receipt_bundle_path,
@@ -595,7 +626,10 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     }
     write_text(&markdown_path, &render_markdown(&run.artifact))?;
 
-    let github = GithubClient::new(gh_binary.clone());
+    let mut github = GithubClient::new(gh_binary.clone());
+    if let Some(token) = &posting_token {
+        github = github.with_token(token.clone());
+    }
     let existing =
         github.read_existing_state(&args.repo, args.number, &head_sha, args.summary_target)?;
     let post_plan = build_post_plan(
@@ -609,7 +643,13 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     write_json(&post_plan_path, &post_plan)?;
 
     if args.post {
-        ensure_pr_head_unchanged(args.number, &args.repo, &gh_binary, &post_plan.head_sha)?;
+        ensure_pr_head_unchanged(
+            args.number,
+            &args.repo,
+            &gh_binary,
+            posting_token.as_deref(),
+            &post_plan.head_sha,
+        )?;
         write_review_receipt_bundle(
             &receipt_bundle_path,
             &request,
@@ -650,13 +690,47 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
     }
 }
 
+fn resolve_post_token(token_file: Option<&Path>, token_env: Option<&str>) -> Result<String> {
+    match (token_file, token_env) {
+        (Some(_), Some(_)) => Err(anyhow!(
+            "review-pr --post accepts exactly one explicit GitHub token source: --gh-token-file or --gh-token-env"
+        )),
+        (Some(path), None) => {
+            let raw = fs::read_to_string(path)
+                .with_context(|| format!("read GitHub token file {}", path.display()))?;
+            let token = raw.trim_end_matches(['\r', '\n']).to_string();
+            if token.trim().is_empty() {
+                return Err(anyhow!(
+                    "GitHub token file {} is empty; refusing to post",
+                    path.display()
+                ));
+            }
+            Ok(token)
+        }
+        (None, Some(var)) => {
+            let token = std::env::var(var)
+                .with_context(|| format!("read explicit GitHub token env var {var}"))?;
+            if token.trim().is_empty() {
+                return Err(anyhow!(
+                    "explicit GitHub token env var {var} is empty; refusing to post"
+                ));
+            }
+            Ok(token)
+        }
+        (None, None) => Err(anyhow!(
+            "review-pr --post requires an explicit GitHub token via --gh-token-file <path> or --gh-token-env <VAR>; ambient gh auth is refused for posting"
+        )),
+    }
+}
+
 fn ensure_pr_head_unchanged(
     number: u64,
     repo: &str,
     gh_binary: &str,
+    gh_token: Option<&str>,
     expected_head_sha: &str,
 ) -> Result<()> {
-    let current = fetch_pull_request_head_sha(number, Some(repo), gh_binary)?;
+    let current = fetch_pull_request_head_sha(number, Some(repo), gh_binary, gh_token)?;
     if current != expected_head_sha {
         return Err(anyhow!(
             "pull request #{number} head moved from {expected_head_sha} to {current}; refusing to post stale Cerberus output"

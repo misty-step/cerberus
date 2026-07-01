@@ -44,6 +44,10 @@ still designs any lane from the diff at runtime (`prompt.rs` mission rules hold)
 - `_done/015-measure-improve-review-faithfulness.md`: eval lab = Daedalus; Cerberus
   emits `ReviewReceiptBundle.v1` (shipped in `_done/005`) and owns reviewer quality
   (prompt/context/substrate) — exactly the lever this change pulls.
+- Factory lane note, 2026-07-01: the measurement path is the Crucible/Threshold
+  review-quality eval (factory backlog 020/054). Cerberus should keep emitting
+  request/artifact/receipt evidence that that arena can consume; it should not
+  grow an in-repo scorer, leaderboard, or promotion loop.
 - If the arena surfaces a missing receipt field needed to score the doctrine, that
   becomes a small concrete Cerberus ticket *pulled by Daedalus*.
 

@@ -25,6 +25,10 @@ grep -q -- '--dry-run' target/cerberus-review-pr-help.txt
 grep -q -- '--post' target/cerberus-review-pr-help.txt
 grep -q -- '--summary-target' target/cerberus-review-pr-help.txt
 grep -q -- '--receipt-bundle' target/cerberus-review-pr-help.txt
+grep -q -- '--gh-token-file' target/cerberus-review-pr-help.txt
+grep -q -- '--gh-token-env' target/cerberus-review-pr-help.txt
+cargo run --locked -- mcp --help > target/cerberus-mcp-help.txt
+grep -q 'Run the Cerberus MCP server over stdio' target/cerberus-mcp-help.txt
 
 rm -rf target/cerberus
 mkdir -p target/cerberus
@@ -260,6 +264,19 @@ expect_exit 1 review-failon-fail cargo run --locked -- review \
   --harness fixture --fixture-output target/cerberus/review-diff-fail-fixture.txt \
   --out target/cerberus/review-failon-artifact.json --fail-on fail
 
+mcp_init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}'
+mcp_tools='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+mcp_review="$(printf '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"review_git_range","arguments":{"repo_path":"%s","base":"%s","head":"%s","harness":"fixture","fixture_output":"fixtures/harness/valid-review.txt","fail_on":"fail"}}}' "$tmp_repo" "$base_sha" "$head_sha")"
+printf '%s\n%s\n%s\n' "$mcp_init" "$mcp_tools" "$mcp_review" \
+  | cargo run --quiet --locked -- mcp \
+  > target/cerberus/mcp.stdout \
+  2> target/cerberus/mcp.stderr
+grep -q '"protocolVersion":"2025-11-25"' target/cerberus/mcp.stdout
+grep -q '"name":"review_git_range"' target/cerberus/mcp.stdout
+grep -q 'Cerberus Review:' target/cerberus/mcp.stdout
+grep -q '"blocking":false' target/cerberus/mcp.stdout
+test ! -s target/cerberus/mcp.stderr
+
 if cargo run --locked -- request git-range \
   --repo-path "$tmp_repo" \
   --base "$base_sha" \
@@ -354,6 +371,8 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
 
 fake_gh="$PWD/fixtures/bin/fake-gh"
 fake_gh_state="target/cerberus/fake-gh-state"
+fake_gh_token="target/cerberus/fake-gh-token.txt"
+printf 'cerberus-fixture-token\n' > "$fake_gh_token"
 rm -rf "$fake_gh_state"
 CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" cargo run --locked -- review-pr \
   --number 7 \
@@ -372,6 +391,134 @@ grep -q '"path": "/repos/example/fixture/pulls/7/reviews"' target/cerberus/revie
 grep -q '"line": 3' target/cerberus/review-pr-dry-run/post-plan.json
 grep -q '"commit_id": "0123456789abcdef"' target/cerberus/review-pr-dry-run/post-plan.json
 grep -q 'comment-001' target/cerberus/review-pr-dry-run/review.md
+
+rm -rf "$fake_gh_state"
+mkdir -p target/cerberus/review-pr-post-no-token
+printf 'stale post result\n' > target/cerberus/review-pr-post-no-token/post-result.json
+printf 'stale post plan\n' > target/cerberus/review-pr-post-no-token/post-plan.json
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-no-token-gh.log \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-post-no-token \
+    --summary-target check-run \
+    --post \
+    > target/cerberus/review-pr-post-no-token.stdout \
+    2> target/cerberus/review-pr-post-no-token.stderr; then
+  echo "expected review-pr post to refuse ambient auth without explicit token" >&2
+  exit 1
+fi
+grep -q 'requires an explicit GitHub token' target/cerberus/review-pr-post-no-token.stderr
+test ! -e target/cerberus/review-pr-post-no-token/post-result.json
+test ! -e target/cerberus/review-pr-post-no-token/post-plan.json
+if [[ -e target/cerberus/review-pr-post-no-token-gh.log ]] && \
+  grep -q '^POST ' target/cerberus/review-pr-post-no-token-gh.log; then
+  echo "review-pr posted without explicit token" >&2
+  exit 1
+fi
+
+rm -rf "$fake_gh_state"
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-both-token-sources-gh.log \
+  CERBERUS_REVIEW_POST_TOKEN=cerberus-fixture-token \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-post-both-token-sources \
+    --summary-target check-run \
+    --gh-token-file "$fake_gh_token" \
+    --gh-token-env CERBERUS_REVIEW_POST_TOKEN \
+    --post \
+    > target/cerberus/review-pr-post-both-token-sources.stdout \
+    2> target/cerberus/review-pr-post-both-token-sources.stderr; then
+  echo "expected review-pr post to reject multiple explicit token sources" >&2
+  exit 1
+fi
+grep -q 'exactly one explicit GitHub token source' \
+  target/cerberus/review-pr-post-both-token-sources.stderr
+
+rm -rf "$fake_gh_state"
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
+  CERBERUS_FAKE_GH_FAIL_PR_VIEW=1 \
+  CERBERUS_REVIEW_POST_TOKEN=cerberus-fixture-token \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-post-pr-view-token-leak \
+    --summary-target check-run \
+    --gh-token-env CERBERUS_REVIEW_POST_TOKEN \
+    --post \
+    > target/cerberus/review-pr-post-pr-view-token-leak.stdout \
+    2> target/cerberus/review-pr-post-pr-view-token-leak.stderr; then
+  echo "expected injected-token pr view failure" >&2
+  exit 1
+fi
+grep -q 'GH_TOKEN=<redacted>' target/cerberus/review-pr-post-pr-view-token-leak.stderr
+if grep -q 'cerberus-fixture-token' target/cerberus/review-pr-post-pr-view-token-leak.stderr; then
+  echo "pr view failure leaked injected token" >&2
+  exit 1
+fi
+
+rm -rf "$fake_gh_state"
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
+  CERBERUS_FAKE_GH_FAIL_PR_DIFF=1 \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-post-pr-diff-token-leak \
+    --summary-target check-run \
+    --gh-token-file "$fake_gh_token" \
+    --post \
+    > target/cerberus/review-pr-post-pr-diff-token-leak.stdout \
+    2> target/cerberus/review-pr-post-pr-diff-token-leak.stderr; then
+  echo "expected injected-token pr diff failure" >&2
+  exit 1
+fi
+grep -q 'GH_TOKEN=<redacted>' target/cerberus/review-pr-post-pr-diff-token-leak.stderr
+if grep -q 'cerberus-fixture-token' target/cerberus/review-pr-post-pr-diff-token-leak.stderr; then
+  echo "pr diff failure leaked injected token" >&2
+  exit 1
+fi
+
+rm -rf "$fake_gh_state"
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
+  CERBERUS_FAKE_GH_FAIL_API=1 \
+  cargo run --locked -- review-pr \
+    --number 7 \
+    --repo example/fixture \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-post-api-token-leak \
+    --summary-target check-run \
+    --gh-token-file "$fake_gh_token" \
+    --post \
+    > target/cerberus/review-pr-post-api-token-leak.stdout \
+    2> target/cerberus/review-pr-post-api-token-leak.stderr; then
+  echo "expected injected-token api failure" >&2
+  exit 1
+fi
+grep -q 'GH_TOKEN=<redacted>' target/cerberus/review-pr-post-api-token-leak.stderr
+if grep -q 'cerberus-fixture-token' target/cerberus/review-pr-post-api-token-leak.stderr; then
+  echo "api failure leaked injected token" >&2
+  exit 1
+fi
 
 rm -rf "$fake_gh_state"
 if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
@@ -394,6 +541,7 @@ test ! -e target/cerberus/review-pr-stale-head/receipt-bundle.json
 
 rm -rf "$fake_gh_state"
 if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
   CERBERUS_FAKE_GH_MOVED_HEAD_SHA=feedfacefeedface \
   CERBERUS_FAKE_GH_MOVE_HEAD_AFTER_VIEW_COUNT=3 \
   CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-final-stale-gh.log \
@@ -405,6 +553,7 @@ if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
     --fixture-output fixtures/harness/valid-review.txt \
     --out-dir target/cerberus/review-pr-post-final-stale \
     --summary-target check-run \
+    --gh-token-file "$fake_gh_token" \
     --post \
     > target/cerberus/review-pr-post-final-stale.stdout \
     2> target/cerberus/review-pr-post-final-stale.stderr; then
@@ -422,6 +571,7 @@ fi
 
 rm -rf "$fake_gh_state"
 CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
 CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-first-gh.log \
 cargo run --locked -- review-pr \
   --number 7 \
@@ -431,9 +581,11 @@ cargo run --locked -- review-pr \
   --fixture-output fixtures/harness/valid-review.txt \
   --out-dir target/cerberus/review-pr-post-first \
   --summary-target check-run \
+  --gh-token-file "$fake_gh_token" \
   --post
 
 CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
 CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-second-gh.log \
 cargo run --locked -- review-pr \
   --number 7 \
@@ -443,9 +595,11 @@ cargo run --locked -- review-pr \
   --fixture-output fixtures/harness/valid-review.txt \
   --out-dir target/cerberus/review-pr-post-second \
   --summary-target check-run \
+  --gh-token-file "$fake_gh_token" \
   --post
 
 CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
 CERBERUS_FAKE_GH_MARKERS_ON_PAGE_2=1 \
 CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-post-page-two-gh.log \
 cargo run --locked -- review-pr \
@@ -456,6 +610,7 @@ cargo run --locked -- review-pr \
   --fixture-output fixtures/harness/valid-review.txt \
   --out-dir target/cerberus/review-pr-post-page-two \
   --summary-target check-run \
+  --gh-token-file "$fake_gh_token" \
   --post
 
 test -s target/cerberus/artifact.json
@@ -467,6 +622,7 @@ test -s target/cerberus/git-range-request.json
 test -s target/cerberus/git-range-artifact.json
 test -s target/cerberus/git-range-review.md
 test -s target/cerberus/git-range-execution_plan.json
+test -s target/cerberus/mcp.stdout
 test -s target/cerberus/git-range-opencode-artifact.json
 test -s target/cerberus/git-range-opencode-review.md
 test -s target/cerberus/git-range-opencode-execution_plan.json
@@ -536,6 +692,7 @@ if grep -R 'GH_TOKEN\|should-not-leak\|master-prompt.md\|review-request.json' ta
 fi
 grep -q 'POST /repos/example/fixture/check-runs' target/cerberus/review-pr-post-first-gh.log
 grep -q 'POST /repos/example/fixture/pulls/7/reviews' target/cerberus/review-pr-post-first-gh.log
+grep -q 'AUTH gh_token=present github_token=absent' target/cerberus/review-pr-post-first-gh.log
 grep -q 'GET /repos/example/fixture/issues/7/comments?per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log
 grep -q 'GET /repos/example/fixture/pulls/7/comments?per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log
 grep -q 'GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_name=Cerberus%20Review&per_page=100&page=1' target/cerberus/review-pr-post-first-gh.log
@@ -553,9 +710,20 @@ if [[ "${CERBERUS_LIVE_REVIEW_PR:-}" == "1" ]]; then
   : "${CERBERUS_LIVE_REVIEW_REPO:?set CERBERUS_LIVE_REVIEW_REPO=owner/name}"
   : "${CERBERUS_LIVE_REVIEW_NUMBER:?set CERBERUS_LIVE_REVIEW_NUMBER=<pull request number>}"
   live_out="target/cerberus/live-review-pr"
-  live_mode="--dry-run"
+  live_mode=(--dry-run)
   if [[ "${CERBERUS_LIVE_REVIEW_POST:-}" == "1" ]]; then
-    live_mode="--post"
+    live_mode=(--post)
+    if [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE:-}" && -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV:-}" ]]; then
+      echo "set only one of CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE or CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV" >&2
+      exit 1
+    elif [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE:-}" ]]; then
+      live_mode+=(--gh-token-file "$CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE")
+    elif [[ -n "${CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV:-}" ]]; then
+      live_mode+=(--gh-token-env "$CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV")
+    else
+      echo "live review posting requires CERBERUS_LIVE_REVIEW_GH_TOKEN_FILE or CERBERUS_LIVE_REVIEW_GH_TOKEN_ENV" >&2
+      exit 1
+    fi
   fi
   cargo run --locked -- review-pr \
     --number "$CERBERUS_LIVE_REVIEW_NUMBER" \
@@ -563,5 +731,5 @@ if [[ "${CERBERUS_LIVE_REVIEW_PR:-}" == "1" ]]; then
     --out-dir "$live_out" \
     --summary-target "${CERBERUS_LIVE_REVIEW_SUMMARY_TARGET:-status}" \
     --harness "${CERBERUS_LIVE_REVIEW_HARNESS:-opencode}" \
-    $live_mode
+    "${live_mode[@]}"
 fi

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerberus Factory Lane: Posting Safety, MCP, Skill, Landmark</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #171717; background: #faf8f2; }
+    main { width: min(82rem, calc(100% - 3rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+    header { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(22rem, .65fr); gap: 2rem; align-items: end; border-bottom: 1px solid #d8d0bd; padding-bottom: 1.4rem; }
+    h1 { margin: 0; font-size: clamp(2.1rem, 4vw, 3.8rem); line-height: 1; }
+    h2 { margin: 0 0 .7rem; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
+    h3 { margin: 1.4rem 0 .4rem; }
+    p, li { line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+    .muted { color: #625d54; }
+    .panel { border: 1px solid #d8d0bd; background: #fffdfa; padding: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #d8d0bd; border: 1px solid #d8d0bd; margin-top: 1.5rem; }
+    .cell { background: #fffdfa; padding: 1rem; }
+    .wash { background: #f0ece0; }
+    .phase { display: grid; grid-template-columns: 8rem minmax(0, 1fr) minmax(16rem, .68fr); gap: 1.2rem; border-top: 1px solid #d8d0bd; padding-top: .85rem; margin-top: .85rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+    th, td { border: 1px solid #d8d0bd; padding: .55rem .65rem; vertical-align: top; text-align: left; }
+    th { background: #f0ece0; }
+    .ok { border-left: 4px solid #2c7a68; }
+    .warn { border-left: 4px solid #b4392a; }
+    @media (max-width: 900px) { header, .grid, .phase { grid-template-columns: 1fr; } main { width: min(100% - 2rem, 82rem); } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <section>
+      <p class="muted">Factory lane / backlog 014 plus agent-native packaging</p>
+      <h1>Make Cerberus safe to post and easy for agents to invoke.</h1>
+      <p>Cerberus already has the primary CLI handoff: <code>review-diff</code> returns review output on stdout and a verdict-gated exit code. This branch finishes the factory surface around it: posting requires an explicit caller-injected GitHub token, agents get an intent-shaped MCP server, the repo ships a Cerberus skill, and releases run through Landmark.</p>
+    </section>
+    <aside class="panel ok">
+      <h2>Chosen Design</h2>
+      <p><strong>Posting:</strong> accept <code>--gh-token-file</code> or <code>--gh-token-env</code>; refuse <code>--post</code> without one; pass the token only to <code>gh api</code>.</p>
+      <p><strong>MCP:</strong> stdio JSON-RPC, intent tools over the existing CLI/review core, no REST mirror and no new review logic.</p>
+      <p><strong>Release:</strong> add the standard Landmark semantic-release workflow and config for <code>master</code>.</p>
+    </aside>
+  </header>
+
+  <section class="grid">
+    <article class="cell"><h2>Standards</h2><p>Caller-neutral core; GitHub remains a projection adapter. No ambient auth, no baked bot identity, no static reviewer fleet.</p></article>
+    <article class="cell"><h2>Acceptance</h2><p>Fake GitHub proves explicit-token posting and no-token refusal; MCP exposes 2-3 high-level review tools; skill documents invocation.</p></article>
+    <article class="cell"><h2>Verify</h2><p><code>./scripts/verify.sh</code>, MCP stdio smoke, fake-gh auth log, generated plan/skill docs inspected, final git status clean.</p></article>
+    <article class="cell wash"><h2>Stop If</h2><p>If a required GitHub App registration secret is needed, document the consumer step instead of baking token minting into Cerberus.</p></article>
+  </section>
+
+  <section class="panel" style="margin-top: 1.5rem">
+    <h2>Execution Plan</h2>
+    <div class="phase"><strong>1 Safety</strong><p>Add explicit posting token flags and plumb them to <code>GithubClient</code>. Refuse <code>--post</code> when neither token source is provided.</p><p class="muted">Proof: fake-gh post with token succeeds; fake-gh post without token exits non-zero and writes no post result.</p></div>
+    <div class="phase"><strong>2 Agent Surface</strong><p>Add <code>cerberus mcp</code> using stdio JSON-RPC. Tools stay intent-shaped: review a git range, render an artifact, and validate an artifact/request pair.</p><p class="muted">Proof: protocol initialize, tools/list, and tools/call fixture review smoke under <code>target/cerberus/mcp-*</code>.</p></div>
+    <div class="phase"><strong>3 Skill</strong><p>Add a shipped skill that tells an agent when to use CLI vs MCP, how to gate on exit codes, and how to avoid posting without explicit token injection.</p><p class="muted">Proof: skill file exists in <code>.agents/skills/cerberus-review/</code> and points to repo gate + artifacts.</p></div>
+    <div class="phase"><strong>4 Landmark</strong><p>Add <code>.github/workflows/release.yml</code> and <code>.releaserc.json</code> using Landmark's semantic-release adoption path for <code>master</code>.</p><p class="muted">Proof: workflow/config present and verify still passes.</p></div>
+  </section>
+
+  <section style="margin-top: 1.5rem">
+    <h2>Alternatives</h2>
+    <table>
+      <tr><th>Option</th><th>Why It Helps</th><th>Verdict</th></tr>
+      <tr><td>Cerberus-owned GitHub App minting</td><td>Would hide token creation from consumers.</td><td>Reject: violates 014 reshape and caller-neutral boundary.</td></tr>
+      <tr><td>MCP wraps every CLI subcommand</td><td>Fast to enumerate.</td><td>Reject: factory report calls out REST/CLI mirror MCP as the anti-pattern.</td></tr>
+      <tr><td>Only document MCP, no server</td><td>Cheap.</td><td>Reject: lane deliverable explicitly asks for a packageable MCP server.</td></tr>
+    </table>
+  </section>
+
+  <section class="panel warn" style="margin-top: 1.5rem">
+    <h2>Review Focus</h2>
+    <p>Critic should attack auth leakage, post idempotency under injected tokens, MCP stdout/stderr separation, and whether the new agent surface forks review behavior instead of calling the existing kernel/CLI path.</p>
+  </section>
+</main>
+</body>
+</html>
