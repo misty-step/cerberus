@@ -3,6 +3,7 @@ pub mod harness;
 pub mod kernel;
 pub mod mcp;
 pub mod post;
+pub mod producer;
 pub mod prompt;
 pub mod receipt;
 pub mod render;
@@ -18,6 +19,10 @@ pub use harness::{
 };
 pub use kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
 pub use post::{build_post_plan, GithubClient, PostPlan, SummaryTarget};
+pub use producer::{
+    build_crucible_producer_manifest, CrucibleProducerManifest, CrucibleProducerManifestInput,
+    CRUCIBLE_PRODUCER_MANIFEST_SCHEMA,
+};
 pub use receipt::{
     build_review_receipt_bundle, ReceiptBundleInput, ReceiptValidation, ReceiptValidationStatus,
     ReviewReceiptBundle, REVIEW_RECEIPT_BUNDLE_SCHEMA,
