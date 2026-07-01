@@ -7,10 +7,18 @@ log_file="${CERBERUS_FAKE_GH_LOG:-}"
 
 mkdir -p "$state_dir"
 
+if [[ "${CERBERUS_FAKE_GH_REQUIRE_TOKEN:-}" == "1" && -z "${GH_TOKEN:-}" ]]; then
+  echo "fake-gh expected explicit GH_TOKEN" >&2
+  exit 1
+fi
+
 record() {
   if [[ -n "$log_file" ]]; then
     {
       printf '%s %s\n' "$1" "$2"
+      printf 'AUTH gh_token=%s github_token=%s\n' \
+        "$([[ -n "${GH_TOKEN:-}" ]] && printf present || printf absent)" \
+        "$([[ -n "${GITHUB_TOKEN:-}" ]] && printf present || printf absent)"
       if [[ -n "${3:-}" ]]; then
         printf '%s\n' "$3"
       fi
@@ -19,6 +27,11 @@ record() {
 }
 
 if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+  record "PR_VIEW" "${*:3}"
+  if [[ "${CERBERUS_FAKE_GH_FAIL_PR_VIEW:-}" == "1" ]]; then
+    echo "pr view failed with GH_TOKEN=${GH_TOKEN:-}" >&2
+    exit 1
+  fi
   count_file="$state_dir/pr-view-count"
   count=0
   if [[ -s "$count_file" ]]; then
@@ -42,6 +55,11 @@ PY
 fi
 
 if [[ "${1:-}" == "pr" && "${2:-}" == "diff" ]]; then
+  record "PR_DIFF" "${*:3}"
+  if [[ "${CERBERUS_FAKE_GH_FAIL_PR_DIFF:-}" == "1" ]]; then
+    echo "pr diff failed with GH_TOKEN=${GH_TOKEN:-}" >&2
+    exit 1
+  fi
   cat "$repo_root/fixtures/github/pr.diff"
   exit 0
 fi
@@ -83,6 +101,11 @@ if [[ "$read_input" == "1" ]]; then
   body="$(cat)"
 fi
 record "$method" "$path" "$body"
+
+if [[ "${CERBERUS_FAKE_GH_FAIL_API:-}" == "1" ]]; then
+  echo "api failed with GH_TOKEN=${GH_TOKEN:-}" >&2
+  exit 1
+fi
 
 comment_array() {
   local file="$1"

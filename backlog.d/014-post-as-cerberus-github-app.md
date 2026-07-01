@@ -1,6 +1,13 @@
 # Safe GitHub posting: explicit injected token, refuse ambient auth
 
-Priority: P2 · Status: ready · Estimate: S · Reshaped: 2026-06-25
+Priority: P2 · Status: shipped · Estimate: S · Reshaped: 2026-06-25
+
+**Shipped 2026-07-01:** `review-pr --post` now refuses ambient/keyring `gh`
+auth and requires exactly one explicit token source (`--gh-token-file` or
+`--gh-token-env`). The token is passed to PR acquisition, stale-head checks, and
+`gh api` posting while ambient GitHub token env vars are removed for those
+subprocesses. `./scripts/verify.sh` covers no-token refusal, explicit-token
+fake-gh posting, and idempotent update behavior.
 
 ## Goal
 When Cerberus posts a review to GitHub (`review-pr --post`), it uses an **explicit, caller-injected token** and **refuses to post under ambient/keyring (`gh`) user auth** — so it never silently posts as a human, and so a bot identity supplied by the caller (a GitHub App installation token) flows through cleanly, including check-runs.

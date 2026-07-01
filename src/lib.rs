@@ -1,12 +1,14 @@
 pub mod digest;
 pub mod harness;
 pub mod kernel;
+pub mod mcp;
 pub mod post;
 pub mod prompt;
 pub mod receipt;
 pub mod render;
 pub mod request;
 pub mod schema;
+mod secrets;
 mod telemetry;
 pub mod validation;
 

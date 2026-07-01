@@ -12,6 +12,7 @@ use crate::render::render_markdown;
 use crate::schema::{
     AnchorKind, Comment, CommentKind, LifecycleState, ReviewArtifact, ReviewRequest, Verdict,
 };
+use crate::secrets::redact_secret;
 
 pub const POST_PLAN_SCHEMA: &str = "cerberus.post_plan.v1";
 pub const POST_RESULT_SCHEMA: &str = "cerberus.post_result.v1";
@@ -467,13 +468,20 @@ struct InlineCommentBody {
 #[derive(Debug, Clone)]
 pub struct GithubClient {
     binary: String,
+    token: Option<String>,
 }
 
 impl GithubClient {
     pub fn new(binary: impl Into<String>) -> Self {
         Self {
             binary: binary.into(),
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
     }
 
     pub fn binary(&self) -> &str {
@@ -594,6 +602,13 @@ impl GithubClient {
     fn api_raw(&self, method: &str, path: &str, body: Option<Value>) -> Result<String> {
         let mut command = Command::new(&self.binary);
         command.arg("api").arg("--method").arg(method).arg(path);
+        if let Some(token) = &self.token {
+            command
+                .env("GH_TOKEN", token)
+                .env_remove("GITHUB_TOKEN")
+                .env_remove("GH_ENTERPRISE_TOKEN")
+                .env_remove("GITHUB_ENTERPRISE_TOKEN");
+        }
         if body.is_some() {
             command.arg("--input").arg("-");
             command.stdin(Stdio::piped());
@@ -613,10 +628,12 @@ impl GithubClient {
             .wait_with_output()
             .with_context(|| format!("wait for gh api --method {method} {path}"))?;
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = redact_secret(&stderr, self.token.as_deref());
             bail!(
                 "{} api --method {method} {path} failed: {}",
                 self.binary,
-                String::from_utf8_lossy(&output.stderr)
+                stderr
             );
         }
         Ok(String::from_utf8_lossy(&output.stdout).to_string())

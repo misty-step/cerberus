@@ -12,6 +12,7 @@ use crate::schema::{
     RuntimeTarget, Source, SourceKind, WorkspaceContext, WorkspaceKind, WorkspaceRef,
     REVIEW_REQUEST_SCHEMA,
 };
+use crate::secrets::redact_secret;
 
 #[derive(Debug, Clone)]
 pub struct RequestOptions {
@@ -40,6 +41,7 @@ pub struct PullRequestOptions {
     pub number: u64,
     pub repo: Option<String>,
     pub gh_binary: String,
+    pub gh_token: Option<String>,
     pub head_workspace: Option<PathBuf>,
     pub base_workspace: Option<PathBuf>,
     pub common: RequestOptions,
@@ -171,11 +173,13 @@ pub fn build_pull_request(options: &PullRequestOptions) -> Result<ReviewRequest>
         options.number,
         options.repo.as_deref(),
         options.gh_binary.as_str(),
+        options.gh_token.as_deref(),
     )?;
     let diff = gh_pr_diff(
         options.number,
         options.repo.as_deref(),
         options.gh_binary.as_str(),
+        options.gh_token.as_deref(),
     )?;
     if diff.trim().is_empty() {
         bail!("pull request #{} produced an empty diff", options.number);
@@ -276,8 +280,9 @@ pub fn fetch_pull_request_head_sha(
     number: u64,
     repo: Option<&str>,
     gh_binary: &str,
+    gh_token: Option<&str>,
 ) -> Result<String> {
-    let pr = gh_pr_view(number, repo, gh_binary)?;
+    let pr = gh_pr_view(number, repo, gh_binary, gh_token)?;
     require_pr_head_sha(number, &pr)
 }
 
@@ -291,17 +296,31 @@ fn policy_from_options(options: &RequestOptions) -> ReviewPolicy {
 }
 
 fn run(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
+    run_with_env(cwd, program, args, None)
+}
+
+fn run_with_env(
+    cwd: &Path,
+    program: &str,
+    args: &[&str],
+    gh_token: Option<&str>,
+) -> Result<String> {
+    let mut command = Command::new(program);
+    command.args(args).current_dir(cwd);
+    if let Some(token) = gh_token {
+        command
+            .env("GH_TOKEN", token)
+            .env_remove("GITHUB_TOKEN")
+            .env_remove("GH_ENTERPRISE_TOKEN")
+            .env_remove("GITHUB_ENTERPRISE_TOKEN");
+    }
+    let output = command
         .output()
         .with_context(|| format!("run {program} {}", args.join(" ")))?;
     if !output.status.success() {
-        bail!(
-            "{program} {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = redact_secret(&stderr, gh_token);
+        bail!("{program} {} failed: {}", args.join(" "), stderr);
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -482,24 +501,34 @@ fn short_sha(value: &str) -> String {
     value.chars().take(12).collect()
 }
 
-fn gh_pr_view(number: u64, repo: Option<&str>, gh_binary: &str) -> Result<GhPullRequest> {
+fn gh_pr_view(
+    number: u64,
+    repo: Option<&str>,
+    gh_binary: &str,
+    gh_token: Option<&str>,
+) -> Result<GhPullRequest> {
     let number = number.to_string();
     let fields = "number,title,body,url,baseRefName,baseRefOid,headRefName,headRefOid,files";
     let mut args = vec!["pr", "view", number.as_str(), "--json", fields];
     if let Some(repo) = repo {
         args.extend(["-R", repo]);
     }
-    let output = run(Path::new("."), gh_binary, &args)?;
+    let output = run_with_env(Path::new("."), gh_binary, &args, gh_token)?;
     serde_json::from_str(&output).context("parse gh pr view JSON")
 }
 
-fn gh_pr_diff(number: u64, repo: Option<&str>, gh_binary: &str) -> Result<String> {
+fn gh_pr_diff(
+    number: u64,
+    repo: Option<&str>,
+    gh_binary: &str,
+    gh_token: Option<&str>,
+) -> Result<String> {
     let number = number.to_string();
     let mut args = vec!["pr", "diff", number.as_str(), "--patch", "--color", "never"];
     if let Some(repo) = repo {
         args.extend(["-R", repo]);
     }
-    run(Path::new("."), gh_binary, &args)
+    run_with_env(Path::new("."), gh_binary, &args, gh_token)
 }
 
 #[derive(Debug, Deserialize)]

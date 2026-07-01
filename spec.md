@@ -278,8 +278,11 @@ cerberus render --artifact <artifact.json> --markdown <review.md>
 cerberus review-pr --number <n> --repo <owner/name> \
   [--out-dir <dir>] [--dry-run|--post] \
   [--summary-target check-run|status] \
+  [--gh-token-file <path>|--gh-token-env <VAR>] \
   [--receipt-bundle <bundle.json>] \
   [--harness opencode|omp|fixture]
+
+cerberus mcp
 ```
 
 The request commands are acquisition helpers. They produce `ReviewRequest.v1`
@@ -313,10 +316,22 @@ comments. Inline review comments are emitted only when the artifact anchor maps
 to a changed new-side line in the PR diff; every unmappable inline comment is
 included in contextual summary output instead.
 
+`--post` requires an explicit caller-injected GitHub token source
+(`--gh-token-file` or `--gh-token-env`) and refuses ambient/keyring `gh` auth.
+The token may be a GitHub App installation token, fine-grained token, or other
+caller-owned credential with the required destination permissions. Cerberus does
+not mint GitHub App JWTs or installation tokens; that remains the consumer or CI
+boundary. Dry-run and artifact emission may still run without an explicit token.
+
 `--summary-target check-run` creates or updates a Cerberus check run when the
-available token has Checks write access. `--summary-target status` posts a
-commit status fallback for user-token environments where check-run creation is
-not authorized.
+injected token has Checks write access. `--summary-target status` posts a
+commit status fallback for environments where check-run creation is not
+authorized.
+
+`mcp` runs a stdio JSON-RPC MCP server. Its tools are review intents, not a
+REST/CLI mirror: review a local git range, render a saved artifact, and validate
+an artifact against its request. Each tool delegates to the same request builder,
+kernel, validator, and renderer used by the CLI.
 
 The fixture harness exists only for deterministic verification. The preferred
 production product path is the OpenCode harness; OMP is a local fallback.
@@ -379,7 +394,10 @@ MVP is complete when:
   bundles for upstream scoring;
 - Markdown rendering works from stored artifacts;
 - `review-pr` can dry-run and post through fake GitHub fixtures without
-  duplicate comments and without inline comments outside changed lines;
+  duplicate comments, without inline comments outside changed lines, and without
+  posting under ambient/keyring GitHub auth;
+- `mcp` can initialize, list intent-shaped tools, and run a fixture-backed
+  git-range review over stdio;
 - `./scripts/verify.sh` passes from a clean checkout;
 - final git state is clean.
 

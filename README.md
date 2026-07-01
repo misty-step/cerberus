@@ -68,6 +68,7 @@ cerberus review-pr --number 123 --repo owner/name \
   --harness opencode \
   --out-dir target/cerberus/review-pr \
   --summary-target check-run \
+  --gh-token-file /path/to/github-app-installation-token \
   --post
 
 # Agent-native: review the current branch against a base in one command,
@@ -121,6 +122,31 @@ projection. It writes `request.json`, `artifact.json`, `review.md`,
 `post-plan.json` under `--out-dir`. `--dry-run` reads existing GitHub
 comments/checks through `gh api` and prints the exact create/update plan
 without writing. `--post` applies that plan and writes `post-result.json`.
+Posting refuses ambient/keyring `gh` auth: pass exactly one explicit token
+source, either `--gh-token-file <path>` or `--gh-token-env <VAR>`. If the token
+is a GitHub App installation token, Cerberus posts as that app identity; token
+minting remains the caller/CI boundary.
+
+## MCP
+
+Cerberus also ships a small stdio MCP server for agents that prefer tool calls
+over shelling out:
+
+```sh
+cerberus mcp
+```
+
+The MCP surface is intent-shaped rather than a CLI mirror:
+
+- `review_git_range` reviews a committed local `base...head` range and returns
+  the rendered review plus verdict metadata.
+- `render_review_artifact` renders a saved `ReviewArtifact.v1` to Markdown.
+- `validate_review_artifact` validates a saved artifact against its
+  `ReviewRequest.v1`.
+
+For local implementation work, `cerberus review-diff --base <ref> --fail-on
+fail` remains the lowest-friction handoff. Use MCP when the calling agent has a
+native MCP client and benefits from tool schemas/results.
 
 `ReviewReceiptBundle.v1` is the upstream evaluation handoff. It records the
 request digest, artifact digest, harness, model and usage when available,
