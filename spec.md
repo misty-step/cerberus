@@ -214,6 +214,13 @@ secret or private file paths. Prompt schema instructions are checked against
 the Rust `ReviewArtifact.v1` contract so the compact substrate prompt cannot
 silently drift from validation.
 
+The orchestrator stage is represented in `reviewer_plan.json`
+(`cerberus.reviewer_plan.v1`). It records diff understanding, available and
+skipped context, the single-master or child-lane decision, the master lane
+scope, and synthesis/validation notes. In the MVP path this receipt records
+`single_master` with no child lanes; future dynamic lanes extend this receipt
+and still synthesize into one validated `ReviewArtifact.v1`.
+
 ## Master Reviewer Prompt Contract
 
 The master prompt tells Cerberus:
@@ -315,9 +322,10 @@ and Harbor export.
 
 `review-pr` is a convenience orchestrator over the existing acquisition and
 review boundaries. It must write the same request, execution plan, transcript,
-artifact, Markdown, and `ReviewReceiptBundle.v1` receipts as the separate
-commands, then produce a `PostPlan.v1`. Dry-run mode reads existing GitHub
-state but does not write. Posting mode applies the post plan through `gh api`.
+reviewer plan, artifact, Markdown, and `ReviewReceiptBundle.v1` receipts as the
+separate commands, then produce a `PostPlan.v1`. Dry-run mode reads existing
+GitHub state but does not write. Posting mode applies the post plan through
+`gh api`.
 
 GitHub projection is not part of `ReviewArtifact.v1`. The post plan maps the
 artifact to a per-head-SHA summary, contextual PR issue comment, and PR review
@@ -325,12 +333,13 @@ comments. Inline review comments are emitted only when the artifact anchor maps
 to a changed new-side line in the PR diff; every unmappable inline comment is
 included in contextual summary output instead.
 
-`--post` requires an explicit caller-injected GitHub token source
-(`--gh-token-file` or `--gh-token-env`) and refuses ambient/keyring `gh` auth.
-The token may be a GitHub App installation token, fine-grained token, or other
-caller-owned credential with the required destination permissions. Cerberus does
-not mint GitHub App JWTs or installation tokens; that remains the consumer or CI
-boundary. Dry-run and artifact emission may still run without an explicit token.
+`review-pr` requires an explicit caller-injected GitHub token source
+(`--gh-token-file` or `--gh-token-env`) for both dry-run reads and posting, and
+refuses ambient/keyring `gh` auth. The token may be a GitHub App installation
+token, fine-grained token, or other caller-owned credential with the required
+destination permissions. Cerberus does not mint GitHub App JWTs or installation
+tokens; that remains the consumer or CI boundary. Pure artifact emission remains
+available through non-GitHub `review` and `review-diff`.
 
 `--summary-target check-run` creates or updates a Cerberus check run when the
 injected token has Checks write access. `--summary-target status` posts a
@@ -378,6 +387,7 @@ Evidence packet:
 - `target/cerberus/artifact.json`
 - `target/cerberus/review.md`
 - `target/cerberus/execution_plan.json`
+- `target/cerberus/reviewer_plan.json`
 - `target/cerberus/receipts/*.json`
 - `target/cerberus/crucible-producer/producer-manifest.json`
 - `target/cerberus/review-pr/post-plan.json`

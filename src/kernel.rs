@@ -7,6 +7,7 @@ use crate::harness::{
     run_command_substrate, run_fixture_substrate, CommandSubstrateConfig, ExecutionPlan,
     FixtureSubstrateConfig, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
+use crate::orchestration::{build_reviewer_plan, ReviewerPlanReceipt};
 use crate::schema::{ReviewArtifact, ReviewRequest, ReviewTelemetry};
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,7 @@ pub struct ReviewRun {
     pub artifact: ReviewArtifact,
     pub transcript: String,
     pub execution_plan: ExecutionPlan,
+    pub reviewer_plan: ReviewerPlanReceipt,
     pub telemetry: ReviewTelemetry,
 }
 
@@ -67,10 +69,12 @@ impl ReviewKernel {
                 run_policy.failure_transcript.as_deref(),
             )?,
         };
+        let reviewer_plan = build_reviewer_plan(request, &run.execution_plan, &run.telemetry)?;
         Ok(ReviewRun {
             artifact: run.artifact,
             transcript: run.transcript,
             execution_plan: run.execution_plan,
+            reviewer_plan,
             telemetry: run.telemetry,
         })
     }

@@ -157,6 +157,7 @@ mod tests {
             execution_plan_uri: Some(
                 "target/cerberus/crucible-producer/execution_plan.json".to_string(),
             ),
+            reviewer_plan_uri: None,
             validation_failed: false,
         })
         .unwrap();
@@ -195,6 +196,7 @@ mod tests {
             artifact_uri: "target/cerberus/crucible-producer/artifact.json".to_string(),
             transcript_uri: None,
             execution_plan_uri: None,
+            reviewer_plan_uri: None,
             validation_failed: true,
         })
         .unwrap();
