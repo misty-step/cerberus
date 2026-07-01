@@ -31,8 +31,9 @@ surface, runs deterministic fixture reviews, smokes both the OpenCode and OMP
 harness paths through local fake binaries, exercises base+head context and
 local runtime probes, and runs `review-pr` through a fake `gh` adapter.
 Evidence is written to `target/cerberus/`, including execution plans,
-transcripts, artifacts, rendered Markdown, post plans, post results, context
-tier receipts, evaluation receipt bundles, and fake GitHub API transcripts.
+reviewer plans, transcripts, artifacts, rendered Markdown, post plans, post
+results, context tier receipts, evaluation receipt bundles, and fake GitHub API
+transcripts.
 
 ## CLI
 
@@ -120,8 +121,8 @@ disposable review worktrees; OMP is a local fallback.
 
 `review-pr` is orchestration over acquisition, review, rendering, and GitHub
 projection. It writes `request.json`, `artifact.json`, `review.md`,
-`execution_plan.json`, `transcript.txt`, `receipt-bundle.json`, and
-`post-plan.json` under `--out-dir`. `--dry-run` reads existing GitHub
+`execution_plan.json`, `reviewer_plan.json`, `transcript.txt`,
+`receipt-bundle.json`, and `post-plan.json` under `--out-dir`. `--dry-run` reads existing GitHub
 comments/checks through `gh api` and prints the exact create/update plan
 without writing. `--post` applies that plan and writes `post-result.json`.
 Because dry-run still reads GitHub state, `review-pr` refuses ambient/keyring
@@ -157,6 +158,11 @@ latency, capability tier, artifact/transcript URIs, and validation outcome
 without embedding prompt files, request files, secret names, or transcript
 excerpts. Daedalus or another lab can score those bundles without Cerberus
 owning model or harness evaluation.
+
+`ReviewerPlanReceipt.v1` is the orchestration sidecar. The current path records
+diff understanding, available and skipped context, the single-master lane
+decision, and the synthesis/validation contract. Dynamic child lanes will extend
+that receipt rather than bypassing `ReviewArtifact.v1`.
 
 ## Crucible producer handoff
 

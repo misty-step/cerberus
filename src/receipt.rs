@@ -31,6 +31,8 @@ pub struct ReviewReceiptBundle {
     pub transcript_uri: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_plan_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer_plan_uri: Option<String>,
     pub validation: ReceiptValidation,
 }
 
@@ -58,6 +60,7 @@ pub struct ReceiptBundleInput<'a> {
     pub artifact_uri: String,
     pub transcript_uri: Option<String>,
     pub execution_plan_uri: Option<String>,
+    pub reviewer_plan_uri: Option<String>,
     pub validation_failed: bool,
 }
 
@@ -97,6 +100,7 @@ pub fn build_review_receipt_bundle(input: ReceiptBundleInput<'_>) -> Result<Revi
         artifact_uri: input.artifact_uri,
         transcript_uri: input.transcript_uri,
         execution_plan_uri: input.execution_plan_uri,
+        reviewer_plan_uri: input.reviewer_plan_uri,
         validation,
     })
 }
@@ -124,7 +128,7 @@ fn receipt_validation(artifact: &ReviewArtifact, validation_failed: bool) -> Rec
     }
 }
 
-fn capability_tier(capabilities: &ContextCapabilities) -> &'static str {
+pub(crate) fn capability_tier(capabilities: &ContextCapabilities) -> &'static str {
     if capabilities.remote_runtime {
         "remote_runtime"
     } else if capabilities.local_runtime {
@@ -284,6 +288,7 @@ mod tests {
             artifact_uri: "target/cerberus/artifact.json".to_string(),
             transcript_uri: Some("target/cerberus/transcript.txt".to_string()),
             execution_plan_uri: Some("target/cerberus/execution_plan.json".to_string()),
+            reviewer_plan_uri: Some("target/cerberus/reviewer_plan.json".to_string()),
             validation_failed,
         }
     }
@@ -388,6 +393,24 @@ mod tests {
                 workspace_mode: "diff_packet".to_string(),
                 runtime_transcripts: Vec::new(),
             },
+            reviewer_plan: crate::orchestration::build_reviewer_plan(
+                request,
+                &ExecutionPlan {
+                    harness: "fixture".to_string(),
+                    command: "fixtures/harness/valid-review.txt".to_string(),
+                    args: Vec::new(),
+                    cwd: ".".to_string(),
+                    timeout_ms: 1000,
+                    env_allowlist: Vec::new(),
+                    context_capabilities: ContextCapabilities::from_request(request),
+                    prompt_transport: "fixture template".to_string(),
+                    private_material_in_argv: false,
+                    workspace_mode: "diff_packet".to_string(),
+                    runtime_transcripts: Vec::new(),
+                },
+                &Default::default(),
+            )
+            .unwrap(),
             telemetry: Default::default(),
         }
     }

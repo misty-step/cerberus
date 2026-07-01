@@ -762,29 +762,36 @@ test -s target/cerberus/review.md
 test -s target/cerberus/review-rendered.md
 test -s target/cerberus/execution_plan.json
 test -s target/cerberus/transcript.txt
+test -s target/cerberus/reviewer_plan.json
 test -s target/cerberus/git-range-request.json
 test -s target/cerberus/git-range-artifact.json
 test -s target/cerberus/git-range-review.md
 test -s target/cerberus/git-range-execution_plan.json
+test -s target/cerberus/git-range-reviewer_plan.json
 test -s target/cerberus/mcp.stdout
 test -s target/cerberus/git-range-opencode-artifact.json
 test -s target/cerberus/git-range-opencode-review.md
 test -s target/cerberus/git-range-opencode-execution_plan.json
 test -s target/cerberus/git-range-opencode-transcript.txt
+test -s target/cerberus/git-range-opencode-reviewer_plan.json
 test -s target/cerberus/context-tiers/local-runtime-request.json
 test -s target/cerberus/context-tiers/local-runtime-opencode-artifact.json
 test -s target/cerberus/context-tiers/local-runtime-opencode-execution_plan.json
 test -s target/cerberus/context-tiers/local-runtime-opencode-transcript.txt
+test -s target/cerberus/context-tiers/local-runtime-opencode-reviewer_plan.json
 test -s target/cerberus/opencode-artifact.json
 test -s target/cerberus/opencode-execution_plan.json
 test -s target/cerberus/opencode-transcript.txt
+test -s target/cerberus/opencode-reviewer_plan.json
 test -s target/cerberus/omp-artifact.json
 test -s target/cerberus/omp-execution_plan.json
 test -s target/cerberus/omp-transcript.txt
+test -s target/cerberus/omp-reviewer_plan.json
 test -s target/cerberus/review-pr-dry-run/request.json
 test -s target/cerberus/review-pr-dry-run/artifact.json
 test -s target/cerberus/review-pr-dry-run/review.md
 test -s target/cerberus/review-pr-dry-run/execution_plan.json
+test -s target/cerberus/review-pr-dry-run/reviewer_plan.json
 test -s target/cerberus/review-pr-dry-run/transcript.txt
 test -s target/cerberus/review-pr-dry-run/post-plan.json
 test -s target/cerberus/review-pr-post-first/post-result.json
@@ -818,6 +825,26 @@ grep -q '"workspace_mode": "diff_packet"' target/cerberus/omp-execution_plan.jso
 grep -q '<request-file>' target/cerberus/opencode-execution_plan.json
 grep -q '<request-file>' target/cerberus/git-range-opencode-execution_plan.json
 grep -q '<prompt-file>' target/cerberus/omp-execution_plan.json
+python3 - <<'PY'
+import json
+
+with open("target/cerberus/reviewer_plan.json", encoding="utf-8") as fh:
+    plan = json.load(fh)
+assert plan["schema_version"] == "cerberus.reviewer_plan.v1"
+assert plan["lane_decision"]["mode"] == "single_master"
+assert len(plan["child_lanes"]) == 0
+assert plan["master_lane"]["expected_output"] == "ReviewArtifact.v1"
+assert plan["diff_understanding"]["changed_surfaces"][0]["path"] == "src/ratio.rs"
+
+with open(
+    "target/cerberus/context-tiers/local-runtime-opencode-reviewer_plan.json",
+    encoding="utf-8",
+) as fh:
+    local_plan = json.load(fh)
+assert local_plan["diff_understanding"]["available_context"]["local_runtime"] is True
+assert local_plan["master_lane"]["allowed_context_tier"] == "local_runtime"
+assert "local_runtime" not in local_plan["diff_understanding"]["skipped_context"]
+PY
 grep -q '"schema_version": "cerberus.review_receipt_bundle.v1"' target/cerberus/receipts/opencode.json
 grep -q '"harness": "opencode"' target/cerberus/receipts/opencode.json
 grep -q '"model": "fake/opencode-reviewer"' target/cerberus/receipts/opencode.json
@@ -826,6 +853,7 @@ grep -q '"completion_tokens": 45' target/cerberus/receipts/opencode.json
 grep -q '"cost_usd": 0.0042' target/cerberus/receipts/opencode.json
 grep -q '"validation": {' target/cerberus/receipts/opencode.json
 grep -q '"trusted_for_posting": true' target/cerberus/receipts/opencode.json
+grep -q '"reviewer_plan_uri": "target/cerberus/reviewer_plan.json"' target/cerberus/receipts/fixture.json
 grep -q '"capability_tier": "diff_only"' target/cerberus/receipts/fixture.json
 grep -q '"capability_tier": "repo_base_and_head"' target/cerberus/receipts/git-range-opencode.json
 grep -q '"capability_tier": "local_runtime"' target/cerberus/receipts/local-runtime-opencode.json

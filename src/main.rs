@@ -468,7 +468,9 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     };
     let run = kernel.review(&request, &run_policy)?;
     let plan_path = execution_plan.unwrap_or_else(|| sibling_path(&out, "execution_plan.json"));
+    let reviewer_plan_path = reviewer_plan_path_for(&out);
     write_json(&plan_path, &run.execution_plan)?;
+    write_json(&reviewer_plan_path, &run.reviewer_plan)?;
     if let Some(transcript_path) = &transcript_path {
         write_text(transcript_path, &run.transcript)?;
     }
@@ -479,9 +481,12 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
             receipt_bundle,
             &request,
             &run,
-            &out,
-            transcript_path.as_deref(),
-            Some(&plan_path),
+            ReviewReceiptPaths {
+                artifact: &out,
+                transcript: transcript_path.as_deref(),
+                execution_plan: Some(&plan_path),
+                reviewer_plan: Some(&reviewer_plan_path),
+            },
             validation_result.is_err(),
         )?)
     } else {
@@ -584,6 +589,7 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
     // Optional persistence; stdout stays the primary deliverable for the caller.
     if let Some(out) = &args.out {
         write_json(out, &run.artifact)?;
+        write_json(&reviewer_plan_path_for(out), &run.reviewer_plan)?;
     }
     let markdown = render_markdown(&run.artifact);
     if let Some(path) = &args.markdown {
@@ -602,6 +608,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let artifact_path = args.out_dir.join("artifact.json");
     let markdown_path = args.out_dir.join("review.md");
     let execution_plan_path = args.out_dir.join("execution_plan.json");
+    let reviewer_plan_path = args.out_dir.join("reviewer_plan.json");
     let transcript_path = args.out_dir.join("transcript.txt");
     let receipt_bundle_path = args
         .receipt_bundle
@@ -660,6 +667,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     };
     let run = kernel.review(&request, &run_policy)?;
     write_json(&execution_plan_path, &run.execution_plan)?;
+    write_json(&reviewer_plan_path, &run.reviewer_plan)?;
     write_text(&transcript_path, &run.transcript)?;
     write_json(&artifact_path, &run.artifact)?;
     let validation_result = validate_artifact_for_request(&run.artifact, &request);
@@ -675,9 +683,12 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             &receipt_bundle_path,
             &request,
             &run,
-            &artifact_path,
-            Some(&transcript_path),
-            Some(&execution_plan_path),
+            ReviewReceiptPaths {
+                artifact: &artifact_path,
+                transcript: Some(&transcript_path),
+                execution_plan: Some(&execution_plan_path),
+                reviewer_plan: Some(&reviewer_plan_path),
+            },
             true,
         )?;
         validation_result?;
@@ -687,9 +698,12 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             &receipt_bundle_path,
             &request,
             &run,
-            &artifact_path,
-            Some(&transcript_path),
-            Some(&execution_plan_path),
+            ReviewReceiptPaths {
+                artifact: &artifact_path,
+                transcript: Some(&transcript_path),
+                execution_plan: Some(&execution_plan_path),
+                reviewer_plan: Some(&reviewer_plan_path),
+            },
             false,
         )?;
         write_text(&markdown_path, &render_markdown(&run.artifact))?;
@@ -726,9 +740,12 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             &receipt_bundle_path,
             &request,
             &run,
-            &artifact_path,
-            Some(&transcript_path),
-            Some(&execution_plan_path),
+            ReviewReceiptPaths {
+                artifact: &artifact_path,
+                transcript: Some(&transcript_path),
+                execution_plan: Some(&execution_plan_path),
+                reviewer_plan: Some(&reviewer_plan_path),
+            },
             false,
         )?;
         let result = github.apply_plan(&post_plan)?;
@@ -738,9 +755,12 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             &receipt_bundle_path,
             &request,
             &run,
-            &artifact_path,
-            Some(&transcript_path),
-            Some(&execution_plan_path),
+            ReviewReceiptPaths {
+                artifact: &artifact_path,
+                transcript: Some(&transcript_path),
+                execution_plan: Some(&execution_plan_path),
+                reviewer_plan: Some(&reviewer_plan_path),
+            },
             false,
         )?;
         println!("{}", serde_json::to_string_pretty(&post_plan)?);
@@ -817,13 +837,18 @@ fn render(args: RenderArgs) -> Result<()> {
     Ok(())
 }
 
+struct ReviewReceiptPaths<'a> {
+    artifact: &'a Path,
+    transcript: Option<&'a Path>,
+    execution_plan: Option<&'a Path>,
+    reviewer_plan: Option<&'a Path>,
+}
+
 fn write_review_receipt_bundle(
     path: &Path,
     request: &ReviewRequest,
     run: &ReviewRun,
-    artifact_path: &Path,
-    transcript_path: Option<&Path>,
-    execution_plan_path: Option<&Path>,
+    paths: ReviewReceiptPaths<'_>,
     validation_failed: bool,
 ) -> Result<cerberus::ReviewReceiptBundle> {
     let bundle = build_review_receipt_bundle(ReceiptBundleInput {
@@ -832,9 +857,10 @@ fn write_review_receipt_bundle(
         harness: &run.execution_plan.harness,
         telemetry: &run.telemetry,
         transcript: &run.transcript,
-        artifact_uri: artifact_path.display().to_string(),
-        transcript_uri: transcript_path.map(|path| path.display().to_string()),
-        execution_plan_uri: execution_plan_path.map(|path| path.display().to_string()),
+        artifact_uri: paths.artifact.display().to_string(),
+        transcript_uri: paths.transcript.map(|path| path.display().to_string()),
+        execution_plan_uri: paths.execution_plan.map(|path| path.display().to_string()),
+        reviewer_plan_uri: paths.reviewer_plan.map(|path| path.display().to_string()),
         validation_failed,
     })?;
     write_json(path, &bundle)?;
@@ -871,6 +897,23 @@ fn sibling_path(out: &Path, filename: &str) -> PathBuf {
     out.parent()
         .map(|parent| parent.join(filename))
         .unwrap_or_else(|| PathBuf::from(filename))
+}
+
+fn reviewer_plan_path_for(out: &Path) -> PathBuf {
+    let file_name = out
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("artifact.json");
+    let reviewer_plan_name = if file_name == "artifact.json" {
+        "reviewer_plan.json".to_string()
+    } else if let Some(prefix) = file_name.strip_suffix("-artifact.json") {
+        format!("{prefix}-reviewer_plan.json")
+    } else if let Some(prefix) = file_name.strip_suffix(".json") {
+        format!("{prefix}-reviewer_plan.json")
+    } else {
+        format!("{file_name}-reviewer_plan.json")
+    };
+    sibling_path(out, &reviewer_plan_name)
 }
 
 #[allow(dead_code)]

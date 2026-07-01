@@ -2,6 +2,7 @@ pub mod digest;
 pub mod harness;
 pub mod kernel;
 pub mod mcp;
+pub mod orchestration;
 pub mod post;
 pub mod producer;
 pub mod prompt;
@@ -18,6 +19,7 @@ pub use harness::{
     FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
 pub use kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
+pub use orchestration::{build_reviewer_plan, ReviewerPlanReceipt, REVIEWER_PLAN_SCHEMA};
 pub use post::{build_post_plan, GithubClient, PostPlan, SummaryTarget};
 pub use producer::{
     build_crucible_producer_manifest, CrucibleProducerManifest, CrucibleProducerManifestInput,

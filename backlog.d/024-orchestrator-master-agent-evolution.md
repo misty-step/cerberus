@@ -1,6 +1,6 @@
 # Evolve Cerberus into an orchestrator master agent
 
-Priority: P1 | Status: ready | Estimate: L | Factory epic: 3
+Priority: P1 | Status: active | Estimate: L | Factory epic: 3
 
 ## Goal
 
@@ -28,8 +28,12 @@ pushed anywhere.
 
 ## Children
 
-1. Introduce a reviewer-plan receipt: diff understanding, lane decision, budget,
-   and synthesis notes.
+1. **In flight:** introduce a reviewer-plan receipt: diff understanding, lane
+   decision, budget, and synthesis notes. First slice adds
+   `cerberus.reviewer_plan.v1`, writes it beside `review`, persisted
+   `review-diff`, and `review-pr` artifacts, links it from
+   `ReviewReceiptBundle.v1`, and pins the no-lane single-master path in
+   `./scripts/verify.sh`.
 2. Add a substrate interface for launching scoped reviewer lanes without
    encoding static personas in Rust.
 3. Add synthesis prompt/schema instructions that merge lane evidence into one
