@@ -130,6 +130,7 @@ const ARTIFACT_ENUM_AND_REFERENCE_RULES: &[&str] = &[
     "lifecycle_state must be completed, completed_degraded, failed, skipped, cancelled, or stale",
     "verdict must be PASS, WARN, FAIL, or SKIP",
     "severity must be info, minor, major, or critical",
+    "findings[].confidence must be a JSON number from 0.0 to 1.0, never a label such as low, medium, or high",
     "comments[].kind must be inline or contextual",
     "comments[].intent must be finding, note, question, or summary",
     "anchor.kind must be inline, file, change, or run",
@@ -138,6 +139,7 @@ const ARTIFACT_ENUM_AND_REFERENCE_RULES: &[&str] = &[
     "citations[].kind must be url, paper, doc, command, artifact, or repo",
     "receipts[].role must be master, reviewer, critic, researcher, or synthesizer",
     "receipts[].status must be completed, timeout, error, or skipped",
+    "all cost_usd fields must be JSON numbers or null, never strings",
     "findings[].citations[] values must name top-level citations[].id values",
     "findings[].suggested_fixes[] values must name top-level suggested_fixes[].id values",
     "comments[].finding_id values must name existing findings[].id values",
@@ -233,7 +235,7 @@ Required ReviewArtifact.v1 fields:
 	- suggested_fixes: array of full SuggestedFix objects
 	- citations: array of full Citation objects; URL citations require observed_at
 - receipts: include at least receipt-master with role "master", harness "opencode", status "completed", verdict, and a non-placeholder summary of what evidence you inspected
-- run: include engine_version "cerberus-opencode", config_digest "sha256:prompt-only", started_at "0", finished_at "0", duration_ms 0, cost_usd null, and coverage
+- run: include engine_version "cerberus-opencode", config_digest "sha256:prompt-only", started_at "0", finished_at "0", duration_ms 0, cost_usd null or a JSON number, and coverage
 - errors: array
 
 Coverage requirements:
@@ -391,6 +393,18 @@ mod tests {
         // The raw-stdout / first-character marker contract is gone: emission is a file now.
         assert!(!message.contains("first character must be"));
         assert!(!master.contains("first output character must be"));
+    }
+
+    #[test]
+    fn prompts_instruct_numeric_confidence() {
+        let request = minimal_request();
+        let capabilities = ContextCapabilities::from_request(&request);
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        assert!(
+            message.contains("findings[].confidence must be a JSON number from 0.0 to 1.0"),
+            "the production prompt must prevent confidence labels like high/medium/low"
+        );
     }
 
     #[test]
@@ -578,7 +592,7 @@ mod tests {
                 started_at: "0".to_string(),
                 finished_at: "1".to_string(),
                 duration_ms: 1,
-                cost_usd: Some("0.01".to_string()),
+                cost_usd: Some(0.01),
                 coverage: Coverage {
                     files_reviewed: vec!["src/lib.rs".to_string()],
                     files_with_findings: vec!["src/lib.rs".to_string()],

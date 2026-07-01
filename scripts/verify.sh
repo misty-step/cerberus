@@ -111,6 +111,27 @@ if grep -q 'sha256:0000000000000000000000000000000000000000000000000000000000000
   exit 1
 fi
 
+if CERBERUS_FAKE_OPENCODE_TIMEOUT=1 CERBERUS_FAKE_OPENCODE_TIMEOUT_SECONDS=3 cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --allow-env CERBERUS_FAKE_OPENCODE_TIMEOUT \
+  --allow-env CERBERUS_FAKE_OPENCODE_TIMEOUT_SECONDS \
+  --timeout-seconds 1 \
+  --out target/cerberus/timeout-no-reask-artifact.json \
+  --transcript target/cerberus/timeout-no-reask-transcript.txt \
+  > target/cerberus/timeout-no-reask.stdout \
+  2> target/cerberus/timeout-no-reask.stderr; then
+  echo "expected timed-out opencode review to fail without a re-ask" >&2
+  exit 1
+fi
+grep -q 'harness timed out after' target/cerberus/timeout-no-reask.stderr
+grep -q '\[attempt: initial\]' target/cerberus/timeout-no-reask-transcript.txt
+if grep -q '\[attempt: re-ask\]' target/cerberus/timeout-no-reask-transcript.txt; then
+  echo "timed-out opencode attempt should not launch a re-ask" >&2
+  exit 1
+fi
+
 printf 'stale receipt should be removed before a failed run\n' \
   > target/cerberus/receipts/stale-before-failed-review.json
 printf 'no review artifact here\n' > target/cerberus/no-artifact.txt

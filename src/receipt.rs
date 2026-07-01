@@ -155,17 +155,12 @@ fn artifact_usage(artifact: &ReviewArtifact) -> Option<Usage> {
 }
 
 fn artifact_cost_usd(artifact: &ReviewArtifact) -> Option<f64> {
-    artifact
-        .run
-        .cost_usd
-        .as_deref()
-        .and_then(|cost| cost.parse::<f64>().ok())
-        .or_else(|| {
-            artifact
-                .receipts
-                .iter()
-                .find_map(|receipt| receipt.usage.as_ref().and_then(|usage| usage.cost_usd))
-        })
+    artifact.run.cost_usd.or_else(|| {
+        artifact
+            .receipts
+            .iter()
+            .find_map(|receipt| receipt.usage.as_ref().and_then(|usage| usage.cost_usd))
+    })
 }
 
 fn transcript_elapsed_ms(transcript: &str) -> Option<u64> {
