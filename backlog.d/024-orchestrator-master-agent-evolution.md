@@ -28,14 +28,17 @@ pushed anywhere.
 
 ## Children
 
-1. **In flight:** introduce a reviewer-plan receipt: diff understanding, lane
-   decision, budget, and synthesis notes. First slice adds
+1. **Done:** introduce a reviewer-plan receipt: diff understanding, lane
+   decision, budget, and synthesis notes. PR #490 added
    `cerberus.reviewer_plan.v1`, writes it beside `review`, persisted
    `review-diff`, and `review-pr` artifacts, links it from
    `ReviewReceiptBundle.v1`, and pins the no-lane single-master path in
    `./scripts/verify.sh`.
-2. Add a substrate interface for launching scoped reviewer lanes without
-   encoding static personas in Rust.
+2. **In flight:** add a substrate interface for launching scoped reviewer lanes
+   without encoding static personas in Rust. Current slice adds
+   `ReviewerLaneSubstrate`, `ReviewerLaneLaunch`,
+   `launch_planned_child_lanes`, and `ReviewerLaneReceipt.v1`; the unit test
+   launches an arbitrary `model-boundary-risk` role from plan data.
 3. Add synthesis prompt/schema instructions that merge lane evidence into one
    artifact while preserving context-tier truth and citation requirements.
 4. Add fixture coverage for no-lane, one-lane, and failed-lane-degraded paths.

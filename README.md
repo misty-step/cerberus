@@ -164,6 +164,11 @@ diff understanding, available and skipped context, the single-master lane
 decision, and the synthesis/validation contract. Dynamic child lanes will extend
 that receipt rather than bypassing `ReviewArtifact.v1`.
 
+Child lanes are launched through a `ReviewerLaneSubstrate` interface over
+`ReviewerLanePlan` data. Roles are plan fields, not built-in Rust personas; a
+lane substrate receives scoped objective/context/budget/stop-condition data and
+returns a `ReviewerLaneReceipt.v1`.
+
 ## Crucible producer handoff
 
 Crucible owns grading, intervals, adjudication, and Harbor export. Cerberus's

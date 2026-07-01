@@ -221,6 +221,13 @@ scope, and synthesis/validation notes. In the MVP path this receipt records
 `single_master` with no child lanes; future dynamic lanes extend this receipt
 and still synthesize into one validated `ReviewArtifact.v1`.
 
+Scoped child-lane launch is a substrate interface over `ReviewerLanePlan` data,
+not a Rust enum of reviewer personas. A lane carries its role, objective, scope,
+allowed context tier, budget, stop condition, substrate/model choice, and
+expected output shape. The substrate returns `ReviewerLaneReceipt.v1` evidence
+for that lane; later synthesis may consume those receipts, but lane output does
+not bypass `ReviewArtifact.v1` validation.
+
 ## Master Reviewer Prompt Contract
 
 The master prompt tells Cerberus:

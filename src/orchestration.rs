@@ -4,9 +4,13 @@ use serde::{Deserialize, Serialize};
 use crate::digest::request_digest;
 use crate::harness::ExecutionPlan;
 use crate::receipt::capability_tier;
-use crate::schema::{ChangedFile, ContextCapabilities, FileStatus, ReviewRequest, ReviewTelemetry};
+use crate::schema::{
+    ChangedFile, ContextCapabilities, FileStatus, ReceiptStatus, ReviewRequest, ReviewTelemetry,
+    RunError,
+};
 
 pub const REVIEWER_PLAN_SCHEMA: &str = "cerberus.reviewer_plan.v1";
+pub const REVIEWER_LANE_RECEIPT_SCHEMA: &str = "cerberus.reviewer_lane_receipt.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReviewerPlanReceipt {
@@ -54,6 +58,7 @@ pub struct LaneDecision {
 #[serde(rename_all = "snake_case")]
 pub enum LaneDecisionMode {
     SingleMaster,
+    PlannedChildLanes,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -78,6 +83,50 @@ pub struct SynthesisPlan {
     pub artifact_contract: String,
     pub validation_gate: String,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewerLaneReceipt {
+    pub schema_version: String,
+    pub request_id: String,
+    pub lane_id: String,
+    pub role: String,
+    pub status: ReceiptStatus,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<RunError>,
+}
+
+pub struct ReviewerLaneLaunch<'a> {
+    pub request: &'a ReviewRequest,
+    pub reviewer_plan: &'a ReviewerPlanReceipt,
+    pub lane: &'a ReviewerLanePlan,
+}
+
+pub trait ReviewerLaneSubstrate {
+    fn launch_reviewer_lane(&self, launch: ReviewerLaneLaunch<'_>) -> Result<ReviewerLaneReceipt>;
+}
+
+pub fn launch_planned_child_lanes<S: ReviewerLaneSubstrate>(
+    substrate: &S,
+    request: &ReviewRequest,
+    reviewer_plan: &ReviewerPlanReceipt,
+) -> Result<Vec<ReviewerLaneReceipt>> {
+    reviewer_plan
+        .child_lanes
+        .iter()
+        .map(|lane| {
+            substrate.launch_reviewer_lane(ReviewerLaneLaunch {
+                request,
+                reviewer_plan,
+                lane,
+            })
+        })
+        .collect()
 }
 
 pub fn build_reviewer_plan(
@@ -287,5 +336,113 @@ mod tests {
             plan.synthesis.validation_gate,
             "validate_artifact_for_request"
         );
+    }
+
+    #[test]
+    fn lane_substrate_launches_arbitrary_planned_roles() {
+        let request = request();
+        let mut plan =
+            build_reviewer_plan(&request, &execution_plan(&request), &Default::default()).unwrap();
+        plan.lane_decision.mode = LaneDecisionMode::PlannedChildLanes;
+        plan.child_lanes.push(ReviewerLanePlan {
+            id: "lane-model-boundary".to_string(),
+            role: "model-boundary-risk".to_string(),
+            objective: "Look for deterministic heuristics where model judgment belongs."
+                .to_string(),
+            scope: vec!["src/orchestration.rs".to_string()],
+            allowed_context_tier: "repo_base_and_head".to_string(),
+            substrate: "fixture-lane".to_string(),
+            model: Some("fixture-lane-model".to_string()),
+            cost_budget_usd: Some("0.01".to_string()),
+            stop_condition: "Return one receipt with evidence or skipped status.".to_string(),
+            expected_output: "ReviewerLaneReceipt.v1".to_string(),
+        });
+
+        let receipts =
+            launch_planned_child_lanes(&RecordingLaneSubstrate, &request, &plan).unwrap();
+
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].schema_version, REVIEWER_LANE_RECEIPT_SCHEMA);
+        assert_eq!(receipts[0].lane_id, "lane-model-boundary");
+        assert_eq!(receipts[0].role, "model-boundary-risk");
+        assert_eq!(receipts[0].status, ReceiptStatus::Completed);
+        assert_eq!(receipts[0].request_id, request.request_id);
+    }
+
+    struct RecordingLaneSubstrate;
+
+    impl ReviewerLaneSubstrate for RecordingLaneSubstrate {
+        fn launch_reviewer_lane(
+            &self,
+            launch: ReviewerLaneLaunch<'_>,
+        ) -> Result<ReviewerLaneReceipt> {
+            assert_eq!(launch.reviewer_plan.request_id, launch.request.request_id);
+            assert_eq!(launch.lane.role, "model-boundary-risk");
+            Ok(ReviewerLaneReceipt {
+                schema_version: REVIEWER_LANE_RECEIPT_SCHEMA.to_string(),
+                request_id: launch.request.request_id.clone(),
+                lane_id: launch.lane.id.clone(),
+                role: launch.lane.role.clone(),
+                status: ReceiptStatus::Completed,
+                summary: format!("launched {}", launch.lane.objective),
+                transcript_uri: Some("fixture://lane-transcript".to_string()),
+                artifact_uri: None,
+                error: None,
+            })
+        }
+    }
+
+    fn request() -> ReviewRequest {
+        ReviewRequest {
+            schema_version: crate::schema::REVIEW_REQUEST_SCHEMA.to_string(),
+            request_id: "req-1".to_string(),
+            source: Source {
+                kind: SourceKind::Fixture,
+                external_id: None,
+                repo: None,
+                uri: None,
+                metadata: serde_json::json!({}),
+            },
+            change: Change {
+                title: "change".to_string(),
+                description: None,
+                base_ref: None,
+                head_ref: None,
+                head_sha: None,
+                diff: Diff {
+                    format: "unified".to_string(),
+                    body: "diff --git a/src/lib.rs b/src/lib.rs\n".to_string(),
+                    digest: None,
+                },
+                files: vec![ChangedFile {
+                    path: "src/lib.rs".to_string(),
+                    status: FileStatus::Modified,
+                    old_path: None,
+                    additions: Some(3),
+                    deletions: Some(1),
+                }],
+            },
+            context: Default::default(),
+            policy: ReviewPolicy {
+                external_research: ExternalResearchPolicy::Forbid,
+                ..ReviewPolicy::default()
+            },
+        }
+    }
+
+    fn execution_plan(request: &ReviewRequest) -> ExecutionPlan {
+        ExecutionPlan {
+            harness: "fixture".to_string(),
+            command: "fixture".to_string(),
+            args: Vec::new(),
+            cwd: ".".to_string(),
+            timeout_ms: 1000,
+            env_allowlist: Vec::new(),
+            context_capabilities: ContextCapabilities::from_request(request),
+            prompt_transport: "fixture".to_string(),
+            private_material_in_argv: false,
+            workspace_mode: "diff_packet".to_string(),
+            runtime_transcripts: Vec::new(),
+        }
     }
 }
