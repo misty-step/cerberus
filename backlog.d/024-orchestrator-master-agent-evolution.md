@@ -39,13 +39,17 @@ pushed anywhere.
    `ReviewerLaneSubstrate`, `ReviewerLaneLaunch`,
    `launch_planned_child_lanes`, and `ReviewerLaneReceipt.v1`; the unit test
    launches an arbitrary `model-boundary-risk` role from plan data.
-3. **In flight:** add synthesis prompt/schema instructions that merge lane
-   evidence into one artifact while preserving context-tier truth and citation
-   requirements. Current slice teaches both prompt surfaces that
+3. **Done:** add synthesis prompt/schema instructions that merge lane evidence
+   into one artifact while preserving context-tier truth and citation
+   requirements. PR #492 teaches both prompt surfaces that
    `ReviewerLaneReceipt.v1` is evidence, must flow through artifact
    `receipts[]`, and cannot raise context capabilities or bypass anchor,
    citation, and validation rules.
-4. Add fixture coverage for no-lane, one-lane, and failed-lane-degraded paths.
+4. **Done:** add fixture coverage for no-lane, one-lane, and
+   failed-lane-degraded synthesis paths. The fixtures pin empty lane evidence as
+   a no-op, arbitrary completed lane roles as generic reviewer receipts with the
+   dynamic role preserved as `perspective`, and failed lanes as degraded
+   artifacts with copied lane errors and residual risk.
 
 ## Notes
 

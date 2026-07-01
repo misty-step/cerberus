@@ -225,8 +225,8 @@ Scoped child-lane launch is a substrate interface over `ReviewerLanePlan` data,
 not a Rust enum of reviewer personas. A lane carries its role, objective, scope,
 allowed context tier, budget, stop condition, substrate/model choice, and
 expected output shape. The substrate returns `ReviewerLaneReceipt.v1` evidence
-for that lane; later synthesis may consume those receipts, but lane output does
-not bypass `ReviewArtifact.v1` validation.
+for that lane. Synthesis records those receipts in the final artifact, and lane
+output does not bypass `ReviewArtifact.v1` validation.
 
 The master prompt treats `ReviewerLaneReceipt.v1` as evidence, not as another
 artifact to publish. Used lane receipts must be represented in the final
