@@ -1,0 +1,14 @@
+product:
+  name: Cerberus
+  description: Code-review harness that produces validated, replayable review artifacts.
+audience: developer
+voice: Precise, evidence-grounded, and honest about inspected context.
+changelog:
+  source: auto
+release:
+  profile: synthesis-only
+model:
+  policy: balanced
+budget:
+  max_input_tokens: 12000
+  max_output_tokens: 1200
