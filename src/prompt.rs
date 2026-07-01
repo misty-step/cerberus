@@ -2,6 +2,16 @@ use std::path::Path;
 
 use crate::schema::{ContextCapabilities, ReviewRequest};
 
+/// Review doctrine — the "what to hunt" vocabulary the master reviewer and any
+/// runtime lane draw from. Distilled from the Harness Kit lens bench
+/// (`harnesses/shared/references/lenses.md`) so the interactive `/code-review`
+/// skill and this production runner share one doctrine and do not drift. Edit
+/// the bench there first, then mirror the distilled subset here. Fowler smell
+/// curation credit: Matt Pocock's `/review` baseline; smells from *Refactoring*
+/// Ch.3. Kept as runtime *vocabulary*, not fixed personas — Cerberus still
+/// designs any lane from the diff at runtime.
+const REVIEW_DOCTRINE: &str = include_str!("review_doctrine.md");
+
 const ARTIFACT_FIELD_PATHS: &[&str] = &[
     "schema_version",
     "artifact_id",
@@ -205,6 +215,9 @@ Mission:
 - PASS requires enough inspected evidence for the available context. If repo_head is true but direct checkout inspection fails or is skipped, use completed_degraded or WARN and record why.
 - Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool. That file is your only deliverable: it must hold exactly one raw JSON object and nothing else — no Markdown fences, no prose. Overwrite it completely if it already exists.
 
+Review doctrine:
+{review_doctrine}
+
 Required ReviewArtifact.v1 fields:
 - schema_version: "cerberus.review_artifact.v1"
 - artifact_id: a unique non-placeholder string for this run
@@ -245,7 +258,8 @@ ReviewRequest:
         request_digest = request_digest,
         contract_checklist = contract_checklist,
         capabilities_json = capabilities_json,
-        request_json = request_json
+        request_json = request_json,
+        review_doctrine = REVIEW_DOCTRINE
     ))
 }
 
@@ -258,12 +272,13 @@ pub fn build_opencode_message(
     let capabilities_json = serde_json::to_string(capabilities)?;
     let contract_checklist = artifact_contract_checklist();
     Ok(format!(
-        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. If repo_head is true, explore the repository thoroughly and autonomously: use read, grep, glob, and the shell (ripgrep, ast-grep, git log/diff/blame) to understand the change in the context of the whole codebase and its history. The attached diff is a starting point, not your only evidence, and there is no fixed read budget. Be thorough but decisive: inspect the changed files and the code they directly touch — callers, callees, tests, and related config — then STOP exploring and emit your artifact. You do not need to read the entire repository, and you are on a wall-clock limit: producing one complete, grounded artifact is the objective, and an exploration that never emits an artifact is a failed review. If repo_base is true, compare relevant base files before making regression or behavior-change claims. Review like a senior engineer: prioritize correctness, security, and behavior regressions over style; ground every finding in a specific line you actually inspected and anchor it there; prefer a few high-signal findings over many low-value ones; never invent issues, and if the change is clean return PASS with empty findings; calibrate severity honestly and record what you did not inspect in summary.residual_risk. Use the shell only for read-only exploration; do not run builds, tests, applications, or network probes as evidence, and do not claim test, build, runtime, or QA results, unless local_runtime or remote_runtime is true (then rely only on the attached transcripts). Set run.coverage.files_reviewed to only files you actually inspected; if you skip changed files because of limits, record that reduced scope in lifecycle_state and summary.residual_risk. {contract_checklist} Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool — that file is your only deliverable. It must hold exactly one raw JSON object and nothing else: no Markdown fences, no prose, no surrounding text. Set request_id and request_digest to the exact values above. Overwrite the file completely if it already exists, and once it holds the complete valid artifact you are done.",
+        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. If repo_head is true, explore the repository thoroughly and autonomously: use read, grep, glob, and the shell (ripgrep, ast-grep, git log/diff/blame) to understand the change in the context of the whole codebase and its history. The attached diff is a starting point, not your only evidence, and there is no fixed read budget. Be thorough but decisive: inspect the changed files and the code they directly touch — callers, callees, tests, and related config — then STOP exploring and emit your artifact. You do not need to read the entire repository, and you are on a wall-clock limit: producing one complete, grounded artifact is the objective, and an exploration that never emits an artifact is a failed review. If repo_base is true, compare relevant base files before making regression or behavior-change claims. Review like a senior engineer: prioritize correctness, security, and behavior regressions over style; ground every finding in a specific line you actually inspected and anchor it there; prefer a few high-signal findings over many low-value ones; never invent issues, and if the change is clean return PASS with empty findings; calibrate severity honestly and record what you did not inspect in summary.residual_risk. Draw on this review doctrine — the vocabulary of what to hunt — while you review: {review_doctrine} Use the shell only for read-only exploration; do not run builds, tests, applications, or network probes as evidence, and do not claim test, build, runtime, or QA results, unless local_runtime or remote_runtime is true (then rely only on the attached transcripts). Set run.coverage.files_reviewed to only files you actually inspected; if you skip changed files because of limits, record that reduced scope in lifecycle_state and summary.residual_risk. {contract_checklist} Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool — that file is your only deliverable. It must hold exactly one raw JSON object and nothing else: no Markdown fences, no prose, no surrounding text. Set request_id and request_digest to the exact values above. Overwrite the file completely if it already exists, and once it holds the complete valid artifact you are done.",
         request_id = request.request_id.as_str(),
         request_digest = request_digest,
         capabilities_json = capabilities_json,
         contract_checklist = contract_checklist,
         out_path = out_path.display(),
+        review_doctrine = REVIEW_DOCTRINE,
     ))
 }
 
@@ -327,6 +342,32 @@ mod tests {
         );
         assert!(message.contains("explore the repository thoroughly and autonomously"));
         assert!(message.contains("Review like a senior engineer"));
+    }
+
+    #[test]
+    fn prompts_embed_review_doctrine() {
+        let request = minimal_request();
+        let capabilities = ContextCapabilities::from_request(&request);
+        let master =
+            build_master_prompt(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        // Both surfaces must carry the same distilled doctrine so the production
+        // runner does not drift from the /code-review lens bench.
+        for prompt in [&master, &message] {
+            assert!(
+                prompt.contains("Plausible-but-wrong"),
+                "doctrine: plausible-but-wrong vocabulary must be embedded"
+            );
+            assert!(
+                prompt.contains("Feature Envy"),
+                "doctrine: Fowler smell vocabulary must be embedded"
+            );
+            assert!(
+                prompt.contains("code judo"),
+                "doctrine: structural-ambition bar must be embedded"
+            );
+        }
     }
 
     #[test]
