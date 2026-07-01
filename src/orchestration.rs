@@ -182,7 +182,7 @@ pub fn build_reviewer_plan(
             validation_gate: "validate_artifact_for_request".to_string(),
             notes: vec![
                 "No child lanes were launched in this run.".to_string(),
-                "Future child-lane evidence must be synthesized into the same artifact and cannot bypass validation.".to_string(),
+                "Future child-lane evidence must be captured as ReviewerLaneReceipt.v1, synthesized into the same artifact receipts, and cannot bypass validation.".to_string(),
             ],
         },
     })

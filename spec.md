@@ -228,6 +228,12 @@ expected output shape. The substrate returns `ReviewerLaneReceipt.v1` evidence
 for that lane; later synthesis may consume those receipts, but lane output does
 not bypass `ReviewArtifact.v1` validation.
 
+The master prompt treats `ReviewerLaneReceipt.v1` as evidence, not as another
+artifact to publish. Used lane receipts must be represented in the final
+artifact's `receipts[]`; failed, skipped, or timed-out lanes reduce confidence
+or produce `completed_degraded` output when appropriate. Lane receipts never
+raise context capabilities beyond the original `ReviewRequest`.
+
 ## Master Reviewer Prompt Contract
 
 The master prompt tells Cerberus:

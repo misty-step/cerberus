@@ -34,13 +34,17 @@ pushed anywhere.
    `review-diff`, and `review-pr` artifacts, links it from
    `ReviewReceiptBundle.v1`, and pins the no-lane single-master path in
    `./scripts/verify.sh`.
-2. **In flight:** add a substrate interface for launching scoped reviewer lanes
-   without encoding static personas in Rust. Current slice adds
+2. **Done:** add a substrate interface for launching scoped reviewer lanes
+   without encoding static personas in Rust. PR #491 added
    `ReviewerLaneSubstrate`, `ReviewerLaneLaunch`,
    `launch_planned_child_lanes`, and `ReviewerLaneReceipt.v1`; the unit test
    launches an arbitrary `model-boundary-risk` role from plan data.
-3. Add synthesis prompt/schema instructions that merge lane evidence into one
-   artifact while preserving context-tier truth and citation requirements.
+3. **In flight:** add synthesis prompt/schema instructions that merge lane
+   evidence into one artifact while preserving context-tier truth and citation
+   requirements. Current slice teaches both prompt surfaces that
+   `ReviewerLaneReceipt.v1` is evidence, must flow through artifact
+   `receipts[]`, and cannot raise context capabilities or bypass anchor,
+   citation, and validation rules.
 4. Add fixture coverage for no-lane, one-lane, and failed-lane-degraded paths.
 
 ## Notes
