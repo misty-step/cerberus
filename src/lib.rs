@@ -20,8 +20,9 @@ pub use harness::{
 };
 pub use kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
 pub use orchestration::{
-    build_reviewer_plan, launch_planned_child_lanes, ReviewerLaneLaunch, ReviewerLaneReceipt,
-    ReviewerLaneSubstrate, ReviewerPlanReceipt, REVIEWER_LANE_RECEIPT_SCHEMA, REVIEWER_PLAN_SCHEMA,
+    build_reviewer_plan, launch_planned_child_lanes, synthesize_lane_receipts_into_artifact,
+    ReviewerLaneLaunch, ReviewerLaneReceipt, ReviewerLaneSubstrate, ReviewerPlanReceipt,
+    REVIEWER_LANE_RECEIPT_SCHEMA, REVIEWER_PLAN_SCHEMA,
 };
 pub use post::{build_post_plan, GithubClient, PostPlan, SummaryTarget};
 pub use producer::{

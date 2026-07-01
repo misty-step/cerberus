@@ -1,12 +1,12 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::digest::request_digest;
 use crate::harness::ExecutionPlan;
 use crate::receipt::capability_tier;
 use crate::schema::{
-    ChangedFile, ContextCapabilities, FileStatus, ReceiptStatus, ReviewRequest, ReviewTelemetry,
-    RunError,
+    ChangedFile, ContextCapabilities, FileStatus, LifecycleState, Receipt, ReceiptRole,
+    ReceiptStatus, ReviewArtifact, ReviewRequest, ReviewTelemetry, RunError,
 };
 
 pub const REVIEWER_PLAN_SCHEMA: &str = "cerberus.reviewer_plan.v1";
@@ -127,6 +127,61 @@ pub fn launch_planned_child_lanes<S: ReviewerLaneSubstrate>(
             })
         })
         .collect()
+}
+
+pub fn synthesize_lane_receipts_into_artifact(
+    artifact: &mut ReviewArtifact,
+    lane_receipts: &[ReviewerLaneReceipt],
+) -> Result<()> {
+    for lane_receipt in lane_receipts {
+        if lane_receipt.schema_version != REVIEWER_LANE_RECEIPT_SCHEMA {
+            bail!(
+                "unsupported reviewer lane receipt schema for {}: {}",
+                lane_receipt.lane_id,
+                lane_receipt.schema_version
+            );
+        }
+        if lane_receipt.request_id != artifact.request_id {
+            bail!(
+                "reviewer lane receipt {} request id mismatch: expected {}, got {}",
+                lane_receipt.lane_id,
+                artifact.request_id,
+                lane_receipt.request_id
+            );
+        }
+
+        artifact.receipts.push(Receipt {
+            id: lane_receipt.lane_id.clone(),
+            role: ReceiptRole::Reviewer,
+            perspective: Some(lane_receipt.role.clone()),
+            model: None,
+            provider: None,
+            harness: Some("reviewer-lane".to_string()),
+            status: lane_receipt.status.clone(),
+            verdict: None,
+            summary: Some(lane_receipt.summary.clone()),
+            artifact_digest: None,
+            transcript_uri: lane_receipt.transcript_uri.clone(),
+            usage: None,
+            error: lane_receipt.error.clone(),
+        });
+
+        if lane_receipt.status != ReceiptStatus::Completed {
+            if artifact.lifecycle_state == LifecycleState::Completed {
+                artifact.lifecycle_state = LifecycleState::CompletedDegraded;
+            }
+            artifact.summary.residual_risk.push(format!(
+                "Child reviewer lane {} ({}) ended with status {}; synthesized review may be incomplete.",
+                lane_receipt.lane_id,
+                lane_receipt.role,
+                receipt_status_label(&lane_receipt.status)
+            ));
+            if let Some(error) = &lane_receipt.error {
+                artifact.errors.push(error.clone());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn build_reviewer_plan(
@@ -252,13 +307,26 @@ fn skipped_context(capabilities: &ContextCapabilities) -> Vec<String> {
     skipped
 }
 
+fn receipt_status_label(status: &ReceiptStatus) -> &'static str {
+    match status {
+        ReceiptStatus::Completed => "completed",
+        ReceiptStatus::Timeout => "timeout",
+        ReceiptStatus::Error => "error",
+        ReceiptStatus::Skipped => "skipped",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::digest::request_digest;
     use crate::harness::ExecutionPlan;
     use crate::schema::{
-        Change, Diff, ExternalResearchPolicy, FileStatus, ReviewPolicy, Source, SourceKind,
+        Change, Coverage, Diff, ErrorScope, ExternalResearchPolicy, FileStatus, LifecycleState,
+        ReceiptRole, ReviewArtifact, ReviewPolicy, RunInfo, Source, SourceKind, Summary, Verdict,
+        REVIEW_ARTIFACT_SCHEMA,
     };
+    use crate::validation::validate_artifact_for_request;
 
     #[test]
     fn reviewer_plan_records_single_master_diff_understanding() {
@@ -369,6 +437,106 @@ mod tests {
         assert_eq!(receipts[0].request_id, request.request_id);
     }
 
+    #[test]
+    fn no_lane_synthesis_leaves_single_master_artifact_unchanged() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        let before = artifact.clone();
+
+        synthesize_lane_receipts_into_artifact(&mut artifact, &[]).unwrap();
+
+        assert_eq!(artifact, before);
+        validate_artifact_for_request(&artifact, &request).unwrap();
+    }
+
+    #[test]
+    fn one_lane_synthesis_records_dynamic_lane_as_generic_reviewer_receipt() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        let lane_receipt = lane_receipt(
+            "lane-model-boundary",
+            "model-boundary-risk",
+            ReceiptStatus::Completed,
+            None,
+        );
+
+        synthesize_lane_receipts_into_artifact(&mut artifact, &[lane_receipt]).unwrap();
+
+        assert_eq!(artifact.lifecycle_state, LifecycleState::Completed);
+        assert!(artifact.errors.is_empty());
+        assert_eq!(artifact.receipts.len(), 1);
+
+        let receipt = &artifact.receipts[0];
+        assert_eq!(receipt.id, "lane-model-boundary");
+        assert_eq!(receipt.role, ReceiptRole::Reviewer);
+        assert_eq!(receipt.perspective.as_deref(), Some("model-boundary-risk"));
+        assert_eq!(receipt.harness.as_deref(), Some("reviewer-lane"));
+        assert_eq!(receipt.status, ReceiptStatus::Completed);
+        assert_eq!(
+            receipt.summary.as_deref(),
+            Some("lane completed with grounded evidence")
+        );
+        assert_eq!(
+            receipt.transcript_uri.as_deref(),
+            Some("fixture://lane-model-boundary/transcript")
+        );
+        assert!(receipt.error.is_none());
+        validate_artifact_for_request(&artifact, &request).unwrap();
+    }
+
+    #[test]
+    fn failed_lane_synthesis_degrades_completed_artifact() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        let lane_error = RunError {
+            scope: ErrorScope::Reviewer,
+            code: "lane_failed".to_string(),
+            message: "fixture lane could not complete".to_string(),
+            retryable: true,
+        };
+        let lane_receipt = lane_receipt(
+            "lane-security",
+            "security-focused-review",
+            ReceiptStatus::Error,
+            Some(lane_error.clone()),
+        );
+
+        synthesize_lane_receipts_into_artifact(&mut artifact, &[lane_receipt]).unwrap();
+
+        assert_eq!(artifact.lifecycle_state, LifecycleState::CompletedDegraded);
+        assert_eq!(artifact.receipts.len(), 1);
+        assert_eq!(artifact.receipts[0].status, ReceiptStatus::Error);
+        assert_eq!(artifact.receipts[0].error.as_ref(), Some(&lane_error));
+        assert_eq!(artifact.errors, vec![lane_error]);
+        assert!(artifact.summary.residual_risk.iter().any(|risk| {
+            risk.contains("lane-security")
+                && risk.contains("security-focused-review")
+                && risk.contains("error")
+        }));
+        validate_artifact_for_request(&artifact, &request).unwrap();
+    }
+
+    #[test]
+    fn lane_synthesis_rejects_mismatched_request_id() {
+        let request = request();
+        let mut artifact = artifact_for(&request);
+        let mut lane_receipt = lane_receipt(
+            "lane-other-request",
+            "model-boundary-risk",
+            ReceiptStatus::Completed,
+            None,
+        );
+        lane_receipt.request_id = "other-req".to_string();
+
+        let error =
+            synthesize_lane_receipts_into_artifact(&mut artifact, &[lane_receipt]).unwrap_err();
+
+        assert!(error.to_string().contains("request id mismatch"));
+        assert!(artifact.receipts.is_empty());
+        assert_eq!(artifact.lifecycle_state, LifecycleState::Completed);
+        validate_artifact_for_request(&artifact, &request).unwrap();
+    }
+
     struct RecordingLaneSubstrate;
 
     impl ReviewerLaneSubstrate for RecordingLaneSubstrate {
@@ -443,6 +611,61 @@ mod tests {
             private_material_in_argv: false,
             workspace_mode: "diff_packet".to_string(),
             runtime_transcripts: Vec::new(),
+        }
+    }
+
+    fn artifact_for(request: &ReviewRequest) -> ReviewArtifact {
+        ReviewArtifact {
+            schema_version: REVIEW_ARTIFACT_SCHEMA.to_string(),
+            artifact_id: "art-1".to_string(),
+            request_id: request.request_id.clone(),
+            request_digest: request_digest(request).unwrap(),
+            lifecycle_state: LifecycleState::Completed,
+            verdict: Verdict::Pass,
+            context_capabilities: ContextCapabilities::from_request(request),
+            summary: Summary {
+                title: "clean".to_string(),
+                body: "No blocking issues.".to_string(),
+                analysis: String::new(),
+                residual_risk: Vec::new(),
+            },
+            findings: Vec::new(),
+            comments: Vec::new(),
+            suggested_fixes: Vec::new(),
+            citations: Vec::new(),
+            receipts: Vec::new(),
+            run: RunInfo {
+                engine_version: "test".to_string(),
+                config_digest: "sha256:test".to_string(),
+                started_at: "2026-07-01T00:00:00Z".to_string(),
+                finished_at: "2026-07-01T00:00:01Z".to_string(),
+                duration_ms: 1,
+                cost_usd: None,
+                coverage: Coverage {
+                    files_reviewed: vec!["src/lib.rs".to_string()],
+                    files_with_findings: Vec::new(),
+                },
+            },
+            errors: Vec::new(),
+        }
+    }
+
+    fn lane_receipt(
+        lane_id: &str,
+        role: &str,
+        status: ReceiptStatus,
+        error: Option<RunError>,
+    ) -> ReviewerLaneReceipt {
+        ReviewerLaneReceipt {
+            schema_version: REVIEWER_LANE_RECEIPT_SCHEMA.to_string(),
+            request_id: "req-1".to_string(),
+            lane_id: lane_id.to_string(),
+            role: role.to_string(),
+            status,
+            summary: "lane completed with grounded evidence".to_string(),
+            transcript_uri: Some(format!("fixture://{lane_id}/transcript")),
+            artifact_uri: None,
+            error,
         }
     }
 }
