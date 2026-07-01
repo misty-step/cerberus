@@ -31,9 +31,9 @@ evidence to decide whether a review is worth trusting.
 
 ## Children
 
-1. Promote and finish `021-glm52-artifact-timeout.md`: root-cause the live
-   artifact-emission timeout and make the error actionable if the model remains
-   unusable.
+1. **Done:** `021-glm52-artifact-timeout.md` moved to `_done/` after the live
+   default GLM 5.2 path emitted a valid artifact and receipt in one initial
+   attempt.
 2. Fix the release workflow. Live evidence on 2026-07-01: Release run
    `28544516079` still failed because `@semantic-release/git` tried to push
    generated `CHANGELOG.md` back to protected `master`; `release.yml` already

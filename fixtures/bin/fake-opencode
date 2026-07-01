@@ -145,6 +145,12 @@ if [[ "${CERBERUS_FAKE_OPENCODE_FIRST_INVALID:-}" == "1" && -z "$session_id" ]];
   artifact_digest="sha256:0000000000000000000000000000000000000000000000000000000000000000"
 fi
 
+if [[ "${CERBERUS_FAKE_OPENCODE_TIMEOUT:-}" == "1" ]]; then
+  printf '%s\n' '{"type":"step_start","sessionID":"ses_fake_opencode_timeout"}'
+  sleep "${CERBERUS_FAKE_OPENCODE_TIMEOUT_SECONDS:-3}"
+  exit 0
+fi
+
 sed \
   -e "s/{{request_id}}/$request_id/g" \
   -e "s#{{request_digest}}#$artifact_digest#g" \

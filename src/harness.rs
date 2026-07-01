@@ -255,6 +255,16 @@ pub(crate) fn run_command_substrate(
     let mut artifact_result = read_artifact_file(&out_path);
     let mut attempt = 0;
     while let Err(reason) = evaluate_emission(&artifact_result, request) {
+        if output.status == "timeout" {
+            write_failure_transcript(failure_transcript, &transcript)?;
+            let transcript_hint = failure_transcript
+                .map(|path| format!("; transcript: {}", path.display()))
+                .unwrap_or_default();
+            return Err(anyhow!(
+                "{plan_harness} harness timed out after {}ms before producing a valid ReviewArtifact.v1 ({reason}){transcript_hint}",
+                output.elapsed_ms
+            ));
+        }
         if attempt >= MAX_REASK_RETRIES {
             break;
         }

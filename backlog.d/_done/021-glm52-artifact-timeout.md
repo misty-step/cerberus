@@ -1,6 +1,31 @@
 # Diagnose GLM 5.2 opencode artifact timeout
 
-Priority: P1 · Status: pending · Estimate: S · Factory child: 022
+Priority: P1 · Status: shipped · Estimate: S · Factory child: 022
+
+**Shipped 2026-07-01:** the live default OpenCode/OpenRouter GLM 5.2 path now
+emits a valid `ReviewArtifact.v1` and receipt within the configured 120-second
+timeout on the small diff-only fixture. The fix was not a blanket timeout bump:
+Cerberus now treats a timed-out OpenCode attempt with no valid artifact as a
+terminal failure instead of spending two more full-timeout re-asks, and the
+artifact schema/prompt no longer split `cost_usd` types or permit confidence
+labels.
+
+Live evidence:
+
+```sh
+cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness opencode \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --out target/cerberus/live-glm52-021/default-after-fix/artifact.json \
+  --transcript target/cerberus/live-glm52-021/default-after-fix/transcript.txt \
+  --receipt-bundle target/cerberus/live-glm52-021/default-after-fix/receipt-bundle.json
+```
+
+Result: exit 0, `receipt-bundle.json` validation `passed`,
+`trusted_for_posting: true`, model `openrouter/z-ai/glm-5.2`, latency `59845ms`,
+single `[attempt: initial]`, no re-ask.
 
 ## Goal
 
@@ -20,14 +45,14 @@ attempt without writing `review-artifact.json`.
 
 ## Oracle
 
-- [ ] `cerberus review --request fixtures/requests/diff-only.json --harness
+- [x] `cerberus review --request fixtures/requests/diff-only.json --harness
       opencode --model openrouter/z-ai/glm-5.2 --allow-env OPENROUTER_API_KEY
       --out <artifact> --transcript <transcript> --receipt-bundle <receipt>`
       emits a valid artifact and receipt on the diff-only fixture.
-- [ ] The transcript shows at least one complete model turn that either writes
+- [x] The transcript shows at least one complete model turn that either writes
       the artifact or gives an actionable schema/prompt failure. A silent timeout
       with only `step_start` is not acceptable.
-- [ ] If GLM 5.2 needs a longer default timeout, the timeout is explicit in docs
+- [x] If GLM 5.2 needs a longer default timeout, the timeout is explicit in docs
       or config and does not mask artifact-emission failures.
 
 ## Evidence From Initial Diagnosis

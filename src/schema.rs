@@ -501,16 +501,42 @@ pub struct ReviewTelemetry {
     pub cost_usd: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RunInfo {
     pub engine_version: String,
     pub config_digest: String,
     pub started_at: String,
     pub finished_at: String,
     pub duration_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost_usd: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "optional_f64_from_number_or_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cost_usd: Option<f64>,
     pub coverage: Coverage,
+}
+
+fn optional_f64_from_number_or_string<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let Some(value) = Option::<serde_json::Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(number) => number.as_f64().map(Some).ok_or_else(|| {
+            serde::de::Error::custom("cost_usd number cannot be represented as f64")
+        }),
+        serde_json::Value::String(raw) => raw
+            .parse::<f64>()
+            .map(Some)
+            .map_err(|_| serde::de::Error::custom("cost_usd string must parse as f64")),
+        other => Err(serde::de::Error::custom(format!(
+            "cost_usd must be a number, numeric string, or null, got {other}"
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -537,4 +563,30 @@ pub enum ErrorScope {
     Adapter,
     Harness,
     Validation,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_cost_usd_accepts_legacy_string_but_serializes_number() {
+        let run: RunInfo = serde_json::from_value(serde_json::json!({
+            "engine_version": "test",
+            "config_digest": "sha256:test",
+            "started_at": "0",
+            "finished_at": "1",
+            "duration_ms": 1,
+            "cost_usd": "0.42",
+            "coverage": {
+                "files_reviewed": [],
+                "files_with_findings": []
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(run.cost_usd, Some(0.42));
+        let serialized = serde_json::to_value(&run).unwrap();
+        assert_eq!(serialized["cost_usd"], serde_json::json!(0.42));
+    }
 }
