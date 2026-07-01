@@ -1,6 +1,11 @@
 # Agent-native review handoff: spawn Cerberus, get the review back, branch on it
 
-Priority: P1 · Status: ready · Estimate: M · Shape: docs/plans/018-agent-native-handoff.html
+Priority: P1 · Status: shipped · Estimate: M · Shape: docs/plans/018-agent-native-handoff.html
+
+**Shipped 2026-06-26:** PR #479 landed `review-diff`, verdict-gated exit codes,
+README handoff docs, and `./scripts/verify.sh` coverage for the agent-native
+CLI contract. Factory groom 2026-07-01 moved this file to `_done/` to remove
+active-backlog drift while preserving the original shape.
 
 ## Goal
 Make Cerberus's **primary** form factor first-class: a calling agent (or human, or CI) spawns Cerberus on a local diff, reads the review off stdout, and branches on a **verdict-gated exit code** — no GitHub, no token, no intermediate request file.
