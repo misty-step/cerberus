@@ -169,6 +169,10 @@ Child lanes are launched through a `ReviewerLaneSubstrate` interface over
 lane substrate receives scoped objective/context/budget/stop-condition data and
 returns a `ReviewerLaneReceipt.v1`.
 
+The master prompt treats those lane receipts as evidence to synthesize into the
+single `ReviewArtifact.v1`. Child-lane claims must still satisfy the artifact's
+anchor, citation, context-capability, and validation rules.
+
 ## Crucible producer handoff
 
 Crucible owns grading, intervals, adjudication, and Harbor export. Cerberus's

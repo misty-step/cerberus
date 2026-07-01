@@ -173,6 +173,14 @@ const ARTIFACT_VALIDATION_RULES: &[&str] = &[
     "top-level suggested_fixes without finding_id must be referenced by a finding or comment",
 ];
 
+const LANE_EVIDENCE_SYNTHESIS_RULES: &[&str] = &[
+    "ReviewerLaneReceipt.v1 is lane evidence, not an output artifact",
+    "child-lane claims must be synthesized into the single ReviewArtifact.v1 and represented in receipts[] when used",
+    "child-lane evidence must not raise context_capabilities beyond the ReviewRequest context",
+    "child-lane findings still need concrete anchors, citations, and suggested_fix references that pass validation",
+    "failed, timeout, or skipped child lanes belong in receipts[] and summary.residual_risk; they do not block emitting a completed_degraded artifact when the master can still judge the diff",
+];
+
 #[cfg(test)]
 struct ValidationFixtureRule {
     fixture: &'static str,
@@ -186,6 +194,9 @@ fn artifact_contract_checklist() -> String {
         ARTIFACT_ENUM_AND_REFERENCE_RULES.join("; "),
         ARTIFACT_VALIDATION_RULES.join("; ")
     )
+    + " Lane evidence synthesis rules: "
+    + &LANE_EVIDENCE_SYNTHESIS_RULES.join("; ")
+    + "."
 }
 
 pub fn build_master_prompt(
@@ -210,6 +221,7 @@ Mission:
 - You may dynamically launch subagents if the selected substrate supports doing so and it improves the review.
 - Do not rely on predefined reviewer personas. Design any lane at runtime from the diff and context.
 - If you launch a lane, give it explicit objective, scope, allowed context, system prompt, and output shape.
+- If ReviewerLaneReceipt.v1 lane evidence is attached, use it only as evidence to synthesize the final ReviewArtifact.v1; do not let child-lane claims bypass anchors, citations, context truth, receipt status, or validation.
 - Synthesize evidence into one durable ReviewArtifact.v1.
 - Do not make architectural, runtime, security, or dependency claims without concrete evidence.
 - External research is allowed only if the request policy permits it. External claims require citations.
@@ -274,7 +286,7 @@ pub fn build_opencode_message(
     let capabilities_json = serde_json::to_string(capabilities)?;
     let contract_checklist = artifact_contract_checklist();
     Ok(format!(
-        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. If repo_head is true, explore the repository thoroughly and autonomously: use read, grep, glob, and the shell (ripgrep, ast-grep, git log/diff/blame) to understand the change in the context of the whole codebase and its history. The attached diff is a starting point, not your only evidence, and there is no fixed read budget. Be thorough but decisive: inspect the changed files and the code they directly touch — callers, callees, tests, and related config — then STOP exploring and emit your artifact. You do not need to read the entire repository, and you are on a wall-clock limit: producing one complete, grounded artifact is the objective, and an exploration that never emits an artifact is a failed review. If repo_base is true, compare relevant base files before making regression or behavior-change claims. Review like a senior engineer: prioritize correctness, security, and behavior regressions over style; ground every finding in a specific line you actually inspected and anchor it there; prefer a few high-signal findings over many low-value ones; never invent issues, and if the change is clean return PASS with empty findings; calibrate severity honestly and record what you did not inspect in summary.residual_risk. Draw on this review doctrine — the vocabulary of what to hunt — while you review: {review_doctrine} Use the shell only for read-only exploration; do not run builds, tests, applications, or network probes as evidence, and do not claim test, build, runtime, or QA results, unless local_runtime or remote_runtime is true (then rely only on the attached transcripts). Set run.coverage.files_reviewed to only files you actually inspected; if you skip changed files because of limits, record that reduced scope in lifecycle_state and summary.residual_risk. {contract_checklist} Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool — that file is your only deliverable. It must hold exactly one raw JSON object and nothing else: no Markdown fences, no prose, no surrounding text. Set request_id and request_digest to the exact values above. Overwrite the file completely if it already exists, and once it holds the complete valid artifact you are done.",
+        "You are Cerberus, the master code reviewer. Read the attached ReviewRequest.v1 JSON file. Request id: {request_id}. Request digest: {request_digest}. ContextCapabilities: {capabilities_json}. If repo_head is true, explore the repository thoroughly and autonomously: use read, grep, glob, and the shell (ripgrep, ast-grep, git log/diff/blame) to understand the change in the context of the whole codebase and its history. The attached diff is a starting point, not your only evidence, and there is no fixed read budget. Be thorough but decisive: inspect the changed files and the code they directly touch — callers, callees, tests, and related config — then STOP exploring and emit your artifact. You do not need to read the entire repository, and you are on a wall-clock limit: producing one complete, grounded artifact is the objective, and an exploration that never emits an artifact is a failed review. If repo_base is true, compare relevant base files before making regression or behavior-change claims. Review like a senior engineer: prioritize correctness, security, and behavior regressions over style; ground every finding in a specific line you actually inspected and anchor it there; prefer a few high-signal findings over many low-value ones; never invent issues, and if the change is clean return PASS with empty findings; calibrate severity honestly and record what you did not inspect in summary.residual_risk. Draw on this review doctrine — the vocabulary of what to hunt — while you review: {review_doctrine} Use the shell only for read-only exploration; do not run builds, tests, applications, or network probes as evidence, and do not claim test, build, runtime, or QA results, unless local_runtime or remote_runtime is true (then rely only on the attached transcripts). If ReviewerLaneReceipt.v1 evidence is attached, synthesize it into your single ReviewArtifact.v1 and receipts[]; do not let child-lane claims bypass anchors, citations, context truth, or validation. Set run.coverage.files_reviewed to only files you actually inspected; if you skip changed files because of limits, record that reduced scope in lifecycle_state and summary.residual_risk. {contract_checklist} Emit your review by writing one ReviewArtifact.v1 object to the file at {out_path} using your write tool — that file is your only deliverable. It must hold exactly one raw JSON object and nothing else: no Markdown fences, no prose, no surrounding text. Set request_id and request_digest to the exact values above. Overwrite the file completely if it already exists, and once it holds the complete valid artifact you are done.",
         request_id = request.request_id.as_str(),
         request_digest = request_digest,
         capabilities_json = capabilities_json,
@@ -323,6 +335,7 @@ mod tests {
         for rule in ARTIFACT_ENUM_AND_REFERENCE_RULES
             .iter()
             .chain(ARTIFACT_VALIDATION_RULES)
+            .chain(LANE_EVIDENCE_SYNTHESIS_RULES)
         {
             assert!(contract.contains(rule), "missing artifact rule {rule}");
         }
@@ -405,6 +418,22 @@ mod tests {
             message.contains("findings[].confidence must be a JSON number from 0.0 to 1.0"),
             "the production prompt must prevent confidence labels like high/medium/low"
         );
+    }
+
+    #[test]
+    fn prompts_instruct_lane_evidence_synthesis() {
+        let request = minimal_request();
+        let capabilities = ContextCapabilities::from_request(&request);
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        let master =
+            build_master_prompt(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        for prompt in [&message, &master] {
+            assert!(prompt.contains("ReviewerLaneReceipt.v1"));
+            assert!(prompt.contains("single ReviewArtifact.v1"));
+            assert!(prompt.contains("must not raise context_capabilities"));
+            assert!(prompt.contains("do not let child-lane claims bypass"));
+        }
     }
 
     #[test]
