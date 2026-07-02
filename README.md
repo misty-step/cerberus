@@ -131,6 +131,80 @@ either `--gh-token-file <path>` or `--gh-token-env <VAR>`. If the token is a
 GitHub App installation token, Cerberus posts as that app identity; token
 minting remains the caller/CI boundary.
 
+## Untrusted-PR review (scoped keys + container isolation)
+
+**The default review path is not safe against an untrusted diff.** A plain
+`--allow-env OPENROUTER_API_KEY` review gives the substrate (which has shell
+and webfetch access) your real, long-lived OpenRouter key and an unrestricted
+network — a prompt-injected PR can exfiltrate both. Only turn on the two
+flags below, together, before pointing Cerberus at a PR you do not trust.
+
+**M1 — scoped, capped, revocable credentials** (`--openrouter-scoped-key`).
+Instead of forwarding your real key, Cerberus mints a brand-new OpenRouter key
+for this one review, hard-capped in USD, and revokes it (or a sweeper does, if
+the process crashes) when the review ends. If the diff steals it, the thief
+gets a key worth at most the cap, already dead by the time they'd replay it.
+
+- `--openrouter-scoped-key` — turn minting on.
+- `--openrouter-provisioning-key-file <path>` / `--openrouter-provisioning-key-env <VAR>`
+  — exactly one, the source of your OpenRouter *provisioning* (management) key
+  used to mint the scoped key. Never the review key itself.
+- `--openrouter-key-limit-usd <amount>` — the USD cap on the minted key
+  (default `5`; must be a positive number).
+- `--openrouter-orphan-sweep-seconds <seconds>` — age past which a leftover
+  key from a crashed prior run is revoked before minting a fresh one (default
+  `1800`).
+
+**M2 — container isolation with a model-only egress exception**
+(`--harness container-opencode`). The substrate runs inside a locked-down
+Docker container: read-only root filesystem, no capabilities, non-root user,
+and network access to exactly one `host:port` — the model API — via a
+CONNECT-only proxy. Every other host, including for DNS resolution, is
+unreachable from inside the sandbox. The container never sees your real
+checkout path; it works from a disposable `.git`-less copy of the diff.
+
+- `--harness container-opencode` — select the isolated substrate.
+- `--container-binary <path>` — host path to the substrate executable,
+  bind-mounted read-only and exec'd inside the container. Required.
+- `--container-image <image>` — base image the substrate runs inside (default
+  `debian:bookworm-slim`). No image is built; a stock image is used as-is.
+- `--container-egress-allow-host <host:port>` — the one reachable destination
+  (default `openrouter.ai:443`).
+- `--container-host-root <path>` — parent directory for the disposable per-run
+  container root; defaults to the OS temp dir. Point this somewhere your
+  Docker daemon can actually see if it runs inside a VM with a narrow mount
+  allowlist (colima's default mounts only `$HOME`, not the OS temp dir).
+
+Combined:
+
+```sh
+cerberus review-pr --number 123 --repo owner/name \
+  --gh-token-env CERBERUS_GH_TOKEN \
+  --harness container-opencode \
+  --container-binary /usr/local/bin/opencode \
+  --openrouter-scoped-key \
+  --openrouter-provisioning-key-env OPENROUTER_MANAGEMENT_KEY \
+  --openrouter-key-limit-usd 2 \
+  --dry-run
+```
+
+Both milestones are live-verified, production-enabled (backlog 013 M1/M2,
+merged and evidence-recorded 2026-07-01). M3 (an optional further hardening
+pass) is not started and not scheduled.
+
+## Review doctrine
+
+`src/review_doctrine.md` is the shared vocabulary the master reviewer draws on
+for every review — Fowler-smell terms, the "plausible-but-wrong" failure mode
+of model-written code, a structural-ambition bar, and a mandatory dimension:
+*heuristic where a model belongs, and model where deterministic code belongs*
+(backlog 023) — every review must ask both whether a change quietly replaced
+model-native judgment with a brittle heuristic, and whether it added a model
+call where deterministic, oracle-checkable code should own the behavior
+instead. `ReviewReceiptBundle.v1` records a `review_doctrine_digest` (a hash
+of that file) so any receipt can show which doctrine version — and therefore
+which mandatory dimensions — governed a given run.
+
 ## MCP
 
 Cerberus also ships a small stdio MCP server for agents that prefer tool calls

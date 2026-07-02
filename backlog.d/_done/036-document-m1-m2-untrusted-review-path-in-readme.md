@@ -1,6 +1,6 @@
 # Document the M1/M2 untrusted-review path and review doctrine in README
 
-Priority: P1 · Status: ready · Estimate: M
+Priority: P1 · Status: done (2026-07-03) · Estimate: M
 
 ## Goal
 README currently has zero mentions of the M1 scoped-ephemeral-key path, the M2
@@ -11,21 +11,21 @@ surface, but a cold operator or agent reading README has no way to discover or
 use them.
 
 ## Oracle
-- [ ] README documents all 9 M1/M2 flags (`--openrouter-scoped-key`,
-      `--openrouter-provisioning-key-file`, `--openrouter-provisioning-key-env`,
-      `--openrouter-key-limit-usd`, `--openrouter-orphan-sweep-seconds`,
-      `--harness container-opencode`, `--container-binary`, `--container-image`,
-      `--container-egress-allow-host`, `--container-host-root`) — verified by
-      `grep -c -- '--<flag>' README.md` returning ≥1 for each.
-- [ ] README states the security model in plain language: what
-      "untrusted-PR-safe" means (scoped/capped/revoked key + non-model-egress
-      blocked by container) and explicitly that the local/default path is NOT
-      untrusted-safe (per VISION.md Non-Goals).
-- [ ] README names the review-doctrine/named-dimensions content
-      (`src/review_doctrine.md`, the mandatory model-boundary dimension from
-      023) at least at pointer level — what it is and where to read the full
-      text.
-- [ ] `./scripts/verify.sh` green (docs-only change, no code path affected).
+- [x] README documents all 9 M1/M2 flags — new "Untrusted-PR review (scoped
+      keys + container isolation)" section; verified live with
+      `grep -c -- '--<flag>' README.md` returning ≥1 for all 10 flag strings
+      checked (9 named flags plus the `--harness container-opencode` pair).
+- [x] README states the security model in plain language, opening with an
+      explicit "The default review path is not safe against an untrusted
+      diff" statement, then explains M1 (scoped/capped/revocable key) and M2
+      (container isolation + model-only egress) each in a short paragraph
+      before the flag list.
+- [x] README names the review-doctrine/named-dimensions content — new
+      "Review doctrine" section pointing at `src/review_doctrine.md`, naming
+      the mandatory model-boundary dimension (023) and the
+      `review_doctrine_digest` receipt field that records which doctrine
+      version governed a run.
+- [x] `./scripts/verify.sh` green.
 
 ## Notes
 Verified live 2026-07-01: `grep -c -- "--openrouter-scoped-key" README.md` and
