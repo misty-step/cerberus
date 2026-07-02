@@ -275,6 +275,27 @@ score included. The repo gate writes the same packet under
 `target/cerberus/crucible-producer/` and checks that the artifact is gradeable
 by Crucible's adapter contract.
 
+### Artifact schema contract
+
+`schemas/review-artifact.schema.json` is a committed JSON Schema for
+`cerberus.review_artifact.v1`, and `schemas/review-artifact.example.json` is a
+canonical fixture that validates against it. Both are generated from the live
+`ReviewArtifact` struct and its serializer, never hand-maintained:
+
+```sh
+cargo run --example gen_review_artifact_schema > schemas/review-artifact.schema.json
+cargo run --example gen_review_artifact_fixture > schemas/review-artifact.example.json
+```
+
+`tests/review_artifact_schema.rs` fails if either committed file drifts from
+what the live code produces, so an incompatible `schema.rs` change forces a
+conscious regeneration and review of the diff before it can merge. This
+fixture is the documented regeneration source for Crucible's own mirror
+(`crucible-core/tests/fixtures/cerberus-artifact.json`, which mirrors the
+struct shape by hand in `crucible-core/src/artifact.rs`) — when this fixture
+changes, regenerate Crucible's copy from it rather than letting the two drift
+independently.
+
 GitHub Checks writes require a token with Checks write access, usually a GitHub
 App or fine-grained token. Classic user tokens commonly cannot create check
 runs. Use `--summary-target status` when commit statuses are the available

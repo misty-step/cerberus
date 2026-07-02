@@ -1,0 +1,737 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewArtifact",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "type": "string"
+    },
+    "citations": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Citation"
+      }
+    },
+    "comments": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Comment"
+      }
+    },
+    "context_capabilities": {
+      "$ref": "#/$defs/ContextCapabilities"
+    },
+    "errors": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RunError"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    },
+    "lifecycle_state": {
+      "$ref": "#/$defs/LifecycleState"
+    },
+    "receipts": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Receipt"
+      }
+    },
+    "request_digest": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "run": {
+      "$ref": "#/$defs/RunInfo"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "suggested_fixes": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SuggestedFix"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "verdict": {
+      "$ref": "#/$defs/Verdict"
+    }
+  },
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "request_id",
+    "request_digest",
+    "lifecycle_state",
+    "verdict",
+    "context_capabilities",
+    "summary",
+    "run"
+  ],
+  "$defs": {
+    "Anchor": {
+      "type": "object",
+      "properties": {
+        "end_line": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "hunk_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/AnchorKind"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_line": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "AnchorKind": {
+      "type": "string",
+      "enum": [
+        "inline",
+        "file",
+        "change",
+        "run"
+      ]
+    },
+    "Citation": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "excerpt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/CitationKind"
+        },
+        "observed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uri": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "used_by": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ]
+    },
+    "CitationKind": {
+      "type": "string",
+      "enum": [
+        "url",
+        "paper",
+        "doc",
+        "command",
+        "artifact",
+        "repo"
+      ]
+    },
+    "Comment": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "body": {
+          "type": "string"
+        },
+        "dedupe_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finding_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "intent": {
+          "$ref": "#/$defs/CommentIntent"
+        },
+        "kind": {
+          "$ref": "#/$defs/CommentKind"
+        },
+        "suggested_fixes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "intent",
+        "body",
+        "anchor"
+      ]
+    },
+    "CommentIntent": {
+      "type": "string",
+      "enum": [
+        "finding",
+        "note",
+        "question",
+        "summary"
+      ]
+    },
+    "CommentKind": {
+      "type": "string",
+      "enum": [
+        "inline",
+        "contextual"
+      ]
+    },
+    "ContextCapabilities": {
+      "type": "object",
+      "properties": {
+        "diff": {
+          "type": "boolean"
+        },
+        "external_research": {
+          "$ref": "#/$defs/ExternalResearchPolicy"
+        },
+        "local_runtime": {
+          "type": "boolean"
+        },
+        "remote_runtime": {
+          "type": "boolean"
+        },
+        "repo_base": {
+          "type": "boolean"
+        },
+        "repo_head": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "diff",
+        "repo_head",
+        "repo_base",
+        "local_runtime",
+        "remote_runtime",
+        "external_research"
+      ]
+    },
+    "Coverage": {
+      "type": "object",
+      "properties": {
+        "files_reviewed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files_with_findings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "files_reviewed",
+        "files_with_findings"
+      ]
+    },
+    "Edit": {
+      "type": "object",
+      "properties": {
+        "end_line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "path": {
+          "type": "string"
+        },
+        "replacement": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "path",
+        "start_line",
+        "end_line"
+      ]
+    },
+    "ErrorScope": {
+      "type": "string",
+      "enum": [
+        "run",
+        "reviewer",
+        "research",
+        "render",
+        "adapter",
+        "harness",
+        "validation"
+      ]
+    },
+    "ExternalResearchPolicy": {
+      "type": "string",
+      "enum": [
+        "forbid",
+        "allow",
+        "require_citations"
+      ]
+    },
+    "Finding": {
+      "type": "object",
+      "properties": {
+        "anchors": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Anchor"
+          }
+        },
+        "category": {
+          "type": "string"
+        },
+        "citations": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "format": "float"
+        },
+        "description": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "suggested_fixes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "category",
+        "title",
+        "description",
+        "evidence",
+        "confidence"
+      ]
+    },
+    "FixApplicability": {
+      "type": "string",
+      "enum": [
+        "safe",
+        "needs_review"
+      ]
+    },
+    "FixFormat": {
+      "type": "string",
+      "enum": [
+        "replacement",
+        "unified_diff",
+        "instructions"
+      ]
+    },
+    "LifecycleState": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "completed_degraded",
+        "failed",
+        "skipped",
+        "cancelled",
+        "stale"
+      ]
+    },
+    "Receipt": {
+      "type": "object",
+      "properties": {
+        "artifact_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "harness": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "perspective": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/ReceiptRole"
+        },
+        "status": {
+          "$ref": "#/$defs/ReceiptStatus"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transcript_uri": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Usage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Verdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "status"
+      ]
+    },
+    "ReceiptRole": {
+      "type": "string",
+      "enum": [
+        "master",
+        "reviewer",
+        "critic",
+        "researcher",
+        "synthesizer"
+      ]
+    },
+    "ReceiptStatus": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "timeout",
+        "error",
+        "skipped"
+      ]
+    },
+    "RunError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "scope": {
+          "$ref": "#/$defs/ErrorScope"
+        }
+      },
+      "required": [
+        "scope",
+        "code",
+        "message",
+        "retryable"
+      ]
+    },
+    "RunInfo": {
+      "type": "object",
+      "properties": {
+        "config_digest": {
+          "type": "string"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine_version",
+        "config_digest",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "coverage"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "minor",
+        "major",
+        "critical"
+      ]
+    },
+    "SuggestedFix": {
+      "type": "object",
+      "properties": {
+        "applicability": {
+          "$ref": "#/$defs/FixApplicability"
+        },
+        "diff": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "edits": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Edit"
+          }
+        },
+        "finding_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "$ref": "#/$defs/FixFormat"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "applicability",
+        "format"
+      ]
+    },
+    "Summary": {
+      "type": "object",
+      "properties": {
+        "analysis": {
+          "type": "string",
+          "default": ""
+        },
+        "body": {
+          "type": "string"
+        },
+        "residual_risk": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body"
+      ]
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "completion_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "prompt_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
+    "Verdict": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "WARN",
+        "FAIL",
+        "SKIP"
+      ]
+    }
+  }
+}
