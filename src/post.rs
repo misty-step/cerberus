@@ -630,6 +630,15 @@ impl GithubClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stderr = redact_secret(&stderr, self.token.as_deref());
+            if path.contains("/check-runs") && stderr.contains("403") {
+                bail!(
+                    "{} api --method {method} {path} failed: {stderr}\n\n\
+                     This token lacks Checks-write (a classic PAT without the `checks` scope, \
+                     or a GitHub App install without Checks permission, commonly hits this). \
+                     Retry with --summary-target status, which only needs Statuses-write.",
+                    self.binary
+                );
+            }
             bail!(
                 "{} api --method {method} {path} failed: {}",
                 self.binary,
@@ -831,5 +840,47 @@ mod tests {
             .operations
             .iter()
             .any(|operation| operation.id == "create-inline-review"));
+    }
+
+    // Backlog 009: a classic-token operator hitting Checks-write denial
+    // previously got a raw `gh` stderr dump with no hint that
+    // --summary-target status is exactly the documented fallback. Pins the
+    // actionable message.
+    #[test]
+    fn check_run_403_names_the_summary_target_status_fallback() {
+        let fake_gh = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/bin/fake-gh");
+        let client = GithubClient::new(fake_gh.display().to_string()).with_token("test-token");
+        let plan = PostPlan {
+            schema_version: POST_PLAN_SCHEMA.to_string(),
+            repo: "example/fixture".to_string(),
+            pull_request: 7,
+            head_sha: "0123456789abcdef".to_string(),
+            artifact_id: "artifact-1".to_string(),
+            artifact_digest: "sha256:test".to_string(),
+            summary_target: SummaryTarget::CheckRun,
+            operations: vec![PlannedOperation {
+                id: "create-check-run".to_string(),
+                method: "POST".to_string(),
+                path: "/repos/example/fixture/check-runs".to_string(),
+                description: "create check run".to_string(),
+                idempotency_key: "create-check-run".to_string(),
+                body: serde_json::json!({}),
+            }],
+            unmapped_comments: Vec::new(),
+        };
+
+        std::env::set_var("CERBERUS_FAKE_GH_FAIL_CHECK_RUNS_403", "1");
+        let err = client.apply_plan(&plan).unwrap_err();
+        std::env::remove_var("CERBERUS_FAKE_GH_FAIL_CHECK_RUNS_403");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("--summary-target status"),
+            "error should name the concrete fallback: {message}"
+        );
+        assert!(
+            message.contains("Checks-write"),
+            "error should name what's missing: {message}"
+        );
     }
 }

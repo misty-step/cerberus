@@ -67,10 +67,17 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Build a ReviewRequest.v1 without running a review.
     Request(Box<RequestArgs>),
+    /// Run a review from an existing ReviewRequest.v1 file.
     Review(Box<ReviewArgs>),
+    /// Build a request from a local git diff and review it in one command;
+    /// no GitHub, no token.
     ReviewDiff(Box<ReviewDiffArgs>),
+    /// Fetch a GitHub pull request, review it, and optionally post the
+    /// result.
     ReviewPr(Box<ReviewPrArgs>),
+    /// Render an existing ReviewArtifact.v1 to Markdown.
     Render(RenderArgs),
     /// Run the Cerberus MCP server over stdio.
     Mcp,
@@ -84,66 +91,112 @@ struct RequestArgs {
 
 #[derive(Debug, Subcommand)]
 enum RequestCommand {
+    /// Build a request from a local git base/head range.
     GitRange(GitRangeArgs),
+    /// Build a request from a GitHub pull request (read-only, ambient `gh` auth).
     Pr(PullRequestArgs),
 }
 
+/// Build a `ReviewRequest.v1` from a local git base/head range, with no
+/// GitHub and no token. Write it with `--out` for a later `review` command,
+/// or use `review-diff` to build and review in one step.
 #[derive(Debug, Args)]
 struct GitRangeArgs {
+    /// Git checkout to diff. Must be a real, non-bare repository.
     #[arg(long, default_value = ".")]
     repo_path: PathBuf,
+    /// Base ref or sha the diff is computed against.
     #[arg(long)]
     base: String,
+    /// Head ref or sha to diff. Defaults to the checkout's current HEAD.
     #[arg(long, default_value = "HEAD")]
     head: String,
+    /// Write the built ReviewRequest.v1 JSON here.
     #[arg(long)]
     out: PathBuf,
+    /// Grant `repo_base` context by pointing at a second checkout of the base
+    /// ref. Without this, the request carries diff + repo_head context only.
     #[arg(long)]
     base_workspace: Option<PathBuf>,
+    /// Human-readable change title recorded on the request.
     #[arg(long)]
     title: Option<String>,
+    /// Longer change description recorded on the request.
     #[arg(long)]
     description: Option<String>,
+    /// Explicit request id. Defaults to a generated id if omitted.
     #[arg(long)]
     request_id: Option<String>,
+    /// `owner/name` slug recorded on the request source, for display only.
     #[arg(long)]
     repo: Option<String>,
+    /// Extra reviewer instruction, repeatable. Appended to the request's
+    /// instructions list in the order given.
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    /// Local command the reviewer may run as a bounded runtime probe (e.g. a
+    /// test suite), repeatable. Requires --allow-local-runtime.
     #[arg(long = "local-runtime-command")]
     local_runtime_commands: Vec<String>,
+    /// Permit the local-runtime commands above to actually run. Without
+    /// this, local-runtime-command entries are rejected at validation.
     #[arg(long)]
     allow_local_runtime: bool,
+    /// Env var name the review substrate's child process may inherit,
+    /// repeatable. Everything else is scrubbed from the child's environment.
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
+    /// Wall-clock budget for the review, in seconds.
     #[arg(long, default_value_t = 120)]
     timeout_seconds: u64,
 }
 
+/// Build a `ReviewRequest.v1` from a GitHub pull request via ambient `gh`
+/// auth. Read-only: use `review-pr` instead if you also want to run and
+/// post the review with an explicit token.
 #[derive(Debug, Args)]
 struct PullRequestArgs {
+    /// Pull request number.
     #[arg(long)]
     number: u64,
+    /// Write the built ReviewRequest.v1 JSON here.
     #[arg(long)]
     out: PathBuf,
+    /// `owner/name` slug. Defaults to the repo `gh` resolves from the
+    /// current directory.
     #[arg(long)]
     repo: Option<String>,
+    /// `gh` binary, resolved from the trusted search path.
     #[arg(long, default_value = "gh")]
     gh_binary: String,
+    /// Grant `repo_head` context by pointing at a checkout of the PR's head
+    /// ref. Without this, the request carries diff context only.
     #[arg(long)]
     head_workspace: Option<PathBuf>,
+    /// Grant `repo_base` context by pointing at a checkout of the PR's base
+    /// ref. Requires --head-workspace.
     #[arg(long)]
     base_workspace: Option<PathBuf>,
+    /// Explicit request id. Defaults to a generated id if omitted.
     #[arg(long)]
     request_id: Option<String>,
+    /// Extra reviewer instruction, repeatable. Appended to the request's
+    /// instructions list in the order given.
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    /// Local command the reviewer may run as a bounded runtime probe (e.g. a
+    /// test suite), repeatable. Requires --allow-local-runtime.
     #[arg(long = "local-runtime-command")]
     local_runtime_commands: Vec<String>,
+    /// Permit the local-runtime commands above to actually run. Without
+    /// this, local-runtime-command entries are rejected at validation.
     #[arg(long)]
     allow_local_runtime: bool,
+    /// Env var name the review substrate's child process may inherit,
+    /// repeatable. Everything else is scrubbed from the child's environment.
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
+    /// Wall-clock budget for the review, in seconds.
     #[arg(long, default_value_t = 120)]
     timeout_seconds: u64,
 }
@@ -153,18 +206,34 @@ struct PullRequestArgs {
 /// surface stays identical while the declaration lives in one place.
 #[derive(Debug, Args)]
 struct SubstrateArgs {
+    /// Which review substrate runs the master reviewer: `opencode` (default,
+    /// live model calls), `omp` (fallback), `fixture` (deterministic,
+    /// tests/CI only — reads a canned artifact from --fixture-output), or
+    /// `container-opencode` (opencode sandboxed for untrusted-PR review;
+    /// backlog 013).
     #[arg(long, value_enum, default_value_t = HarnessKind::Opencode)]
     harness: HarnessKind,
+    /// Path to a canned ReviewArtifact.v1 template the fixture substrate
+    /// reads instead of calling a model. Required when --harness fixture.
     #[arg(long)]
     fixture_output: Option<PathBuf>,
+    /// `opencode` binary, resolved from the trusted search path (or an
+    /// absolute path). Used when --harness opencode.
     #[arg(long, default_value = "opencode")]
     opencode_binary: String,
+    /// Attach to an existing opencode session id instead of starting a new
+    /// one. Rarely needed outside interactive debugging.
     #[arg(long)]
     opencode_attach: Option<String>,
+    /// opencode agent profile to run the review under.
     #[arg(long, default_value = "build")]
     opencode_agent: Option<String>,
+    /// `omp` binary, resolved from the trusted search path. Used when
+    /// --harness omp.
     #[arg(long, default_value = "omp")]
     omp_binary: String,
+    /// Model id passed to the substrate (e.g. `openrouter/z-ai/glm-5.2`).
+    /// Substrate-specific; unused by the fixture harness.
     #[arg(long)]
     model: Option<String>,
     /// `docker` (or a compatible CLI), resolved from the trusted search path,
@@ -206,6 +275,9 @@ struct SubstrateArgs {
 /// untrusted-PR review. Off by default; trusted self-review is unaffected.
 #[derive(Debug, Args)]
 struct ScopedKeyArgs {
+    /// Mint a per-review, USD-capped OpenRouter key instead of forwarding a
+    /// long-lived OPENROUTER_API_KEY into the substrate. Requires
+    /// --openrouter-provisioning-key-file or -env.
     #[arg(long)]
     openrouter_scoped_key: bool,
     /// Read the OpenRouter provisioning (management) key from this file.
@@ -216,6 +288,7 @@ struct ScopedKeyArgs {
     /// var. Required unless --openrouter-provisioning-key-file is used.
     #[arg(long)]
     openrouter_provisioning_key_env: Option<String>,
+    /// USD spend cap on the minted key.
     #[arg(long, default_value_t = 5.0)]
     openrouter_key_limit_usd: f64,
     /// Age past which the orphan sweeper revokes a stale review-tagged key
@@ -224,37 +297,62 @@ struct ScopedKeyArgs {
     openrouter_orphan_sweep_seconds: u64,
 }
 
+/// Run a review from an existing `ReviewRequest.v1` file (built by `request`
+/// or `review-diff`, or hand-authored) and write a `ReviewArtifact.v1`.
 #[derive(Debug, Args)]
 struct ReviewArgs {
+    /// ReviewRequest.v1 JSON to review.
     #[arg(long)]
     request: PathBuf,
+    /// Write the ReviewArtifact.v1 JSON here.
     #[arg(long)]
     out: PathBuf,
+    /// Also write the rendered Markdown here.
     #[arg(long)]
     markdown: Option<PathBuf>,
     #[command(flatten)]
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
+    /// Working directory for a diff-only request's disposable packet
+    /// workspace. Defaults to the current directory.
     #[arg(long)]
     cwd: Option<PathBuf>,
+    /// Wall-clock budget for the review, in seconds. Defaults to the
+    /// request's own `policy.timeout_ms`.
     #[arg(long)]
     timeout_seconds: Option<u64>,
+    /// Write the substrate execution plan (command, args, env allowlist,
+    /// workspace mode) here. Defaults to a sibling of --out.
     #[arg(long)]
     execution_plan: Option<PathBuf>,
+    /// Write the raw substrate transcript here. Written automatically next
+    /// to --receipt-bundle if that flag is set and this one is not.
     #[arg(long)]
     transcript: Option<PathBuf>,
+    /// Write a redacted ReviewReceiptBundle.v1 here — request/artifact
+    /// digests, telemetry, and validation outcome for downstream eval labs.
     #[arg(long)]
     receipt_bundle: Option<PathBuf>,
     /// Write a Crucible producer manifest sidecar. Requires --receipt-bundle and contains no scores.
     #[arg(long)]
     producer_manifest: Option<PathBuf>,
+    /// Env var name the review substrate's child process may inherit,
+    /// repeatable. Everything else is scrubbed from the child's environment.
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
+    /// Map the verdict to the process exit code: `none` (default) never
+    /// blocks, `warn` blocks on WARN or FAIL, `fail` blocks only on FAIL. A
+    /// blocking verdict exits 1; a Cerberus error (no valid artifact) always
+    /// exits 2 regardless of this flag.
     #[arg(long, value_enum, default_value_t = FailOn::None)]
     fail_on: FailOn,
 }
 
+/// Fetch a GitHub pull request, run a review, and optionally post it. Reads
+/// require an explicit token (--gh-token-file or --gh-token-env); ambient
+/// `gh` auth is never used for reads or posting. Refuses to post if the PR's
+/// head moved since the request was built.
 #[derive(Debug, Args)]
 #[command(group(
     ArgGroup::new("posting-mode")
@@ -262,18 +360,31 @@ struct ReviewArgs {
         .multiple(false)
 ))]
 struct ReviewPrArgs {
+    /// Pull request number.
     #[arg(long)]
     number: u64,
+    /// `owner/name` slug.
     #[arg(long)]
     repo: String,
+    /// Directory request/artifact/transcript/receipt/post-plan files are
+    /// written under.
     #[arg(long, default_value = "target/cerberus/review-pr")]
     out_dir: PathBuf,
+    /// Plan the post (summary + inline comments) and write post-plan.json
+    /// without publishing anything. Mutually exclusive with --post.
     #[arg(long)]
     dry_run: bool,
+    /// Publish the planned summary and inline comments to the pull request.
+    /// Mutually exclusive with --dry-run.
     #[arg(long)]
     post: bool,
+    /// Where the review summary is published: a GitHub Checks run
+    /// (`check-run`, needs Checks-write) or a commit status
+    /// (`status`, needs only Statuses-write — use this if Checks-write is
+    /// denied).
     #[arg(long, value_enum, default_value_t = SummaryTarget::CheckRun)]
     summary_target: SummaryTarget,
+    /// `gh` binary, resolved from the trusted search path.
     #[arg(long, default_value = "gh")]
     gh_binary: String,
     /// Read the explicit GitHub token from this file. Required unless --gh-token-env is used.
@@ -282,36 +393,58 @@ struct ReviewPrArgs {
     /// Read the explicit GitHub token from this named env var. Required unless --gh-token-file is used.
     #[arg(long)]
     gh_token_env: Option<String>,
+    /// Grant `repo_head` context by pointing at a checkout of the PR's head
+    /// ref. Without this, the request carries diff context only.
     #[arg(long)]
     head_workspace: Option<PathBuf>,
+    /// Grant `repo_base` context by pointing at a checkout of the PR's base
+    /// ref. Requires --head-workspace.
     #[arg(long)]
     base_workspace: Option<PathBuf>,
+    /// Explicit request id. Defaults to a generated id if omitted.
     #[arg(long)]
     request_id: Option<String>,
+    /// Extra reviewer instruction, repeatable. Appended to the request's
+    /// instructions list in the order given.
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    /// Local command the reviewer may run as a bounded runtime probe (e.g. a
+    /// test suite), repeatable. Requires --allow-local-runtime.
     #[arg(long = "local-runtime-command")]
     local_runtime_commands: Vec<String>,
+    /// Permit the local-runtime commands above to actually run. Without
+    /// this, local-runtime-command entries are rejected at validation.
     #[arg(long)]
     allow_local_runtime: bool,
+    /// Env var name the review substrate's child process may inherit,
+    /// repeatable. Everything else is scrubbed from the child's environment.
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
+    /// Wall-clock budget for the review, in seconds.
     #[arg(long, default_value_t = 120)]
     timeout_seconds: u64,
     #[command(flatten)]
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
+    /// Working directory for a diff-only request's disposable packet
+    /// workspace. Defaults to the current directory.
     #[arg(long)]
     cwd: Option<PathBuf>,
+    /// Write a redacted ReviewReceiptBundle.v1 here instead of the default
+    /// `<out-dir>/receipt-bundle.json`.
     #[arg(long)]
     receipt_bundle: Option<PathBuf>,
 }
 
+/// Render an existing ReviewArtifact.v1 to Markdown without re-running a
+/// review.
 #[derive(Debug, Args)]
 struct RenderArgs {
+    /// ReviewArtifact.v1 JSON to render.
     #[arg(long)]
     artifact: PathBuf,
+    /// Write the rendered Markdown here.
     #[arg(long)]
     markdown: PathBuf,
 }
@@ -321,36 +454,58 @@ struct RenderArgs {
 /// artifact under `--json`); the exit code gates on the verdict via `--fail-on`.
 #[derive(Debug, Args)]
 struct ReviewDiffArgs {
+    /// Git checkout to diff. Must be a real, non-bare repository.
     #[arg(long, default_value = ".")]
     repo_path: PathBuf,
+    /// Base ref or sha the diff is computed against.
     #[arg(long)]
     base: String,
+    /// Head ref or sha to diff. Defaults to the checkout's current HEAD.
     #[arg(long, default_value = "HEAD")]
     head: String,
+    /// Grant `repo_base` context by pointing at a second checkout of the base
+    /// ref. Without this, the request carries diff + repo_head context only.
     #[arg(long)]
     base_workspace: Option<PathBuf>,
+    /// Human-readable change title recorded on the request.
     #[arg(long)]
     title: Option<String>,
+    /// Longer change description recorded on the request.
     #[arg(long)]
     description: Option<String>,
+    /// Explicit request id. Defaults to a generated id if omitted.
     #[arg(long)]
     request_id: Option<String>,
+    /// `owner/name` slug recorded on the request source, for display only.
     #[arg(long)]
     repo: Option<String>,
+    /// Extra reviewer instruction, repeatable. Appended to the request's
+    /// instructions list in the order given.
     #[arg(long = "instruction")]
     instructions: Vec<String>,
+    /// Local command the reviewer may run as a bounded runtime probe (e.g. a
+    /// test suite), repeatable. Requires --allow-local-runtime.
     #[arg(long = "local-runtime-command")]
     local_runtime_commands: Vec<String>,
+    /// Permit the local-runtime commands above to actually run. Without
+    /// this, local-runtime-command entries are rejected at validation.
     #[arg(long)]
     allow_local_runtime: bool,
+    /// Env var name the review substrate's child process may inherit,
+    /// repeatable. Everything else is scrubbed from the child's environment.
     #[arg(long = "allow-env")]
     allowed_env: Vec<String>,
+    /// Wall-clock budget for the review, in seconds.
     #[arg(long, default_value_t = 120)]
     timeout_seconds: u64,
     #[command(flatten)]
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
+    /// Map the verdict to the process exit code: `none` (default) never
+    /// blocks, `warn` blocks on WARN or FAIL, `fail` blocks only on FAIL. A
+    /// blocking verdict exits 1; a Cerberus error (no valid artifact) always
+    /// exits 2 regardless of this flag.
     #[arg(long, value_enum, default_value_t = FailOn::None)]
     fail_on: FailOn,
     /// Also write the artifact JSON to this path (still printed to stdout).

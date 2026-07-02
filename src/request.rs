@@ -314,9 +314,16 @@ fn run_with_env(
             .env_remove("GH_ENTERPRISE_TOKEN")
             .env_remove("GITHUB_ENTERPRISE_TOKEN");
     }
-    let output = command
-        .output()
-        .with_context(|| format!("run {program} {}", args.join(" ")))?;
+    let output = command.output().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            anyhow!(
+                "{program} was not found on PATH ({err}); install it and ensure it is on PATH, \
+                 or pass an explicit path via the matching --*-binary flag (e.g. --gh-binary)"
+            )
+        } else {
+            anyhow::Error::new(err).context(format!("run {program} {}", args.join(" ")))
+        }
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = redact_secret(&stderr, gh_token);
@@ -732,5 +739,24 @@ mod tests {
         pr.base_ref_oid = Some("".to_string());
         let err = require_pr_base_sha(7, &pr).unwrap_err();
         assert!(err.to_string().contains("missing baseRefOid"));
+    }
+
+    // Backlog 009: a missing `gh`/`git` binary previously surfaced only the
+    // raw OS error ("No such file or directory"), with no hint that the
+    // fix is installing it or pointing --gh-binary/--*-binary elsewhere —
+    // unlike the harness-binary path, which already names the fix.
+    #[test]
+    fn missing_binary_names_the_install_or_flag_fix() {
+        let cwd = tempfile::tempdir().unwrap();
+        let err = run(cwd.path(), "cerberus-definitely-not-a-real-binary", &[]).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("was not found on PATH"),
+            "should name the concrete problem: {message}"
+        );
+        assert!(
+            message.contains("--*-binary") || message.contains("install it"),
+            "should name the concrete fix: {message}"
+        );
     }
 }

@@ -9,9 +9,17 @@ pub fn render_markdown(artifact: &ReviewArtifact) -> String {
     out.push_str(&format!("**Artifact:** `{}`  \n", artifact.artifact_id));
     out.push_str(&format!("**Request:** `{}`  \n", artifact.request_id));
     out.push_str(&format!(
-        "**Lifecycle:** `{:?}`\n\n",
+        "**Lifecycle:** `{:?}`  \n",
         artifact.lifecycle_state
     ));
+    out.push_str(&format!(
+        "**Duration:** `{}ms`  \n",
+        artifact.run.duration_ms
+    ));
+    match artifact.run.cost_usd {
+        Some(cost) => out.push_str(&format!("**Cost:** `${cost:.4}`\n\n")),
+        None => out.push_str("**Cost:** `unknown`\n\n"),
+    }
 
     out.push_str("## Summary\n\n");
     out.push_str(&format!("**{}**\n\n", artifact.summary.title));
@@ -33,6 +41,37 @@ pub fn render_markdown(artifact: &ReviewArtifact) -> String {
         artifact.context_capabilities.remote_runtime,
         artifact.context_capabilities.external_research
     ));
+
+    out.push_str("## Coverage\n\n");
+    if artifact.run.coverage.files_reviewed.is_empty() {
+        out.push_str("No files recorded as reviewed.\n\n");
+    } else {
+        out.push_str(&format!(
+            "**Files reviewed ({}):** {}\n\n",
+            artifact.run.coverage.files_reviewed.len(),
+            artifact
+                .run
+                .coverage
+                .files_reviewed
+                .iter()
+                .map(|path| format!("`{path}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !artifact.run.coverage.files_with_findings.is_empty() {
+        out.push_str(&format!(
+            "**Files with findings:** {}\n\n",
+            artifact
+                .run
+                .coverage
+                .files_with_findings
+                .iter()
+                .map(|path| format!("`{path}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
 
     out.push_str("## Findings\n\n");
     if artifact.findings.is_empty() {
@@ -197,5 +236,124 @@ mod tests {
         let markdown = render_markdown(&artifact);
         assert!(markdown.contains("# Cerberus Review: PASS"));
         assert!(markdown.contains("No findings."));
+    }
+
+    fn artifact_with_run(run: RunInfo) -> ReviewArtifact {
+        ReviewArtifact {
+            schema_version: REVIEW_ARTIFACT_SCHEMA.to_string(),
+            artifact_id: "a".to_string(),
+            request_id: "r".to_string(),
+            request_digest: "sha256:r".to_string(),
+            lifecycle_state: LifecycleState::Completed,
+            verdict: Verdict::Pass,
+            context_capabilities: ContextCapabilities {
+                diff: true,
+                repo_head: false,
+                repo_base: false,
+                local_runtime: false,
+                remote_runtime: false,
+                external_research: ExternalResearchPolicy::Forbid,
+            },
+            summary: Summary {
+                title: "Clean".to_string(),
+                body: "No issues.".to_string(),
+                analysis: String::new(),
+                residual_risk: Vec::new(),
+            },
+            findings: Vec::new(),
+            comments: Vec::new(),
+            suggested_fixes: Vec::new(),
+            citations: Vec::new(),
+            receipts: Vec::new(),
+            run,
+            errors: Vec::new(),
+        }
+    }
+
+    // Pins the VISION promise "operators can see ... the time/cost it took":
+    // this data lived in the schema but was previously rendered only inside
+    // a #[cfg(test)] block, never in the production Markdown callers/GitHub
+    // actually see (backlog 009).
+    #[test]
+    fn renders_duration_and_cost_in_production_markdown() {
+        let artifact = artifact_with_run(RunInfo {
+            engine_version: "test".to_string(),
+            config_digest: "sha256:test".to_string(),
+            started_at: "0".to_string(),
+            finished_at: "1".to_string(),
+            duration_ms: 4321,
+            cost_usd: Some(0.0042),
+            coverage: Coverage {
+                files_reviewed: Vec::new(),
+                files_with_findings: Vec::new(),
+            },
+        });
+
+        let markdown = render_markdown(&artifact);
+
+        assert!(markdown.contains("**Duration:** `4321ms`"));
+        assert!(markdown.contains("**Cost:** `$0.0042`"));
+    }
+
+    #[test]
+    fn renders_unknown_cost_when_the_substrate_did_not_report_one() {
+        let artifact = artifact_with_run(RunInfo {
+            engine_version: "test".to_string(),
+            config_digest: "sha256:test".to_string(),
+            started_at: "0".to_string(),
+            finished_at: "1".to_string(),
+            duration_ms: 1,
+            cost_usd: None,
+            coverage: Coverage {
+                files_reviewed: Vec::new(),
+                files_with_findings: Vec::new(),
+            },
+        });
+
+        let markdown = render_markdown(&artifact);
+
+        assert!(markdown.contains("**Cost:** `unknown`"));
+    }
+
+    #[test]
+    fn renders_coverage_files_reviewed_and_with_findings() {
+        let artifact = artifact_with_run(RunInfo {
+            engine_version: "test".to_string(),
+            config_digest: "sha256:test".to_string(),
+            started_at: "0".to_string(),
+            finished_at: "1".to_string(),
+            duration_ms: 1,
+            cost_usd: None,
+            coverage: Coverage {
+                files_reviewed: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+                files_with_findings: vec!["src/main.rs".to_string()],
+            },
+        });
+
+        let markdown = render_markdown(&artifact);
+
+        assert!(markdown.contains("**Files reviewed (2):**"));
+        assert!(markdown.contains("`src/lib.rs`"));
+        assert!(markdown.contains("**Files with findings:** `src/main.rs`"));
+    }
+
+    #[test]
+    fn renders_no_files_reviewed_when_coverage_is_empty() {
+        let artifact = artifact_with_run(RunInfo {
+            engine_version: "test".to_string(),
+            config_digest: "sha256:test".to_string(),
+            started_at: "0".to_string(),
+            finished_at: "1".to_string(),
+            duration_ms: 1,
+            cost_usd: None,
+            coverage: Coverage {
+                files_reviewed: Vec::new(),
+                files_with_findings: Vec::new(),
+            },
+        });
+
+        let markdown = render_markdown(&artifact);
+
+        assert!(markdown.contains("No files recorded as reviewed."));
     }
 }
