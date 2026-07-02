@@ -82,7 +82,7 @@ Then **read the artifact and transcript by hand** — this is the QA, not the ru
    issues?
 
 Note the boundary: **scored** faithfulness (paired baseline-vs-candidate, CIs,
-judge κ) is Daedalus's arena, not this repo (`backlog.d/020`, `_done/015`). This
+judge κ) is Threshold's arena, not this repo (`backlog.d/020`, `_done/015`). This
 skill is the human-read smoke that precedes that arena.
 
 ## Post-path QA (idempotency)
@@ -111,5 +111,5 @@ them. Confirm on the PR.
 Return: **verdict** (PASS / FAIL / UNVERIFIED) · exact commands run · surfaces
 exercised (machinery vs brain) · artifacts inspected (paths under
 `target/cerberus/`) · for a brain change, the human groundedness read · what was
-NOT covered (e.g. "no live review — fixture only") and whether Daedalus scoring
+NOT covered (e.g. "no live review — fixture only") and whether Threshold scoring
 is owed.

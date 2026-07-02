@@ -230,7 +230,7 @@ native MCP client and benefits from tool schemas/results.
 request digest, artifact digest, harness, model and usage when available,
 latency, capability tier, artifact/transcript URIs, and validation outcome
 without embedding prompt files, request files, secret names, or transcript
-excerpts. Daedalus or another lab can score those bundles without Cerberus
+excerpts. Threshold or another lab can score those bundles without Cerberus
 owning model or harness evaluation.
 
 `ReviewerPlanReceipt.v1` is the orchestration sidecar. The current path records

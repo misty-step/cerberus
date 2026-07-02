@@ -27,7 +27,7 @@ deployment is advisory.
 
 ## Children
 
-1. Pull `020-review-doctrine-and-daedalus-eval.md` through the new Crucible
+1. Pull `020-review-doctrine-and-threshold-eval.md` through the new Crucible
    benchmark path and record keep/revise/revert for the current review doctrine.
 2. Add a periodic Crucible scoring run over production Cerberus receipts once
    Crucible's run database exists.

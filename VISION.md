@@ -82,7 +82,7 @@ Drift here is how narrow tools become unmaintainable platforms. The scope stays
 narrow on purpose.
 
 - **Not an evaluation lab.** Cerberus emits redacted, replayable
-  `ReviewReceiptBundle.v1` receipts so upstream labs (Daedalus) can score real
+  `ReviewReceiptBundle.v1` receipts so upstream labs (Threshold) can score real
   runs. It does not own leaderboards, harness-vs-harness matrices, reviewer-config
   promotion, eval dashboards, or long-lived benchmark storage.
 - **No hardcoded reviewer personas in Rust.** Reviewer topology is a runtime
@@ -152,7 +152,7 @@ work queue, release system, or eval lab.
 Known consumers: **Bitterblossom** (defines its own review triggers and operating
 substrate, then invokes Cerberus as the reviewer) and **Olympus**, which refactors
 its Argus agent to invoke Cerberus rather than reimplement review. **Crucible**
-and **Daedalus** evaluate Cerberus runs from emitted receipts. When a capability
+and **Threshold** evaluate Cerberus runs from emitted receipts. When a capability
 could belong to Cerberus or to a consumer/adjacent system — a trigger, a queue, a
 posting destination, an eval, a release workflow — it belongs to the consumer or
 adjacent system unless an ADR argues otherwise. Cerberus stays a highly

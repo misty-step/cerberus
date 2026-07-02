@@ -76,7 +76,7 @@ Substrate order for Cerberus:
 
 ## External Evals
 
-Cerberus does not own model or harness evaluation in the MVP. Daedalus and
+Cerberus does not own model or harness evaluation in the MVP. Threshold and
 other upstream laboratories may evaluate Cerberus, produce reviewer config
 candidates, and compare harnesses or models. Cerberus only needs enough receipt
 surface for those systems to replay and score runs later.
@@ -443,6 +443,6 @@ After MVP, consider:
 - GitHub acquisition and posting adapters;
 - rootless container runtime profile;
 - remote runtime probe capability;
-- Daedalus reviewer config import;
+- Threshold reviewer config import;
 - SARIF/check renderers;
 - richer receipt redaction and artifact storage.
