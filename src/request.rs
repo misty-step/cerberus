@@ -614,6 +614,27 @@ mod tests {
         git_output(repo, &["rev-parse", "HEAD"]).unwrap()
     }
 
+    fn build_range_request_for_test(repo: &Path, base: &str, head: &str) -> ReviewRequest {
+        build_git_range_request(&GitRangeRequestOptions {
+            repo_path: repo.to_path_buf(),
+            base: base.to_string(),
+            head: head.to_string(),
+            base_workspace: None,
+            title: None,
+            description: None,
+            repo: None,
+            common: RequestOptions {
+                request_id: None,
+                instructions: Vec::new(),
+                local_runtime: Vec::new(),
+                allow_local_runtime: false,
+                allowed_env: Vec::new(),
+                timeout_ms: 120_000,
+            },
+        })
+        .unwrap()
+    }
+
     fn gh_pr(head_ref_oid: Option<String>) -> GhPullRequest {
         GhPullRequest {
             number: 7,
@@ -673,24 +694,7 @@ mod tests {
         run(repo.path(), "git", &["commit", "-q", "-m", "add binary"]).unwrap();
         let head = git_output(repo.path(), &["rev-parse", "HEAD"]).unwrap();
 
-        let request = build_git_range_request(&GitRangeRequestOptions {
-            repo_path: repo.path().to_path_buf(),
-            base: base.clone(),
-            head: head.clone(),
-            base_workspace: None,
-            title: None,
-            description: None,
-            repo: None,
-            common: RequestOptions {
-                request_id: None,
-                instructions: Vec::new(),
-                local_runtime: Vec::new(),
-                allow_local_runtime: false,
-                allowed_env: Vec::new(),
-                timeout_ms: 120_000,
-            },
-        })
-        .unwrap();
+        let request = build_range_request_for_test(repo.path(), &base, &head);
 
         let binary_file = request
             .change
@@ -709,6 +713,132 @@ mod tests {
         assert!(
             request.change.diff.body.contains("GIT binary patch"),
             "diff body should carry git's base85-encoded binary patch, not be silently empty: {}",
+            request.change.diff.body
+        );
+    }
+
+    // Backlog 039: a fixture corpus for diff shapes most likely to break the
+    // request-building pipeline in ways a single hand-picked test wouldn't
+    // catch. Deterministic request-building coverage only -- not
+    // review-quality/LLM-faithfulness evals, which stay in Crucible/Daedalus
+    // per ADR 0003. Add new diff-shape regressions here rather than as a
+    // one-off test elsewhere.
+
+    #[cfg(unix)]
+    #[test]
+    fn build_git_range_request_handles_an_executable_bit_only_mode_change() {
+        let repo = init_repo();
+        let base = commit_file(repo.path(), "echo hi\n", "initial");
+        let script = repo.path().join("file.txt");
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        fs::set_permissions(&script, perms).unwrap();
+        run(repo.path(), "git", &["add", "file.txt"]).unwrap();
+        run(
+            repo.path(),
+            "git",
+            &["commit", "-q", "-m", "make executable"],
+        )
+        .unwrap();
+        let head = git_output(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+
+        let request = build_range_request_for_test(repo.path(), &base, &head);
+        crate::validation::validate_request(&request).expect("request is schema-valid");
+
+        let file = request
+            .change
+            .files
+            .iter()
+            .find(|file| file.path == "file.txt")
+            .expect("mode-changed file present in the request's changed files");
+        assert_eq!(file.status, FileStatus::Modified);
+        assert_eq!(
+            (file.additions, file.deletions),
+            (Some(0), Some(0)),
+            "a pure mode change touches no lines -- 0/0, not None (no content changed, \
+             but git did report a diff)"
+        );
+        assert!(!request.change.diff.body.is_empty());
+        assert!(
+            request.change.diff.body.contains("old mode")
+                && request.change.diff.body.contains("new mode"),
+            "diff body should carry git's mode-change markers: {}",
+            request.change.diff.body
+        );
+    }
+
+    #[test]
+    fn build_git_range_request_handles_a_pure_file_delete() {
+        let repo = init_repo();
+        let base = commit_file(repo.path(), "line one\nline two\nline three\n", "initial");
+        run(repo.path(), "git", &["rm", "-q", "file.txt"]).unwrap();
+        run(repo.path(), "git", &["commit", "-q", "-m", "delete file"]).unwrap();
+        let head = git_output(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+
+        let request = build_range_request_for_test(repo.path(), &base, &head);
+        crate::validation::validate_request(&request).expect("request is schema-valid");
+
+        let file = request
+            .change
+            .files
+            .iter()
+            .find(|file| file.path == "file.txt")
+            .expect("deleted file present in the request's changed files");
+        assert_eq!(file.status, FileStatus::Removed);
+        assert_eq!(
+            (file.additions, file.deletions),
+            (Some(0), Some(3)),
+            "a pure delete of a 3-line file removes 3 lines and adds none"
+        );
+        assert!(!request.change.diff.body.is_empty());
+    }
+
+    #[test]
+    fn build_git_range_request_handles_a_file_with_three_separated_hunks() {
+        let repo = init_repo();
+        let original: String = (1..=50)
+            .map(|line_number| format!("line {line_number}\n"))
+            .collect();
+        let base = commit_file(repo.path(), &original, "initial");
+        let mut lines: Vec<String> = (1..=50).map(|n| format!("line {n}")).collect();
+        lines[4] = "CHANGED line 5".to_string();
+        lines[24] = "CHANGED line 25".to_string();
+        lines[44] = "CHANGED line 45".to_string();
+        fs::write(
+            repo.path().join("file.txt"),
+            format!("{}\n", lines.join("\n")),
+        )
+        .unwrap();
+        run(repo.path(), "git", &["add", "file.txt"]).unwrap();
+        run(
+            repo.path(),
+            "git",
+            &["commit", "-q", "-m", "three separated edits"],
+        )
+        .unwrap();
+        let head = git_output(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+
+        let request = build_range_request_for_test(repo.path(), &base, &head);
+        crate::validation::validate_request(&request).expect("request is schema-valid");
+
+        let file = request
+            .change
+            .files
+            .iter()
+            .find(|file| file.path == "file.txt")
+            .expect("edited file present in the request's changed files");
+        assert_eq!(file.status, FileStatus::Modified);
+        assert_eq!((file.additions, file.deletions), (Some(3), Some(3)));
+        let hunk_count = request
+            .change
+            .diff
+            .body
+            .lines()
+            .filter(|line| line.starts_with("@@"))
+            .count();
+        assert!(
+            hunk_count >= 3,
+            "three widely separated single-line edits should produce at least 3 hunks, got {hunk_count}:\n{}",
             request.change.diff.body
         );
     }
