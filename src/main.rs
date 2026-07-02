@@ -8,6 +8,7 @@ use cerberus::harness::{
     ExecutionPlan, FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
 use cerberus::kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
+use cerberus::openrouter_keys::{mint_review_key, ProvisioningClient, ScopedKeyGuard};
 use cerberus::post::{build_post_plan, trusted_lifecycle, GithubClient, SummaryTarget};
 use cerberus::producer::{build_crucible_producer_manifest, CrucibleProducerManifestInput};
 use cerberus::receipt::{build_review_receipt_bundle, ReceiptBundleInput};
@@ -20,6 +21,7 @@ use cerberus::{
     render_markdown, validate_artifact_for_request, validate_request, ReviewArtifact, ReviewRequest,
 };
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use uuid::Uuid;
 
 /// Maps a review verdict to a process exit code so a calling agent can gate on
 /// it. A blocking verdict (exit 1) is a *successful* review that found issues —
@@ -166,6 +168,32 @@ struct SubstrateArgs {
     model: Option<String>,
 }
 
+/// Scoped-ephemeral-key flags (backlog 013 M1), flattened into every command
+/// that runs a review. When `--openrouter-scoped-key` is set, Cerberus mints
+/// a per-review OpenRouter key capped at `--openrouter-key-limit-usd` instead
+/// of forwarding a long-lived OPENROUTER_API_KEY into a substrate that also
+/// has webfetch/bash access — the confirmed exfil path for a prompt-injected
+/// untrusted-PR review. Off by default; trusted self-review is unaffected.
+#[derive(Debug, Args)]
+struct ScopedKeyArgs {
+    #[arg(long)]
+    openrouter_scoped_key: bool,
+    /// Read the OpenRouter provisioning (management) key from this file.
+    /// Required unless --openrouter-provisioning-key-env is used.
+    #[arg(long)]
+    openrouter_provisioning_key_file: Option<PathBuf>,
+    /// Read the OpenRouter provisioning (management) key from this named env
+    /// var. Required unless --openrouter-provisioning-key-file is used.
+    #[arg(long)]
+    openrouter_provisioning_key_env: Option<String>,
+    #[arg(long, default_value_t = 5.0)]
+    openrouter_key_limit_usd: f64,
+    /// Age past which the orphan sweeper revokes a stale review-tagged key
+    /// left by a crashed prior run, before minting a fresh one.
+    #[arg(long, default_value_t = 1800)]
+    openrouter_orphan_sweep_seconds: u64,
+}
+
 #[derive(Debug, Args)]
 struct ReviewArgs {
     #[arg(long)]
@@ -176,6 +204,8 @@ struct ReviewArgs {
     markdown: Option<PathBuf>,
     #[command(flatten)]
     substrate: SubstrateArgs,
+    #[command(flatten)]
+    scoped_key: ScopedKeyArgs,
     #[arg(long)]
     cwd: Option<PathBuf>,
     #[arg(long)]
@@ -240,6 +270,8 @@ struct ReviewPrArgs {
     timeout_seconds: u64,
     #[command(flatten)]
     substrate: SubstrateArgs,
+    #[command(flatten)]
+    scoped_key: ScopedKeyArgs,
     #[arg(long)]
     cwd: Option<PathBuf>,
     #[arg(long)]
@@ -287,6 +319,8 @@ struct ReviewDiffArgs {
     timeout_seconds: u64,
     #[command(flatten)]
     substrate: SubstrateArgs,
+    #[command(flatten)]
+    scoped_key: ScopedKeyArgs,
     #[arg(long, value_enum, default_value_t = FailOn::None)]
     fail_on: FailOn,
     /// Also write the artifact JSON to this path (still printed to stdout).
@@ -426,6 +460,7 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         out,
         markdown,
         substrate,
+        scoped_key,
         cwd,
         timeout_seconds,
         execution_plan,
@@ -448,6 +483,9 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     }
     let mut request = read_json::<ReviewRequest>(&request)?;
     extend_review_allowed_env(&mut request, allowed_env);
+    let scoped_key_client = resolve_scoped_key_client(&scoped_key)?;
+    let _scoped_key_guard =
+        mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &scoped_key)?;
     validate_request(&request)?;
     let cwd = cwd.unwrap_or(std::env::current_dir().context("read current directory")?);
     let transcript_path = transcript.or_else(|| {
@@ -555,8 +593,89 @@ fn require_child_env_for_substrate(
     ))
 }
 
+/// Backlog 013 M1: build the provisioning client when `--openrouter-scoped-key`
+/// is set, resolving its management key from an explicit file/env source only
+/// (no ambient fallback, matching the house `--gh-token-file`/`--gh-token-env`
+/// pattern). Returns `None` when scoped-key minting was not requested, so
+/// callers fall back to the existing forwarded-`OPENROUTER_API_KEY` path
+/// unchanged.
+fn resolve_scoped_key_client(args: &ScopedKeyArgs) -> Result<Option<ProvisioningClient>> {
+    if !args.openrouter_scoped_key {
+        return Ok(None);
+    }
+    let key = resolve_openrouter_provisioning_key(
+        args.openrouter_provisioning_key_file.as_deref(),
+        args.openrouter_provisioning_key_env.as_deref(),
+    )?;
+    Ok(Some(ProvisioningClient::new(key)))
+}
+
+fn resolve_openrouter_provisioning_key(
+    key_file: Option<&Path>,
+    key_env: Option<&str>,
+) -> Result<String> {
+    match (key_file, key_env) {
+        (Some(_), Some(_)) => Err(anyhow!(
+            "--openrouter-scoped-key accepts exactly one explicit provisioning-key source: --openrouter-provisioning-key-file or --openrouter-provisioning-key-env"
+        )),
+        (Some(path), None) => {
+            let raw = fs::read_to_string(path).with_context(|| {
+                format!("read OpenRouter provisioning key file {}", path.display())
+            })?;
+            let key = raw.trim_end_matches(['\r', '\n']).to_string();
+            if key.trim().is_empty() {
+                return Err(anyhow!(
+                    "OpenRouter provisioning key file {} is empty; refusing to mint scoped keys",
+                    path.display()
+                ));
+            }
+            Ok(key)
+        }
+        (None, Some(var)) => {
+            let key = std::env::var(var)
+                .with_context(|| format!("read explicit OpenRouter provisioning key env var {var}"))?;
+            if key.trim().is_empty() {
+                return Err(anyhow!(
+                    "explicit OpenRouter provisioning key env var {var} is empty; refusing to mint scoped keys"
+                ));
+            }
+            Ok(key)
+        }
+        (None, None) => Err(anyhow!(
+            "--openrouter-scoped-key requires an explicit provisioning key via --openrouter-provisioning-key-file <path> or --openrouter-provisioning-key-env <VAR>; ambient env is refused"
+        )),
+    }
+}
+
+/// Mint a per-review OpenRouter key when a `client` was resolved, inject it
+/// as `OPENROUTER_API_KEY` (shadowing any operator long-lived key already in
+/// this process's env) for the child substrate to pick up via the normal
+/// `allowed_env` forward path, and return the guard that revokes it. The
+/// guard has a `Drop` impl, so holding it in an unused local keeps the key
+/// alive exactly until the caller's function returns (success, error, or
+/// panic) — see `ScopedKeyGuard` for why that is crash-safe within this
+/// process. The mint-then-sweep sequence itself lives in
+/// `cerberus::openrouter_keys::mint_review_key`, tested there against a mock
+/// provisioning server; this function is just the CLI-specific glue (env
+/// injection, request mutation).
+fn mint_scoped_openrouter_key<'a>(
+    client: Option<&'a ProvisioningClient>,
+    request: &mut ReviewRequest,
+    args: &ScopedKeyArgs,
+) -> Result<Option<ScopedKeyGuard<'a>>> {
+    let Some(client) = client else {
+        return Ok(None);
+    };
+    let sweep_age = Duration::from_secs(args.openrouter_orphan_sweep_seconds);
+    let tag = Uuid::new_v4().to_string();
+    let minted = mint_review_key(client, &tag, args.openrouter_key_limit_usd, sweep_age)?;
+    std::env::set_var("OPENROUTER_API_KEY", &minted.secret);
+    extend_review_allowed_env(request, vec!["OPENROUTER_API_KEY".to_string()]);
+    Ok(Some(ScopedKeyGuard::new(client, minted.hash)))
+}
+
 fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
-    let request = build_git_range_request(&GitRangeRequestOptions {
+    let mut request = build_git_range_request(&GitRangeRequestOptions {
         repo_path: args.repo_path,
         base: args.base,
         head: args.head,
@@ -573,6 +692,9 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
             timeout_ms: timeout_ms(args.timeout_seconds)?,
         },
     })?;
+    let scoped_key_client = resolve_scoped_key_client(&args.scoped_key)?;
+    let _scoped_key_guard =
+        mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &args.scoped_key)?;
     validate_request(&request)?;
     let cwd = std::env::current_dir().context("read current directory")?;
     let substrate = review_substrate(args.substrate)?;
@@ -622,7 +744,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         resolve_github_token(args.gh_token_file.as_deref(), args.gh_token_env.as_deref())?;
     let gh_binary = args.gh_binary.clone();
 
-    let request = build_pull_request(&PullRequestOptions {
+    let mut request = build_pull_request(&PullRequestOptions {
         number: args.number,
         repo: Some(args.repo.clone()),
         gh_binary: gh_binary.clone(),
@@ -638,6 +760,9 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             timeout_ms: timeout_ms(args.timeout_seconds)?,
         },
     })?;
+    let scoped_key_client = resolve_scoped_key_client(&args.scoped_key)?;
+    let _scoped_key_guard =
+        mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &args.scoped_key)?;
     validate_request(&request)?;
     write_json(&request_path, &request)?;
     let head_sha = request
@@ -1014,4 +1139,79 @@ mod tests {
     // The ExitCode mapping (blocking -> 1, clean -> 0, error -> 2) is proven
     // end-to-end by the exit-code matrix in scripts/verify.sh; ExitCode is not
     // PartialEq, so it cannot be asserted here.
+
+    fn default_scoped_key_args() -> ScopedKeyArgs {
+        ScopedKeyArgs {
+            openrouter_scoped_key: false,
+            openrouter_provisioning_key_file: None,
+            openrouter_provisioning_key_env: None,
+            openrouter_key_limit_usd: 5.0,
+            openrouter_orphan_sweep_seconds: 1800,
+        }
+    }
+
+    #[test]
+    fn scoped_key_client_is_none_when_flag_is_off() {
+        let client = resolve_scoped_key_client(&default_scoped_key_args()).expect("resolves");
+        assert!(
+            client.is_none(),
+            "no provisioning key should be required unless --openrouter-scoped-key is set"
+        );
+    }
+
+    #[test]
+    fn mint_scoped_openrouter_key_is_a_noop_without_a_client() {
+        let request_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
+        let mut request: ReviewRequest = read_json(&request_path).expect("fixture request loads");
+        let allowed_env_before = request.policy.allowed_env.clone();
+
+        let guard = mint_scoped_openrouter_key(None, &mut request, &default_scoped_key_args())
+            .expect("no client means no minting");
+
+        assert!(guard.is_none());
+        assert_eq!(
+            request.policy.allowed_env, allowed_env_before,
+            "request must be untouched when scoped-key minting was not requested"
+        );
+    }
+
+    #[test]
+    fn provisioning_key_resolves_from_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("provisioning-key.txt");
+        fs::write(&path, "mgmt-key-from-file\n").expect("write key file");
+
+        let key = resolve_openrouter_provisioning_key(Some(&path), None).expect("reads file");
+        assert_eq!(key, "mgmt-key-from-file");
+    }
+
+    #[test]
+    fn provisioning_key_resolves_from_explicit_env_var() {
+        let var = "CERBERUS_TEST_OPENROUTER_PROVISIONING_KEY";
+        std::env::set_var(var, "mgmt-key-from-env");
+        let key = resolve_openrouter_provisioning_key(None, Some(var)).expect("reads env var");
+        std::env::remove_var(var);
+        assert_eq!(key, "mgmt-key-from-env");
+    }
+
+    #[test]
+    fn provisioning_key_rejects_both_sources_at_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("provisioning-key.txt");
+        fs::write(&path, "irrelevant").expect("write key file");
+
+        let err = resolve_openrouter_provisioning_key(Some(&path), Some("SOME_VAR")).unwrap_err();
+        assert!(err.to_string().contains("exactly one explicit"));
+    }
+
+    #[test]
+    fn provisioning_key_refuses_ambient_fallback() {
+        let err = resolve_openrouter_provisioning_key(None, None).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("requires an explicit provisioning key"),
+            "must not silently fall back to ambient env: {err}"
+        );
+    }
 }

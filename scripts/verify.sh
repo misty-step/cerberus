@@ -22,6 +22,10 @@ grep -q '\[default: opencode\]' target/cerberus-review-help.txt
 grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.txt
 grep -q -- '--receipt-bundle' target/cerberus-review-help.txt
 grep -q -- '--producer-manifest' target/cerberus-review-help.txt
+grep -q -- '--openrouter-scoped-key' target/cerberus-review-help.txt
+grep -q -- '--openrouter-provisioning-key-file' target/cerberus-review-help.txt
+grep -q -- '--openrouter-provisioning-key-env' target/cerberus-review-help.txt
+grep -q -- '--openrouter-key-limit-usd' target/cerberus-review-help.txt
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
@@ -38,6 +42,7 @@ grep -q -- '--summary-target' target/cerberus-review-pr-help.txt
 grep -q -- '--receipt-bundle' target/cerberus-review-pr-help.txt
 grep -q -- '--gh-token-file' target/cerberus-review-pr-help.txt
 grep -q -- '--gh-token-env' target/cerberus-review-pr-help.txt
+grep -q -- '--openrouter-scoped-key' target/cerberus-review-pr-help.txt
 cargo run --locked -- mcp --help > target/cerberus-mcp-help.txt
 grep -q 'Run the Cerberus MCP server over stdio' target/cerberus-mcp-help.txt
 
@@ -131,6 +136,38 @@ if grep -q '\[attempt: re-ask\]' target/cerberus/timeout-no-reask-transcript.txt
   echo "timed-out opencode attempt should not launch a re-ask" >&2
   exit 1
 fi
+
+# Backlog 013 M1: --openrouter-scoped-key must refuse to mint without an
+# explicit provisioning-key source — no ambient-env fallback, same house
+# pattern as --gh-token-file/--gh-token-env. These fail before any network
+# call, so they run unconditionally (no provisioning key needed).
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out target/cerberus/scoped-key-no-source-artifact.json \
+  --openrouter-scoped-key \
+  > target/cerberus/scoped-key-no-source.stdout \
+  2> target/cerberus/scoped-key-no-source.stderr; then
+  echo "expected --openrouter-scoped-key without an explicit provisioning-key source to fail" >&2
+  exit 1
+fi
+grep -q 'requires an explicit provisioning key' target/cerberus/scoped-key-no-source.stderr
+
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out target/cerberus/scoped-key-both-sources-artifact.json \
+  --openrouter-scoped-key \
+  --openrouter-provisioning-key-file target/cerberus/nonexistent-provisioning-key.txt \
+  --openrouter-provisioning-key-env CERBERUS_UNUSED_OPENROUTER_PROVISIONING_KEY \
+  > target/cerberus/scoped-key-both-sources.stdout \
+  2> target/cerberus/scoped-key-both-sources.stderr; then
+  echo "expected --openrouter-scoped-key with both key sources to fail" >&2
+  exit 1
+fi
+grep -q 'exactly one explicit' target/cerberus/scoped-key-both-sources.stderr
 
 printf 'stale receipt should be removed before a failed run\n' \
   > target/cerberus/receipts/stale-before-failed-review.json
