@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 
+use crate::container::{run_container_substrate, ContainerOpencodeSubstrateConfig};
 use crate::harness::{
     run_command_substrate, run_fixture_substrate, CommandSubstrateConfig, ExecutionPlan,
     FixtureSubstrateConfig, OmpSubstrateConfig, OpenCodeSubstrateConfig,
@@ -20,6 +21,7 @@ pub enum ReviewSubstrate {
     Fixture(FixtureSubstrateConfig),
     Opencode(OpenCodeSubstrateConfig),
     Omp(OmpSubstrateConfig),
+    ContainerOpencode(ContainerOpencodeSubstrateConfig),
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +70,9 @@ impl ReviewKernel {
                 run_policy.timeout,
                 run_policy.failure_transcript.as_deref(),
             )?,
+            ReviewSubstrate::ContainerOpencode(config) => {
+                run_container_substrate(request, run_policy.timeout, config)?
+            }
         };
         let reviewer_plan = build_reviewer_plan(request, &run.execution_plan, &run.telemetry)?;
         Ok(ReviewRun {

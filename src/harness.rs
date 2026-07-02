@@ -23,7 +23,7 @@ use crate::validation::validate_artifact_for_request;
 /// Filename the review agent writes its `ReviewArtifact.v1` JSON to, inside the
 /// disposable review workspace (`--dir`). The harness reads it back and parses
 /// it; there is no transcript scraping.
-const ARTIFACT_FILENAME: &str = "review-artifact.json";
+pub(crate) const ARTIFACT_FILENAME: &str = "review-artifact.json";
 
 /// Maximum re-ask retries after an invalid or missing emission. Research puts
 /// first-retry recovery near 80% and second-retry above 99%; a third is wasted
@@ -35,6 +35,7 @@ pub enum HarnessKind {
     Opencode,
     Omp,
     Fixture,
+    ContainerOpencode,
 }
 
 #[derive(Debug, Clone)]
@@ -301,7 +302,7 @@ pub(crate) fn run_command_substrate(
 /// Read and parse the artifact the agent emitted to its out-path. A missing or
 /// unparseable file is an error (the agent never produced a deliverable), which
 /// the re-ask loop treats as a reason to ask again.
-fn read_artifact_file(out_path: &Path) -> Result<ReviewArtifact> {
+pub(crate) fn read_artifact_file(out_path: &Path) -> Result<ReviewArtifact> {
     let raw = fs::read_to_string(out_path)
         .with_context(|| format!("read emitted review artifact {}", out_path.display()))?;
     serde_json::from_str(&raw)
@@ -1174,7 +1175,7 @@ fn unix_timestamp_string() -> String {
 }
 
 #[cfg(unix)]
-fn set_private_permissions(path: &Path) -> Result<()> {
+pub(crate) fn set_private_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = fs::metadata(path)?.permissions();
     permissions.set_mode(0o600);
@@ -1183,12 +1184,12 @@ fn set_private_permissions(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_private_permissions(_path: &Path) -> Result<()> {
+pub(crate) fn set_private_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
 #[cfg(unix)]
-fn set_private_directory_permissions(path: &Path) -> Result<()> {
+pub(crate) fn set_private_directory_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = fs::metadata(path)?.permissions();
     permissions.set_mode(0o700);
@@ -1197,7 +1198,7 @@ fn set_private_directory_permissions(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_private_directory_permissions(_path: &Path) -> Result<()> {
+pub(crate) fn set_private_directory_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
