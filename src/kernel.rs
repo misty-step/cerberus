@@ -26,7 +26,6 @@ pub enum ReviewSubstrate {
 
 #[derive(Debug, Clone)]
 pub struct RunPolicy {
-    pub cwd: PathBuf,
     pub timeout: Duration,
     pub failure_transcript: Option<PathBuf>,
 }
@@ -54,19 +53,17 @@ impl ReviewKernel {
     pub fn review(&self, request: &ReviewRequest, run_policy: &RunPolicy) -> Result<ReviewRun> {
         let run = match &self.substrate {
             ReviewSubstrate::Fixture(config) => {
-                run_fixture_substrate(request, &run_policy.cwd, run_policy.timeout, config)?
+                run_fixture_substrate(request, run_policy.timeout, config)?
             }
             ReviewSubstrate::Opencode(config) => run_command_substrate(
                 CommandSubstrateConfig::Opencode(config),
                 request,
-                &run_policy.cwd,
                 run_policy.timeout,
                 run_policy.failure_transcript.as_deref(),
             )?,
             ReviewSubstrate::Omp(config) => run_command_substrate(
                 CommandSubstrateConfig::Omp(config),
                 request,
-                &run_policy.cwd,
                 run_policy.timeout,
                 run_policy.failure_transcript.as_deref(),
             )?,

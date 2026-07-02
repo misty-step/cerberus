@@ -314,10 +314,6 @@ struct ReviewArgs {
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
-    /// Working directory for a diff-only request's disposable packet
-    /// workspace. Defaults to the current directory.
-    #[arg(long)]
-    cwd: Option<PathBuf>,
     /// Wall-clock budget for the review, in seconds. Defaults to the
     /// request's own `policy.timeout_ms`.
     #[arg(long)]
@@ -427,10 +423,6 @@ struct ReviewPrArgs {
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
-    /// Working directory for a diff-only request's disposable packet
-    /// workspace. Defaults to the current directory.
-    #[arg(long)]
-    cwd: Option<PathBuf>,
     /// Write a redacted ReviewReceiptBundle.v1 here instead of the default
     /// `<out-dir>/receipt-bundle.json`.
     #[arg(long)]
@@ -667,7 +659,6 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         markdown,
         substrate,
         scoped_key,
-        cwd,
         timeout_seconds,
         execution_plan,
         transcript,
@@ -693,7 +684,6 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     let _scoped_key_guard =
         mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &scoped_key)?;
     validate_request(&request)?;
-    let cwd = cwd.unwrap_or(std::env::current_dir().context("read current directory")?);
     let transcript_path = transcript.or_else(|| {
         receipt_bundle
             .as_ref()
@@ -706,7 +696,6 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
     require_child_env_for_substrate(&request, &substrate)?;
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
-        cwd,
         timeout,
         failure_transcript: transcript_path.clone(),
     };
@@ -902,12 +891,10 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
     let _scoped_key_guard =
         mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &args.scoped_key)?;
     validate_request(&request)?;
-    let cwd = std::env::current_dir().context("read current directory")?;
     let substrate = review_substrate(args.substrate)?;
     require_child_env_for_substrate(&request, &substrate)?;
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
-        cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
         failure_transcript: None,
     };
@@ -985,14 +972,10 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         &head_sha,
     )?;
 
-    let cwd = args
-        .cwd
-        .unwrap_or(std::env::current_dir().context("read current directory")?);
     let substrate = review_substrate(args.substrate)?;
     require_child_env_for_substrate(&request, &substrate)?;
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
-        cwd,
         timeout: Duration::from_millis(request.policy.timeout_ms),
         failure_transcript: Some(transcript_path.clone()),
     };

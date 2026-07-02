@@ -11,7 +11,6 @@ fn kernel_review_runs_fixture_through_small_typed_boundary() {
         "fixtures/harness/valid-review.txt",
     )));
     let policy = RunPolicy {
-        cwd: PathBuf::from("."),
         timeout: Duration::from_secs(5),
         failure_transcript: None,
     };
