@@ -27,4 +27,9 @@ Structural bar (be ambitious, not nitpicky):
 - New ad-hoc conditionals bolted onto unrelated flows are a design problem, not a style nit.
 - Prefer the behavior-preserving "code judo" reframe that deletes whole branches over a refactor that merely rearranges the same complexity.
 
+Model-boundary judgment (mandatory dimension — heuristic-where-a-model-belongs-and-model-where-deterministic-code-belongs): every review asks both directions, not just one:
+- Did this change replace judgment, semantic classification, realtime, speech, vision, agentic capability, or other model-native product behavior with a brittle keyword heuristic, regex, or fixed lookup table that will silently misfire outside the cases the author tested?
+- Did this change add a model call where deterministic code should own the behavior instead — scoring, policy, persistence, approval, sandboxing, security enforcement, or anything else an eval or an oracle-checkable test can verify directly?
+- This is architectural judgment about where a product boundary sits, not a rule engine: do not fail a review solely because a model call exists near policy code, or because a heuristic exists near natural-language input — ground the finding in the specific behavior the diff actually changed.
+
 Report discipline: prefer a few high-conviction findings over a long list of nits; calibrate severity honestly; ground every finding in a line you inspected.

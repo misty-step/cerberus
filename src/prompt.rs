@@ -10,7 +10,7 @@ use crate::schema::{ContextCapabilities, ReviewRequest};
 /// curation credit: Matt Pocock's `/review` baseline; smells from *Refactoring*
 /// Ch.3. Kept as runtime *vocabulary*, not fixed personas — Cerberus still
 /// designs any lane from the diff at runtime.
-const REVIEW_DOCTRINE: &str = include_str!("review_doctrine.md");
+pub(crate) const REVIEW_DOCTRINE: &str = include_str!("review_doctrine.md");
 
 const ARTIFACT_FIELD_PATHS: &[&str] = &[
     "schema_version",
@@ -381,6 +381,16 @@ mod tests {
             assert!(
                 prompt.contains("code judo"),
                 "doctrine: structural-ambition bar must be embedded"
+            );
+            // Backlog 023: the mandatory model-boundary dimension must reach
+            // both prompt surfaces the same way every other doctrine section
+            // does -- named vocabulary embedded in the shared doctrine text,
+            // not a hardcoded persona.
+            assert!(
+                prompt.contains(
+                    "heuristic-where-a-model-belongs-and-model-where-deterministic-code-belongs"
+                ),
+                "doctrine: the mandatory model-boundary dimension must be embedded"
             );
         }
     }
