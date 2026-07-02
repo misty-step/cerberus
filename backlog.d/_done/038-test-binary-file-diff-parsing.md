@@ -1,6 +1,6 @@
 # Test binary-file diff parsing end-to-end (numstat + --binary body)
 
-Priority: P2 · Status: ready · Estimate: S
+Priority: P2 · Status: done (2026-07-02) · Estimate: S
 
 ## Goal
 `parse_numstat` (`src/request.rs:453`) parses git's binary-file numstat line
@@ -11,16 +11,17 @@ has no test with a binary file in the diff, so this path has run unverified
 since it was written.
 
 ## Oracle
-- [ ] A unit test feeds `parse_numstat` a raw numstat line for a binary file
-      (`-\t-\timage.png`) and asserts `additions`/`deletions` are both `None`,
-      not a parse panic or a spurious `0`.
-- [ ] An end-to-end test (real git repo fixture, one binary file added or
-      modified) runs `build_git_range_request` and asserts the resulting
-      `ReviewRequest` contains the file with `additions: None,
-      deletions: None` and a valid (non-empty, UTF-8) `Diff.body` — confirming
-      `--binary`'s base85-encoded patch output survives the full pipeline
-      without corrupting the request JSON.
-- [ ] `./scripts/verify.sh` green.
+- [x] Unit test `parses_binary_numstat_line_as_no_line_counts` feeds
+      `parse_numstat` a raw binary numstat line and asserts
+      `additions`/`deletions` are both `None`.
+- [x] End-to-end test `build_git_range_request_handles_an_added_binary_file`
+      builds a real temp git repo, adds a 1024-byte binary file as a second
+      commit, runs `build_git_range_request`, and asserts the file entry has
+      `additions: None, deletions: None` and the request's `Diff.body`
+      contains git's `GIT binary patch` marker (empirically confirmed via a
+      manual `git diff --binary` run before writing the assertion, so it
+      matches real git output rather than a guess).
+- [x] `./scripts/verify.sh` green.
 
 ## Notes
 Verified live 2026-07-01: `grep -n "binary" src/request.rs` shows `--binary`
