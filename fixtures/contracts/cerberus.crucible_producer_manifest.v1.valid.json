@@ -1,0 +1,47 @@
+{
+  "schema_version": "cerberus.crucible_producer_manifest.v1",
+  "consumer": "crucible",
+  "request": {
+    "request_id": "req-fixture",
+    "request_digest": "sha256:requestfixture"
+  },
+  "artifact": {
+    "artifact_id": "artifact-fixture",
+    "artifact_uri": "artifact.json",
+    "artifact_digest": "sha256:artifactfixture",
+    "schema_version": "cerberus.review_artifact.v1",
+    "finding_count": 1,
+    "comment_count": 0,
+    "capability_tier": "repo_head",
+    "context_capabilities": {
+      "diff": true,
+      "repo_head": true,
+      "repo_base": false,
+      "local_runtime": false,
+      "remote_runtime": false,
+      "external_research": "forbid"
+    }
+  },
+  "receipt_bundle": {
+    "schema_version": "cerberus.review_receipt_bundle.v1",
+    "receipt_bundle_uri": "receipt-bundle.json",
+    "receipt_bundle_digest": "sha256:receiptfixture",
+    "transcript_uri": "transcript.txt",
+    "execution_plan_uri": "execution_plan.json"
+  },
+  "grader_input": {
+    "format": "cerberus.review_artifact.v1",
+    "artifact_uri": "artifact.json",
+    "findings_path": "findings",
+    "finding_id_path": "findings[].id"
+  },
+  "validation": {
+    "status": "passed",
+    "trusted_for_grading": true
+  },
+  "boundary": {
+    "scorer_owner": "crucible",
+    "includes_score": false,
+    "note": "Cerberus produced the validated review artifact and redacted receipts only; Crucible owns grading."
+  }
+}
