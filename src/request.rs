@@ -649,6 +649,70 @@ mod tests {
         assert_eq!(stats.get("new.txt"), Some(&(Some(3), Some(0))));
     }
 
+    // Backlog 038: git's numstat line for a binary file uses `-`/`-` in place
+    // of line counts (there is nothing to count). `.parse::<u32>().ok()`
+    // silently yields None for "-", which is correct, but nothing exercised
+    // this path until now.
+    #[test]
+    fn parses_binary_numstat_line_as_no_line_counts() {
+        let stats = parse_numstat("-\t-\timage.png\n");
+        assert_eq!(stats.get("image.png"), Some(&(None, None)));
+    }
+
+    // Backlog 038: end-to-end proof that a real binary file survives the
+    // full build_git_range_request pipeline -- `--binary`'s base85-encoded
+    // patch output must round-trip through git diff -> UTF-8 lossy capture
+    // -> the request JSON without corrupting the file entry or the request.
+    #[test]
+    fn build_git_range_request_handles_an_added_binary_file() {
+        let repo = init_repo();
+        let base = commit_file(repo.path(), "hello\n", "initial");
+        let binary_bytes: Vec<u8> = (0..=255u8).cycle().take(1024).collect();
+        fs::write(repo.path().join("image.png"), &binary_bytes).unwrap();
+        run(repo.path(), "git", &["add", "image.png"]).unwrap();
+        run(repo.path(), "git", &["commit", "-q", "-m", "add binary"]).unwrap();
+        let head = git_output(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+
+        let request = build_git_range_request(&GitRangeRequestOptions {
+            repo_path: repo.path().to_path_buf(),
+            base: base.clone(),
+            head: head.clone(),
+            base_workspace: None,
+            title: None,
+            description: None,
+            repo: None,
+            common: RequestOptions {
+                request_id: None,
+                instructions: Vec::new(),
+                local_runtime: Vec::new(),
+                allow_local_runtime: false,
+                allowed_env: Vec::new(),
+                timeout_ms: 120_000,
+            },
+        })
+        .unwrap();
+
+        let binary_file = request
+            .change
+            .files
+            .iter()
+            .find(|file| file.path == "image.png")
+            .expect("binary file present in the request's changed files");
+        assert_eq!(binary_file.status, FileStatus::Added);
+        assert_eq!(
+            binary_file.additions, None,
+            "binary files have no line-count, not a spurious 0"
+        );
+        assert_eq!(binary_file.deletions, None);
+
+        assert!(!request.change.diff.body.is_empty());
+        assert!(
+            request.change.diff.body.contains("GIT binary patch"),
+            "diff body should carry git's base85-encoded binary patch, not be silently empty: {}",
+            request.change.diff.body
+        );
+    }
+
     #[test]
     fn parses_github_remote_slugs() {
         assert_eq!(
