@@ -1,16 +1,16 @@
 # Deliver the operator-visibility VISION promises and actionable errors
 
-Priority: P1 · Status: pending · Estimate: M
+Priority: P1 · Status: done (2026-07-02) · Estimate: M
 
 ## Goal
 An operator reading Cerberus output sees the verdict, why each comment exists, what context was used/skipped, and the time/cost — and hits actionable messages on the predictable failures.
 
 ## Oracle
-- [ ] Rendered Markdown (and the GitHub summary/check, which reuse `render_markdown` — `post.rs:335,397`) shows `run.duration_ms`, `run.cost_usd`, and `run.coverage`; today these are touched only in a `#[cfg(test)]` block (`render.rs:149+`) and the production render omits them.
-- [ ] Every CLI flag has operator-facing `help` text (today all `#[arg]` in `main.rs:38-207` are blank — verified live via `--help`).
-- [ ] A Checks-write `403` emits an actionable "retry with `--summary-target status`" message instead of a raw `gh` stderr dump (`post.rs:615-621`).
-- [ ] `gh` spawn failure gives the same actionable not-found guidance as the harness-binary path (`harness.rs:845-850` is good; `request.rs:293-307` is a raw OS error today).
-- [ ] `--dry-run` is either read explicitly or its no-op-but-safe default is documented in help (`main.rs:158,492`).
+- [x] Rendered Markdown (and the GitHub summary/check, which reuse `render_markdown`) shows `run.duration_ms`, `run.cost_usd`, and `run.coverage` — `render.rs` now renders Duration/Cost lines and a Coverage section (files reviewed + files with findings) in production output, pinned by 5 new tests.
+- [x] Every CLI flag has operator-facing `help` text — every `#[arg]` in `main.rs` (and every `Command`/`RequestCommand` subcommand) now carries a doc comment clap surfaces via `--help`.
+- [x] A Checks-write `403` emits an actionable "retry with `--summary-target status`" message instead of a raw `gh` stderr dump — `GithubClient::api_raw` detects `check-runs` path + `403` and names the fix, pinned by a fake-gh-driven test.
+- [x] `gh`/`git` spawn failure gives the same actionable not-found guidance as the harness-binary path — `request.rs::run_with_env` now distinguishes `ErrorKind::NotFound` and names the install-or-flag fix, pinned by a test.
+- [x] `--dry-run` behavior is documented in help (it and `--post` are a mutually-exclusive ArgGroup; both flags now carry doc comments explaining the plan-only vs. publish behavior).
 
 ## Children
 1. Render run cost/time/coverage (and "what was skipped") in the review Markdown. [direct VISION miss]

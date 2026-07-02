@@ -107,6 +107,11 @@ if [[ "${CERBERUS_FAKE_GH_FAIL_API:-}" == "1" ]]; then
   exit 1
 fi
 
+if [[ "${CERBERUS_FAKE_GH_FAIL_CHECK_RUNS_403:-}" == "1" && "$path" == *"/check-runs"* ]]; then
+  echo "gh: Resource not accessible by integration (HTTP 403)" >&2
+  exit 1
+fi
+
 comment_array() {
   local file="$1"
   if [[ -s "$file" ]]; then
