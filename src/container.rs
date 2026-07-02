@@ -696,7 +696,16 @@ fn run_docker_with_timeout(
             .context("open docker stderr writer")?,
     ));
     let start = Instant::now();
-    let mut child = command.spawn().context("spawn docker run")?;
+    let mut child = command.spawn().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            anyhow!(
+                "{docker_binary} was not found on PATH ({err}); install Docker, or point \
+                 --docker-binary at the correct executable"
+            )
+        } else {
+            anyhow::Error::new(err).context(format!("spawn {docker_binary} run"))
+        }
+    })?;
     loop {
         if let Some(status) = child.try_wait().context("poll docker run")? {
             return Ok(DockerOutput {
@@ -1046,6 +1055,36 @@ mod tests {
     fn parse_host_port_rejects_whitespace() {
         assert!(parse_host_port("open router.ai:443").is_err());
         assert!(parse_host_port("openrouter.ai:443\ndeny_all off").is_err());
+    }
+
+    // Backlog 037: a missing/misnamed docker binary previously surfaced only
+    // the raw OS error ("No such file or directory"), unlike the
+    // request.rs::run_with_env pattern this mirrors
+    // (missing_binary_names_the_install_or_flag_fix), which names the fix.
+    #[test]
+    fn missing_docker_binary_names_the_install_or_flag_fix() {
+        let command = Command::new("cerberus-definitely-not-a-real-docker-binary");
+
+        let result = run_docker_with_timeout(
+            command,
+            "irrelevant-container-name",
+            "cerberus-definitely-not-a-real-docker-binary",
+            Duration::from_secs(5),
+        );
+        let err = match result {
+            Ok(_) => panic!("spawning a nonexistent docker binary should fail"),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        assert!(
+            message.contains("was not found on PATH"),
+            "should name the concrete problem: {message}"
+        );
+        assert!(
+            message.contains("--docker-binary") || message.contains("install Docker"),
+            "should name the concrete fix: {message}"
+        );
     }
 
     #[test]

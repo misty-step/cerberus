@@ -1,6 +1,6 @@
 # Actionable error when Docker is missing or misconfigured for container-opencode
 
-Priority: P2 · Status: ready · Estimate: S
+Priority: P2 · Status: done (2026-07-03) · Estimate: S
 
 ## Goal
 `run_docker_with_timeout` (`src/container.rs:699`) spawns `docker run` via
@@ -11,15 +11,21 @@ unlike the parallel `git`/`gh` binary-missing path backlog 009 already fixed
 (`src/request.rs:744-758`, `missing_binary_names_the_install_or_flag_fix`).
 
 ## Oracle
-- [ ] A `docker run` spawn failure (binary not found) surfaces an error naming:
-      install Docker, or point `--container-binary` at the correct executable —
-      mirroring the existing `--*-binary` pattern in `request.rs`.
-- [ ] A new unit test in `container.rs` exercises `run_docker_with_timeout` (or
-      its caller) with a nonexistent binary name and asserts the error message
-      names the fix, following the shape of
-      `request.rs::missing_binary_names_the_install_or_flag_fix`.
-- [ ] No change to behavior when Docker is present and working.
-- [ ] `./scripts/verify.sh` green.
+- [x] A `docker run` spawn failure (binary not found) surfaces an error naming
+      install Docker or the correct flag to point at a different executable.
+      **Correction to this ticket's own text**: the flag is `--docker-binary`
+      (which selects the docker CLI itself), not `--container-binary` (which
+      selects the substrate binary run *inside* the container — a different
+      flag entirely). Verified against `main.rs`'s actual `SubstrateArgs`
+      field names before writing the message.
+- [x] New test `container::tests::missing_docker_binary_names_the_install_or_flag_fix`
+      exercises `run_docker_with_timeout` directly with a nonexistent binary
+      name and asserts the error names both the problem and the fix,
+      following the shape of `request.rs::missing_binary_names_the_install_or_flag_fix`.
+- [x] No change to behavior when Docker is present and working — the
+      `ErrorKind::NotFound` branch is new; every other spawn-error path falls
+      through to the pre-existing `.context(...)` behavior unchanged.
+- [x] `./scripts/verify.sh` green.
 
 ## Notes
 Verified live 2026-07-01: `container.rs:699`
