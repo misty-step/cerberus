@@ -1,10 +1,10 @@
-use crate::schema::{Anchor, ReviewArtifact, Severity, Verdict};
+use crate::schema::{Anchor, ReviewArtifact, Severity};
 
 pub fn render_markdown(artifact: &ReviewArtifact) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "# Cerberus Review: {}\n\n",
-        verdict_label(&artifact.verdict)
+        artifact.verdict.label()
     ));
     out.push_str(&format!("**Artifact:** `{}`  \n", artifact.artifact_id));
     out.push_str(&format!("**Request:** `{}`  \n", artifact.request_id));
@@ -154,15 +154,6 @@ pub fn render_markdown(artifact: &ReviewArtifact) -> String {
         }
     }
     out
-}
-
-fn verdict_label(verdict: &Verdict) -> &'static str {
-    match verdict {
-        Verdict::Pass => "PASS",
-        Verdict::Warn => "WARN",
-        Verdict::Fail => "FAIL",
-        Verdict::Skip => "SKIP",
-    }
 }
 
 fn severity_label(severity: &Severity) -> &'static str {

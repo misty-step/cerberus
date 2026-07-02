@@ -312,7 +312,6 @@ mod tests {
         LifecycleState, Receipt, ReceiptRole, ReceiptStatus, ReviewArtifact, RunError, RunInfo,
         Severity, SuggestedFix, Summary, Usage, Verdict, REVIEW_ARTIFACT_SCHEMA,
     };
-    use crate::schema::{Source, SourceKind, REVIEW_REQUEST_SCHEMA};
 
     #[test]
     fn prompts_embed_generated_artifact_contract() {
@@ -497,32 +496,7 @@ mod tests {
     }
 
     fn minimal_request() -> ReviewRequest {
-        ReviewRequest {
-            schema_version: REVIEW_REQUEST_SCHEMA.to_string(),
-            request_id: "req-1".to_string(),
-            source: Source {
-                kind: SourceKind::Fixture,
-                external_id: None,
-                repo: None,
-                uri: None,
-                metadata: serde_json::json!({}),
-            },
-            change: crate::schema::Change {
-                title: "change".to_string(),
-                description: None,
-                base_ref: None,
-                head_ref: None,
-                head_sha: None,
-                diff: crate::schema::Diff {
-                    format: "unified".to_string(),
-                    body: "diff --git a/src/lib.rs b/src/lib.rs\n".to_string(),
-                    digest: None,
-                },
-                files: Vec::new(),
-            },
-            context: crate::schema::RequestContext::default(),
-            policy: crate::schema::ReviewPolicy::default(),
-        }
+        crate::test_support::minimal_review_request()
     }
 
     fn representative_artifact() -> ReviewArtifact {
