@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::digest::{request_digest, sha256_digest};
 use crate::prompt::{build_master_prompt, build_opencode_message};
 use crate::schema::{
-    ContextArtifact, ContextCapabilities, LifecycleState, ReceiptStatus, ReviewArtifact,
-    ReviewRequest, ReviewTelemetry, RuntimeTarget,
+    ContextArtifact, ContextCapabilities, ExternalResearchPolicy, LifecycleState, ReceiptStatus,
+    ReviewArtifact, ReviewRequest, ReviewTelemetry, RuntimeTarget,
 };
 use crate::telemetry::{omp_telemetry, opencode_telemetry};
 use crate::validation::validate_artifact_for_request;
@@ -183,6 +183,7 @@ pub(crate) fn run_command_substrate(
         write_opencode_config(
             &child_config,
             &opencode_allowed_paths(&workspace, &runtime_receipts),
+            child_request.policy.external_research != ExternalResearchPolicy::Forbid,
         )?;
     }
 
@@ -482,7 +483,11 @@ fn request_with_workspace_paths(
     child_request
 }
 
-fn write_opencode_config(config_home: &Path, workspace_paths: &[PathBuf]) -> Result<()> {
+fn write_opencode_config(
+    config_home: &Path,
+    workspace_paths: &[PathBuf],
+    external_research_allowed: bool,
+) -> Result<()> {
     let config_dir = config_home.join("opencode");
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("create OpenCode config dir {}", config_dir.display()))?;
@@ -500,14 +505,25 @@ fn write_opencode_config(config_home: &Path, workspace_paths: &[PathBuf]) -> Res
     // vars reach the child), not from denying tools. Untrusted-PR isolation
     // (network egress + credential handling) is a separate container profile
     // tracked in backlog 013.
+    //
+    // web tools are the one exception: granted capability must match the
+    // request's declared context.external_research tier (backlog 007), so
+    // policy.external_research == Forbid actually denies webfetch/websearch
+    // at the permission layer instead of relying on a prompt instruction the
+    // model could ignore.
+    let web_permission = if external_research_allowed {
+        "allow"
+    } else {
+        "deny"
+    };
     let config = serde_json::json!({
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "external_directory": external_directory,
             "edit": "allow",
             "bash": "allow",
-            "webfetch": "allow",
-            "websearch": "allow"
+            "webfetch": web_permission,
+            "websearch": web_permission
         }
     });
     let config_path = config_dir.join("opencode.json");
@@ -1386,7 +1402,7 @@ mod tests {
         let workspace = temp.path().join("repo-head");
         fs::create_dir(&workspace).unwrap();
 
-        write_opencode_config(temp.path(), std::slice::from_ref(&workspace)).unwrap();
+        write_opencode_config(temp.path(), std::slice::from_ref(&workspace), true).unwrap();
 
         let config_path = temp.path().join("opencode/opencode.json");
         let config: Value =
@@ -1413,6 +1429,42 @@ mod tests {
                 .and_then(Value::as_str),
             Some("allow")
         );
+    }
+
+    // Backlog 007: granted capability must match the request's declared
+    // context.external_research tier. Before this test the config
+    // unconditionally granted webfetch/websearch regardless of policy --
+    // Forbid was a prompt instruction the model could ignore, not an actual
+    // permission boundary.
+    #[test]
+    fn opencode_config_denies_web_tools_when_external_research_is_forbidden() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("repo-head");
+        fs::create_dir(&workspace).unwrap();
+
+        write_opencode_config(temp.path(), std::slice::from_ref(&workspace), false).unwrap();
+
+        let config_path = temp.path().join("opencode/opencode.json");
+        let config: Value =
+            serde_json::from_str(&fs::read_to_string(config_path).unwrap()).unwrap();
+        for tool in ["webfetch", "websearch"] {
+            assert_eq!(
+                config
+                    .pointer(&format!("/permission/{tool}"))
+                    .and_then(Value::as_str),
+                Some("deny"),
+                "external_research == Forbid must deny {tool} at the permission layer"
+            );
+        }
+        for tool in ["edit", "bash"] {
+            assert_eq!(
+                config
+                    .pointer(&format!("/permission/{tool}"))
+                    .and_then(Value::as_str),
+                Some("allow"),
+                "{tool} is unrelated to external_research and must stay allowed"
+            );
+        }
     }
 
     #[test]
