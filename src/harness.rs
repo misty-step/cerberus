@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::digest::{request_digest, sha256_digest};
 use crate::prompt::{build_master_prompt, build_opencode_message};
 use crate::schema::{
-    ContextArtifact, ContextCapabilities, ExternalResearchPolicy, LifecycleState, ReceiptStatus,
-    ReviewArtifact, ReviewRequest, ReviewTelemetry, RuntimeTarget,
+    Anchor, AnchorKind, ContextArtifact, ContextCapabilities, ExternalResearchPolicy,
+    LifecycleState, ReceiptStatus, ReviewArtifact, ReviewRequest, ReviewTelemetry, RuntimeTarget,
 };
 use crate::telemetry::{omp_telemetry, opencode_telemetry};
 use crate::validation::validate_artifact_for_request;
@@ -290,12 +290,68 @@ pub(crate) fn run_command_substrate(
         write_failure_transcript(failure_transcript, &transcript)?;
         return Err(err);
     }
+    // Backlog 007 item 1 (warn-only): the workspace is still alive here, so
+    // this is the one place left to cheaply catch a confabulated line
+    // citation before the disposable worktree/archive is dropped.
+    for warning in out_of_range_line_citation_warnings(&artifact, workspace.path()) {
+        eprintln!("warning: {warning}");
+    }
     Ok(HarnessRun {
         artifact,
         transcript,
         execution_plan: plan,
         telemetry,
     })
+}
+
+/// Backlog 007 item 1 (warn-only -- see the ticket's scoping note for why
+/// blocking behavior, and the hunk_digest/excerpt byte-matching half of this
+/// ticket, stay deferred design decisions this slice does not make). While
+/// the review workspace is still alive, checks each inline anchor's cited
+/// line number against the actual file's real line count. A citation beyond
+/// the file's length is a concrete, cheap-to-catch sign of a confabulated
+/// citation. An unreadable file (path outside the workspace, deleted,
+/// binary) is silently skipped -- that is a different, already-enforced
+/// concern (`validation.rs`'s path-in-change check), not this one.
+fn out_of_range_line_citation_warnings(
+    artifact: &ReviewArtifact,
+    workspace_root: &Path,
+) -> Vec<String> {
+    let mut line_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut warnings = Vec::new();
+    let mut check = |anchor: &Anchor, source: String| {
+        if anchor.kind != AnchorKind::Inline {
+            return;
+        }
+        let Some(path) = &anchor.path else {
+            return;
+        };
+        let Some(cited_line) = anchor.end_line.or(anchor.line) else {
+            return;
+        };
+        let line_count = *line_counts.entry(path.clone()).or_insert_with(|| {
+            fs::read_to_string(workspace_root.join(path))
+                .map(|content| content.lines().count())
+                .unwrap_or(usize::MAX)
+        });
+        if line_count == usize::MAX {
+            return;
+        }
+        if cited_line as usize > line_count {
+            warnings.push(format!(
+                "{source} cites {path}:{cited_line}, but the file only has {line_count} lines -- possible confabulated citation"
+            ));
+        }
+    };
+    for finding in &artifact.findings {
+        for anchor in &finding.anchors {
+            check(anchor, format!("finding {}", finding.id));
+        }
+    }
+    for comment in &artifact.comments {
+        check(&comment.anchor, format!("comment {}", comment.id));
+    }
+    warnings
 }
 
 /// Read and parse the artifact the agent emitted to its out-path. A missing or
@@ -1215,6 +1271,7 @@ pub(crate) fn set_private_directory_permissions(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::{Comment, CommentIntent, CommentKind, Finding, Severity};
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
@@ -1674,6 +1731,105 @@ mod tests {
             "errors": []
         })
         .to_string()
+    }
+
+    fn anchored_finding(id: &str, path: &str, line: u32) -> Finding {
+        Finding {
+            id: id.to_string(),
+            severity: Severity::Major,
+            category: "correctness".to_string(),
+            title: "title".to_string(),
+            description: "description".to_string(),
+            evidence: "evidence".to_string(),
+            confidence: 0.8,
+            anchors: vec![Anchor {
+                kind: AnchorKind::Inline,
+                path: Some(path.to_string()),
+                line: Some(line),
+                start_line: None,
+                end_line: None,
+                hunk_digest: None,
+            }],
+            citations: Vec::new(),
+            suggested_fixes: Vec::new(),
+        }
+    }
+
+    fn artifact_with_findings(findings: Vec<Finding>) -> ReviewArtifact {
+        serde_json::from_str::<ReviewArtifact>(&minimal_artifact_json())
+            .map(|mut artifact| {
+                artifact.findings = findings;
+                artifact
+            })
+            .unwrap()
+    }
+
+    // Backlog 007 item 1: pins the warn-only out-of-range line citation
+    // check. Deliberately does NOT test hunk_digest/excerpt byte-matching
+    // (item 2) or blocking behavior -- both stay deferred design decisions
+    // per the ticket's scoping note.
+    #[test]
+    fn out_of_range_line_citation_warnings_flags_a_line_beyond_the_files_length() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("file.txt"), "one\ntwo\nthree\n").unwrap();
+        let artifact = artifact_with_findings(vec![anchored_finding("f-1", "file.txt", 10)]);
+
+        let warnings = out_of_range_line_citation_warnings(&artifact, temp.path());
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("file.txt:10"));
+        assert!(warnings[0].contains("3 lines"));
+    }
+
+    #[test]
+    fn out_of_range_line_citation_warnings_is_silent_for_in_range_citations() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("file.txt"), "one\ntwo\nthree\n").unwrap();
+        let artifact = artifact_with_findings(vec![anchored_finding("f-1", "file.txt", 2)]);
+
+        assert!(out_of_range_line_citation_warnings(&artifact, temp.path()).is_empty());
+    }
+
+    #[test]
+    fn out_of_range_line_citation_warnings_is_silent_when_the_file_is_unreadable() {
+        // Simulates diff-only mode, where the workspace is a request/diff
+        // packet, not a real checkout -- the cited file genuinely does not
+        // exist at this path, and that is a different, already-enforced
+        // concern (validation.rs's path-in-change check), not this one.
+        let temp = tempfile::tempdir().unwrap();
+        let artifact =
+            artifact_with_findings(vec![anchored_finding("f-1", "does/not/exist.txt", 999)]);
+
+        assert!(out_of_range_line_citation_warnings(&artifact, temp.path()).is_empty());
+    }
+
+    #[test]
+    fn out_of_range_line_citation_warnings_checks_comment_anchors_too() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("file.txt"), "one\ntwo\n").unwrap();
+        let mut artifact = artifact_with_findings(Vec::new());
+        artifact.comments.push(Comment {
+            id: "c-1".to_string(),
+            kind: CommentKind::Inline,
+            intent: CommentIntent::Note,
+            finding_id: None,
+            body: "body".to_string(),
+            anchor: Anchor {
+                kind: AnchorKind::Inline,
+                path: Some("file.txt".to_string()),
+                line: Some(50),
+                start_line: None,
+                end_line: None,
+                hunk_digest: None,
+            },
+            dedupe_key: None,
+            suggested_fixes: Vec::new(),
+        });
+
+        let warnings = out_of_range_line_citation_warnings(&artifact, temp.path());
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("comment c-1"));
     }
 
     #[test]
