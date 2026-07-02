@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/misty-step/cerberus/blob/master/docs/schemas/cerberus.crucible_producer_manifest.v1.schema.json",
+  "title": "Cerberus Crucible Producer Manifest v1",
+  "description": "Producer-owned handoff packet that points Crucible at a Cerberus ReviewArtifact and ReviewReceiptBundle without embedding Crucible scoring decisions.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "consumer",
+    "request",
+    "artifact",
+    "receipt_bundle",
+    "grader_input",
+    "validation",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "cerberus.crucible_producer_manifest.v1"
+    },
+    "consumer": {
+      "const": "crucible"
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "request_id",
+        "request_digest"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request_digest": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "artifact_id",
+        "artifact_uri",
+        "artifact_digest",
+        "schema_version",
+        "finding_count",
+        "comment_count",
+        "capability_tier",
+        "context_capabilities"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_version": {
+          "const": "cerberus.review_artifact.v1"
+        },
+        "finding_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comment_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capability_tier": {
+          "type": "string",
+          "enum": [
+            "metadata_only",
+            "diff_only",
+            "repo_head",
+            "repo_base_and_head",
+            "local_runtime",
+            "remote_runtime"
+          ]
+        },
+        "context_capabilities": {
+          "$ref": "#/$defs/context_capabilities"
+        }
+      },
+      "additionalProperties": false
+    },
+    "receipt_bundle": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "receipt_bundle_uri",
+        "receipt_bundle_digest"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "cerberus.review_receipt_bundle.v1"
+        },
+        "receipt_bundle_uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "receipt_bundle_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transcript_uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution_plan_uri": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "grader_input": {
+      "type": "object",
+      "required": [
+        "format",
+        "artifact_uri",
+        "findings_path",
+        "finding_id_path"
+      ],
+      "properties": {
+        "format": {
+          "const": "cerberus.review_artifact.v1"
+        },
+        "artifact_uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "findings_path": {
+          "const": "findings"
+        },
+        "finding_id_path": {
+          "const": "findings[].id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "status",
+        "trusted_for_grading"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "trusted_for_grading": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "boundary": {
+      "type": "object",
+      "required": [
+        "scorer_owner",
+        "includes_score",
+        "note"
+      ],
+      "properties": {
+        "scorer_owner": {
+          "const": "crucible"
+        },
+        "includes_score": {
+          "const": false
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "context_capabilities": {
+      "type": "object",
+      "required": [
+        "diff",
+        "repo_head",
+        "repo_base",
+        "local_runtime",
+        "remote_runtime",
+        "external_research"
+      ],
+      "properties": {
+        "diff": {
+          "type": "boolean"
+        },
+        "repo_head": {
+          "type": "boolean"
+        },
+        "repo_base": {
+          "type": "boolean"
+        },
+        "local_runtime": {
+          "type": "boolean"
+        },
+        "remote_runtime": {
+          "type": "boolean"
+        },
+        "external_research": {
+          "type": "string",
+          "enum": [
+            "forbid",
+            "allow",
+            "require_citations"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

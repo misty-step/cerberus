@@ -140,6 +140,7 @@ mod tests {
     use super::*;
     use crate::receipt::{build_review_receipt_bundle, ReceiptBundleInput};
     use crate::schema::{ReviewTelemetry, REVIEW_ARTIFACT_SCHEMA};
+    use serde_json::Value;
 
     #[test]
     fn manifest_points_crucible_at_the_artifact_findings_array() {
@@ -213,6 +214,68 @@ mod tests {
         assert!(!manifest.validation.trusted_for_grading);
     }
 
+    #[test]
+    fn committed_manifest_schema_matches_builder_contract() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../docs/schemas/cerberus.crucible_producer_manifest.v1.schema.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            schema["properties"]["schema_version"]["const"],
+            CRUCIBLE_PRODUCER_MANIFEST_SCHEMA
+        );
+        assert_schema_requires(
+            &schema,
+            &[
+                "schema_version",
+                "consumer",
+                "request",
+                "artifact",
+                "receipt_bundle",
+                "grader_input",
+                "validation",
+                "boundary",
+            ],
+        );
+
+        let fixture: CrucibleProducerManifest = serde_json::from_str(include_str!(
+            "../fixtures/contracts/cerberus.crucible_producer_manifest.v1.valid.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture.schema_version, CRUCIBLE_PRODUCER_MANIFEST_SCHEMA);
+
+        let manifest = gradeable_manifest();
+        let value = serde_json::to_value(&manifest).unwrap();
+        for path in [
+            "schema_version",
+            "consumer",
+            "request.request_id",
+            "request.request_digest",
+            "artifact.artifact_id",
+            "artifact.artifact_uri",
+            "artifact.artifact_digest",
+            "artifact.schema_version",
+            "artifact.context_capabilities",
+            "receipt_bundle.schema_version",
+            "receipt_bundle.receipt_bundle_uri",
+            "receipt_bundle.receipt_bundle_digest",
+            "grader_input.format",
+            "grader_input.artifact_uri",
+            "grader_input.findings_path",
+            "grader_input.finding_id_path",
+            "validation.status",
+            "validation.trusted_for_grading",
+            "boundary.scorer_owner",
+            "boundary.includes_score",
+            "boundary.note",
+        ] {
+            assert!(
+                value_at_path(&value, path).is_some(),
+                "manifest missing required path {path}: {value}"
+            );
+        }
+    }
+
     fn request() -> ReviewRequest {
         serde_json::from_str(include_str!("../fixtures/requests/diff-only.json")).unwrap()
     }
@@ -223,5 +286,52 @@ mod tests {
             r#"{"diff":true,"repo_head":false,"repo_base":false,"local_runtime":false,"remote_runtime":false,"external_research":"forbid"}"#,
         );
         serde_json::from_str(&raw).unwrap()
+    }
+
+    fn gradeable_manifest() -> CrucibleProducerManifest {
+        let request = request();
+        let artifact = artifact();
+        let telemetry = ReviewTelemetry::default();
+        let bundle = build_review_receipt_bundle(ReceiptBundleInput {
+            request: &request,
+            artifact: &artifact,
+            harness: "fixture",
+            telemetry: &telemetry,
+            transcript: "elapsed_ms: 9",
+            artifact_uri: "target/cerberus/crucible-producer/artifact.json".to_string(),
+            transcript_uri: Some("target/cerberus/crucible-producer/transcript.txt".to_string()),
+            execution_plan_uri: Some(
+                "target/cerberus/crucible-producer/execution_plan.json".to_string(),
+            ),
+            reviewer_plan_uri: None,
+            validation_failed: false,
+        })
+        .unwrap();
+
+        build_crucible_producer_manifest(CrucibleProducerManifestInput {
+            request: &request,
+            artifact: &artifact,
+            receipt_bundle: &bundle,
+            receipt_bundle_uri: "target/cerberus/crucible-producer/receipt-bundle.json".to_string(),
+        })
+        .unwrap()
+    }
+
+    fn assert_schema_requires(schema: &Value, fields: &[&str]) {
+        let required = schema["required"].as_array().unwrap();
+        for field in fields {
+            assert!(
+                required.iter().any(|required| required == field),
+                "schema required list missing {field}: {schema}"
+            );
+        }
+    }
+
+    fn value_at_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+        let mut current = value;
+        for segment in path.split('.') {
+            current = current.get(segment)?;
+        }
+        Some(current)
     }
 }
