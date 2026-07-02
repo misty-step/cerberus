@@ -618,20 +618,27 @@ fn start_egress_proxy<'a>(
     Ok(guard)
 }
 
+/// `pgrep squid` only proves the process was exec'd, not that it has
+/// finished `listen()`ing on `PROXY_PORT` yet — on a loaded CI runner the
+/// gap between the two was wide enough for the review container's first
+/// `CONNECT` to lose the race and fail outright. squid logs the exact line
+/// below the moment it starts accepting connections, so check that instead
+/// of inferring readiness from process existence.
 fn wait_for_proxy_ready(docker_binary: &str, proxy_name: &str) -> Result<()> {
-    for _ in 0..25 {
+    for _ in 0..50 {
         if let Ok(output) = Command::new(docker_binary)
-            .args(["exec", proxy_name, "pgrep", "squid"])
+            .args(["logs", proxy_name])
             .output()
         {
-            if output.status.success() {
+            let combined = [output.stdout.as_slice(), output.stderr.as_slice()].concat();
+            if String::from_utf8_lossy(&combined).contains("Accepting HTTP Socket connections") {
                 return Ok(());
             }
         }
         std::thread::sleep(Duration::from_millis(200));
     }
     Err(anyhow!(
-        "egress proxy {proxy_name} did not become ready within 5s"
+        "egress proxy {proxy_name} did not become ready within 10s"
     ))
 }
 
