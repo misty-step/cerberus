@@ -76,7 +76,7 @@ Substrate order for Cerberus:
 
 ## External Evals
 
-Cerberus does not own model or harness evaluation in the MVP. Daedalus and
+Cerberus does not own model or harness evaluation in the MVP. Threshold and
 other upstream laboratories may evaluate Cerberus, produce reviewer config
 candidates, and compare harnesses or models. Cerberus only needs enough receipt
 surface for those systems to replay and score runs later.

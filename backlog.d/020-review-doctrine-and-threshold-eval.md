@@ -1,6 +1,6 @@
-# Review doctrine in the prompt + prove it via a Daedalus arena run
+# Review doctrine in the prompt + prove it via a Threshold arena run
 
-Priority: P1 · Status: ready · Estimate: S (Cerberus side shipped) + Daedalus pull
+Priority: P1 · Status: ready · Estimate: S (Cerberus side shipped) + Threshold pull
 
 ## Goal
 The master-reviewer prompt now carries an explicit **review doctrine** — the
@@ -9,7 +9,7 @@ The master-reviewer prompt now carries an explicit **review doctrine** — the
 bar). Shipped in `src/review_doctrine.md`, embedded into both `build_master_prompt`
 and `build_opencode_message` via `include_str!`, pinned by
 `prompt::tests::prompts_embed_review_doctrine`. This ticket tracks the *measurement*
-of that change, which by the locked boundary is Daedalus's surface — not in-repo.
+of that change, which by the locked boundary is Threshold's surface — not in-repo.
 
 ## Why
 Before this change the production reviewer's doctrine was thinner than Harness
@@ -29,8 +29,8 @@ sync today; if this mirror drifts often, add a check (or a generator) rather tha
 trusting discipline. Kept as runtime *vocabulary*, not fixed personas — Cerberus
 still designs any lane from the diff at runtime (`prompt.rs` mission rules hold).
 
-## Oracle (Daedalus-owned, per 015 closure + VISION "Not an evaluation lab")
-- [ ] Daedalus runs its review-autoresearch arena over Cerberus receipts with two
+## Oracle (Threshold-owned, per 015 closure + VISION "Not an evaluation lab")
+- [ ] Threshold runs its review-autoresearch arena over Cerberus receipts with two
       paired harness configs: **baseline** = the pre-doctrine prompt, **candidate**
       = doctrine-on (this change), same model/substrate/corpus.
 - [ ] Faithfulness / false-confident rate reported **with a confidence interval**,
@@ -41,7 +41,7 @@ still designs any lane from the diff at runtime (`prompt.rs` mission rules hold)
       not more noise). A delta inside the CI is not a result — revert or revise.
 
 ## Boundary notes
-- `_done/015-measure-improve-review-faithfulness.md`: eval lab = Daedalus; Cerberus
+- `_done/015-measure-improve-review-faithfulness.md`: eval lab = Threshold; Cerberus
   emits `ReviewReceiptBundle.v1` (shipped in `_done/005`) and owns reviewer quality
   (prompt/context/substrate) — exactly the lever this change pulls.
 - Factory lane note, 2026-07-01: the measurement path is the Crucible/Threshold
@@ -49,8 +49,8 @@ still designs any lane from the diff at runtime (`prompt.rs` mission rules hold)
   request/artifact/receipt evidence that that arena can consume; it should not
   grow an in-repo scorer, leaderboard, or promotion loop.
 - If the arena surfaces a missing receipt field needed to score the doctrine, that
-  becomes a small concrete Cerberus ticket *pulled by Daedalus*.
+  becomes a small concrete Cerberus ticket *pulled by Threshold*.
 
 ## Done when
 - [x] Doctrine asset + prompt wiring + embed test shipped; `verify.sh` green.
-- [ ] Daedalus arena verdict recorded (keep / revise / revert) with CI + κ.
+- [ ] Threshold arena verdict recorded (keep / revise / revert) with CI + κ.
