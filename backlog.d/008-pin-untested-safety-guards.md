@@ -1,15 +1,17 @@
 # Pin the untested safety guards with regression tests
 
-Priority: P1 · Status: pending · Estimate: M
+Priority: P1 · Status: oracle satisfied 2026-07-02, child 5 deferred (operator decision) · Estimate: M
 
 ## Goal
 Every spec falsifier and safety footgun is pinned by a test that fails if the guard is removed — closing the gaps where a silent regression currently passes green.
 
 ## Oracle
-- [ ] A test spawns a child that outlives its timeout and asserts status `"timeout"` AND that the grandchild process is dead (exercises `kill_process_tree`/`setpgid`, `harness.rs:871,883` — currently zero coverage).
-- [ ] Bounded-output is proven on the production path `read_capped_file` (`harness.rs:918`), not the `#[cfg(test)]` reimplementation `cap_bytes` (`:899`); the >64MB truncation branch executes in a test.
-- [ ] `external_research = RequireCitations` enforcement (`validation.rs:178-184`) has a test that fails without it.
-- [ ] Each `validate_request` reject branch (`validation.rs:65-92`), including `DiffDigestMismatch`, has a test.
+- [x] A test spawns a child that outlives its timeout and asserts status `"timeout"` AND that the grandchild process is dead — `harness::tests::timeout_kills_the_whole_process_group_not_just_the_direct_child`. SIGKILL can't be trapped, so it uses a pid-file (grandchild backgrounds `sleep 30`, writes its own pid, gets checked via `kill(pid, 0)` after the timeout fires) rather than a trap handler. Mutation-verified: temporarily reverted `kill_process_tree` to `child.kill()` only, confirmed the test fails with the grandchild pid still alive, then restored.
+- [x] Bounded-output is proven on the production path `read_capped_file` directly (no `cap_bytes` reimplementation exists in the codebase today — already gone before this ticket) — `harness::tests::read_capped_file_truncates_the_middle_of_oversized_output` writes a real 65MB file with distinguishable head/tail markers and asserts the truncation-marker branch executes and the result never exceeds `OUTPUT_CAPTURE_CAP`.
+- [x] `external_research = RequireCitations` enforcement has two tests: `rejects_finding_without_citation_when_policy_requires_one` and `accepts_finding_with_citation_when_policy_requires_one`.
+- [x] Every `validate_request` reject branch, including `DiffDigestMismatch`, is covered by one table-driven test (`validate_request_rejects_each_known_violation`, 8 cases, one per `ValidationError` variant `validate_request` can return) — replaces the two narrower pre-existing tests it subsumes.
+
+Child 5 ("(Defense-in-depth) warn/deny when `--allow-env` forwards `GH_TOKEN`/`AWS_*`/`*_API_KEY`") was explicitly bracketed as defense-in-depth and is not in the oracle above; it also requires an operator judgment call (warn vs. deny, exact pattern list) rather than pure test-writing, so it's left unstarted per the overnight contract's "skip operator-decision items, note them" rule.
 
 ## Verification System
 - Claim: removing any safety/validation guard breaks at least one test.
