@@ -1,0 +1,13 @@
+title = "cerberus gitleaks config"
+
+# Extends gitleaks' own default rule set (https://github.com/gitleaks/gitleaks)
+# rather than defining rules from scratch. There is no allowlist for a rule
+# match today (backlog 010) — a true positive here must be removed, not
+# suppressed. The only exclusion is build output, which is never source.
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''^target/''',
+]
