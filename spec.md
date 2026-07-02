@@ -443,6 +443,6 @@ After MVP, consider:
 - GitHub acquisition and posting adapters;
 - rootless container runtime profile;
 - remote runtime probe capability;
-- Daedalus reviewer config import;
+- Threshold reviewer config import;
 - SARIF/check renderers;
 - richer receipt redaction and artifact storage.
