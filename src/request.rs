@@ -47,6 +47,48 @@ pub struct PullRequestOptions {
     pub common: RequestOptions,
 }
 
+/// Backlog 008 child 5 (defense-in-depth, warn only -- deciding what to
+/// actually reject, and the exact pattern list, is an operator call, not
+/// this one). `request.policy.allowed_env` forwards a named env var into a
+/// substrate that has webfetch/bash access; a name that looks like a
+/// long-lived credential is exactly what a prompt-injected diff would try
+/// to exfiltrate. Returns message strings rather than printing directly so
+/// the check is testable without capturing process stderr, and so every
+/// caller (CLI commands in `main.rs`, the MCP tool handler in `mcp.rs`)
+/// gets the same check without duplicating the pattern list.
+pub fn credential_shaped_env_warnings(request: &ReviewRequest) -> Vec<String> {
+    const CREDENTIAL_SUFFIXES: &[&str] = &[
+        "_TOKEN",
+        "_KEY",
+        "_SECRET",
+        "_PASSWORD",
+        "_CREDENTIAL",
+        "_CREDENTIALS",
+    ];
+    request
+        .policy
+        .allowed_env
+        .iter()
+        .filter(|name| {
+            let upper = name.to_uppercase();
+            CREDENTIAL_SUFFIXES
+                .iter()
+                .any(|suffix| upper.ends_with(suffix))
+        })
+        .map(|name| {
+            let advice = if name == "OPENROUTER_API_KEY" {
+                "consider --openrouter-scoped-key instead, which mints a capped, revocable key per review"
+            } else {
+                "only forward it if you trust the diff being reviewed"
+            };
+            format!(
+                "--allow-env {name} looks like a credential name forwarded into a substrate \
+                 with webfetch/bash access; a prompt-injected diff could try to exfiltrate it -- {advice}"
+            )
+        })
+        .collect()
+}
+
 pub fn build_git_range_request(options: &GitRangeRequestOptions) -> Result<ReviewRequest> {
     let repo_path = absolute_path(&options.repo_path)?;
     let range = format!("{}...{}", options.base, options.head);
@@ -841,6 +883,51 @@ mod tests {
             "three widely separated single-line edits should produce at least 3 hunks, got {hunk_count}:\n{}",
             request.change.diff.body
         );
+    }
+
+    #[test]
+    fn credential_shaped_env_warnings_flags_common_credential_suffixes() {
+        let mut request = crate::test_support::minimal_review_request();
+        request.policy.allowed_env = vec![
+            "OPENROUTER_API_KEY".to_string(),
+            "GH_TOKEN".to_string(),
+            "AWS_SECRET_ACCESS_KEY".to_string(),
+            "CERBERUS_RUNTIME_FLAG".to_string(),
+        ];
+
+        let warnings = credential_shaped_env_warnings(&request);
+
+        assert!(warnings.iter().any(|w| w.contains("OPENROUTER_API_KEY")));
+        assert!(warnings.iter().any(|w| w.contains("GH_TOKEN")));
+        assert!(warnings.iter().any(|w| w.contains("AWS_SECRET_ACCESS_KEY")));
+        assert_eq!(
+            warnings.len(),
+            3,
+            "CERBERUS_RUNTIME_FLAG does not look credential-shaped and must not warn: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn credential_shaped_env_warnings_names_the_scoped_key_flag_for_openrouter() {
+        let mut request = crate::test_support::minimal_review_request();
+        request.policy.allowed_env = vec!["OPENROUTER_API_KEY".to_string()];
+
+        let warnings = credential_shaped_env_warnings(&request);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("--openrouter-scoped-key"),
+            "should point at the safer alternative: {}",
+            warnings[0]
+        );
+    }
+
+    #[test]
+    fn credential_shaped_env_warnings_is_empty_for_non_credential_names() {
+        let mut request = crate::test_support::minimal_review_request();
+        request.policy.allowed_env = vec!["CERBERUS_RUNTIME_FLAG".to_string(), "CI".to_string()];
+
+        assert!(credential_shaped_env_warnings(&request).is_empty());
     }
 
     #[test]

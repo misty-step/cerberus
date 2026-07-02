@@ -14,7 +14,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::kernel::{ReviewKernel, ReviewSubstrate, RunPolicy};
-use crate::request::{build_git_range_request, GitRangeRequestOptions, RequestOptions};
+use crate::request::{
+    build_git_range_request, credential_shaped_env_warnings, GitRangeRequestOptions, RequestOptions,
+};
 use crate::schema::{RuntimeTarget, Verdict};
 use crate::{
     render_markdown, validate_artifact_for_request, validate_request, FixtureSubstrateConfig,
@@ -222,6 +224,9 @@ fn review_git_range(arguments: Value) -> Result<Value> {
         },
     })?;
     validate_request(&request)?;
+    for warning in credential_shaped_env_warnings(&request) {
+        eprintln!("warning: {warning}");
+    }
 
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {

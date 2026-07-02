@@ -14,8 +14,8 @@ use cerberus::post::{build_post_plan, trusted_lifecycle, GithubClient, SummaryTa
 use cerberus::producer::{build_crucible_producer_manifest, CrucibleProducerManifestInput};
 use cerberus::receipt::{build_review_receipt_bundle, ReceiptBundleInput};
 use cerberus::request::{
-    build_git_range_request, build_pull_request, fetch_pull_request_head_sha,
-    GitRangeRequestOptions, PullRequestOptions, RequestOptions,
+    build_git_range_request, build_pull_request, credential_shaped_env_warnings,
+    fetch_pull_request_head_sha, GitRangeRequestOptions, PullRequestOptions, RequestOptions,
 };
 use cerberus::schema::{RuntimeTarget, Verdict};
 use cerberus::{
@@ -694,6 +694,9 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         .unwrap_or_else(|| Duration::from_millis(request.policy.timeout_ms));
     let substrate = review_substrate(substrate)?;
     require_child_env_for_substrate(&request, &substrate)?;
+    for warning in credential_shaped_env_warnings(&request) {
+        eprintln!("warning: {warning}");
+    }
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
         timeout,
@@ -901,6 +904,9 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
     validate_request(&request)?;
     let substrate = review_substrate(args.substrate)?;
     require_child_env_for_substrate(&request, &substrate)?;
+    for warning in credential_shaped_env_warnings(&request) {
+        eprintln!("warning: {warning}");
+    }
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
         timeout: Duration::from_millis(request.policy.timeout_ms),
@@ -982,6 +988,9 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
 
     let substrate = review_substrate(args.substrate)?;
     require_child_env_for_substrate(&request, &substrate)?;
+    for warning in credential_shaped_env_warnings(&request) {
+        eprintln!("warning: {warning}");
+    }
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
         timeout: Duration::from_millis(request.policy.timeout_ms),

@@ -1,6 +1,6 @@
 # Pin the untested safety guards with regression tests
 
-Priority: P1 · Status: oracle satisfied 2026-07-02, child 5 deferred (operator decision) · Estimate: M
+Priority: P1 · Status: done 2026-07-02 (oracle satisfied, child 5 warn-only shipped, deny explicitly deferred) · Estimate: M
 
 ## Goal
 Every spec falsifier and safety footgun is pinned by a test that fails if the guard is removed — closing the gaps where a silent regression currently passes green.
@@ -11,7 +11,7 @@ Every spec falsifier and safety footgun is pinned by a test that fails if the gu
 - [x] `external_research = RequireCitations` enforcement has two tests: `rejects_finding_without_citation_when_policy_requires_one` and `accepts_finding_with_citation_when_policy_requires_one`.
 - [x] Every `validate_request` reject branch, including `DiffDigestMismatch`, is covered by one table-driven test (`validate_request_rejects_each_known_violation`, 8 cases, one per `ValidationError` variant `validate_request` can return) — replaces the two narrower pre-existing tests it subsumes.
 
-Child 5 ("(Defense-in-depth) warn/deny when `--allow-env` forwards `GH_TOKEN`/`AWS_*`/`*_API_KEY`") was explicitly bracketed as defense-in-depth and is not in the oracle above; it also requires an operator judgment call (warn vs. deny, exact pattern list) rather than pure test-writing, so it's left unstarted per the overnight contract's "skip operator-decision items, note them" rule.
+Child 5 ("(Defense-in-depth) warn/deny when `--allow-env` forwards `GH_TOKEN`/`AWS_*`/`*_API_KEY`") was explicitly bracketed as defense-in-depth and is not in the oracle above. **Warn half shipped 2026-07-02** (`request::credential_shaped_env_warnings`, wired into all 3 CLI review commands and the MCP tool handler — every `--allow-env`/`allow_env` entry point): a name ending in `_TOKEN`/`_KEY`/`_SECRET`/`_PASSWORD`/`_CREDENTIAL(S)` prints a non-blocking stderr warning naming the exfiltration risk, with a pointer to `--openrouter-scoped-key` when the name is exactly `OPENROUTER_API_KEY`. Live-verified via both a raw CLI invocation and an MCP `tools/call` (both print the warning on stderr, exit 0, stdout untouched). The **deny half is still deferred** — actually rejecting a matching name would need an operator call on severity and the exact pattern list (warn is reversible/low-risk; deny could break a legitimate workflow with no clear line on where "credential-shaped" should become "blocked").
 
 ## Verification System
 - Claim: removing any safety/validation guard breaks at least one test.
@@ -22,11 +22,11 @@ Child 5 ("(Defense-in-depth) warn/deny when `--allow-env` forwards `GH_TOKEN`/`A
 - Cadence: CI on every push (gate already runs on push + PR, `verify.yml`).
 
 ## Children
-1. Timeout/orphan-child-kill test (lane-safety's "most dangerous gap").
-2. Bounded-output: delete `cap_bytes`; drive a >64MB (or cap-injected) file through `read_capped_file`.
-3. `RequireCitations` enforcement test.
-4. Table-driven `validate_request` rejection tests, one per `ValidationError` variant.
-5. (Defense-in-depth) Warn/deny when `--allow-env` forwards `GH_TOKEN`/`AWS_*`/`*_API_KEY`.
+1. **Done.** Timeout/orphan-child-kill test (lane-safety's "most dangerous gap").
+2. **Done.** Bounded-output: delete `cap_bytes`; drive a >64MB (or cap-injected) file through `read_capped_file`.
+3. **Done.** `RequireCitations` enforcement test.
+4. **Done.** Table-driven `validate_request` rejection tests, one per `ValidationError` variant.
+5. **Done (warn-only).** Warn when `--allow-env` forwards a credential-shaped name. Deny not implemented — needs an operator call.
 
 ## Notes
 **Why:** lane-safety guard table (vetted) — guards 2,3,6,7,8,10,11 are genuinely PINNED (credit due), but #12 (orphan-kill) and #13 (bounded-output prod path) are UNTESTED, and #5 (citations) plus parts of #1 (request rejects, incl. the `DiffDigestMismatch` tamper check) are ASSERTED-BUT-UNTESTED. Lead vet confirmed the only timeout test uses a fast command (`harness.rs:1504`) and `cap_bytes` is `#[cfg(test)]`-only. Most dangerous: an LLM CLI spawns its own subprocesses with allowlisted creds; a silent `setpgid`/`kill` regression orphans a secret-holding process running unbounded after Cerberus reports done — violating VISION's non-negotiable "no orphan children / bounded time." All cheap, all high-value.
