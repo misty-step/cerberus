@@ -19,13 +19,17 @@ cargo test --locked
 
 cargo run --locked -- review --help > target/cerberus-review-help.txt
 grep -q '\[default: opencode\]' target/cerberus-review-help.txt
-grep -q 'possible values: opencode, omp, fixture' target/cerberus-review-help.txt
+grep -q 'possible values: opencode, omp, fixture, container-opencode' target/cerberus-review-help.txt
 grep -q -- '--receipt-bundle' target/cerberus-review-help.txt
 grep -q -- '--producer-manifest' target/cerberus-review-help.txt
 grep -q -- '--openrouter-scoped-key' target/cerberus-review-help.txt
 grep -q -- '--openrouter-provisioning-key-file' target/cerberus-review-help.txt
 grep -q -- '--openrouter-provisioning-key-env' target/cerberus-review-help.txt
 grep -q -- '--openrouter-key-limit-usd' target/cerberus-review-help.txt
+grep -q -- '--docker-binary' target/cerberus-review-help.txt
+grep -q -- '--container-image' target/cerberus-review-help.txt
+grep -q -- '--container-binary' target/cerberus-review-help.txt
+grep -q -- '--container-host-root' target/cerberus-review-help.txt
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
@@ -914,6 +918,134 @@ grep -q 'GET /repos/example/fixture/commits/0123456789abcdef/check-runs?check_na
 grep -q 'PATCH /repos/example/fixture/check-runs/501' target/cerberus/review-pr-post-page-two-gh.log
 grep -q 'PATCH /repos/example/fixture/issues/comments/101' target/cerberus/review-pr-post-page-two-gh.log
 grep -q 'PATCH /repos/example/fixture/pulls/comments/201' target/cerberus/review-pr-post-page-two-gh.log
+
+# Backlog 013 M2 (slice 1): container-opencode red-team family. Proves the
+# containment boundary the same way M1 proved the credential boundary — by
+# actually trying the attack and showing it fails, not by inspecting code.
+# Gated on Docker: skipped (not failed) when the daemon isn't reachable, per
+# the ticket's own gate contract ("container path skipped when Docker
+# absent"). --container-host-root must be under a path the Docker daemon can
+# actually see: on native Docker (Linux, GH Actions runners) any path works,
+# but a daemon running inside a VM with a narrow mount allowlist (colima's
+# default: only $HOME) needs it pointed inside the checkout, not the OS temp
+# dir -- otherwise -v mounts silently resolve empty instead of failing loudly.
+if docker info > /dev/null 2>&1; then
+  container_host_root="target/cerberus/container-hostroot"
+  redteam_substrate="$PWD/fixtures/bin/redteam-container-substrate"
+  rm_container_workdirs() {
+    rm -rf "$container_host_root"
+  }
+  rm_container_workdirs
+  mkdir -p "$container_host_root"
+
+  run_redteam_container_review() {
+    local name="$1"
+    local request="$2"
+    cargo run --locked -- review \
+      --request "$request" \
+      --harness container-opencode \
+      --container-binary "$redteam_substrate" \
+      --container-host-root "$container_host_root" \
+      --out "target/cerberus/${name}-artifact.json" \
+      --transcript "target/cerberus/${name}-transcript.txt" \
+      --timeout-seconds 60 \
+      > "target/cerberus/${name}.stdout" \
+      2> "target/cerberus/${name}.stderr"
+  }
+
+  assert_redteam_contained() {
+    local name="$1"
+    local transcript="target/cerberus/${name}-transcript.txt"
+    test -s "target/cerberus/${name}-artifact.json"
+    grep -q '"verdict"' "target/cerberus/${name}-artifact.json"
+    if ! grep -q '\[redteam-results\]' "$transcript"; then
+      echo "red-team substrate never reported results for ${name}" >&2
+      exit 1
+    fi
+    if grep -q '"dns_lookup_exit_code": 0' "$transcript"; then
+      echo "container-opencode did not block DNS egress in ${name}" >&2
+      exit 1
+    fi
+    if grep -q '"egress_connect_exit_code": 0' "$transcript"; then
+      echo "container-opencode did not block non-model network egress in ${name}" >&2
+      exit 1
+    fi
+    if grep -q '"outside_mount_write_exit_code": 0' "$transcript"; then
+      echo "container-opencode did not block a file-write escape outside the mount in ${name}" >&2
+      exit 1
+    fi
+    if grep -q '"traversal_write_exit_code": 0' "$transcript"; then
+      echo "container-opencode did not block a path-traversal file-write escape in ${name}" >&2
+      exit 1
+    fi
+    if ! grep -q '"dot_git_present": false' "$transcript"; then
+      echo "container-opencode mounted tree carries a .git handle in ${name} (worktree-escape risk)" >&2
+      exit 1
+    fi
+  }
+
+  # Diff-only: no repo checkout, exercises the network/filesystem escape
+  # vectors without needing a git-archive extraction.
+  run_redteam_container_review "redteam-diff-only" fixtures/requests/redteam-diff-only.json
+  assert_redteam_contained redteam-diff-only
+
+  # repo_head: a real disposable source repo, archived via `git archive` (not
+  # `git worktree add`) into the container mount. This is the case that
+  # actually exercises the .git-less claim -- diff-only mode has no .git
+  # either way, so it can't tell a git-archive extraction from a plain
+  # directory. Digest the host repo before/after to prove the container
+  # substrate never touched the real checkout (only the archived copy).
+  redteam_source_repo="$PWD/target/cerberus/redteam-source-repo"
+  rm -rf "$redteam_source_repo"
+  mkdir -p "$redteam_source_repo"
+  git -C "$redteam_source_repo" init -q
+  git -C "$redteam_source_repo" config user.email redteam@example.com
+  git -C "$redteam_source_repo" config user.name "Cerberus Redteam Fixture"
+  echo 'fn main() {}' > "$redteam_source_repo/main.rs"
+  git -C "$redteam_source_repo" add .
+  git -C "$redteam_source_repo" commit -q -m init
+  redteam_source_sha="$(git -C "$redteam_source_repo" rev-parse HEAD)"
+
+  python3 - "$redteam_source_repo" "$redteam_source_sha" <<'PY'
+import json
+import sys
+
+repo_path, sha = sys.argv[1], sys.argv[2]
+with open("fixtures/requests/redteam-diff-only.json", encoding="utf-8") as fh:
+    request = json.load(fh)
+request["request_id"] = "fixture-redteam-repo-head-001"
+request["context"]["workspaces"] = {
+    "head": {"kind": "checkout", "path": repo_path, "sha": sha}
+}
+with open("target/cerberus/redteam-repo-head-request.json", "w", encoding="utf-8") as fh:
+    json.dump(request, fh, indent=2)
+PY
+
+  host_head_before="$(git -C "$redteam_source_repo" rev-parse HEAD)"
+  host_status_before="$(git -C "$redteam_source_repo" status --porcelain)"
+
+  run_redteam_container_review "redteam-repo-head" target/cerberus/redteam-repo-head-request.json
+  assert_redteam_contained redteam-repo-head
+
+  host_head_after="$(git -C "$redteam_source_repo" rev-parse HEAD)"
+  host_status_after="$(git -C "$redteam_source_repo" status --porcelain)"
+  if [[ "$host_head_before" != "$host_head_after" ]]; then
+    echo "container-opencode review mutated the host checkout's HEAD ($host_head_before -> $host_head_after)" >&2
+    exit 1
+  fi
+  if [[ -n "$host_status_after" ]]; then
+    echo "container-opencode review left the host checkout dirty: $host_status_after" >&2
+    exit 1
+  fi
+  if [[ -n "$host_status_before" ]]; then
+    echo "host checkout was unexpectedly dirty before the container review even ran" >&2
+    exit 1
+  fi
+
+  rm_container_workdirs
+else
+  echo "docker not reachable; skipping backlog 013 M2 container-opencode red-team family" >&2
+fi
 
 if [[ "${CERBERUS_LIVE_REVIEW_PR:-}" == "1" ]]; then
   : "${CERBERUS_LIVE_REVIEW_REPO:?set CERBERUS_LIVE_REVIEW_REPO=owner/name}"

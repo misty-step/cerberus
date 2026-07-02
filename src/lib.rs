@@ -1,3 +1,4 @@
+pub mod container;
 pub mod digest;
 pub mod harness;
 pub mod kernel;
@@ -15,6 +16,7 @@ mod secrets;
 mod telemetry;
 pub mod validation;
 
+pub use container::{ContainerOpencodeSubstrateConfig, DEFAULT_CONTAINER_IMAGE};
 pub use digest::{request_digest, sha256_digest};
 pub use harness::{
     FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,

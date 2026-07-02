@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use cerberus::container::ContainerOpencodeSubstrateConfig;
 use cerberus::harness::{
     ExecutionPlan, FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
@@ -166,6 +167,25 @@ struct SubstrateArgs {
     omp_binary: String,
     #[arg(long)]
     model: Option<String>,
+    /// `docker` (or a compatible CLI), resolved from the trusted search path,
+    /// used only when `--harness container-opencode`.
+    #[arg(long, default_value = "docker")]
+    docker_binary: String,
+    /// Base image `--harness container-opencode` runs the substrate binary
+    /// inside. No image is built; a stock base image is used as-is.
+    #[arg(long, default_value = cerberus::DEFAULT_CONTAINER_IMAGE)]
+    container_image: String,
+    /// Host path to the substrate executable bind-mounted read-only and
+    /// exec'd inside the container in place of `--opencode-binary`. Required
+    /// when `--harness container-opencode`.
+    #[arg(long)]
+    container_binary: Option<PathBuf>,
+    /// Parent directory for the disposable per-run container host root.
+    /// Defaults to the OS temp dir. Point this at a directory your Docker
+    /// daemon can actually see if it runs inside a VM with a narrow mount
+    /// allowlist (e.g. colima's default, which mounts only `$HOME`).
+    #[arg(long)]
+    container_host_root: Option<PathBuf>,
 }
 
 /// Scoped-ephemeral-key flags (backlog 013 M1), flattened into every command
@@ -434,6 +454,10 @@ fn review_substrate(args: SubstrateArgs) -> Result<ReviewSubstrate> {
         opencode_agent,
         omp_binary,
         model,
+        docker_binary,
+        container_image,
+        container_binary,
+        container_host_root,
     } = args;
     match harness {
         HarnessKind::Fixture => {
@@ -451,6 +475,19 @@ fn review_substrate(args: SubstrateArgs) -> Result<ReviewSubstrate> {
             binary: omp_binary,
             model,
         })),
+        HarnessKind::ContainerOpencode => {
+            let binary_host_path = container_binary.ok_or_else(|| {
+                anyhow!("--container-binary is required for container-opencode harness")
+            })?;
+            Ok(ReviewSubstrate::ContainerOpencode(
+                ContainerOpencodeSubstrateConfig {
+                    docker_binary,
+                    image: container_image,
+                    binary_host_path,
+                    host_root_parent: container_host_root,
+                },
+            ))
+        }
     }
 }
 
