@@ -1,0 +1,133 @@
+{
+  "schema_version": "cerberus.review_artifact.v1",
+  "artifact_id": "artifact-canonical-001",
+  "request_id": "req-canonical-001",
+  "request_digest": "sha256:canonical-request-digest",
+  "lifecycle_state": "completed",
+  "verdict": "WARN",
+  "context_capabilities": {
+    "diff": true,
+    "repo_head": true,
+    "repo_base": false,
+    "local_runtime": false,
+    "remote_runtime": false,
+    "external_research": "allow"
+  },
+  "summary": {
+    "title": "One correctness concern, otherwise clean",
+    "body": "The guard avoids division by zero, but returning 0.0 silently changes the mathematical meaning and may hide caller bugs.",
+    "analysis": "Reviewed the full file for related call sites; none distinguish a real zero ratio from this sentinel.",
+    "residual_risk": [
+      "Call sites outside this file were not inspected."
+    ]
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "severity": "major",
+      "category": "correctness",
+      "title": "Silent zero return may mask invalid denominator",
+      "description": "The new branch returns 0.0 for every zero denominator. If callers distinguish a true zero ratio from invalid input, this will silently produce a plausible but wrong result.",
+      "evidence": "The changed hunk adds `if denominator == 0.0 { return 0.0; }` before the existing division.",
+      "confidence": 0.76,
+      "anchors": [
+        {
+          "kind": "inline",
+          "path": "src/ratio.rs",
+          "line": 3,
+          "hunk_digest": "sha256:hunk-digest-example"
+        }
+      ],
+      "citations": [
+        "citation-001"
+      ],
+      "suggested_fixes": [
+        "fix-001"
+      ]
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-001",
+      "kind": "inline",
+      "intent": "finding",
+      "finding_id": "finding-001",
+      "body": "Returning `0.0` for invalid input can be indistinguishable from a legitimate zero ratio. Consider an explicit error, `Option`, or documented sentinel behavior.",
+      "anchor": {
+        "kind": "inline",
+        "path": "src/ratio.rs",
+        "line": 3
+      },
+      "dedupe_key": "src/ratio.rs:3:zero-denominator",
+      "suggested_fixes": [
+        "fix-001"
+      ]
+    }
+  ],
+  "suggested_fixes": [
+    {
+      "id": "fix-001",
+      "finding_id": "finding-001",
+      "applicability": "needs_review",
+      "format": "replacement",
+      "edits": [
+        {
+          "path": "src/ratio.rs",
+          "start_line": 3,
+          "end_line": 3,
+          "replacement": "if denominator == 0.0 { return Err(RatioError::InvalidDenominator); }"
+        }
+      ]
+    }
+  ],
+  "citations": [
+    {
+      "id": "citation-001",
+      "kind": "doc",
+      "title": "Ratio module invariants",
+      "uri": "docs/ratio-invariants.md",
+      "observed_at": "2026-07-03T00:00:00Z",
+      "digest": "sha256:doc-digest-example",
+      "excerpt": "A zero ratio and an invalid ratio must remain distinguishable.",
+      "used_by": [
+        "finding-001"
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "id": "receipt-master",
+      "role": "master",
+      "perspective": "correctness",
+      "model": "openrouter/z-ai/glm-5.2",
+      "provider": "openrouter",
+      "harness": "opencode",
+      "status": "completed",
+      "verdict": "WARN",
+      "summary": "Master reviewer produced one diff-grounded concern.",
+      "transcript_uri": "target/cerberus/transcript.txt",
+      "usage": {
+        "prompt_tokens": 4821,
+        "completion_tokens": 612,
+        "cost_usd": 0.0134
+      }
+    }
+  ],
+  "run": {
+    "engine_version": "cerberus-0.1.0",
+    "config_digest": "sha256:config-digest-example",
+    "started_at": "2026-07-03T00:00:00Z",
+    "finished_at": "2026-07-03T00:00:04Z",
+    "duration_ms": 4321,
+    "cost_usd": 0.0134,
+    "coverage": {
+      "files_reviewed": [
+        "src/ratio.rs"
+      ],
+      "files_with_findings": [
+        "src/ratio.rs"
+      ]
+    }
+  },
+  "errors": []
+}

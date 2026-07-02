@@ -198,7 +198,7 @@ fn default_timeout_ms() -> u64 {
     120_000
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExternalResearchPolicy {
     #[default]
@@ -207,7 +207,7 @@ pub enum ExternalResearchPolicy {
     RequireCitations,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct ContextCapabilities {
     pub diff: bool,
     pub repo_head: bool,
@@ -231,7 +231,7 @@ impl ContextCapabilities {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct ReviewArtifact {
     pub schema_version: String,
     pub artifact_id: String,
@@ -256,7 +256,7 @@ pub struct ReviewArtifact {
     pub errors: Vec<RunError>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LifecycleState {
     Completed,
@@ -267,7 +267,7 @@ pub enum LifecycleState {
     Stale,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Verdict {
     Pass,
@@ -290,7 +290,7 @@ impl Verdict {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct Summary {
     pub title: String,
     pub body: String,
@@ -300,7 +300,7 @@ pub struct Summary {
     pub residual_risk: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Finding {
     pub id: String,
     pub severity: Severity,
@@ -317,7 +317,7 @@ pub struct Finding {
     pub suggested_fixes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     Info,
@@ -326,7 +326,7 @@ pub enum Severity {
     Critical,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct Anchor {
     pub kind: AnchorKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -341,7 +341,7 @@ pub struct Anchor {
     pub hunk_digest: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AnchorKind {
     Inline,
@@ -350,7 +350,7 @@ pub enum AnchorKind {
     Run,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct Comment {
     pub id: String,
     pub kind: CommentKind,
@@ -365,14 +365,14 @@ pub struct Comment {
     pub suggested_fixes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CommentKind {
     Inline,
     Contextual,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CommentIntent {
     Finding,
@@ -381,7 +381,7 @@ pub enum CommentIntent {
     Summary,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct SuggestedFix {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -394,14 +394,14 @@ pub struct SuggestedFix {
     pub diff: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FixApplicability {
     Safe,
     NeedsReview,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FixFormat {
     Replacement,
@@ -409,7 +409,7 @@ pub enum FixFormat {
     Instructions,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct Edit {
     pub path: String,
     pub start_line: u32,
@@ -420,7 +420,7 @@ pub struct Edit {
     pub replacement: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct Citation {
     pub id: String,
     pub kind: CitationKind,
@@ -438,7 +438,7 @@ pub struct Citation {
     pub used_by: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CitationKind {
     Url,
@@ -449,7 +449,7 @@ pub enum CitationKind {
     Repo,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Receipt {
     pub id: String,
     pub role: ReceiptRole,
@@ -476,7 +476,7 @@ pub struct Receipt {
     pub error: Option<RunError>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptRole {
     Master,
@@ -486,7 +486,7 @@ pub enum ReceiptRole {
     Synthesizer,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptStatus {
     Completed,
@@ -495,7 +495,7 @@ pub enum ReceiptStatus {
     Skipped,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Usage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens: Option<u64>,
@@ -515,7 +515,7 @@ pub struct ReviewTelemetry {
     pub cost_usd: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct RunInfo {
     pub engine_version: String,
     pub config_digest: String,
@@ -553,13 +553,13 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct Coverage {
     pub files_reviewed: Vec<String>,
     pub files_with_findings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct RunError {
     pub scope: ErrorScope,
     pub code: String,
@@ -567,7 +567,7 @@ pub struct RunError {
     pub retryable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorScope {
     Run,
