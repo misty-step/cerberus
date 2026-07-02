@@ -225,7 +225,6 @@ fn review_git_range(arguments: Value) -> Result<Value> {
 
     let kernel = ReviewKernel::new(substrate);
     let run_policy = RunPolicy {
-        cwd: std::env::current_dir().context("read current directory")?,
         timeout: Duration::from_millis(request.policy.timeout_ms),
         failure_transcript: None,
     };

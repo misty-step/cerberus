@@ -1,6 +1,6 @@
 # Remove the dead empty-diff fallback workspace and its cwd plumbing
 
-Priority: P3 · Status: pending · Estimate: S
+Priority: P3 · Status: done (2026-07-02) · Estimate: S
 
 ## Goal
 Delete the `fallback_empty_diff` workspace branch (and the `cwd`/`RunPolicy.cwd`/`--cwd` plumbing that exists only to feed it) so the review harness can never write `review-artifact.json` into a real checkout.
@@ -13,9 +13,9 @@ Backlog 016 moved emission to a file the agent writes inside `workspace.path()`.
 - Keep `--cwd` only if a real consumer needs it; otherwise delete it with the rest.
 
 ## Oracle
-- [ ] The empty-diff case routes to a private temp dir (or is rejected outright), never the real cwd; a unit test calling the kernel directly with an empty diff proves no file lands outside a tempdir.
-- [ ] `fallback_cwd` / `RunPolicy.cwd` / `--cwd` are removed if they have no other consumer (or a stated reason to keep each).
-- [ ] `./scripts/verify.sh` green; no behavior change for diff-bearing requests.
+- [x] The empty-diff case routes to a private temp dir, never the real cwd. `RunWorkspace::prepare` now always uses the `packet` tempdir it already creates for any diff-only request; the empty-diff case just gets a distinct `workspace_mode` label (`empty_diff_packet`) for observability. `harness::tests::empty_diff_request_still_resolves_to_a_private_tempdir_workspace` calls `RunWorkspace::prepare` directly with an empty diff and asserts the resolved path lives under the tempdir. Mutation-verified: temporarily made the empty-diff branch return `/tmp` directly, confirmed the test fails, restored.
+- [x] `fallback_cwd` / `RunPolicy.cwd` / `--cwd` removed — no other consumer existed. Removed `fallback_cwd` param from `RunWorkspace::prepare`, `cwd` param from `run_fixture_substrate`/`run_command_substrate`, `RunPolicy.cwd` field, and the `--cwd` flag from `review`/`review-pr` (it had zero effect on real non-empty-diff behavior even before this change — `ExecutionPlan.cwd` was always `workspace.path()`, never the flag's value). Also renamed the now-accurately-named `with_packet` helper (was `with_packet_or_fallback`).
+- [x] `./scripts/verify.sh` green; no behavior change for diff-bearing requests — confirmed, full suite + gate pass unchanged.
 
 ## Notes
 Surfaced by the 016 diverse-provider review (fresh-context critic, non-blocking). Fail-closed today, so this is hardening + a small deletion, not a bug fix.

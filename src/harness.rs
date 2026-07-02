@@ -82,7 +82,6 @@ pub(crate) struct HarnessRun {
 
 pub(crate) fn run_fixture_substrate(
     request: &ReviewRequest,
-    cwd: &Path,
     timeout: Duration,
     config: &FixtureSubstrateConfig,
 ) -> Result<HarnessRun> {
@@ -95,7 +94,7 @@ pub(crate) fn run_fixture_substrate(
         .prefix("cerberus-fixture-")
         .tempdir()
         .context("create private fixture tempdir")?;
-    let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+    let workspace = RunWorkspace::prepare(request, temp.path())?;
     let mut child_request = request_with_workspace_paths(request, &workspace);
     let runtime_receipts =
         run_local_runtime_probes(&mut child_request, &workspace, temp.path(), timeout)?;
@@ -146,7 +145,6 @@ pub(crate) enum CommandSubstrateConfig<'a> {
 pub(crate) fn run_command_substrate(
     substrate: CommandSubstrateConfig<'_>,
     request: &ReviewRequest,
-    cwd: &Path,
     timeout: Duration,
     failure_transcript: Option<&Path>,
 ) -> Result<HarnessRun> {
@@ -165,7 +163,7 @@ pub(crate) fn run_command_substrate(
             .with_context(|| format!("create child state dir {}", child_state_dir.display()))?;
         set_private_directory_permissions(child_state_dir)?;
     }
-    let workspace = RunWorkspace::prepare(request, cwd, temp.path())?;
+    let workspace = RunWorkspace::prepare(request, temp.path())?;
     let mut child_request = request_with_workspace_paths(request, &workspace);
     let runtime_receipts =
         run_local_runtime_probes(&mut child_request, &workspace, temp.path(), timeout)?;
@@ -550,7 +548,7 @@ struct WorktreeCleanup {
 }
 
 impl RunWorkspace {
-    fn prepare(request: &ReviewRequest, fallback_cwd: &Path, temp_root: &Path) -> Result<Self> {
+    fn prepare(request: &ReviewRequest, temp_root: &Path) -> Result<Self> {
         if let Some(head) = &request.context.workspaces.head {
             let base = request
                 .context
@@ -594,21 +592,17 @@ impl RunWorkspace {
         set_private_permissions(&request_path)?;
         set_private_permissions(&diff_path)?;
 
-        if request.change.diff.body.trim().is_empty() {
-            // Degenerate path: an empty diff has nothing to review. The agent now
-            // emits its artifact into the workspace, so this fallback would write
-            // review-artifact.json into the real cwd. That is gated shut today —
-            // validate_request rejects an empty diff before any binary reaches the
-            // kernel — so it is unreachable in practice; only a library caller that
-            // skips validation could hit it. Removing the dead fallback/cwd
-            // plumbing is tracked in backlog 017.
-            Ok(Self::with_packet_or_fallback(
-                fallback_cwd.to_path_buf(),
-                "fallback_empty_diff",
-            ))
+        // An empty diff has nothing to review; validate_request rejects it before
+        // any binary reaches the kernel, so a real CLI run never hits this. Only a
+        // library caller that skips validation could — and even then it gets the
+        // same private packet dir as any other diff-only run, never a real cwd
+        // (backlog 017).
+        let mode = if request.change.diff.body.trim().is_empty() {
+            "empty_diff_packet"
         } else {
-            Ok(Self::with_packet_or_fallback(packet, "diff_packet"))
-        }
+            "diff_packet"
+        };
+        Ok(Self::with_packet(packet, mode))
     }
 
     fn prepare_worktree(
@@ -668,7 +662,7 @@ impl RunWorkspace {
         }
     }
 
-    fn with_packet_or_fallback(path: PathBuf, mode: &str) -> Self {
+    fn with_packet(path: PathBuf, mode: &str) -> Self {
         Self {
             path,
             base_path: None,
@@ -1222,6 +1216,34 @@ mod tests {
             "policy": {}
         }))
         .unwrap()
+    }
+
+    // Backlog 017: an empty diff has nothing to review and validate_request
+    // rejects it before any real CLI path reaches the kernel -- but a library
+    // caller of ReviewKernel::review that skips validation could still hit
+    // this. Before this ticket, that case resolved the workspace to the
+    // caller's real cwd; since file emission writes review-artifact.json
+    // straight into the resolved workspace, that would have dropped the file
+    // into a real checkout. Pins that it now always resolves under the
+    // private per-run tempdir, the same as any other diff-only request.
+    #[test]
+    fn empty_diff_request_still_resolves_to_a_private_tempdir_workspace() {
+        let mut request = test_request();
+        request.change.diff.body = String::new();
+        let temp = tempfile::Builder::new()
+            .prefix("cerberus-empty-diff-test-")
+            .tempdir()
+            .unwrap();
+
+        let workspace = RunWorkspace::prepare(&request, temp.path()).unwrap();
+
+        assert!(
+            workspace.path().starts_with(temp.path()),
+            "empty-diff workspace {} must live under the private tempdir {}, never a real caller cwd",
+            workspace.path().display(),
+            temp.path().display()
+        );
+        assert_eq!(workspace.mode, "empty_diff_packet");
     }
 
     #[test]
