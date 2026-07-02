@@ -1465,6 +1465,99 @@ mod tests {
         assert_eq!(output.stdout.len(), 200000);
     }
 
+    // Backlog 008: bounded output was previously proven only by a
+    // #[cfg(test)]-only reimplementation of the cap logic, never the
+    // production read_capped_file path. Drives real bytes past the cap
+    // through the actual function so a regression (e.g. someone "simplifies"
+    // away the truncation branch) fails a test, not just a code review.
+    #[test]
+    fn read_capped_file_truncates_the_middle_of_oversized_output() {
+        use std::io::Write;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let head_marker = b"HEAD_MARKER_BEGIN";
+        let tail_marker = b"TAIL_MARKER_END";
+        let total_len = OUTPUT_CAPTURE_CAP + 1_000_000;
+        {
+            let mut writer = std::io::BufWriter::new(file.reopen().unwrap());
+            writer.write_all(head_marker).unwrap();
+            let filler_len = total_len - head_marker.len() - tail_marker.len();
+            writer.write_all(&vec![b'x'; filler_len]).unwrap();
+            writer.write_all(tail_marker).unwrap();
+            writer.flush().unwrap();
+        }
+
+        let bytes = read_capped_file(file.path()).unwrap();
+
+        assert_eq!(
+            bytes.len(),
+            OUTPUT_CAPTURE_CAP,
+            "capped output must never exceed the cap regardless of input size"
+        );
+        assert!(
+            bytes.starts_with(head_marker),
+            "the head of the output must survive truncation"
+        );
+        assert!(
+            bytes.ends_with(tail_marker),
+            "the tail of the output must survive truncation"
+        );
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("[cerberus truncated middle]"),
+            "truncation must be visible in the captured output, not silent"
+        );
+    }
+
+    // Backlog 008: the orphan-kill machinery (setpgid at spawn + kill(-pid)
+    // on timeout) had zero coverage — a silent regression here leaves a
+    // credential-holding grandchild process running unbounded after Cerberus
+    // reports done, violating VISION's "no orphan children" non-negotiable.
+    //
+    // SIGKILL cannot be trapped/caught by a handler (that's the point of it),
+    // so a trap-based marker doesn't work here. Instead: the direct child
+    // backgrounds a grandchild (`sleep 30`) and writes its pid to a file.
+    // kill_process_tree sends SIGKILL to the whole *process group*
+    // (`libc::kill(-pid, ...)`), and a plain, non-interactive `sh -c` script
+    // does not put background jobs in their own group, so the grandchild
+    // inherits the group `configure_process_group` set up for the direct
+    // child. If a regression narrowed the kill back down to just the direct
+    // child's pid, the grandchild would survive as a live orphan.
+    #[cfg(unix)]
+    #[test]
+    fn timeout_kills_the_whole_process_group_not_just_the_direct_child() {
+        let pidfile = tempfile::NamedTempFile::new().unwrap();
+        let pidfile_path = pidfile.path().to_path_buf();
+
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!("sleep 30 & echo $! > {}; wait", pidfile_path.display()),
+        ]);
+        configure_process_group(&mut command);
+
+        let output = run_with_timeout(command, Duration::from_millis(500)).unwrap();
+        assert_eq!(output.status, "timeout");
+
+        // Give the OS a moment to finish delivering the signal.
+        std::thread::sleep(Duration::from_millis(200));
+
+        let grandchild_pid: libc::pid_t = std::fs::read_to_string(&pidfile_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .expect("grandchild pid file should contain a pid before the timeout fires");
+        // SAFETY: signal 0 sends nothing; it only probes whether the pid is
+        // alive and signalable, which is safe on any pid value.
+        let still_alive = unsafe { libc::kill(grandchild_pid, 0) == 0 };
+        assert!(
+            !still_alive,
+            "grandchild (sleep) pid {grandchild_pid} survived the timeout — \
+             kill_process_tree/setpgid did not kill the whole process group, \
+             only the direct shell child"
+        );
+    }
+
     fn minimal_artifact_json() -> String {
         serde_json::json!({
             "schema_version": "cerberus.review_artifact.v1",

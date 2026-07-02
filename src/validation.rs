@@ -343,36 +343,99 @@ mod tests {
         validate_artifact_for_request(&artifact_for(&request), &request).unwrap();
     }
 
+    // Backlog 008: validate_request can return 8 distinct ValidationError
+    // variants, but only 2 (LocalRuntimeRequiresPolicy,
+    // BaseWorkspaceRequiresHead) had a test driving them. One table, one
+    // case per variant, so adding a new validate_request check without a
+    // matching case is an easy diff to spot in review.
     #[test]
-    fn rejects_local_runtime_without_policy() {
-        let mut request = request();
-        request.context.local_runtime.push(RuntimeTarget {
-            kind: "command".to_string(),
-            command: "true".to_string(),
-            args: Vec::new(),
-            cwd: None,
-        });
+    fn validate_request_rejects_each_known_violation() {
+        struct Case {
+            name: &'static str,
+            mutate: fn(&mut ReviewRequest),
+            matches: fn(&ValidationError) -> bool,
+        }
 
-        assert!(matches!(
-            validate_request(&request),
-            Err(ValidationError::LocalRuntimeRequiresPolicy)
-        ));
-    }
+        let cases: &[Case] = &[
+            Case {
+                name: "unsupported request schema",
+                mutate: |r| r.schema_version = "cerberus.review_request.v999".to_string(),
+                matches: |e| {
+                    matches!(
+                        e,
+                        ValidationError::UnsupportedRequestSchema(v)
+                            if v == "cerberus.review_request.v999"
+                    )
+                },
+            },
+            Case {
+                name: "missing request id",
+                mutate: |r| r.request_id = "   ".to_string(),
+                matches: |e| matches!(e, ValidationError::MissingRequestId),
+            },
+            Case {
+                name: "missing title",
+                mutate: |r| r.change.title = "   ".to_string(),
+                matches: |e| matches!(e, ValidationError::MissingTitle),
+            },
+            Case {
+                name: "unsupported diff format",
+                mutate: |r| r.change.diff.format = "context".to_string(),
+                matches: |e| matches!(e, ValidationError::UnsupportedDiffFormat(f) if f == "context"),
+            },
+            Case {
+                name: "missing diff body",
+                mutate: |r| r.change.diff.body = "   ".to_string(),
+                matches: |e| matches!(e, ValidationError::MissingDiff),
+            },
+            Case {
+                name: "diff digest mismatch",
+                mutate: |r| r.change.diff.digest = Some("sha256:wrong".to_string()),
+                matches: |e| {
+                    matches!(
+                        e,
+                        ValidationError::DiffDigestMismatch { actual, .. }
+                            if actual == "sha256:wrong"
+                    )
+                },
+            },
+            Case {
+                name: "local runtime without policy",
+                mutate: |r| {
+                    r.context.local_runtime.push(RuntimeTarget {
+                        kind: "command".to_string(),
+                        command: "true".to_string(),
+                        args: Vec::new(),
+                        cwd: None,
+                    })
+                },
+                matches: |e| matches!(e, ValidationError::LocalRuntimeRequiresPolicy),
+            },
+            Case {
+                name: "base workspace without head workspace",
+                mutate: |r| {
+                    r.context.workspaces.base = Some(WorkspaceRef {
+                        kind: WorkspaceKind::Checkout,
+                        path: "/tmp/base".to_string(),
+                        ref_name: Some("main".to_string()),
+                        sha: Some("abc123".to_string()),
+                    })
+                },
+                matches: |e| matches!(e, ValidationError::BaseWorkspaceRequiresHead),
+            },
+        ];
 
-    #[test]
-    fn rejects_base_workspace_without_head_workspace() {
-        let mut request = request();
-        request.context.workspaces.base = Some(WorkspaceRef {
-            kind: WorkspaceKind::Checkout,
-            path: "/tmp/base".to_string(),
-            ref_name: Some("main".to_string()),
-            sha: Some("abc123".to_string()),
-        });
-
-        assert!(matches!(
-            validate_request(&request),
-            Err(ValidationError::BaseWorkspaceRequiresHead)
-        ));
+        for case in cases {
+            let mut mutated = request();
+            (case.mutate)(&mut mutated);
+            let err = validate_request(&mutated)
+                .expect_err(&format!("case {:?} should have been rejected", case.name));
+            assert!(
+                (case.matches)(&err),
+                "case {:?}: unexpected error {err:?}",
+                case.name
+            );
+        }
     }
 
     #[test]
@@ -498,6 +561,65 @@ mod tests {
                 suggested_fix_id,
             }) if scope == "finding f-1" && suggested_fix_id == "missing-fix"
         ));
+    }
+
+    // Backlog 008: RequireCitations was a policy the schema and validator
+    // both modeled, but nothing ever drove it through validate_artifact_for_request
+    // in a test — a regression here would let an uncited external-research
+    // finding through silently.
+    #[test]
+    fn rejects_finding_without_citation_when_policy_requires_one() {
+        let mut request = request();
+        request.policy.external_research = ExternalResearchPolicy::RequireCitations;
+        let mut artifact = artifact_for(&request);
+        artifact.findings.push(Finding {
+            id: "f-1".to_string(),
+            severity: Severity::Major,
+            category: "correctness".to_string(),
+            title: "uncited external-research finding".to_string(),
+            description: "claims something from outside the diff".to_string(),
+            evidence: "no citation attached".to_string(),
+            confidence: 0.6,
+            anchors: vec![inline_anchor()],
+            citations: Vec::new(),
+            suggested_fixes: Vec::new(),
+        });
+
+        assert!(matches!(
+            validate_artifact_for_request(&artifact, &request),
+            Err(ValidationError::ExternalResearchMissingCitation(id)) if id == "f-1"
+        ));
+    }
+
+    #[test]
+    fn accepts_finding_with_citation_when_policy_requires_one() {
+        let mut request = request();
+        request.policy.external_research = ExternalResearchPolicy::RequireCitations;
+        let mut artifact = artifact_for(&request);
+        artifact.findings.push(Finding {
+            id: "f-1".to_string(),
+            severity: Severity::Major,
+            category: "correctness".to_string(),
+            title: "cited external-research finding".to_string(),
+            description: "claims something from outside the diff".to_string(),
+            evidence: "backed by a citation".to_string(),
+            confidence: 0.6,
+            anchors: vec![inline_anchor()],
+            citations: vec!["c-1".to_string()],
+            suggested_fixes: Vec::new(),
+        });
+        artifact.citations.push(Citation {
+            id: "c-1".to_string(),
+            kind: CitationKind::Doc,
+            title: Some("relevant doc".to_string()),
+            uri: None,
+            observed_at: None,
+            digest: None,
+            excerpt: None,
+            used_by: vec!["f-1".to_string()],
+        });
+
+        validate_artifact_for_request(&artifact, &request).unwrap();
     }
 
     #[test]
