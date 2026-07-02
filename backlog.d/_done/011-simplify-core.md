@@ -1,6 +1,6 @@
 # Simplify and de-duplicate the core
 
-Priority: P2 · Status: children 1-4 done (2026-07-02); 5-6 deferred, need human ratification · Estimate: M
+Priority: P2 · Status: done 2026-07-02 (oracle satisfied; children 5-6 remain PROPOSED, need spec ratification, not part of the oracle) · Estimate: M
 
 ## Goal
 Shrink the surface an editor must preserve: collapse a pass-through seam, de-duplicate display/test logic, and delete dead provenance — without changing the public `ReviewRequest.v1` / `ReviewArtifact.v1` / `ReviewKernel` seams.
