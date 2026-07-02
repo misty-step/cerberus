@@ -188,9 +188,8 @@ mod tests {
     use crate::harness::ExecutionPlan;
     use crate::kernel::ReviewRun;
     use crate::schema::{
-        Change, Coverage, Diff, ExternalResearchPolicy, LifecycleState, Receipt, ReceiptRole,
-        ReceiptStatus, ReviewArtifact, ReviewPolicy, ReviewRequest, Source, SourceKind, Summary,
-        Verdict,
+        Coverage, LifecycleState, Receipt, ReceiptRole, ReceiptStatus, ReviewArtifact,
+        ReviewRequest, Summary, Verdict,
     };
 
     #[test]
@@ -227,8 +226,55 @@ mod tests {
         );
     }
 
+    // Backlog 011: `!serialized.contains("secret")`-style checks are
+    // tautological here -- ReviewReceiptBundle structurally has no field
+    // that could ever hold a raw prompt path, secret name, or transcript
+    // excerpt (only `*_uri` pointers), so those assertions would pass even
+    // if a real leak existed elsewhere. The positive contract that actually
+    // constrains future changes: the bundle's serialized field set is
+    // exactly this allowlist. Adding any new field forces a conscious,
+    // visible update here -- the real backstop against a future field
+    // accidentally carrying raw content.
+    fn assert_receipt_bundle_field_allowlist(bundle: &ReviewReceiptBundle) {
+        let value = serde_json::to_value(bundle).unwrap();
+        let fields: std::collections::BTreeSet<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str())
+            .collect();
+        let allowed: std::collections::BTreeSet<&str> = [
+            "schema_version",
+            "request_id",
+            "request_digest",
+            "artifact_id",
+            "artifact_digest",
+            "harness",
+            "model",
+            "usage",
+            "cost_usd",
+            "latency_ms",
+            "capability_tier",
+            "review_doctrine_digest",
+            "context_capabilities",
+            "artifact_uri",
+            "transcript_uri",
+            "execution_plan_uri",
+            "reviewer_plan_uri",
+            "validation",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            fields, allowed,
+            "receipt bundle field set changed -- if this is a deliberate new field, \
+             confirm it holds a URI/digest/pointer, never raw prompt or transcript \
+             content, before updating this allowlist"
+        );
+    }
+
     #[test]
-    fn receipt_bundle_redacts_prompt_paths_secret_names_and_transcript_excerpts() {
+    fn receipt_bundle_exposes_only_the_allowlisted_fields_even_with_sensitive_input() {
         let request = request();
         let mut run = run_for(&request);
         run.execution_plan.command = "/tmp/cerberus-private/master-prompt.md".to_string();
@@ -239,12 +285,8 @@ mod tests {
         run.transcript = "elapsed_ms: 9\nGH_TOKEN=should-not-leak\nsecret-value".to_string();
 
         let bundle = build_review_receipt_bundle(input(&request, &run, false)).unwrap();
-        let serialized = serde_json::to_string(&bundle).unwrap();
 
-        assert!(!serialized.contains("master-prompt.md"));
-        assert!(!serialized.contains("review-request.json"));
-        assert!(!serialized.contains("GH_TOKEN"));
-        assert!(!serialized.contains("secret-value"));
+        assert_receipt_bundle_field_allowlist(&bundle);
         assert_eq!(bundle.latency_ms, 9);
     }
 
@@ -287,16 +329,15 @@ mod tests {
         run.transcript = "elapsed_ms: 9\nGH_TOKEN=secret\nraw transcript excerpt".to_string();
 
         let bundle = build_review_receipt_bundle(input(&request, &run, true)).unwrap();
-        let serialized = serde_json::to_string(&bundle).unwrap();
 
+        // Positive contract: the validation error is the generic constant,
+        // never the raw (attacker-influenced) schema_version string it was
+        // derived from.
         assert_eq!(
             bundle.validation.error.as_deref(),
             Some(ARTIFACT_VALIDATION_FAILED)
         );
-        assert!(!serialized.contains("GH_TOKEN"));
-        assert!(!serialized.contains("master-prompt.md"));
-        assert!(!serialized.contains("review-request.json"));
-        assert!(!serialized.contains("raw transcript excerpt"));
+        assert_receipt_bundle_field_allowlist(&bundle);
     }
 
     fn input<'a>(
@@ -319,35 +360,7 @@ mod tests {
     }
 
     fn request() -> ReviewRequest {
-        ReviewRequest {
-            schema_version: crate::schema::REVIEW_REQUEST_SCHEMA.to_string(),
-            request_id: "req-1".to_string(),
-            source: Source {
-                kind: SourceKind::Fixture,
-                external_id: None,
-                repo: None,
-                uri: None,
-                metadata: serde_json::json!({}),
-            },
-            change: Change {
-                title: "change".to_string(),
-                description: None,
-                base_ref: None,
-                head_ref: None,
-                head_sha: None,
-                diff: Diff {
-                    format: "unified".to_string(),
-                    body: "diff --git a/a b/a\n".to_string(),
-                    digest: None,
-                },
-                files: Vec::new(),
-            },
-            context: Default::default(),
-            policy: ReviewPolicy {
-                external_research: ExternalResearchPolicy::Forbid,
-                ..ReviewPolicy::default()
-            },
-        }
+        crate::test_support::minimal_review_request()
     }
 
     fn run_for(request: &ReviewRequest) -> ReviewRun {

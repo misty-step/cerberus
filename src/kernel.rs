@@ -6,7 +6,7 @@ use anyhow::Result;
 use crate::container::{run_container_substrate, ContainerOpencodeSubstrateConfig};
 use crate::harness::{
     run_command_substrate, run_fixture_substrate, CommandSubstrateConfig, ExecutionPlan,
-    FixtureSubstrateConfig, OmpSubstrateConfig, OpenCodeSubstrateConfig,
+    FixtureSubstrateConfig, HarnessRun, OmpSubstrateConfig, OpenCodeSubstrateConfig,
 };
 use crate::orchestration::{build_reviewer_plan, ReviewerPlanReceipt};
 use crate::schema::{ReviewArtifact, ReviewRequest, ReviewTelemetry};
@@ -37,6 +37,22 @@ pub struct ReviewRun {
     pub execution_plan: ExecutionPlan,
     pub reviewer_plan: ReviewerPlanReceipt,
     pub telemetry: ReviewTelemetry,
+}
+
+impl ReviewRun {
+    /// A `ReviewRun` is a completed `HarnessRun` plus the reviewer plan,
+    /// which can only be built after the harness run finishes (it summarizes
+    /// the run's own execution plan and telemetry). Named here so that
+    /// relationship is explicit instead of an anonymous field-copy literal.
+    fn from_harness(run: HarnessRun, reviewer_plan: ReviewerPlanReceipt) -> Self {
+        Self {
+            artifact: run.artifact,
+            transcript: run.transcript,
+            execution_plan: run.execution_plan,
+            reviewer_plan,
+            telemetry: run.telemetry,
+        }
+    }
 }
 
 impl ReviewSubstrate {
@@ -72,12 +88,6 @@ impl ReviewKernel {
             }
         };
         let reviewer_plan = build_reviewer_plan(request, &run.execution_plan, &run.telemetry)?;
-        Ok(ReviewRun {
-            artifact: run.artifact,
-            transcript: run.transcript,
-            execution_plan: run.execution_plan,
-            reviewer_plan,
-            telemetry: run.telemetry,
-        })
+        Ok(ReviewRun::from_harness(run, reviewer_plan))
     }
 }

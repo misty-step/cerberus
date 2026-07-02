@@ -14,6 +14,8 @@ pub mod request;
 pub mod schema;
 mod secrets;
 mod telemetry;
+#[cfg(test)]
+mod test_support;
 pub mod validation;
 
 pub use container::{

@@ -276,6 +276,20 @@ pub enum Verdict {
     Skip,
 }
 
+impl Verdict {
+    /// Uppercase display label — matches the wire representation
+    /// (`SCREAMING_SNAKE_CASE`) so render and post surfaces don't hand-roll
+    /// their own copy of this match.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Verdict::Pass => "PASS",
+            Verdict::Warn => "WARN",
+            Verdict::Fail => "FAIL",
+            Verdict::Skip => "SKIP",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Summary {
     pub title: String,

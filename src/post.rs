@@ -312,7 +312,7 @@ fn summary_operation(input: SummaryOperationInput<'_>) -> PlannedOperation {
             body: json!({
                 "state": status_state(&input.artifact.verdict),
                 "target_url": input.target_url,
-                "description": format!("Cerberus Review: {}", verdict_label(&input.artifact.verdict)),
+                "description": format!("Cerberus Review: {}", input.artifact.verdict.label()),
                 "context": "Cerberus Review",
             }),
         },
@@ -332,7 +332,7 @@ fn check_run_body(
         "conclusion": check_conclusion(&artifact.verdict),
         "external_id": format!("cerberus:pr:{pull_request}:{head_sha}"),
         "output": {
-            "title": format!("Cerberus Review: {}", verdict_label(&artifact.verdict)),
+            "title": format!("Cerberus Review: {}", artifact.verdict.label()),
             "summary": format!(
                 "{}\n\nArtifact: `{}`\nDigest: `{}`",
                 artifact.summary.body,
@@ -430,15 +430,6 @@ fn extract_inline_marker_key(body: &str, head_sha: &str) -> Option<String> {
     let rest = &body[start..];
     let end = rest.find(" -->")?;
     Some(rest[..end].to_string())
-}
-
-fn verdict_label(verdict: &Verdict) -> &'static str {
-    match verdict {
-        Verdict::Pass => "PASS",
-        Verdict::Warn => "WARN",
-        Verdict::Fail => "FAIL",
-        Verdict::Skip => "SKIP",
-    }
 }
 
 fn check_conclusion(verdict: &Verdict) -> &'static str {
