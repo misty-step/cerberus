@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::digest::{request_digest, sha256_digest};
+use crate::prompt::REVIEW_DOCTRINE;
 use crate::schema::{
     ContextCapabilities, LifecycleState, ReviewArtifact, ReviewRequest, ReviewTelemetry, Usage,
 };
@@ -25,6 +26,12 @@ pub struct ReviewReceiptBundle {
     pub cost_usd: Option<f64>,
     pub latency_ms: u64,
     pub capability_tier: String,
+    /// sha256 of the review doctrine text (src/review_doctrine.md) embedded
+    /// in the prompt for this run — including the mandatory model-boundary
+    /// dimension (backlog 023). Recorded so any receipt can show which
+    /// doctrine version, and therefore which mandatory review dimensions,
+    /// were in force, without depending on the model to self-report it.
+    pub review_doctrine_digest: String,
     pub context_capabilities: ContextCapabilities,
     pub artifact_uri: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,6 +103,7 @@ pub fn build_review_receipt_bundle(input: ReceiptBundleInput<'_>) -> Result<Revi
         latency_ms: transcript_elapsed_ms(input.transcript)
             .unwrap_or(input.artifact.run.duration_ms),
         capability_tier: capability_tier(&context_capabilities).to_string(),
+        review_doctrine_digest: sha256_digest(REVIEW_DOCTRINE.as_bytes()),
         context_capabilities,
         artifact_uri: input.artifact_uri,
         transcript_uri: input.transcript_uri,
@@ -200,6 +208,23 @@ mod tests {
         assert_eq!(first.capability_tier, "diff_only");
         assert_eq!(first.validation.status, ReceiptValidationStatus::Passed);
         assert!(first.validation.trusted_for_posting);
+    }
+
+    // Backlog 023: the receipt bundle is the durable surface that shows which
+    // review doctrine -- and therefore which mandatory dimensions, e.g. the
+    // model-boundary one -- governed a given run, without depending on the
+    // model to self-report it.
+    #[test]
+    fn receipt_bundle_records_the_review_doctrine_digest() {
+        let request = request();
+        let run = run_for(&request);
+
+        let bundle = build_review_receipt_bundle(input(&request, &run, false)).unwrap();
+
+        assert_eq!(
+            bundle.review_doctrine_digest,
+            sha256_digest(crate::prompt::REVIEW_DOCTRINE.as_bytes())
+        );
     }
 
     #[test]
