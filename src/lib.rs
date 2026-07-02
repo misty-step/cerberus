@@ -16,7 +16,9 @@ mod secrets;
 mod telemetry;
 pub mod validation;
 
-pub use container::{ContainerOpencodeSubstrateConfig, DEFAULT_CONTAINER_IMAGE};
+pub use container::{
+    ContainerOpencodeSubstrateConfig, DEFAULT_CONTAINER_IMAGE, DEFAULT_EGRESS_ALLOW_HOST,
+};
 pub use digest::{request_digest, sha256_digest};
 pub use harness::{
     FixtureSubstrateConfig, HarnessKind, OmpSubstrateConfig, OpenCodeSubstrateConfig,
