@@ -17,6 +17,17 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --locked
 
+# Backlog 010: secret-scan the working tree before publication. Gated on
+# gitleaks being installed (skipped, not failed, when it isn't — CI always
+# has it; a cold agent's local machine may not). No allowlist mechanism for
+# an individual finding today: a true positive must be removed, not
+# suppressed. .gitleaks.toml excludes only target/ (build output).
+if command -v gitleaks > /dev/null 2>&1; then
+  gitleaks detect --no-git --source . --no-banner
+else
+  echo "gitleaks not installed; skipping secret scan (CI always has it)" >&2
+fi
+
 cargo run --locked -- review --help > target/cerberus-review-help.txt
 grep -q '\[default: opencode\]' target/cerberus-review-help.txt
 grep -q 'possible values: opencode, omp, fixture, container-opencode' target/cerberus-review-help.txt
