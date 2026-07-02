@@ -176,6 +176,14 @@ fn docker_run_args(
         "--rm".to_string(),
         "--name".to_string(),
         container_name.to_string(),
+        // Run as the host's own uid:gid, not root. --cap-drop ALL removes
+        // CAP_DAC_OVERRIDE, so a root-owned process without it can no longer
+        // rely on root's usual permission bypass — it would need the mounted
+        // host_root's owning uid to match anyway. Matching uid:gid up front
+        // is both the permission fix and the hardening: the sandboxed agent
+        // never runs as container-root at all.
+        "--user".to_string(),
+        current_uid_gid(),
         // Slice 1: deny ALL egress, including to the model API. Strictly
         // stronger than "non-model egress blocked" and needs no allowlist to
         // get right. A narrow model-only exception is a follow-up slice.
@@ -203,6 +211,18 @@ fn docker_run_args(
     ];
     args.extend(container_args.iter().cloned());
     args
+}
+
+#[cfg(unix)]
+fn current_uid_gid() -> String {
+    // SAFETY: getuid/getgid take no arguments and cannot fail.
+    let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+    format!("{uid}:{gid}")
+}
+
+#[cfg(not(unix))]
+fn current_uid_gid() -> String {
+    "1000:1000".to_string()
 }
 
 struct DockerOutput {

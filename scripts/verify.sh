@@ -941,7 +941,7 @@ if docker info > /dev/null 2>&1; then
   run_redteam_container_review() {
     local name="$1"
     local request="$2"
-    cargo run --locked -- review \
+    if ! cargo run --locked -- review \
       --request "$request" \
       --harness container-opencode \
       --container-binary "$redteam_substrate" \
@@ -950,7 +950,11 @@ if docker info > /dev/null 2>&1; then
       --transcript "target/cerberus/${name}-transcript.txt" \
       --timeout-seconds 60 \
       > "target/cerberus/${name}.stdout" \
-      2> "target/cerberus/${name}.stderr"
+      2> "target/cerberus/${name}.stderr"; then
+      echo "container-opencode red-team review ${name} failed; stderr:" >&2
+      cat "target/cerberus/${name}.stderr" >&2
+      exit 1
+    fi
   }
 
   assert_redteam_contained() {
