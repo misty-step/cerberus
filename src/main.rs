@@ -861,6 +861,14 @@ fn mint_scoped_openrouter_key<'a>(
     let Some(client) = client else {
         return Ok(None);
     };
+    if args.openrouter_key_limit_usd <= 0.0 {
+        return Err(anyhow!(
+            "--openrouter-key-limit-usd must be a positive USD cap (got {}); a zero or \
+             negative limit defeats the scoped key's entire guarantee — a capped, \
+             worthless-if-stolen credential — before any key is minted",
+            args.openrouter_key_limit_usd
+        ));
+    }
     let sweep_age = Duration::from_secs(args.openrouter_orphan_sweep_seconds);
     let tag = Uuid::new_v4().to_string();
     let minted = mint_review_key(client, &tag, args.openrouter_key_limit_usd, sweep_age)?;
@@ -1363,6 +1371,40 @@ mod tests {
             request.policy.allowed_env, allowed_env_before,
             "request must be untouched when scoped-key minting was not requested"
         );
+    }
+
+    // Backlog 040: 013 M1's entire threat model depends on the minted key
+    // being genuinely capped (VISION: "make the model credential worthless
+    // ... per-review, capped, revoked"). A zero or negative limit forwarded
+    // straight to the provisioning API would silently defeat that guarantee.
+    #[test]
+    fn mint_scoped_openrouter_key_rejects_non_positive_limit_before_any_network_call() {
+        let request_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
+        let client = ProvisioningClient::new("fake-provisioning-key");
+
+        for limit in [0.0, -1.0] {
+            let mut request: ReviewRequest =
+                read_json(&request_path).expect("fixture request loads");
+            let mut args = default_scoped_key_args();
+            args.openrouter_key_limit_usd = limit;
+
+            let result = mint_scoped_openrouter_key(Some(&client), &mut request, &args);
+            let err = match result {
+                Ok(_) => panic!("limit {limit} should be rejected"),
+                Err(err) => err,
+            };
+
+            let message = err.to_string();
+            assert!(
+                message.contains("--openrouter-key-limit-usd"),
+                "error should name the flag: {message}"
+            );
+            assert!(
+                message.contains("positive"),
+                "error should explain why a non-positive cap is rejected: {message}"
+            );
+        }
     }
 
     #[test]

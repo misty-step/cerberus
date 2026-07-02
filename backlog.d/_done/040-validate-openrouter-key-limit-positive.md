@@ -1,6 +1,6 @@
 # Validate --openrouter-key-limit-usd is a sane positive value before minting
 
-Priority: P1 · Status: ready · Estimate: S
+Priority: P1 · Status: done (2026-07-03) · Estimate: S
 
 ## Goal
 `mint_review_key`/`mint_key` (`src/openrouter_keys.rs:76,260`) forward
@@ -11,15 +11,16 @@ silently breaks the exact security guarantee 013 M1 exists to provide
 revoked").
 
 ## Oracle
-- [ ] `--openrouter-key-limit-usd` rejects `0` and negative values with a clear
-      CLI-level error before any network call to mint a key (validate in
-      `main.rs`, not deep inside `openrouter_keys.rs`).
-- [ ] A unit test asserts `0.0` and `-1.0` are rejected with an error naming
-      the flag and why (a non-positive cap defeats the "worthless key"
-      guarantee).
-- [ ] The existing default (`5.0`) and any explicit positive value continue to
-      work unchanged.
-- [ ] `./scripts/verify.sh` green.
+- [x] `--openrouter-key-limit-usd` rejects `0` and negative values with a clear
+      CLI-level error before any network call to mint a key. Validated in
+      `mint_scoped_openrouter_key` (`main.rs`) before `mint_review_key` is
+      ever called.
+- [x] Unit test `mint_scoped_openrouter_key_rejects_non_positive_limit_before_any_network_call`
+      asserts `0.0` and `-1.0` are both rejected, error names
+      `--openrouter-key-limit-usd` and "positive".
+- [x] Existing default (`5.0`) and explicit positive values unchanged — no
+      other test in the suite regressed.
+- [x] `./scripts/verify.sh` green.
 
 ## Notes
 Verified live 2026-07-01: `grep -n "key_limit_usd" src/*.rs` shows the value
