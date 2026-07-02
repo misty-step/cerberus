@@ -186,6 +186,16 @@ struct SubstrateArgs {
     /// allowlist (e.g. colima's default, which mounts only `$HOME`).
     #[arg(long)]
     container_host_root: Option<PathBuf>,
+    /// The single `host:port` the container-opencode egress proxy allows
+    /// `CONNECT` to. Every other host is unreachable from inside the
+    /// sandbox, including for DNS resolution.
+    #[arg(long, default_value = cerberus::DEFAULT_EGRESS_ALLOW_HOST)]
+    container_egress_allow_host: String,
+    /// Age past which the orphan sweeper removes a stale container-opencode
+    /// container/network left by a crashed prior run, before creating this
+    /// run's own resources.
+    #[arg(long, default_value_t = 1800)]
+    container_orphan_sweep_seconds: u64,
 }
 
 /// Scoped-ephemeral-key flags (backlog 013 M1), flattened into every command
@@ -458,6 +468,8 @@ fn review_substrate(args: SubstrateArgs) -> Result<ReviewSubstrate> {
         container_image,
         container_binary,
         container_host_root,
+        container_egress_allow_host,
+        container_orphan_sweep_seconds,
     } = args;
     match harness {
         HarnessKind::Fixture => {
@@ -485,6 +497,8 @@ fn review_substrate(args: SubstrateArgs) -> Result<ReviewSubstrate> {
                     image: container_image,
                     binary_host_path,
                     host_root_parent: container_host_root,
+                    egress_allow_host: container_egress_allow_host,
+                    orphan_sweep_max_age: Duration::from_secs(container_orphan_sweep_seconds),
                 },
             ))
         }

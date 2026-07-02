@@ -30,6 +30,8 @@ grep -q -- '--docker-binary' target/cerberus-review-help.txt
 grep -q -- '--container-image' target/cerberus-review-help.txt
 grep -q -- '--container-binary' target/cerberus-review-help.txt
 grep -q -- '--container-host-root' target/cerberus-review-help.txt
+grep -q -- '--container-egress-allow-host' target/cerberus-review-help.txt
+grep -q -- '--container-orphan-sweep-seconds' target/cerberus-review-help.txt
 cargo run --locked -- request --help > target/cerberus-request-help.txt
 grep -q 'git-range' target/cerberus-request-help.txt
 grep -Eq '^  pr([[:space:]]|$)' target/cerberus-request-help.txt
@@ -986,6 +988,13 @@ if docker info > /dev/null 2>&1; then
       echo "container-opencode mounted tree carries a .git handle in ${name} (worktree-escape risk)" >&2
       exit 1
     fi
+    # Backlog 013 M2 slice 2: containment must carve exactly one working
+    # exception (the model API through the egress proxy), not just deny
+    # everything -- prove the CONNECT tunnel to the allowed host succeeds.
+    if ! grep -q '"allowed_connect_status": "HTTP/1.1 200 Connection established"' "$transcript"; then
+      echo "container-opencode did not allow the model-API CONNECT tunnel in ${name}" >&2
+      exit 1
+    fi
   }
 
   # Diff-only: no repo checkout, exercises the network/filesystem escape
@@ -1043,6 +1052,46 @@ PY
   fi
   if [[ -n "$host_status_before" ]]; then
     echo "host checkout was unexpectedly dirty before the container review even ran" >&2
+    exit 1
+  fi
+
+  # Backlog 013 M2: orphaned-container sweeper, parallel to M1's orphan-key
+  # sweeper. Fabricate a container and a network carrying an old timestamp
+  # in their names (as if a prior run had been SIGKILLed after creating
+  # them) and confirm the very next container-opencode run's sweep step
+  # removes them, logging that it did.
+  orphan_ts=$(($(date +%s) - 7200))
+  orphan_container="cerberus-review-${orphan_ts}-verifysweep"
+  orphan_network="cerberus-review-net-${orphan_ts}-verifysweep"
+  docker run -d --name "$orphan_container" alpine:3.20 sleep 300 > /dev/null
+  docker network create "$orphan_network" > /dev/null
+
+  if ! cargo run --locked -- review \
+    --request fixtures/requests/redteam-diff-only.json \
+    --harness container-opencode \
+    --container-binary "$redteam_substrate" \
+    --container-host-root "$container_host_root" \
+    --container-orphan-sweep-seconds 60 \
+    --out target/cerberus/orphan-sweep-artifact.json \
+    --transcript target/cerberus/orphan-sweep-transcript.txt \
+    --timeout-seconds 60 \
+    > target/cerberus/orphan-sweep.stdout \
+    2> target/cerberus/orphan-sweep.stderr; then
+    echo "orphan-sweep verification review itself failed; stderr:" >&2
+    cat target/cerberus/orphan-sweep.stderr >&2
+    exit 1
+  fi
+  if ! grep -q 'orphan sweep removed' target/cerberus/orphan-sweep.stderr; then
+    echo "container-opencode did not log an orphan sweep on a run that should have found stale resources" >&2
+    cat target/cerberus/orphan-sweep.stderr >&2
+    exit 1
+  fi
+  if docker ps -a --filter "name=${orphan_container}" --format '{{.Names}}' | grep -q .; then
+    echo "orphan sweeper left the stale container ${orphan_container} running" >&2
+    exit 1
+  fi
+  if docker network ls --filter "name=${orphan_network}" --format '{{.Name}}' | grep -q .; then
+    echo "orphan sweeper left the stale network ${orphan_network} in place" >&2
     exit 1
   fi
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Backlog 013 M2 red-team substrate: stands in for a prompt-injected review
 # agent that has full bash access inside the container-opencode sandbox, and
-# tries every escape vector the substrate claims to block. Runs entirely on
-# bash + coreutils (no python3, no curl -- the base image is minimal and has
-# neither, and network egress is denied anyway).
+# tries every escape vector the substrate claims to block -- plus proves the
+# one narrow exception (the model API, via the egress proxy) still works.
+# Runs entirely on bash + coreutils (no python3, no curl -- the base image
+# is minimal and has neither; the allowed-host probe uses a raw CONNECT over
+# bash's /dev/tcp instead).
 #
 # Writes its findings to /cerberus/redteam-results.json (host-readable via
 # the same bind mount cerberus reads the artifact from) and always emits a
@@ -85,6 +87,30 @@ if [[ -e "$dir/.git" ]]; then
   git_present="true"
 fi
 
+# 6. Allowed-host reachability: the egress proxy must carve exactly one
+#    working exception, not just deny everything. Send a raw CONNECT for the
+#    model API through $HTTPS_PROXY (the container harness injects it) and
+#    read back squid's status line -- "200 Connection established" for the
+#    tunnel opening, distinct from the "403 Forbidden" a denied host gets.
+allowed_connect_status="no-proxy-configured"
+if [[ -n "${HTTPS_PROXY:-}" ]]; then
+  proxy_host_port="${HTTPS_PROXY#http://}"
+  proxy_host="${proxy_host_port%%:*}"
+  proxy_port="${proxy_host_port##*:}"
+  allowed_connect_status="$(timeout 5 bash -c '
+    exec 3<>"/dev/tcp/$1/$2" || exit 1
+    printf "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n" "$3" "$3" >&3
+    IFS= read -r -t 5 status_line <&3
+    # squid'"'"'s response line ends \r\n; read -r strips the \n but keeps
+    # the trailing \r, which is otherwise invalid unescaped inside a JSON
+    # string.
+    printf "%s" "${status_line%$'"'"'\r'"'"'}"
+  ' _ "$proxy_host" "$proxy_port" "${CERBERUS_REDTEAM_ALLOWED_HOST:-openrouter.ai:443}" 2>/dev/null)"
+  if [[ -z "$allowed_connect_status" ]]; then
+    allowed_connect_status="connect-failed"
+  fi
+fi
+
 # The emitted context_capabilities must exactly match the request's -- the
 # harness rejects any mismatch, over- or understated. Derive repo_head/base
 # from which archived workspace this run mounted (see container.rs's
@@ -104,7 +130,8 @@ cat > "$results_path" <<EOF
   "egress_connect_exit_code": $egress_exit,
   "outside_mount_write_exit_code": $outside_write_exit,
   "traversal_write_exit_code": $traversal_exit,
-  "dot_git_present": $git_present
+  "dot_git_present": $git_present,
+  "allowed_connect_status": "$allowed_connect_status"
 }
 EOF
 
