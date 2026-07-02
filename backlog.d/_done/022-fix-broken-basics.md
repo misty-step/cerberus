@@ -1,6 +1,6 @@
 # Fix the broken basics before expanding Cerberus
 
-Priority: P0 | Status: selected P0 slices shipped; residual safety/DX work remains | Estimate: M | Factory epic: 1
+Priority: P0 | Status: done (2026-07-02) | Estimate: M | Factory epic: 1
 
 ## Goal
 
@@ -25,9 +25,14 @@ evidence to decide whether a review is worth trusting.
 - [x] `review-pr --dry-run` either refuses ambient GitHub auth before any live
       read, or README and help text state that dry-run reads may use ambient
       `gh` auth while posting still refuses it.
-- [ ] Existing safety and operator-visibility tickets that protect publication
+- [x] Existing safety and operator-visibility tickets that protect publication
       are complete enough that `./scripts/verify.sh` would catch likely
-      execution and publication regressions.
+      execution and publication regressions. Re-verified 2026-07-02 against
+      live code (not just ticket status text): `008`'s oracle is 4/4 (only a
+      defense-in-depth child explicitly outside the oracle remains, needs an
+      operator warn-vs-deny call), `009` is fully done and archived to
+      `_done/`. Both landed this session with mutation-verified regression
+      tests, not just green-once assertions.
 
 ## Children
 
@@ -38,10 +43,12 @@ evidence to decide whether a review is worth trusting.
    `master` Verify run `28551881723` triggered Release run `28551914709`, which
    created `v2.60.0`; the next GLM-fix merge also triggered green Release run
    `28552884422`.
-3. Finish the publication-safety pieces from `008-pin-untested-safety-guards.md`
-   and `009-operator-visibility-and-errors.md` that guard timeout/orphan kill,
-   bounded output, request validation, cost/time/coverage rendering, CLI help,
-   and actionable Checks 403 fallback guidance.
+3. **Done (2026-07-02):** publication-safety pieces from
+   `008-pin-untested-safety-guards.md` and `009-operator-visibility-and-errors.md`
+   landed this session: orphan/timeout-kill, bounded-output, `RequireCitations`,
+   and table-driven request-validation tests (008); CLI help text,
+   cost/time/coverage rendering, and actionable Checks-403 fallback guidance
+   (009, archived to `_done/`).
 4. **Done:** `src/post.rs` has protocol-level proof in `./scripts/verify.sh`
    for check-run, summary, and inline-comment create/update/page-2 marker
    idempotence. Live proof on PR #489 used the fixture PASS artifact with
