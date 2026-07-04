@@ -59,6 +59,7 @@ grep -q -- '--summary-target' target/cerberus-review-pr-help.txt
 grep -q -- '--receipt-bundle' target/cerberus-review-pr-help.txt
 grep -q -- '--gh-token-file' target/cerberus-review-pr-help.txt
 grep -q -- '--gh-token-env' target/cerberus-review-pr-help.txt
+grep -q -- '--remote-event' target/cerberus-review-pr-help.txt
 grep -q -- '--openrouter-scoped-key' target/cerberus-review-pr-help.txt
 cargo run --locked -- mcp --help > target/cerberus-mcp-help.txt
 grep -q 'Run the Cerberus MCP server over stdio' target/cerberus-mcp-help.txt
@@ -583,6 +584,123 @@ grep -q '"line": 3' target/cerberus/review-pr-dry-run/post-plan.json
 grep -q '"commit_id": "0123456789abcdef"' target/cerberus/review-pr-dry-run/post-plan.json
 grep -q 'comment-001' target/cerberus/review-pr-dry-run/review.md
 grep -q 'AUTH gh_token=present github_token=absent' target/cerberus/review-pr-dry-run-gh.log
+
+remote_event=target/cerberus/weave-remote-event.json
+cat > "$remote_event" <<'JSON'
+{
+  "schema_version": "weave.remote_event.v1",
+  "id": "evt_github_fixture_review_pr",
+  "producer": {"name": "github-adapter", "version": "0.1.0"},
+  "produced_at": "2026-07-04T20:00:00Z",
+  "occurred_at": "2026-07-04T19:59:58Z",
+  "correlation_id": "github:example/fixture:pull_request:7:opened",
+  "source": {
+    "kind": "github",
+    "host": "github.com",
+    "external_id": "delivery-review-pr-7"
+  },
+  "repository": {
+    "id": "repo-fixture",
+    "full_name": "example/fixture",
+    "default_branch": "main"
+  },
+  "subject": {
+    "kind": "pull_request",
+    "id": "7",
+    "number": 7,
+    "url": "https://github.com/example/fixture/pull/7"
+  },
+  "actor": {
+    "id": "user-fixture",
+    "login": "codex-worker",
+    "kind": "bot"
+  },
+  "action": "opened",
+  "idempotency_key": "github:delivery-review-pr-7:pull_request:7:opened:0123456789abcdef",
+  "host_payload": {
+    "event_name": "pull_request",
+    "delivery_id": "delivery-review-pr-7",
+    "api_version": "2022-11-28",
+    "links": [
+      {"rel": "html", "href": "https://github.com/example/fixture/pull/7"}
+    ]
+  },
+  "policy": {
+    "merge_policy": "human-review",
+    "source": "repo-rule",
+    "reason": "remote-event consumer smoke treats merge policy as input metadata only"
+  },
+  "payload": {
+    "base_ref": "main",
+    "head_ref": "fix/ratio-zero",
+    "head_sha": "0123456789abcdef",
+    "draft": false,
+    "state": "open"
+  }
+}
+JSON
+rm -rf "$fake_gh_state"
+CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+CERBERUS_FAKE_GH_REQUIRE_TOKEN=1 \
+CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-remote-event-gh.log \
+cargo run --locked -- review-pr \
+  --remote-event "$remote_event" \
+  --gh-binary "$fake_gh" \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --out-dir target/cerberus/review-pr-remote-event \
+  --receipt-bundle target/cerberus/receipts/review-pr-remote-event.json \
+  --gh-token-file "$fake_gh_token" \
+  --dry-run \
+  > target/cerberus/review-pr-remote-event.stdout
+grep -Eq 'PR_VIEW 7 .* -R example/fixture' target/cerberus/review-pr-remote-event-gh.log
+grep -Eq 'PR_DIFF 7 .* -R example/fixture' target/cerberus/review-pr-remote-event-gh.log
+python3 - <<'PY'
+import json
+request = json.load(open("target/cerberus/review-pr-remote-event/request.json", encoding="utf-8"))
+event = request["source"]["metadata"]["remote_event"]
+assert event["schema_version"] == "weave.remote_event.v1"
+assert event["repository"]["full_name"] == "example/fixture"
+assert event["subject"]["number"] == 7
+assert event["actor"]["login"] == "codex-worker"
+assert event["action"] == "opened"
+assert event["payload"]["head_sha"] == "0123456789abcdef"
+assert event["policy"]["merge_policy"] == "human-review"
+assert "normalized remote-event envelope" in "\n".join(request["context"]["instructions"])
+PY
+
+unknown_remote_event=target/cerberus/weave-remote-event-unknown-major.json
+python3 - <<'PY'
+import json
+event = json.load(open("target/cerberus/weave-remote-event.json", encoding="utf-8"))
+event["schema_version"] = "weave.remote_event.v2"
+with open("target/cerberus/weave-remote-event-unknown-major.json", "w", encoding="utf-8") as fh:
+    json.dump(event, fh)
+    fh.write("\n")
+PY
+rm -rf "$fake_gh_state"
+rm -f target/cerberus/review-pr-remote-event-unknown-gh.log
+if CERBERUS_FAKE_GH_STATE_DIR="$fake_gh_state" \
+  CERBERUS_FAKE_GH_LOG=target/cerberus/review-pr-remote-event-unknown-gh.log \
+  cargo run --locked -- review-pr \
+    --remote-event "$unknown_remote_event" \
+    --gh-binary "$fake_gh" \
+    --harness fixture \
+    --fixture-output fixtures/harness/valid-review.txt \
+    --out-dir target/cerberus/review-pr-remote-event-unknown \
+    --gh-token-file "$fake_gh_token" \
+    --dry-run \
+    > target/cerberus/review-pr-remote-event-unknown.stdout \
+    2> target/cerberus/review-pr-remote-event-unknown.stderr; then
+  echo "expected review-pr remote-event to reject unknown major schema_version" >&2
+  exit 1
+fi
+grep -q 'unsupported remote event schema_version weave.remote_event.v2' \
+  target/cerberus/review-pr-remote-event-unknown.stderr
+if [[ -s target/cerberus/review-pr-remote-event-unknown-gh.log ]]; then
+  echo "review-pr remote-event read GitHub before rejecting unknown major schema_version" >&2
+  exit 1
+fi
 
 rm -rf "$fake_gh_state"
 mkdir -p target/cerberus/review-pr-dry-run-no-token
