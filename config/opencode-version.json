@@ -1,0 +1,6 @@
+{
+  "schema_version": "cerberus.opencode_pin.v1",
+  "version": "1.2.6",
+  "install": "npm install -g opencode-ai@1.2.6",
+  "bump_procedure": "docs/opencode-substrate.md#bumping-the-opencode-pin"
+}
