@@ -32,4 +32,18 @@ Model-boundary judgment (mandatory dimension — heuristic-where-a-model-belongs
 - Did this change add a model call where deterministic code should own the behavior instead — scoring, policy, persistence, approval, sandboxing, security enforcement, or anything else an eval or an oracle-checkable test can verify directly?
 - This is architectural judgment about where a product boundary sits, not a rule engine: do not fail a review solely because a model call exists near policy code, or because a heuristic exists near natural-language input — ground the finding in the specific behavior the diff actually changed.
 
+Stack-aware review: when the request is part of a stacked PR chain, review the
+current PR as a slice, not as the whole feature.
+- Verify the PR base and stack order before judging merge readiness. The bottom
+  PR should target the default branch; upper PRs should target the previous
+  stack branch until lower slices merge.
+- Distinguish defects introduced by this PR from defects already present in lower stack PRs.
+  Findings should land on the first PR that introduced the problem.
+- Treat missing lower-stack context as residual risk, not as proof of a bug in
+  the upper PR.
+- Call out partitioning mistakes explicitly: "belongs in lower PR",
+  "upper PR depends on an unmerged behavior", or "base branch appears wrong".
+- For merge-readiness comments, require bottom-up merge order and a final
+  default-branch sync check after the last PR lands.
+
 Report discipline: prefer a few high-conviction findings over a long list of nits; calibrate severity honestly; ground every finding in a line you inspected.
