@@ -395,6 +395,32 @@ mod tests {
     }
 
     #[test]
+    fn prompts_embed_stack_aware_review_doctrine() {
+        let request = minimal_request();
+        let capabilities = ContextCapabilities::from_request(&request);
+        let master =
+            build_master_prompt(&request, &capabilities, "sha256:test", out_path()).unwrap();
+        let message =
+            build_opencode_message(&request, &capabilities, "sha256:test", out_path()).unwrap();
+
+        for prompt in [&master, &message] {
+            assert!(
+                prompt.contains("Stack-aware review"),
+                "doctrine: stack-aware review section must be embedded"
+            );
+            assert!(
+                prompt.contains("Distinguish defects introduced by this PR from defects already present in lower stack PRs"),
+                "doctrine: reviewers must separate current-slice findings from lower-stack findings"
+            );
+            assert!(
+                prompt
+                    .contains("Verify the PR base and stack order before judging merge readiness"),
+                "doctrine: reviewers must inspect base/stack order"
+            );
+        }
+    }
+
+    #[test]
     fn prompts_instruct_file_emission_not_raw_stdout() {
         let request = minimal_request();
         let capabilities = ContextCapabilities::from_request(&request);
