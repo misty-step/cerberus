@@ -6,6 +6,11 @@ if [[ "${GH_TOKEN:-}" != "" ]]; then
   exit 64
 fi
 
+if [[ "${1:-}" == "--version" || "${1:-}" == "-v" ]]; then
+  printf '%s\n' "1.2.6"
+  exit 0
+fi
+
 if [[ "$*" == *"Avoid divide by zero"* ]]; then
   echo "private request material leaked through argv" >&2
   exit 65

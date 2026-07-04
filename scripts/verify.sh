@@ -133,6 +133,30 @@ if grep -q 'sha256:0000000000000000000000000000000000000000000000000000000000000
   exit 1
 fi
 
+cat > target/cerberus/fake-opencode-old <<'SH'
+#!/usr/bin/env sh
+if [ "${1:-}" = "--version" ]; then
+  printf '%s\n' "0.0.0"
+  exit 0
+fi
+exec "$CERBERUS_FAKE_OPENCODE" "$@"
+SH
+chmod +x target/cerberus/fake-opencode-old
+if CERBERUS_FAKE_OPENCODE="$PWD/fixtures/bin/fake-opencode" cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness opencode \
+  --opencode-binary "$PWD/target/cerberus/fake-opencode-old" \
+  --out target/cerberus/opencode-version-drift-artifact.json \
+  > target/cerberus/opencode-version-drift.stdout \
+  2> target/cerberus/opencode-version-drift.stderr; then
+  echo "expected OpenCode version drift to fail before review execution" >&2
+  exit 1
+fi
+grep -q 'OpenCode version drift' target/cerberus/opencode-version-drift.stderr
+grep -q 'config/opencode-version.json' target/cerberus/opencode-version-drift.stderr
+grep -q 'docs/opencode-substrate.md#bumping-the-opencode-pin' \
+  target/cerberus/opencode-version-drift.stderr
+
 if CERBERUS_FAKE_OPENCODE_TIMEOUT=1 CERBERUS_FAKE_OPENCODE_TIMEOUT_SECONDS=3 cargo run --locked -- review \
   --request fixtures/requests/diff-only.json \
   --harness opencode \

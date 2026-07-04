@@ -29,6 +29,7 @@ pub(crate) const ARTIFACT_FILENAME: &str = "review-artifact.json";
 /// first-retry recovery near 80% and second-retry above 99%; a third is wasted
 /// tokens. The loop is fail-closed: an artifact that never validates is an error.
 const MAX_REASK_RETRIES: usize = 2;
+const OPENCODE_PIN_PATH: &str = "config/opencode-version.json";
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum HarnessKind {
@@ -202,6 +203,9 @@ pub(crate) fn run_command_substrate(
 
     let trusted_search_path = trusted_executable_search_path();
     let executable = resolve_executable_in(&binary, &trusted_search_path)?;
+    if matches!(substrate, CommandSubstrateConfig::Opencode(_)) {
+        verify_opencode_version_pin(&executable)?;
+    }
 
     let plan = ExecutionPlan {
         harness: plan_harness.to_string(),
@@ -520,6 +524,89 @@ fn command_for_substrate(
             Ok((config.binary.clone(), args, "omp", "private prompt file"))
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenCodeVersionPin {
+    version: String,
+    install: String,
+    bump_procedure: String,
+}
+
+fn verify_opencode_version_pin(executable: &Path) -> Result<()> {
+    let pin = read_opencode_version_pin(Path::new(OPENCODE_PIN_PATH))?;
+    let output = Command::new(executable)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .env_clear()
+        .output()
+        .with_context(|| {
+            format!(
+                "probe OpenCode version with {} --version",
+                executable.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "OpenCode version pin check failed: {} --version exited with {}; expected {} from {}. Install the pin with `{}` or follow {}.",
+            executable.display(),
+            output.status,
+            pin.version,
+            OPENCODE_PIN_PATH,
+            pin.install,
+            pin.bump_procedure
+        ));
+    }
+    let observed = parse_version_token(&output.stdout)
+        .or_else(|| parse_version_token(&output.stderr))
+        .ok_or_else(|| {
+            anyhow!(
+                "OpenCode version pin check failed: {} --version did not print a parseable version; expected {} from {}. Follow {} before running live reviews.",
+                executable.display(),
+                pin.version,
+                OPENCODE_PIN_PATH,
+                pin.bump_procedure
+            )
+        })?;
+    if observed != pin.version {
+        return Err(anyhow!(
+            "OpenCode version drift: expected {} from {}, but {} reported {}. Install the pin with `{}` or update the pin via {} before running live reviews.",
+            pin.version,
+            OPENCODE_PIN_PATH,
+            executable.display(),
+            observed,
+            pin.install,
+            pin.bump_procedure
+        ));
+    }
+    Ok(())
+}
+
+fn read_opencode_version_pin(path: &Path) -> Result<OpenCodeVersionPin> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("read OpenCode version pin {}", path.display()))?;
+    serde_json::from_str(&raw)
+        .with_context(|| format!("parse OpenCode version pin {}", path.display()))
+}
+
+fn parse_version_token(bytes: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(bytes)
+        .split_whitespace()
+        .find(|token| {
+            let token = token.strip_prefix('v').unwrap_or(token);
+            let mut parts = token.split('.');
+            matches!(
+                (parts.next(), parts.next(), parts.next()),
+                (Some(major), Some(minor), Some(patch))
+                    if major.chars().all(|c| c.is_ascii_digit())
+                        && minor.chars().all(|c| c.is_ascii_digit())
+                        && patch
+                            .chars()
+                            .take_while(|c| *c != '-' && *c != '+')
+                            .all(|c| c.is_ascii_digit())
+            )
+        })
+        .map(|token| token.strip_prefix('v').unwrap_or(token).to_string())
 }
 
 fn request_with_workspace_paths(
