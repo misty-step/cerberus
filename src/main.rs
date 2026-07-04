@@ -22,6 +22,7 @@ use cerberus::{
     render_markdown, validate_artifact_for_request, validate_request, ReviewArtifact, ReviewRequest,
 };
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 /// Maps a review verdict to a process exit code so a calling agent can gate on
@@ -357,11 +358,15 @@ struct ReviewArgs {
 ))]
 struct ReviewPrArgs {
     /// Pull request number.
-    #[arg(long)]
-    number: u64,
+    #[arg(long, required_unless_present = "remote_event")]
+    number: Option<u64>,
     /// `owner/name` slug.
+    #[arg(long, required_unless_present = "remote_event")]
+    repo: Option<String>,
+    /// Build the PR review request from a normalized weave.remote_event.v1
+    /// envelope instead of raw host webhook JSON.
     #[arg(long)]
-    repo: String,
+    remote_event: Option<PathBuf>,
     /// Directory request/artifact/transcript/receipt/post-plan files are
     /// written under.
     #[arg(long, default_value = "target/cerberus/review-pr")]
@@ -933,6 +938,17 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
 }
 
 fn review_pr(args: ReviewPrArgs) -> Result<()> {
+    let remote_event = args
+        .remote_event
+        .as_deref()
+        .map(read_remote_event_review)
+        .transpose()?;
+    let number = resolve_pr_number(args.number, remote_event.as_ref())?;
+    let repo = resolve_pr_repo(args.repo.as_deref(), remote_event.as_ref())?;
+    let request_id = args
+        .request_id
+        .clone()
+        .or_else(|| remote_event.as_ref().map(|event| event.request_id()));
     let request_path = args.out_dir.join("request.json");
     let artifact_path = args.out_dir.join("artifact.json");
     let markdown_path = args.out_dir.join("review.md");
@@ -952,14 +968,14 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     let gh_binary = args.gh_binary.clone();
 
     let mut request = build_pull_request(&PullRequestOptions {
-        number: args.number,
-        repo: Some(args.repo.clone()),
+        number,
+        repo: Some(repo.clone()),
         gh_binary: gh_binary.clone(),
         gh_token: Some(github_token.clone()),
         head_workspace: args.head_workspace,
         base_workspace: args.base_workspace,
         common: RequestOptions {
-            request_id: args.request_id,
+            request_id,
             instructions: args.instructions,
             local_runtime: runtime_targets(args.local_runtime_commands),
             allow_local_runtime: args.allow_local_runtime,
@@ -967,6 +983,9 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
             timeout_ms: timeout_ms(args.timeout_seconds)?,
         },
     })?;
+    if let Some(event) = &remote_event {
+        attach_remote_event_metadata(&mut request, event)?;
+    }
     let scoped_key_client = resolve_scoped_key_client(&args.scoped_key)?;
     let _scoped_key_guard =
         mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &args.scoped_key)?;
@@ -978,13 +997,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow!("review-pr requires request.change.head_sha"))?
         .to_string();
-    ensure_pr_head_unchanged(
-        args.number,
-        &args.repo,
-        &gh_binary,
-        Some(&github_token),
-        &head_sha,
-    )?;
+    ensure_pr_head_unchanged(number, &repo, &gh_binary, Some(&github_token), &head_sha)?;
 
     let substrate = review_substrate(args.substrate)?;
     require_child_env_for_substrate(&request, &substrate)?;
@@ -1002,13 +1015,7 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     write_text(&transcript_path, &run.transcript)?;
     write_json(&artifact_path, &run.artifact)?;
     let validation_result = validate_artifact_for_request(&run.artifact, &request);
-    ensure_pr_head_unchanged(
-        args.number,
-        &args.repo,
-        &gh_binary,
-        Some(&github_token),
-        &head_sha,
-    )?;
+    ensure_pr_head_unchanged(number, &repo, &gh_binary, Some(&github_token), &head_sha)?;
     if validation_result.is_err() {
         write_review_receipt_bundle(
             &receipt_bundle_path,
@@ -1047,13 +1054,12 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
 
     let mut github = GithubClient::new(gh_binary.clone());
     github = github.with_token(github_token.clone());
-    let existing =
-        github.read_existing_state(&args.repo, args.number, &head_sha, args.summary_target)?;
+    let existing = github.read_existing_state(&repo, number, &head_sha, args.summary_target)?;
     let post_plan = build_post_plan(
         &request,
         &run.artifact,
-        &args.repo,
-        args.number,
+        &repo,
+        number,
         args.summary_target,
         &existing,
     )?;
@@ -1061,8 +1067,8 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
 
     if args.post {
         ensure_pr_head_unchanged(
-            args.number,
-            &args.repo,
+            number,
+            &repo,
             &gh_binary,
             Some(&github_token),
             &post_plan.head_sha,
@@ -1111,6 +1117,175 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err).with_context(|| format!("remove stale {}", path.display())),
     }
+}
+
+#[derive(Debug, Clone)]
+struct RemoteEventReview {
+    schema_version: String,
+    event_id: String,
+    repo: String,
+    number: u64,
+    actor_login: String,
+    delivery_id: String,
+    head_sha: Option<String>,
+    metadata: Value,
+}
+
+impl RemoteEventReview {
+    fn request_id(&self) -> String {
+        format!("weave-remote-event-{}", self.event_id)
+    }
+}
+
+fn read_remote_event_review(path: &Path) -> Result<RemoteEventReview> {
+    let event: Value = read_json(path)?;
+    let schema_version = required_string(&event, "/schema_version")?;
+    if schema_version != "weave.remote_event.v1" {
+        return Err(anyhow!(
+            "unsupported remote event schema_version {schema_version}; expected weave.remote_event.v1"
+        ));
+    }
+    let subject_kind = required_string(&event, "/subject/kind")?;
+    if subject_kind != "pull_request" {
+        return Err(anyhow!(
+            "remote event subject.kind {subject_kind} is not supported for review-pr; expected pull_request"
+        ));
+    }
+    let number = event
+        .pointer("/subject/number")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("remote event subject.number is required for review-pr"))?;
+    let repo = required_string(&event, "/repository/full_name")?;
+    let head_sha = optional_string(&event, "/payload/head_sha")?;
+    let mut metadata = json!({
+        "schema_version": schema_version,
+        "id": required_string(&event, "/id")?,
+        "source": {
+            "kind": required_string(&event, "/source/kind")?,
+            "host": required_string(&event, "/source/host")?,
+            "external_id": required_string(&event, "/source/external_id")?,
+        },
+        "repository": {
+            "full_name": repo,
+        },
+        "subject": {
+            "kind": subject_kind,
+            "id": required_string(&event, "/subject/id")?,
+            "number": number,
+        },
+        "actor": {
+            "login": required_string(&event, "/actor/login")?,
+        },
+        "action": required_string(&event, "/action")?,
+        "idempotency_key": required_string(&event, "/idempotency_key")?,
+        "host_payload": {
+            "delivery_id": required_string(&event, "/host_payload/delivery_id")?,
+            "event_name": required_string(&event, "/host_payload/event_name")?,
+        },
+        "payload": {
+            "head_sha": head_sha.clone(),
+            "base_ref": optional_string(&event, "/payload/base_ref")?,
+            "head_ref": optional_string(&event, "/payload/head_ref")?,
+            "state": optional_string(&event, "/payload/state")?,
+        }
+    });
+    if let Some(policy) = optional_object(&event, "/policy")? {
+        metadata["policy"] = policy;
+    }
+    Ok(RemoteEventReview {
+        schema_version: metadata["schema_version"].as_str().unwrap().to_string(),
+        event_id: metadata["id"].as_str().unwrap().to_string(),
+        repo: metadata["repository"]["full_name"]
+            .as_str()
+            .unwrap()
+            .to_string(),
+        number,
+        actor_login: metadata["actor"]["login"].as_str().unwrap().to_string(),
+        delivery_id: metadata["host_payload"]["delivery_id"]
+            .as_str()
+            .unwrap()
+            .to_string(),
+        head_sha,
+        metadata,
+    })
+}
+
+fn required_string(event: &Value, pointer: &str) -> Result<String> {
+    event
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| anyhow!("remote event {pointer} must be a non-empty string"))
+}
+
+fn optional_string(event: &Value, pointer: &str) -> Result<Option<String>> {
+    match event.pointer(pointer) {
+        Some(Value::Null) | None => Ok(None),
+        Some(value) => value
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| Ok(Some(value.to_string())))
+            .unwrap_or_else(|| Err(anyhow!("remote event {pointer} must be a non-empty string"))),
+    }
+}
+
+fn optional_object(event: &Value, pointer: &str) -> Result<Option<Value>> {
+    match event.pointer(pointer) {
+        Some(Value::Null) | None => Ok(None),
+        Some(value) if value.is_object() => Ok(Some(value.clone())),
+        Some(_) => Err(anyhow!("remote event {pointer} must be an object")),
+    }
+}
+
+fn resolve_pr_number(cli_number: Option<u64>, event: Option<&RemoteEventReview>) -> Result<u64> {
+    match (cli_number, event) {
+        (Some(cli), Some(event)) if cli != event.number => Err(anyhow!(
+            "--number {cli} conflicts with remote event subject.number {}",
+            event.number
+        )),
+        (Some(cli), _) => Ok(cli),
+        (None, Some(event)) => Ok(event.number),
+        (None, None) => Err(anyhow!("review-pr requires --number or --remote-event")),
+    }
+}
+
+fn resolve_pr_repo(cli_repo: Option<&str>, event: Option<&RemoteEventReview>) -> Result<String> {
+    match (cli_repo, event) {
+        (Some(cli), Some(event)) if cli != event.repo => Err(anyhow!(
+            "--repo {cli} conflicts with remote event repository.full_name {}",
+            event.repo
+        )),
+        (Some(cli), _) => Ok(cli.to_string()),
+        (None, Some(event)) => Ok(event.repo.clone()),
+        (None, None) => Err(anyhow!("review-pr requires --repo or --remote-event")),
+    }
+}
+
+fn attach_remote_event_metadata(
+    request: &mut ReviewRequest,
+    event: &RemoteEventReview,
+) -> Result<()> {
+    if let Some(expected) = &event.head_sha {
+        let actual = request
+            .change
+            .head_sha
+            .as_deref()
+            .ok_or_else(|| anyhow!("GitHub PR request is missing head_sha"))?;
+        if actual != expected {
+            return Err(anyhow!(
+                "remote event payload.head_sha {expected} does not match GitHub PR head {actual}"
+            ));
+        }
+    }
+    request.source.metadata["remote_event"] = event.metadata.clone();
+    request.context.metadata["remote_event"] = event.metadata.clone();
+    request.context.instructions.push(format!(
+        "This review was dispatched from {} for {}#{} by {} via delivery {}. \
+Use the normalized remote-event envelope metadata, not raw host webhook JSON, as the caller context.",
+        event.schema_version, event.repo, event.number, event.actor_login, event.delivery_id
+    ));
+    Ok(())
 }
 
 fn resolve_github_token(token_file: Option<&Path>, token_env: Option<&str>) -> Result<String> {
