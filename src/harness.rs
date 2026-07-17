@@ -709,10 +709,11 @@ fn read_substrate_version_pin(path: &Path, substrate_name: &str) -> Result<Subst
 fn parse_version_token(bytes: &[u8]) -> Option<String> {
     String::from_utf8_lossy(bytes)
         .split_whitespace()
-        .find(|token| {
+        .filter_map(|raw| {
+            let token = raw.rsplit('/').next().unwrap_or(raw);
             let token = token.strip_prefix('v').unwrap_or(token);
             let mut parts = token.split('.');
-            matches!(
+            let valid = matches!(
                 (parts.next(), parts.next(), parts.next()),
                 (Some(major), Some(minor), Some(patch))
                     if major.chars().all(|c| c.is_ascii_digit())
@@ -721,9 +722,10 @@ fn parse_version_token(bytes: &[u8]) -> Option<String> {
                             .chars()
                             .take_while(|c| *c != '-' && *c != '+')
                             .all(|c| c.is_ascii_digit())
-            )
+            );
+            valid.then(|| token.to_string())
         })
-        .map(|token| token.strip_prefix('v').unwrap_or(token).to_string())
+        .next()
 }
 
 fn request_with_workspace_paths(
@@ -2279,6 +2281,18 @@ mod tests {
     fn omp_lifecycle_ignores_unenumerated_nonterminal_event_types_and_blank_lines() {
         let stdout = b"{\"type\":\"tool_call\",\"name\":\"grep\"}\n\n{\"type\":\"some_future_event_kind\",\"foo\":1}\n{\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"stop\"}]}\n";
         assert!(validate_omp_lifecycle(stdout).is_ok());
+    }
+
+    #[test]
+    fn version_token_accepts_plain_and_slash_prefixed_versions() {
+        assert_eq!(
+            parse_version_token(b"opencode 1.2.6\n"),
+            Some("1.2.6".to_string())
+        );
+        assert_eq!(
+            parse_version_token(b"omp/17.0.2\n"),
+            Some("17.0.2".to_string())
+        );
     }
 
     #[test]
