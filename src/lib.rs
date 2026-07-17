@@ -11,12 +11,14 @@ pub mod prompt;
 pub mod receipt;
 pub mod render;
 pub mod request;
+pub mod retry;
 pub mod schema;
 mod secrets;
 mod telemetry;
 #[cfg(test)]
 mod test_support;
 pub mod validation;
+pub mod workflow_lock;
 
 pub use container::{
     ContainerOpencodeSubstrateConfig, DEFAULT_CONTAINER_IMAGE, DEFAULT_EGRESS_ALLOW_HOST,
@@ -46,7 +48,12 @@ pub use receipt::{
     ReviewReceiptBundle, REVIEW_RECEIPT_BUNDLE_SCHEMA,
 };
 pub use render::render_markdown;
+pub use retry::{retry_once, RetryAttempt, RetryError};
 pub use schema::{
     ContextCapabilities, ReviewArtifact, ReviewRequest, ReviewTelemetry, REVIEW_ARTIFACT_SCHEMA,
 };
 pub use validation::{validate_artifact_for_request, validate_request};
+pub use workflow_lock::{
+    acquire_workflow_lock, default_workflow_lock_path, WorkflowLockError, WorkflowLockGuard,
+    WORKFLOW_LOCK_PATH_ENV,
+};
