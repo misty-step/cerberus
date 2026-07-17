@@ -983,7 +983,7 @@ struct CommandInput<'a> {
     capabilities: &'a ContextCapabilities,
     request_digest: &'a str,
     /// Private per-run `--config` overlay path for the Omp substrate only
-    /// (unused by Opencode/Fixture); see `OMP_REVIEW_CONFIG_OVERLAY`.
+    /// (unused by Opencode/Fixture); see `omp::OMP_REVIEW_CONFIG_OVERLAY`.
     omp_config_path: &'a Path,
 }
 
