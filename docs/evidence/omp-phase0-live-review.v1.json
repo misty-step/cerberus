@@ -1,0 +1,215 @@
+{
+  "artifact_id": "cerberus-review-58fba366-phase0-omp-run-1",
+  "citations": [],
+  "comments": [
+    {
+      "anchor": {
+        "end_line": 613,
+        "kind": "inline",
+        "path": "src/harness.rs",
+        "start_line": 608
+      },
+      "body": "This fail-closed check requires exactly one `agent_end` event. Given the master doctrine allows dynamically launching subagents on substrates that support it, please confirm (via a live OMP probe that actually dispatches a subagent) whether OMP's NDJSON stream still emits exactly one top-level `agent_end` in that case before this gate goes live -- otherwise subagent-using OMP reviews will hard-fail here before the artifact is ever read.",
+      "dedupe_key": "omp-agent-end-cardinality-harness-rs-608",
+      "finding_id": "finding-omp-agent-end-cardinality",
+      "id": "comment-omp-agent-end-cardinality",
+      "intent": "finding",
+      "kind": "inline",
+      "suggested_fixes": [
+        "sf-omp-subagent-probe-gate"
+      ]
+    },
+    {
+      "anchor": {
+        "end_line": 42,
+        "kind": "inline",
+        "path": "src/harness.rs",
+        "start_line": 33
+      },
+      "body": "src/harness.rs was already 2065 lines before this diff; this change adds another ~284 lines of OMP-specific command building, lifecycle validation, and version-pin logic to it. Worth extracting into a dedicated module (e.g. src/harness/omp.rs) before Phase 1 piles more substrate-specific logic on top, per docs/plans/productization-2026-07-17.md.",
+      "dedupe_key": "harness-file-decomposition-harness-rs-33",
+      "finding_id": "finding-harness-file-decomposition",
+      "id": "comment-harness-file-decomposition",
+      "intent": "finding",
+      "kind": "inline",
+      "suggested_fixes": [
+        "sf-harness-omp-module-split"
+      ]
+    },
+    {
+      "anchor": {
+        "end_line": 135,
+        "kind": "inline",
+        "path": "docs/evidence/omp-phase0-probe-receipt.v1.json",
+        "start_line": 133
+      },
+      "body": "This run (probe_ok:false, grep_success_count:0) is honestly retained rather than dropped, which is good -- but a one-line root-cause note here (or in docs/omp-substrate.md's bump procedure) would strengthen the Phase 0 reliability claim this receipt exists to support.",
+      "dedupe_key": "phase0-evidence-gap-receipt-133",
+      "finding_id": "finding-phase0-evidence-gap",
+      "id": "comment-phase0-evidence-gap",
+      "intent": "note",
+      "kind": "inline",
+      "suggested_fixes": []
+    }
+  ],
+  "context_capabilities": {
+    "diff": true,
+    "external_research": "forbid",
+    "local_runtime": false,
+    "remote_runtime": false,
+    "repo_base": true,
+    "repo_head": true
+  },
+  "errors": [],
+  "findings": [
+    {
+      "anchors": [
+        {
+          "end_line": 638,
+          "kind": "inline",
+          "path": "src/harness.rs",
+          "start_line": 593
+        },
+        {
+          "end_line": 5,
+          "kind": "inline",
+          "line": 5,
+          "path": "docs/omp-substrate.md",
+          "start_line": 5
+        }
+      ],
+      "category": "reliability",
+      "citations": [],
+      "confidence": 0.55,
+      "description": "src/harness.rs:593-638 (validate_omp_lifecycle) requires stdout to contain exactly one `type == \"agent_end\"` NDJSON event or the run fails closed before the artifact file is even read (called from src/harness.rs:290-295, ahead of the re-ask/validation loop). docs/omp-substrate.md:5 documents this as the contract: 'exactly one terminal agent_end'. But this exact master-prompt's own doctrine says 'You may dynamically launch subagents if the selected substrate supports doing so and it improves the review' -- a capability this diff's Phase 0 work is explicitly trying to prove out for OMP. The Phase 0 evidence receipt this diff adds (docs/evidence/omp-phase0-probe-receipt.v1.json) only exercises a single grep-tool-using prompt in every one of its 11 recorded runs (session_count:1, terminal_count:1 throughout) -- none of them launch a subagent. If OMP's `--mode json` stream emits a distinct top-level `agent_end` per subagent turn (plausible, since subagents in most agent harnesses complete their own lifecycle), every live OMP review that actually uses the subagent capability this diff is meant to unlock would hard-fail validate_omp_lifecycle before ever reaching artifact validation -- silently disabling the exact multi-lane review feature the doctrine offers for this substrate.",
+      "evidence": "src/harness.rs lines 593-638 (agent_end_events.len() != 1 check) and lines 290-295 (called before artifact read); docs/omp-substrate.md line 5 documents the same 'exactly one terminal agent_end' contract; docs/evidence/omp-phase0-probe-receipt.v1.json shows every recorded run has session_count:1/terminal_count:1 from a single grep-only prompt, none exercising subagent dispatch.",
+      "id": "finding-omp-agent-end-cardinality",
+      "severity": "major",
+      "suggested_fixes": [
+        "sf-omp-subagent-probe-gate"
+      ],
+      "title": "validate_omp_lifecycle's exactly-one-agent_end gate is untested against subagent-launching OMP runs"
+    },
+    {
+      "anchors": [
+        {
+          "end_line": 42,
+          "kind": "inline",
+          "path": "src/harness.rs",
+          "start_line": 33
+        },
+        {
+          "end_line": 638,
+          "kind": "inline",
+          "path": "src/harness.rs",
+          "start_line": 593
+        }
+      ],
+      "category": "maintainability",
+      "citations": [],
+      "confidence": 0.9,
+      "description": "origin/master's src/harness.rs was 2065 lines before this diff -- already roughly double the repo's own '~1000 lines is a decomposition smell' bar -- and this diff adds the OMP config-overlay write (src/harness.rs:200-205), the `--mode json`/`--config` argv construction (src/harness.rs:551-580), the new validate_omp_lifecycle function (src/harness.rs:593-638), and the generalized verify_substrate_version_pin/read_substrate_version_pin/parse_version_token (src/harness.rs:640-729), plus roughly 180 lines of new dedicated tests, landing the file at 2349 lines. The file already mixed fixture/opencode/omp command-building, version pinning, workspace preparation, runtime probes, and low-level process execution before this change; the diff adds a fourth OMP-specific concern (lifecycle validation) to the pile rather than extracting it. docs/plans/productization-2026-07-17.md's own Phase 1 plan intends to add more substrate/seat-specific logic to this same runner soon, which will make the eventual extraction strictly harder the longer it's deferred.",
+      "evidence": "wc -l shows origin/master's src/harness.rs at 2065 lines vs this diff's 2349 lines (net +284, matching the diff stat's +303/-19); new OMP-specific code lives at src/harness.rs:200-205, 551-580, 593-638, 640-729 inside the same file as run_fixture_substrate, run_command_substrate, RunWorkspace, and the runtime-probe machinery.",
+      "id": "finding-harness-file-decomposition",
+      "severity": "major",
+      "suggested_fixes": [
+        "sf-harness-omp-module-split"
+      ],
+      "title": "harness.rs (already 2065 lines pre-diff) grows another ~284 lines without decomposition"
+    },
+    {
+      "anchors": [
+        {
+          "end_line": 140,
+          "kind": "inline",
+          "path": "docs/evidence/omp-phase0-probe-receipt.v1.json",
+          "start_line": 121
+        },
+        {
+          "end_line": 17,
+          "kind": "inline",
+          "line": 17,
+          "path": "docs/omp-substrate.md",
+          "start_line": 17
+        }
+      ],
+      "category": "process",
+      "citations": [],
+      "confidence": 0.85,
+      "description": "docs/evidence/omp-phase0-probe-receipt.v1.json lines 121-140 record run_dir 'cerberus-phase0-env-clear-1-irub1mmf' with probe_ok:false, grep_success_count:0, passed:false, while the other 5 env-clear runs (lines 141 onward) all pass -- meeting the receipt's own 'at_least_five_pass' bar at 5-of-6, not 5-of-5. This is transparently retained rather than hidden or overwritten, which is good practice, but neither the receipt nor docs/omp-substrate.md's bump procedure (line 17, 'Run at least five ... env-cleared ... probes') nor docs/plans/productization-2026-07-17.md narrates what caused the isolated grep-tool failure on that run, or whether it is expected transient flakiness under the fresh env-cleared XDG state this diff specifically hardens for (the OMP_REVIEW_CONFIG_OVERLAY comment at src/harness.rs:36-40 references exactly this class of fresh-XDG instability). Since Phase 0's stated purpose is retiring OMP's unsupervised-reliability risk, a single-scenario ~17% failure rate in the evidence meant to retire that risk deserves a one-line explanation or an explicit 'N/6 acceptable, here is why' note rather than silent retry-until-five.",
+      "evidence": "docs/evidence/omp-phase0-probe-receipt.v1.json lines 121-140 (probe_ok:false run) versus lines 141-160 (retried, passing run with the same 'env-clear-1' label); docs/omp-substrate.md line 17 states the bump procedure's 'at least five' bar without qualifying that fewer than 100% of attempts may need to pass.",
+      "id": "finding-phase0-evidence-gap",
+      "severity": "minor",
+      "suggested_fixes": [],
+      "title": "Phase 0 env-clear evidence records one probe_ok:false run with no root-cause note"
+    }
+  ],
+  "lifecycle_state": "completed",
+  "receipts": [
+    {
+      "harness": "opencode",
+      "id": "receipt-master",
+      "model": "claude-sonnet-5",
+      "provider": "anthropic",
+      "role": "master",
+      "status": "completed",
+      "summary": "Inspected the full diff body plus direct checkout reads of every changed file: src/harness.rs (run_command_substrate end-to-end at lines 156-352, command_for_substrate at 520-582, validate_omp_lifecycle at 593-638, verify_substrate_version_pin/read_substrate_version_pin/parse_version_token at 640-729, opencode_reask_args/CommandInput/redact_prompt_path/version-probe env handling, and the new test bodies under mod tests), fixtures/bin/fake-omp (full file, including the new --version branch and the appended agent_end NDJSON line), docs/omp-substrate.md (full), config/omp-version.json (full), docs/evidence/omp-phase0-probe-receipt.v1.json (direct/env-clear run arrays including the one probe_ok:false entry), and OPERATOR-CHARTER-2026-07-17.md (spot-checked against the request's embedded diff body). Cross-checked against origin/master (repo_base) for src/harness.rs's pre-diff line count (2065) and pre-diff verify_opencode_version_pin/parse_version_token shape, and grepped src/main.rs to confirm HarnessKind::Opencode remains the CLI default (consistent with the charter's 'flip default only when OMP earns it' intent and ADR 0002). No cargo build/test/clippy was run (local_runtime=false, per policy); no live OMP execution occurred. Verdict WARN: no red-line or correctness violation found, but two major reliability/structural findings and one minor evidence-rigor finding are outstanding.",
+      "verdict": "WARN"
+    }
+  ],
+  "request_digest": "sha256:835e3880076dfc7e1ce00f08bac01bf545cfbbe92c92ce3de009813edf73e9de",
+  "request_id": "phase0-omp-live-20260717b",
+  "run": {
+    "config_digest": "sha256:prompt-only",
+    "coverage": {
+      "files_reviewed": [
+        "OPERATOR-CHARTER-2026-07-17.md",
+        "config/omp-version.json",
+        "docs/evidence/omp-phase0-probe-receipt.v1.json",
+        "docs/omp-substrate.md",
+        "docs/plans/productization-2026-07-17.md",
+        "fixtures/bin/fake-omp",
+        "src/harness.rs"
+      ],
+      "files_with_findings": [
+        "src/harness.rs",
+        "docs/evidence/omp-phase0-probe-receipt.v1.json"
+      ]
+    },
+    "duration_ms": 0,
+    "engine_version": "cerberus-opencode",
+    "finished_at": "0",
+    "started_at": "0"
+  },
+  "schema_version": "cerberus.review_artifact.v1",
+  "suggested_fixes": [
+    {
+      "applicability": "needs_review",
+      "diff": "Before flipping any default toward OMP (or otherwise relying on it in unattended production), add a Phase 0 probe scenario that has the reviewer actually dispatch at least one subagent under `--mode json`, and inspect the resulting NDJSON for how many `agent_end` (or equivalent nested-lifecycle) events appear. If subagents produce additional top-level `agent_end` events, change validate_omp_lifecycle (src/harness.rs:593-638) to key on the *last* agent_end (or another substrate-documented top-level/nesting marker) rather than requiring the count to equal exactly one, and add a fixture/unit test exercising that multi-event shape alongside the existing single-event tests.",
+      "edits": [],
+      "finding_id": "finding-omp-agent-end-cardinality",
+      "format": "instructions",
+      "id": "sf-omp-subagent-probe-gate"
+    },
+    {
+      "applicability": "needs_review",
+      "diff": "Extract the OMP-specific pieces of src/harness.rs -- the config-overlay write (~200-205), the `--mode json`/`--config` argv construction in command_for_substrate's Omp arm (~551-580), validate_omp_lifecycle (~593-638), and the now-generalized verify_substrate_version_pin/read_substrate_version_pin/parse_version_token (~640-729, which OpenCode also needs) -- into a new src/harness/omp.rs (or src/harness/version_pin.rs for the shared pin logic), re-exporting only what run_command_substrate/command_for_substrate call. Move the matching unit tests alongside their functions. This keeps harness.rs focused on the substrate-agnostic run/workspace/process-execution orchestration and gives Phase 1's planned additional substrate/seat logic a place to land that isn't this same file.",
+      "edits": [],
+      "finding_id": "finding-harness-file-decomposition",
+      "format": "instructions",
+      "id": "sf-harness-omp-module-split"
+    }
+  ],
+  "summary": {
+    "analysis": "Two structural/reliability concerns keep this from a clean PASS. First, `validate_omp_lifecycle` (src/harness.rs:593-638) hard-fails unless stdout contains exactly one `agent_end` event -- but this review's own master-prompt doctrine explicitly permits the master reviewer to dynamically launch subagents when the substrate supports it, and the Phase 0 evidence receipt (docs/evidence/omp-phase0-probe-receipt.v1.json) only exercises a single grep-tool prompt, never a subagent-launching one. There is no evidence in this diff that OMP's NDJSON stream still emits exactly one top-level `agent_end` when the reviewer dispatches subagents; if it emits one per subagent, every live OMP review that uses subagents fails this new gate before the artifact is even read. Second, `src/harness.rs` was already 2065 lines pre-diff (roughly double the repo's own ~1000-line structural bar) and this diff adds ~284 more net lines of OMP-substrate-specific logic (config overlay write, argv construction, lifecycle validation, generalized version-pin check, plus their tests) into the same file that already owns fixture/opencode/omp/version-pinning/workspace/runtime-probe/process-execution concerns -- with the productization plan itself (Phase 1) intending to add more substrate/seat logic here soon. Third, the Phase 0 evidence receipt itself records one `probe_ok:false` env-clear run (5-of-6 passing) with no root-cause note, which is a minor rigor gap in the exact evidence meant to retire OMP's unsupervised-reliability risk. None of these are correctness bugs in the code as tested (fake-omp fixture, argv assertions, and the five new `validate_omp_lifecycle` unit tests all check out by hand-tracing), and none touch the AGENTS.md red lines.",
+    "body": "This diff (a) adds a real OMP CLI version pin check (generalized from the existing OpenCode one), (b) writes a private per-run `--config` overlay to keep env-cleared OMP runs from hitting fastembed/onnxruntime downloads or retry/model-fallback surprises, (c) switches OMP invocation to `-p --mode json`, and (d) adds `validate_omp_lifecycle`, a fail-closed NDJSON parser that requires exactly one terminal `agent_end` event with a non-error/non-aborted final assistant `stopReason` before the emitted artifact file is ever read -- because a live probe showed `omp` can exit 0 even when the model's own turn errored. It also lands the operator charter, the Phase 0 productization plan, and a redacted evidence receipt as new docs. No red-line rule (static reviewer roster, argv secrets, ambient credentials, spec.md governance) is touched or violated: prompt/diff/config content stays out of argv (new `redact_prompt_path` case + matching test), `env_clear()` plus explicit allowlists are used throughout including the new version-probe subprocess, and the diff neither edits `spec.md`/`VISION.md`/`AGENTS.md` nor hardcodes a reviewer roster in Rust. The generalized `verify_substrate_version_pin`/`parse_version_token` refactor is a genuine duplication removal (single implementation now serves OpenCode and OMP) and is well covered by new unit tests whose expected argv/error-string assertions I traced by hand and found internally consistent.",
+    "residual_risk": [
+      "local_runtime is false: no cargo build/test/clippy was run against this diff; all conclusions rest on static reading of src/harness.rs, fixtures/bin/fake-omp, docs/omp-substrate.md, config/omp-version.json, docs/evidence/omp-phase0-probe-receipt.v1.json, OPERATOR-CHARTER-2026-07-17.md, and a targeted grep of src/main.rs -- not on a compiled or executed verification of validate_omp_lifecycle, verify_substrate_version_pin, or the new test assertions.",
+      "OMP's real NDJSON schema for subagent-launching runs is unverified (external_research is forbidden and no live OMP execution is available in this review); the single-agent_end assumption in validate_omp_lifecycle is untested against that path -- see finding-omp-agent-end-cardinality.",
+      "repo_base (origin/master) was consulted only to confirm src/harness.rs's pre-diff line count (2065) and the pre-diff shape of verify_opencode_version_pin/parse_version_token/main.rs's default harness; it was not exhaustively re-reviewed file-by-file for regressions outside the changed surface.",
+      "docs/plans/productization-2026-07-17.md and OPERATOR-CHARTER-2026-07-17.md were read for consistency with AGENTS.md/ADR 0002 (confirmed OpenCode remains the CLI default per src/main.rs's HarnessKind::Opencode default) but were not cross-checked line-by-line against every referenced Powder card or external artifact URL, several of which are local filesystem paths this review has no access to."
+    ],
+    "title": "OMP `--mode json` lifecycle hardening is sound but rests on an unverified single-agent_end assumption, and keeps growing an already-oversized harness.rs"
+  },
+  "verdict": "WARN"
+}

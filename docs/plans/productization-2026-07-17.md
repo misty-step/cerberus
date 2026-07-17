@@ -118,6 +118,8 @@ NO-GO: attach the failing transcript to `cerberus-042` and escalate the failed p
 
 ### Change
 
+- First extract OMP command/lifecycle logic and shared substrate version-pin logic from the oversized `src/harness.rs` into focused modules, with no behavior change and the Phase 0 live/fixture gates held green. Do this before adding seat execution.
+
 - Deterministically classify Tier 0/1/2 from the frozen diff and policy.
 - Load the four Tier 1 seats from trusted declarative policy/profile data. Let the master add, never subtract, risk-triggered lanes.
 - Carry the mandatory Factory dimension — heuristic where a model belongs, and model where deterministic code belongs — in trusted seat/prompt and receipt vocabulary.

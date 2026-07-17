@@ -131,6 +131,11 @@
         "lifecycle_sha256": "647cea9ea49d5eece95da4270626460d04b63b83eb0c4fd0188225ea95de76ea",
         "passed": false,
         "probe_ok": false,
+        "failure": {
+          "class": "probe-path",
+          "detail": "The grep tool resolved the relative charter path against the per-run temp directory instead of the requested repository cwd. OMP still emitted one clean agent_end with stopReason=stop; the probe failed because its tool result was an error.",
+          "lifecycle_clean": true
+        },
         "returncode": 0,
         "run_dir": "cerberus-phase0-env-clear-1-irub1mmf",
         "session_count": 1,
@@ -240,6 +245,30 @@
       }
     ],
     "total_runs": 6
+  },
+  "subagent_probe": {
+    "agent_end_count": 1,
+    "event_count": 76,
+    "event_types": {
+      "agent_end": 1,
+      "agent_start": 1,
+      "message_end": 7,
+      "message_start": 7,
+      "message_update": 44,
+      "notice": 1,
+      "session": 1,
+      "thinking_level_changed": 1,
+      "tool_execution_end": 2,
+      "tool_execution_start": 2,
+      "tool_execution_update": 3,
+      "turn_end": 3,
+      "turn_start": 3
+    },
+    "final_stop_reason": "stop",
+    "lifecycle_sha256": "8ecdc32339ecbce85666498129ec5e69d96d8661a8e7c8c68c4db7f473c8de18",
+    "probe_ok": true,
+    "returncode": 0,
+    "stderr_empty": true
   },
   "model": "anthropic/claude-sonnet-5",
   "passed": true,
