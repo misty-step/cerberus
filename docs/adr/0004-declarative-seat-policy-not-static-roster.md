@@ -24,11 +24,11 @@ Three governing documents already lock a conflicting-looking rule:
   (correctness/security/QA/...) into product code," and `VISION.md:88`: "No
   hardcoded reviewer personas in Rust. Reviewer topology is a runtime
   decision, never product architecture."
-- `spec.md:21-25`: "Cerberus has no predefined correctness, security,
+- `spec.md:21-26`: "Cerberus has no predefined correctness, security,
   architecture, QA, or research subagents. The master reviewer decides at
   runtime whether to launch substrate subagents, how many to launch, what
   perspectives matter... The Rust application validates capabilities and
-  artifacts; it does not freeze reviewer topology into product code."
+  artifacts; it does not freeze reviewer topology into product architecture."
 
 A charter that requires four mandatory seats and a spec that forbids a fixed
 reviewer roster are not actually incompatible once the mechanism spec.md
@@ -102,7 +102,7 @@ implementation still needs its own ADR per `AGENTS.md`'s red line 4.
 - Powder `cerberus-043`'s "meaningful diffs execute four schema-bound Tier 1
   seats; deterministic Tier 0 executes none; risk classifier adds required
   seats" criterion is implementable without violating `AGENTS.md` red line 1,
-  `VISION.md:21-28/88`, or `spec.md:21-25/224-228` — those rules forbid Rust
+  `VISION.md:21-28/88`, or `spec.md:21-26/224-228` — those rules forbid Rust
   from authoring reviewer *content*, not from enforcing a *coverage floor*
   over data the master still writes.
 - Seat policy data becomes a new trusted-input surface, alongside the
@@ -114,6 +114,16 @@ implementation still needs its own ADR per `AGENTS.md`'s red line 4.
   Correctness, ... }` to Rust source is doing exactly what this ADR and its
   three parent documents forbid — that is a design-review rejection, not a
   missing unit test (per `AGENTS.md`'s framing of red line 1).
+- **Named residual risk, not a settled non-issue:** a repo-committed,
+  version-controlled policy file naming four required roles is a much softer
+  form of the thing red line 1 forbids than a Rust enum is, but it is not
+  zero distance from it. The distinction this ADR relies on is narrow and
+  specific: the floor may name required *dimensions/roles* (what must be
+  covered) and *count*, never a specific persona identity, system prompt, or
+  fixed model. If a future seat-policy file starts encoding prompt text,
+  persona names, or per-role model pins, that is no longer policy data — it
+  is the forbidden roster wearing a YAML costume, and should be rejected in
+  design review exactly as a Rust enum would be.
 
 ## Alternatives Considered
 
