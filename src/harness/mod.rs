@@ -20,6 +20,10 @@ use crate::schema::{
 use crate::telemetry::{omp_telemetry, opencode_telemetry};
 use crate::validation::validate_artifact_for_request;
 
+mod omp;
+mod version_pin;
+pub use omp::OmpSubstrateConfig;
+
 /// Filename the review agent writes its `ReviewArtifact.v1` JSON to, inside the
 /// disposable review workspace (`--dir`). The harness reads it back and parses
 /// it; there is no transcript scraping.
@@ -30,16 +34,6 @@ pub(crate) const ARTIFACT_FILENAME: &str = "review-artifact.json";
 /// tokens. The loop is fail-closed: an artifact that never validates is an error.
 const MAX_REASK_RETRIES: usize = 2;
 const OPENCODE_PIN_PATH: &str = "config/opencode-version.json";
-const OMP_PIN_PATH: &str = "config/omp-version.json";
-
-/// Fixed private OMP review config overlay, passed via `--config` on every
-/// OMP run. Env-cleared fresh-XDG runs otherwise trigger unbounded
-/// fastembed/onnxruntime downloads and unwanted retry/model-fallback
-/// behavior; this exact shape (memory backend off, retry disabled, no model
-/// fallback) is the one proven stable across 5x live env-clear runs. See
-/// docs/plans/productization-2026-07-17.md Phase 0.
-const OMP_REVIEW_CONFIG_OVERLAY: &str =
-    "memory:\n  backend: off\nretry:\n  enabled: false\n  modelFallback: false\n";
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum HarnessKind {
@@ -59,12 +53,6 @@ pub struct OpenCodeSubstrateConfig {
     pub binary: String,
     pub attach: Option<String>,
     pub agent: Option<String>,
-    pub model: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct OmpSubstrateConfig {
-    pub binary: String,
     pub model: Option<String>,
 }
 
@@ -199,7 +187,7 @@ pub(crate) fn run_command_substrate(
     }
     let omp_config_path = temp.path().join("omp-review-config.yml");
     if matches!(substrate, CommandSubstrateConfig::Omp(_)) {
-        fs::write(&omp_config_path, OMP_REVIEW_CONFIG_OVERLAY)
+        fs::write(&omp_config_path, omp::OMP_REVIEW_CONFIG_OVERLAY)
             .context("write private omp review config overlay")?;
         set_private_permissions(&omp_config_path)?;
     }
@@ -222,7 +210,7 @@ pub(crate) fn run_command_substrate(
     let executable = resolve_executable_in(&binary, &trusted_search_path)?;
     match substrate {
         CommandSubstrateConfig::Opencode(_) => {
-            verify_substrate_version_pin(
+            version_pin::verify_substrate_version_pin(
                 &executable,
                 Path::new(OPENCODE_PIN_PATH),
                 "OpenCode",
@@ -230,9 +218,9 @@ pub(crate) fn run_command_substrate(
             )?;
         }
         CommandSubstrateConfig::Omp(_) => {
-            verify_substrate_version_pin(
+            version_pin::verify_substrate_version_pin(
                 &executable,
-                Path::new(OMP_PIN_PATH),
+                Path::new(omp::OMP_PIN_PATH),
                 "OMP",
                 &trusted_search_path,
             )?;
@@ -304,7 +292,7 @@ pub(crate) fn run_command_substrate(
     // this substrate. Fail closed on the NDJSON lifecycle before ever
     // touching the emitted artifact file.
     if matches!(substrate, CommandSubstrateConfig::Omp(_)) {
-        if let Err(err) = validate_omp_lifecycle(&output.stdout) {
+        if let Err(err) = omp::validate_lifecycle(&output.stdout) {
             write_failure_transcript(failure_transcript, &transcript)?;
             return Err(err);
         }
@@ -564,184 +552,8 @@ fn command_for_substrate(
                 "private request file attachment plus argv instructions",
             ))
         }
-        CommandSubstrateConfig::Omp(config) => {
-            // v17.0.2 single-shot headless contract: `-p --mode json` plus every
-            // isolation flag, a trusted cwd, and exactly one private prompt
-            // reference in argv (never raw prompt/diff content). See
-            // docs/plans/productization-2026-07-17.md Phase 0.
-            let mut args = vec![
-                "-p".to_string(),
-                "--mode".to_string(),
-                "json".to_string(),
-                "--no-session".to_string(),
-                "--no-pty".to_string(),
-                "--no-extensions".to_string(),
-                "--no-skills".to_string(),
-                "--no-rules".to_string(),
-                "--cwd".to_string(),
-                input.cwd.display().to_string(),
-                // Private repeatable --config overlay proven to avoid
-                // fastembed/onnxruntime downloads and retry/model-fallback
-                // surprises on fresh env-cleared XDG state. See
-                // OMP_REVIEW_CONFIG_OVERLAY.
-                "--config".to_string(),
-                input.omp_config_path.display().to_string(),
-            ];
-            if let Some(model) = &config.model {
-                args.push("--model".to_string());
-                args.push(model.clone());
-            }
-            args.push(format!("@{}", input.prompt_path.display()));
-            Ok((config.binary.clone(), args, "omp", "private prompt file"))
-        }
+        CommandSubstrateConfig::Omp(config) => omp::command_args(config, input),
     }
-}
-
-/// Fail-closed check over an OMP `--mode json` run's raw stdout. Process exit
-/// status is not trustworthy for this substrate: a live probe showed `omp`
-/// exits 0 even when the model's own final message stopped with an error or
-/// was aborted. Parses every non-empty line as one NDJSON event, requires
-/// exactly one terminal `type == "agent_end"` event, requires that event to
-/// carry at least one `role == "assistant"` message, and rejects a final
-/// assistant `stopReason` of `error` or `aborted`. OMP emits many other
-/// event types along the way; those are intentionally not enumerated here --
-/// only `agent_end` is meaningful to this gate.
-fn validate_omp_lifecycle(stdout: &[u8]) -> Result<()> {
-    let text = String::from_utf8_lossy(stdout);
-    let mut agent_end_events: Vec<Value> = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let event: Value = serde_json::from_str(trimmed).with_context(|| {
-            format!("omp stdout line {} is not valid JSON: {trimmed}", index + 1)
-        })?;
-        if event.get("type").and_then(Value::as_str) == Some("agent_end") {
-            agent_end_events.push(event);
-        }
-    }
-    if agent_end_events.len() != 1 {
-        return Err(anyhow!(
-            "omp lifecycle invalid: expected exactly one agent_end event, observed {}",
-            agent_end_events.len()
-        ));
-    }
-    let terminal = &agent_end_events[0];
-    let messages = terminal
-        .get("messages")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("omp lifecycle invalid: agent_end event has no messages array"))?;
-    let final_assistant = messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
-        .ok_or_else(|| {
-            anyhow!("omp lifecycle invalid: agent_end event contains no assistant message")
-        })?;
-    let stop_reason = final_assistant
-        .get("stopReason")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            anyhow!("omp lifecycle invalid: final assistant message has no stopReason")
-        })?;
-    if stop_reason == "error" || stop_reason == "aborted" {
-        return Err(anyhow!(
-            "omp lifecycle invalid: final assistant stopReason was \"{stop_reason}\""
-        ));
-    }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-struct SubstrateVersionPin {
-    version: String,
-    install: String,
-    bump_procedure: String,
-}
-
-fn verify_substrate_version_pin(
-    executable: &Path,
-    pin_path: &Path,
-    substrate_name: &str,
-    trusted_search_path: &[PathBuf],
-) -> Result<()> {
-    let pin = read_substrate_version_pin(pin_path, substrate_name)?;
-    let output = Command::new(executable)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .env_clear()
-        .env("PATH", join_search_path(trusted_search_path))
-        .output()
-        .with_context(|| {
-            format!(
-                "probe {substrate_name} version with {} --version",
-                executable.display()
-            )
-        })?;
-    if !output.status.success() {
-        return Err(anyhow!(
-            "{substrate_name} version pin check failed: {} --version exited with {}; expected {} from {}. Install the pin with `{}` or follow {}.",
-            executable.display(),
-            output.status,
-            pin.version,
-            pin_path.display(),
-            pin.install,
-            pin.bump_procedure
-        ));
-    }
-    let observed = parse_version_token(&output.stdout)
-        .or_else(|| parse_version_token(&output.stderr))
-        .ok_or_else(|| {
-            anyhow!(
-                "{substrate_name} version pin check failed: {} --version did not print a parseable version; expected {} from {}. Follow {} before running live reviews.",
-                executable.display(),
-                pin.version,
-                pin_path.display(),
-                pin.bump_procedure
-            )
-        })?;
-    if observed != pin.version {
-        return Err(anyhow!(
-            "{substrate_name} version drift: expected {} from {}, but {} reported {}. Install the pin with `{}` or update the pin via {} before running live reviews.",
-            pin.version,
-            pin_path.display(),
-            executable.display(),
-            observed,
-            pin.install,
-            pin.bump_procedure
-        ));
-    }
-    Ok(())
-}
-
-fn read_substrate_version_pin(path: &Path, substrate_name: &str) -> Result<SubstrateVersionPin> {
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("read {substrate_name} version pin {}", path.display()))?;
-    serde_json::from_str(&raw)
-        .with_context(|| format!("parse {substrate_name} version pin {}", path.display()))
-}
-
-fn parse_version_token(bytes: &[u8]) -> Option<String> {
-    String::from_utf8_lossy(bytes)
-        .split_whitespace()
-        .filter_map(|raw| {
-            let token = raw.rsplit('/').next().unwrap_or(raw);
-            let token = token.strip_prefix('v').unwrap_or(token);
-            let mut parts = token.split('.');
-            let valid = matches!(
-                (parts.next(), parts.next(), parts.next()),
-                (Some(major), Some(minor), Some(patch))
-                    if major.chars().all(|c| c.is_ascii_digit())
-                        && minor.chars().all(|c| c.is_ascii_digit())
-                        && patch
-                            .chars()
-                            .take_while(|c| *c != '-' && *c != '+')
-                            .all(|c| c.is_ascii_digit())
-            );
-            valid.then(|| token.to_string())
-        })
-        .next()
 }
 
 fn request_with_workspace_paths(
@@ -2263,52 +2075,6 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--config", "/tmp/cerberus-test/omp-review-config.yml"]));
-    }
-
-    #[test]
-    fn omp_lifecycle_accepts_clean_terminal_stop() {
-        let stdout = br#"{"type":"agent_end","messages":[{"role":"assistant","content":[{"type":"text","text":"ok"}],"stopReason":"stop"}]}"#;
-        assert!(validate_omp_lifecycle(stdout).is_ok());
-    }
-
-    #[test]
-    fn omp_lifecycle_rejects_model_error_stop_reason() {
-        let stdout = br#"{"type":"agent_end","messages":[{"role":"assistant","content":[],"provider":"zai","stopReason":"error","errorStatus":429}]}"#;
-        let err = validate_omp_lifecycle(stdout).unwrap_err();
-        assert!(err.to_string().contains("stopReason"));
-    }
-
-    #[test]
-    fn omp_lifecycle_rejects_missing_terminal_agent_end() {
-        let stdout = br#"{"type":"tool_call","name":"grep"}
-{"type":"tool_result","ok":true}"#;
-        let err = validate_omp_lifecycle(stdout).unwrap_err();
-        assert!(err.to_string().contains("agent_end"));
-    }
-
-    #[test]
-    fn omp_lifecycle_rejects_malformed_json_line() {
-        let stdout = b"{not json}\n{\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"stop\"}]}";
-        let err = validate_omp_lifecycle(stdout).unwrap_err();
-        assert!(err.to_string().contains("not valid JSON"));
-    }
-
-    #[test]
-    fn omp_lifecycle_ignores_unenumerated_nonterminal_event_types_and_blank_lines() {
-        let stdout = b"{\"type\":\"tool_call\",\"name\":\"grep\"}\n\n{\"type\":\"some_future_event_kind\",\"foo\":1}\n{\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"stop\"}]}\n";
-        assert!(validate_omp_lifecycle(stdout).is_ok());
-    }
-
-    #[test]
-    fn version_token_accepts_plain_and_slash_prefixed_versions() {
-        assert_eq!(
-            parse_version_token(b"opencode 1.2.6\n"),
-            Some("1.2.6".to_string())
-        );
-        assert_eq!(
-            parse_version_token(b"omp/17.0.2\n"),
-            Some("17.0.2".to_string())
-        );
     }
 
     #[test]
