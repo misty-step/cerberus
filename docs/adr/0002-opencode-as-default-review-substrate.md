@@ -93,3 +93,36 @@ the review contract and harness boundary first.
 - Cerberus needs capabilities that cannot fit behind the common
   `ReviewHarness` contract without making OpenCode-specific assumptions leak
   into public request or artifact schemas.
+
+## Guard for a Future Default Flip (added 2026-07-17)
+
+`OPERATOR-CHARTER-2026-07-17.md` puts OMP back in scope as a first-class,
+subscription-backed local runtime path, alongside a local control plane this
+ADR did not originally anticipate. This section does not flip the default —
+`--harness opencode` remains it — it names the exact bar a future superseding
+ADR must clear before it can.
+
+Phase 0 (`docs/evidence/omp-phase0-2026-07-17.md`,
+`docs/plans/productization-2026-07-17.md`) already closed the reliability gap
+that motivated this ADR's original OMP hesitation: OMP v17.0.2 now has a
+pinned, fail-closed, `--mode json` headless path with repeated live lifecycle
+proof and one request-bound `ReviewArtifact.v1` from the exact public
+Cerberus entrypoint. That evidence answers "is OMP headless reliable," not
+"should OMP be the default."
+
+A future ADR may supersede this one and flip the default only when all of
+the following hold, each with its own dated evidence, not narrative claims:
+
+1. Phase 1's mandatory-seat, identity-validation, and subscription-first
+   policy (ADR 0004) is implemented and live-proven under OMP, not only
+   fixture-proven.
+2. OpenCode's fallback path is proven viable under the same subscription-
+   first/OpenRouter-denied-by-default policy — a fallback that only works
+   through the policy exception it exists to guard against is not a real
+   fallback.
+3. `spec.md` and `VISION.md` are revised in the same PR as the superseding
+   ADR, per `AGENTS.md` red line 4 — this ADR's own "Substrate order for
+   Cerberus" language in `spec.md` is locked contract, not this file alone.
+4. The comparison in "Alternatives Considered" above (durable sessions,
+   structured events, retries, fleet operation) is re-run against OMP's
+   actual Phase 1 control-plane surface, not its Phase 0 headless-only shape.
