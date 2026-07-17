@@ -44,7 +44,7 @@
         "start_line": 133
       },
       "body": "This run (probe_ok:false, grep_success_count:0) is honestly retained rather than dropped, which is good -- but a one-line root-cause note here (or in docs/omp-substrate.md's bump procedure) would strengthen the Phase 0 reliability claim this receipt exists to support.",
-      "dedupe_key": "phase0-evidence-gap-receipt-133",
+      "dedupe_key": null,
       "finding_id": "finding-phase0-evidence-gap",
       "id": "comment-phase0-evidence-gap",
       "intent": "note",
