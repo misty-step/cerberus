@@ -283,6 +283,22 @@ pub(crate) fn run_command_substrate(
     let mut transcript = runtime_probe_transcript(&runtime_receipts);
     append_attempt_transcript(&mut transcript, "initial", None, &output);
 
+    // A timed-out OMP run necessarily has an incomplete lifecycle. Report the
+    // root cause before the stricter NDJSON gate turns it into a misleading
+    // "missing agent_end" diagnostic. OpenCode initial attempts benefit from
+    // the same early, unambiguous failure; re-ask timeouts remain handled in
+    // the validation loop below.
+    if output.status == "timeout" {
+        write_failure_transcript(failure_transcript, &transcript)?;
+        let transcript_hint = failure_transcript
+            .map(|path| format!("; transcript: {}", path.display()))
+            .unwrap_or_default();
+        return Err(anyhow!(
+            "{plan_harness} harness timed out after {}ms before completing the substrate lifecycle{transcript_hint}",
+            output.elapsed_ms
+        ));
+    }
+
     // `omp --mode json` exits 0 even when the final model message itself
     // errored or aborted -- process exit status alone cannot be trusted for
     // this substrate. Fail closed on the NDJSON lifecycle before ever

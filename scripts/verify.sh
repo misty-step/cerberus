@@ -557,6 +557,22 @@ GH_TOKEN=should-not-leak cargo run --locked -- review \
   --transcript target/cerberus/omp-transcript.txt \
   --receipt-bundle target/cerberus/receipts/omp.json
 
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness omp \
+  --omp-binary "$PWD/fixtures/bin/fake-omp-timeout" \
+  --timeout-seconds 1 \
+  --out target/cerberus/omp-timeout-artifact.json \
+  2> target/cerberus/omp-timeout.stderr; then
+  echo "timed-out OMP fixture unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q 'omp harness timed out after' target/cerberus/omp-timeout.stderr
+if grep -q 'missing agent_end\|expected exactly one agent_end' target/cerberus/omp-timeout.stderr; then
+  echo "timed-out OMP fixture was misreported as a lifecycle cardinality failure" >&2
+  exit 1
+fi
+
 fake_gh="$PWD/fixtures/bin/fake-gh"
 fake_gh_state="target/cerberus/fake-gh-state"
 fake_gh_token="target/cerberus/fake-gh-token.txt"

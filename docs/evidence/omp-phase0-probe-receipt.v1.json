@@ -247,28 +247,61 @@
     "total_runs": 6
   },
   "subagent_probe": {
-    "agent_end_count": 1,
-    "event_count": 76,
-    "event_types": {
-      "agent_end": 1,
-      "agent_start": 1,
-      "message_end": 7,
-      "message_start": 7,
-      "message_update": 44,
-      "notice": 1,
-      "session": 1,
-      "thinking_level_changed": 1,
-      "tool_execution_end": 2,
-      "tool_execution_start": 2,
-      "tool_execution_update": 3,
-      "turn_end": 3,
-      "turn_start": 3
-    },
-    "final_stop_reason": "stop",
-    "lifecycle_sha256": "8ecdc32339ecbce85666498129ec5e69d96d8661a8e7c8c68c4db7f473c8de18",
-    "probe_ok": true,
-    "returncode": 0,
-    "stderr_empty": true
+    "all_one_top_level_agent_end": true,
+    "passing_runs": 5,
+    "runs": [
+      {
+        "agent_end_count": 1,
+        "event_count": 76,
+        "final_stop_reason": "stop",
+        "lifecycle_sha256": "8ecdc32339ecbce85666498129ec5e69d96d8661a8e7c8c68c4db7f473c8de18",
+        "probe_ok": true,
+        "returncode": 0,
+        "run": 1,
+        "stderr_empty": true
+      },
+      {
+        "agent_end_count": 1,
+        "event_count": 70,
+        "final_stop_reason": "stop",
+        "lifecycle_sha256": "c74ab510acab40e99088f80367cd07794200e67da8ecf7891bf1f6418949faa8",
+        "probe_ok": true,
+        "returncode": 0,
+        "run": 2,
+        "stderr_empty": true
+      },
+      {
+        "agent_end_count": 1,
+        "event_count": 76,
+        "final_stop_reason": "stop",
+        "lifecycle_sha256": "10cf1e96321d277f00d15da54e4b42adca44c23145f7a6fde4645f07f6ba89a1",
+        "probe_ok": true,
+        "returncode": 0,
+        "run": 3,
+        "stderr_empty": true
+      },
+      {
+        "agent_end_count": 1,
+        "event_count": 63,
+        "final_stop_reason": "stop",
+        "lifecycle_sha256": "013822687d3e92ba4cc03fc9ce1cafc240a20399b2a4c40d1821ec33ad37f36e",
+        "probe_ok": true,
+        "returncode": 0,
+        "run": 4,
+        "stderr_empty": true
+      },
+      {
+        "agent_end_count": 1,
+        "event_count": 69,
+        "final_stop_reason": "stop",
+        "lifecycle_sha256": "c0ef19b8ff6f1b731b98a936ea01e206b6d6fa6c5c2619c49a0c1e8f3cd48c34",
+        "probe_ok": true,
+        "returncode": 0,
+        "run": 5,
+        "stderr_empty": true
+      }
+    ],
+    "total_runs": 5
   },
   "model": "anthropic/claude-sonnet-5",
   "passed": true,
