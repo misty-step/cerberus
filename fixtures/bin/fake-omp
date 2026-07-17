@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1:-}" == "--version" ]]; then
+  echo "omp 17.0.2"
+  exit 0
+fi
+
 if [[ "${GH_TOKEN:-}" != "" ]]; then
   echo "GH_TOKEN leaked into fake-omp" >&2
   exit 64
@@ -58,3 +63,5 @@ sed \
   -e "s/{{artifact_id}}/artifact-fake-omp/g" \
   -e "s/{{now}}/0/g" \
   "$template" > "$workdir/review-artifact.json"
+
+printf '%s\n' '{"type":"agent_end","messages":[{"role":"assistant","content":[],"stopReason":"stop"}]}'
