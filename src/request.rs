@@ -533,7 +533,7 @@ fn apply_numstat(files: &mut [ChangedFile], stats: &BTreeMap<String, (Option<u32
     }
 }
 
-fn sanitize_id(value: &str) -> String {
+pub(crate) fn sanitize_id(value: &str) -> String {
     value
         .chars()
         .map(|ch| {

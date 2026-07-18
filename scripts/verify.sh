@@ -1043,8 +1043,20 @@ import json
 with open("target/cerberus/reviewer_plan.json", encoding="utf-8") as fh:
     plan = json.load(fh)
 assert plan["schema_version"] == "cerberus.reviewer_plan.v1"
-assert plan["lane_decision"]["mode"] == "single_master"
-assert len(plan["child_lanes"]) == 0
+# fixtures/requests/diff-only.json is a meaningful (Tier 1) diff, so the
+# seat-policy floor (ADR 0004) applies: the plan names one lane per
+# required floor seat, carries only its role label, and never assigns a
+# model -- the master reviewer decides prompt/scope/model per lane at
+# launch time (still disabled until the reviewer-lane substrate lands).
+assert plan["lane_decision"]["mode"] == "planned_child_lanes"
+assert len(plan["child_lanes"]) == 4
+assert all(lane.get("model") is None for lane in plan["child_lanes"])
+assert {lane["role"] for lane in plan["child_lanes"]} == {
+    "behavioral-correctness",
+    "security-and-trust-boundary",
+    "architecture-and-maintainability",
+    "deterministic-verification",
+}
 assert plan["master_lane"]["expected_output"] == "ReviewArtifact.v1"
 assert plan["diff_understanding"]["changed_surfaces"][0]["path"] == "src/ratio.rs"
 
