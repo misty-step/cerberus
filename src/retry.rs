@@ -40,9 +40,9 @@ pub enum RetryError<E: fmt::Debug + fmt::Display> {
     /// silently collapse required cross-family independence into a single
     /// family by retrying into it.
     #[error(
-        "refusing retry: it would reuse family {family:?}, the same family the first attempt used, which would collapse required family diversity"
+        "refusing retry: it would reuse family {family:?}, the same family the first attempt used, which would collapse required family diversity (first attempt failed with: {first})"
     )]
-    FamilyCollapse { family: String },
+    FamilyCollapse { family: String, first: E },
     /// Both the first attempt and the one bounded retry failed.
     #[error("bounded retry exhausted after one retry (first attempt: {first}; retry: {retry})")]
     Exhausted { first: E, retry: E },
@@ -76,6 +76,7 @@ where
             if require_family_diversity && retry_family == first_family {
                 return Err(RetryError::FamilyCollapse {
                     family: retry_family,
+                    first: first_err,
                 });
             }
             match work(RetryAttempt::Retry, &retry_family) {
@@ -150,7 +151,10 @@ mod tests {
             },
         );
         match result {
-            Err(RetryError::FamilyCollapse { family }) => assert_eq!(family, "family-a"),
+            Err(RetryError::FamilyCollapse { family, first }) => {
+                assert_eq!(family, "family-a");
+                assert_eq!(first, "transient failure");
+            }
             other => panic!("expected FamilyCollapse, got {other:?}"),
         }
         assert_eq!(
