@@ -10,6 +10,7 @@ use cerberus::harness::{
 };
 use cerberus::kernel::{ReviewKernel, ReviewRun, ReviewSubstrate, RunPolicy};
 use cerberus::openrouter_keys::{mint_review_key, ProvisioningClient, ScopedKeyGuard};
+use cerberus::openrouter_policy::{require_openrouter_policy_for_substrate, OpenRouterException};
 use cerberus::post::{build_post_plan, trusted_lifecycle, GithubClient, SummaryTarget};
 use cerberus::producer::{build_crucible_producer_manifest, CrucibleProducerManifestInput};
 use cerberus::receipt::{build_review_receipt_bundle, ReceiptBundleInput};
@@ -298,6 +299,21 @@ struct ScopedKeyArgs {
     openrouter_orphan_sweep_seconds: u64,
 }
 
+/// Explicit-source-only admission for the subscription-first, OpenRouter-
+/// denied-by-default trusted review policy (cerberus-051). No ambient flag
+/// or boolean escape hatch: an OpenRouter-routed model is admitted only when
+/// this names a file holding a reviewed, digested exception record whose
+/// scope covers the call site. See `cerberus::openrouter_policy`.
+#[derive(Debug, Args)]
+struct OpenRouterPolicyArgs {
+    /// Path to a reviewed, digested OpenRouter exception record (JSON;
+    /// `cerberus::openrouter_policy::OpenRouterException`) permitting this
+    /// review to route its resolved model through OpenRouter despite the
+    /// deny-by-default policy. Omit to run under the default deny.
+    #[arg(long)]
+    openrouter_exception_file: Option<PathBuf>,
+}
+
 /// Run a review from an existing `ReviewRequest.v1` file (built by `request`
 /// or `review-diff`, or hand-authored) and write a `ReviewArtifact.v1`.
 #[derive(Debug, Args)]
@@ -315,6 +331,8 @@ struct ReviewArgs {
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
+    #[command(flatten)]
+    openrouter_policy: OpenRouterPolicyArgs,
     /// Wall-clock budget for the review, in seconds. Defaults to the
     /// request's own `policy.timeout_ms`.
     #[arg(long)]
@@ -428,6 +446,8 @@ struct ReviewPrArgs {
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
+    #[command(flatten)]
+    openrouter_policy: OpenRouterPolicyArgs,
     /// Write a redacted ReviewReceiptBundle.v1 here instead of the default
     /// `<out-dir>/receipt-bundle.json`.
     #[arg(long)]
@@ -499,6 +519,8 @@ struct ReviewDiffArgs {
     substrate: SubstrateArgs,
     #[command(flatten)]
     scoped_key: ScopedKeyArgs,
+    #[command(flatten)]
+    openrouter_policy: OpenRouterPolicyArgs,
     /// Map the verdict to the process exit code: `none` (default) never
     /// blocks, `warn` blocks on WARN or FAIL, `fail` blocks only on FAIL. A
     /// blocking verdict exits 1; a Cerberus error (no valid artifact) always
@@ -664,6 +686,7 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         markdown,
         substrate,
         scoped_key,
+        openrouter_policy,
         timeout_seconds,
         execution_plan,
         transcript,
@@ -698,7 +721,8 @@ fn review(args: ReviewArgs) -> Result<ExitCode> {
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_millis(request.policy.timeout_ms));
     let substrate = review_substrate(substrate)?;
-    require_child_env_for_substrate(&request, &substrate)?;
+    let openrouter_exception = resolve_openrouter_exception(&openrouter_policy)?;
+    require_openrouter_policy_for_substrate(&request, &substrate, openrouter_exception.as_ref())?;
     for warning in credential_shaped_env_warnings(&request) {
         eprintln!("warning: {warning}");
     }
@@ -770,30 +794,17 @@ fn extend_review_allowed_env(request: &mut ReviewRequest, allowed_env: Vec<Strin
     }
 }
 
-fn require_child_env_for_substrate(
-    request: &ReviewRequest,
-    substrate: &ReviewSubstrate,
-) -> Result<()> {
-    let ReviewSubstrate::Opencode(config) = substrate else {
-        return Ok(());
-    };
-    let Some(model) = config.model.as_deref() else {
-        return Ok(());
-    };
-    if config.attach.is_some() || !model.starts_with("openrouter/") {
-        return Ok(());
-    }
-    if request
-        .policy
-        .allowed_env
-        .iter()
-        .any(|key| key == "OPENROUTER_API_KEY")
-    {
-        return Ok(());
-    }
-    Err(anyhow!(
-        "opencode OpenRouter model {model:?} requires OPENROUTER_API_KEY in Cerberus's scrubbed child environment; pass --allow-env OPENROUTER_API_KEY or include it in request.policy.allowed_env"
-    ))
+/// Resolve the CLI-level OpenRouter policy exception: `None` when
+/// `--openrouter-exception-file` was not passed (the default deny-by-default
+/// state), `Some` when the named file loads and self-verifies. See
+/// `cerberus::openrouter_policy::OpenRouterException::load`.
+fn resolve_openrouter_exception(
+    args: &OpenRouterPolicyArgs,
+) -> Result<Option<OpenRouterException>> {
+    args.openrouter_exception_file
+        .as_deref()
+        .map(OpenRouterException::load)
+        .transpose()
 }
 
 /// Backlog 013 M1: build the provisioning client when `--openrouter-scoped-key`
@@ -908,7 +919,8 @@ fn review_diff(args: ReviewDiffArgs) -> Result<ExitCode> {
         mint_scoped_openrouter_key(scoped_key_client.as_ref(), &mut request, &args.scoped_key)?;
     validate_request(&request)?;
     let substrate = review_substrate(args.substrate)?;
-    require_child_env_for_substrate(&request, &substrate)?;
+    let openrouter_exception = resolve_openrouter_exception(&args.openrouter_policy)?;
+    require_openrouter_policy_for_substrate(&request, &substrate, openrouter_exception.as_ref())?;
     for warning in credential_shaped_env_warnings(&request) {
         eprintln!("warning: {warning}");
     }
@@ -1000,7 +1012,8 @@ fn review_pr(args: ReviewPrArgs) -> Result<()> {
     ensure_pr_head_unchanged(number, &repo, &gh_binary, Some(&github_token), &head_sha)?;
 
     let substrate = review_substrate(args.substrate)?;
-    require_child_env_for_substrate(&request, &substrate)?;
+    let openrouter_exception = resolve_openrouter_exception(&args.openrouter_policy)?;
+    require_openrouter_policy_for_substrate(&request, &substrate, openrouter_exception.as_ref())?;
     for warning in credential_shaped_env_warnings(&request) {
         eprintln!("warning: {warning}");
     }
@@ -1430,6 +1443,7 @@ fn _assert_plan_is_serializable(plan: &ExecutionPlan) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cerberus::openrouter_policy::OpenRouterExceptionScope;
 
     const ALL_VERDICTS: [Verdict; 4] = [Verdict::Pass, Verdict::Warn, Verdict::Fail, Verdict::Skip];
 
@@ -1494,15 +1508,19 @@ mod tests {
             model: Some("openrouter/z-ai/glm-5.2".to_string()),
         });
 
-        let err = require_child_env_for_substrate(&request, &substrate).unwrap_err();
+        let err = require_openrouter_policy_for_substrate(&request, &substrate, None).unwrap_err();
         assert!(
             err.to_string().contains("--allow-env OPENROUTER_API_KEY"),
             "error should name the concrete fix: {err}"
         );
     }
 
+    // cerberus-051: the allowlisted credential alone used to be sufficient to
+    // run an OpenRouter model. The subscription-first deny-by-default policy
+    // now requires a covering exception on top of it -- this is the exact
+    // permissive gap cerberus-051 closes; see cerberus::openrouter_policy.
     #[test]
-    fn openrouter_model_with_allowed_key_passes_preflight() {
+    fn openrouter_model_with_allowed_key_is_still_denied_without_an_exception() {
         let request_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
         let mut request: ReviewRequest = read_json(&request_path).expect("fixture request loads");
@@ -1514,7 +1532,67 @@ mod tests {
             model: Some("openrouter/z-ai/glm-5.2".to_string()),
         });
 
-        require_child_env_for_substrate(&request, &substrate).unwrap();
+        let err = require_openrouter_policy_for_substrate(&request, &substrate, None).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("denied by the subscription-first trusted review policy"),
+            "an allowlisted credential must not bypass the deny-by-default policy: {err}"
+        );
+    }
+
+    fn default_openrouter_policy_args() -> OpenRouterPolicyArgs {
+        OpenRouterPolicyArgs {
+            openrouter_exception_file: None,
+        }
+    }
+
+    #[test]
+    fn resolve_openrouter_exception_is_none_when_flag_is_absent() {
+        let resolved =
+            resolve_openrouter_exception(&default_openrouter_policy_args()).expect("resolves");
+        assert!(
+            resolved.is_none(),
+            "no exception should be loaded unless --openrouter-exception-file is passed"
+        );
+    }
+
+    #[test]
+    fn resolve_openrouter_exception_loads_and_admits_the_checked_in_any_scope_fixture() {
+        let exception_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/openrouter-exceptions/any-scope.json");
+        let args = OpenRouterPolicyArgs {
+            openrouter_exception_file: Some(exception_path),
+        };
+        let exception = resolve_openrouter_exception(&args)
+            .expect("fixture exception resolves")
+            .expect("flag was set, so an exception must load");
+        assert_eq!(exception.scope, OpenRouterExceptionScope::Any);
+
+        let request_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/requests/diff-only.json");
+        let mut request: ReviewRequest = read_json(&request_path).expect("fixture request loads");
+        extend_review_allowed_env(&mut request, vec!["OPENROUTER_API_KEY".to_string()]);
+        let substrate = ReviewSubstrate::Omp(OmpSubstrateConfig {
+            binary: "omp".to_string(),
+            model: Some("openrouter/z-ai/glm-5.2".to_string()),
+        });
+
+        require_openrouter_policy_for_substrate(&request, &substrate, Some(&exception)).unwrap();
+    }
+
+    #[test]
+    fn resolve_openrouter_exception_rejects_a_tampered_checked_in_fixture() {
+        let exception_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/openrouter-exceptions/tampered.json");
+        let args = OpenRouterPolicyArgs {
+            openrouter_exception_file: Some(exception_path),
+        };
+        let err = resolve_openrouter_exception(&args).unwrap_err();
+        assert!(
+            err.chain()
+                .any(|cause| cause.to_string().contains("digest mismatch")),
+            "a hand-edited exception file must be refused: {err:#}"
+        );
     }
 
     // The ExitCode mapping (blocking -> 1, clean -> 0, error -> 2) is proven

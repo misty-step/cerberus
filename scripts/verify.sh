@@ -34,6 +34,7 @@ grep -q 'possible values: opencode, omp, fixture, container-opencode' target/cer
 grep -q -- '--receipt-bundle' target/cerberus-review-help.txt
 grep -q -- '--producer-manifest' target/cerberus-review-help.txt
 grep -q -- '--openrouter-scoped-key' target/cerberus-review-help.txt
+grep -q -- '--openrouter-exception-file' target/cerberus-review-help.txt
 grep -q -- '--openrouter-provisioning-key-file' target/cerberus-review-help.txt
 grep -q -- '--openrouter-provisioning-key-env' target/cerberus-review-help.txt
 grep -q -- '--openrouter-key-limit-usd' target/cerberus-review-help.txt
@@ -61,6 +62,7 @@ grep -q -- '--gh-token-file' target/cerberus-review-pr-help.txt
 grep -q -- '--gh-token-env' target/cerberus-review-pr-help.txt
 grep -q -- '--remote-event' target/cerberus-review-pr-help.txt
 grep -q -- '--openrouter-scoped-key' target/cerberus-review-pr-help.txt
+grep -q -- '--openrouter-exception-file' target/cerberus-review-pr-help.txt
 cargo run --locked -- mcp --help > target/cerberus-mcp-help.txt
 grep -q 'Run the Cerberus MCP server over stdio' target/cerberus-mcp-help.txt
 
@@ -210,6 +212,96 @@ if cargo run --locked -- review \
   exit 1
 fi
 grep -q 'exactly one explicit' target/cerberus/scoped-key-both-sources.stderr
+
+# cerberus-051: subscription-first / OpenRouter-denied-by-default trusted
+# review policy. The admission check runs immediately after the substrate is
+# resolved, before any substrate binary is invoked, so these scenarios exit
+# fast against the fake opencode/omp binaries with no live network call.
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --out target/cerberus/openrouter-policy-denied-artifact.json \
+  > target/cerberus/openrouter-policy-denied.stdout \
+  2> target/cerberus/openrouter-policy-denied.stderr; then
+  echo "expected an OpenRouter model without a reviewed exception to be denied" >&2
+  exit 1
+fi
+grep -q 'denied by the subscription-first trusted review policy' target/cerberus/openrouter-policy-denied.stderr
+grep -q -- '--openrouter-exception-file' target/cerberus/openrouter-policy-denied.stderr
+
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness omp \
+  --omp-binary "$PWD/fixtures/bin/fake-omp" \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --out target/cerberus/openrouter-policy-omp-denied-artifact.json \
+  > target/cerberus/openrouter-policy-omp-denied.stdout \
+  2> target/cerberus/openrouter-policy-omp-denied.stderr; then
+  echo "expected an OMP OpenRouter model without a reviewed exception to be denied" >&2
+  exit 1
+fi
+grep -q 'denied by the subscription-first trusted review policy' target/cerberus/openrouter-policy-omp-denied.stderr
+
+cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --openrouter-exception-file fixtures/openrouter-exceptions/any-scope.json \
+  --out target/cerberus/openrouter-policy-admitted-artifact.json \
+  --execution-plan target/cerberus/openrouter-policy-admitted-execution_plan.json \
+  --transcript target/cerberus/openrouter-policy-admitted-transcript.txt \
+  > target/cerberus/openrouter-policy-admitted.stdout \
+  2> target/cerberus/openrouter-policy-admitted.stderr
+test -s target/cerberus/openrouter-policy-admitted-artifact.json
+
+cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness opencode \
+  --opencode-binary "$PWD/fixtures/bin/fake-opencode" \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --openrouter-exception-file fixtures/openrouter-exceptions/opencode-fallback.json \
+  --out target/cerberus/openrouter-policy-fallback-scoped-artifact.json \
+  > target/cerberus/openrouter-policy-fallback-scoped.stdout \
+  2> target/cerberus/openrouter-policy-fallback-scoped.stderr
+test -s target/cerberus/openrouter-policy-fallback-scoped-artifact.json
+
+# The opencode-fallback-scoped exception must not leak into covering OMP.
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness omp \
+  --omp-binary "$PWD/fixtures/bin/fake-omp" \
+  --model openrouter/z-ai/glm-5.2 \
+  --allow-env OPENROUTER_API_KEY \
+  --openrouter-exception-file fixtures/openrouter-exceptions/opencode-fallback.json \
+  --out target/cerberus/openrouter-policy-omp-narrow-exception-artifact.json \
+  > target/cerberus/openrouter-policy-omp-narrow-exception.stdout \
+  2> target/cerberus/openrouter-policy-omp-narrow-exception.stderr; then
+  echo "expected an OpenCode-fallback-scoped exception to not cover OMP" >&2
+  exit 1
+fi
+grep -q 'does not cover' target/cerberus/openrouter-policy-omp-narrow-exception.stderr
+
+# A hand-edited exception (scope widened without recomputing the digest)
+# must be refused before it ever reaches substrate resolution.
+if cargo run --locked -- review \
+  --request fixtures/requests/diff-only.json \
+  --harness fixture \
+  --fixture-output fixtures/harness/valid-review.txt \
+  --openrouter-exception-file fixtures/openrouter-exceptions/tampered.json \
+  --out target/cerberus/openrouter-policy-tampered-artifact.json \
+  > target/cerberus/openrouter-policy-tampered.stdout \
+  2> target/cerberus/openrouter-policy-tampered.stderr; then
+  echo "expected a hand-edited OpenRouter exception file to be refused" >&2
+  exit 1
+fi
+grep -q 'digest mismatch' target/cerberus/openrouter-policy-tampered.stderr
 
 printf 'stale receipt should be removed before a failed run\n' \
   > target/cerberus/receipts/stale-before-failed-review.json
