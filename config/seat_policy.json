@@ -1,0 +1,12 @@
+{
+  "schema_version": "cerberus.seat_policy.v1",
+  "tier1_floor": {
+    "seat_count": 4,
+    "seats": [
+      { "role": "behavioral-correctness", "dimension": "model_judgment" },
+      { "role": "security-and-trust-boundary", "dimension": "model_judgment" },
+      { "role": "architecture-and-maintainability", "dimension": "model_judgment" },
+      { "role": "deterministic-verification", "dimension": "heuristic_tool" }
+    ]
+  }
+}

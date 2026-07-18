@@ -8,6 +8,10 @@ use crate::schema::{
     ChangedFile, ContextCapabilities, FileStatus, LifecycleState, Receipt, ReceiptRole,
     ReceiptStatus, ReviewArtifact, ReviewRequest, ReviewTelemetry, RunError,
 };
+use crate::seat_policy::{
+    admit_seat_plan, classify_diff_tier, load_seat_policy, DiffTier, SeatAdmissionVerdict,
+    SeatPolicy, SEAT_POLICY_SCHEMA,
+};
 
 pub const REVIEWER_PLAN_SCHEMA: &str = "cerberus.reviewer_plan.v1";
 pub const REVIEWER_LANE_RECEIPT_SCHEMA: &str = "cerberus.reviewer_lane_receipt.v1";
@@ -201,6 +205,16 @@ pub fn build_reviewer_plan(
             .collect()
     };
 
+    let seat_policy = load_seat_policy()?;
+    let diff_tier = classify_diff_tier(&request.change.files);
+    let (lane_decision, child_lanes) = plan_seat_admitted_lanes(
+        diff_tier,
+        &seat_policy,
+        &scope,
+        &context_tier,
+        &execution_plan.harness,
+    )?;
+
     Ok(ReviewerPlanReceipt {
         schema_version: REVIEWER_PLAN_SCHEMA.to_string(),
         request_id: request.request_id.clone(),
@@ -212,35 +226,136 @@ pub fn build_reviewer_plan(
             skipped_context: skipped_context(&available_context),
             available_context,
         },
-        lane_decision: LaneDecision {
-            mode: LaneDecisionMode::SingleMaster,
-            reason: "The current orchestrator slice records the existing single-master path; child lane launch is disabled until the reviewer-lane substrate lands.".to_string(),
-            stop_condition: "Emit exactly one ReviewArtifact.v1 candidate and pass validate_artifact_for_request, or fail closed.".to_string(),
-            cost_budget_usd: None,
-        },
+        lane_decision,
         master_lane: ReviewerLanePlan {
             id: "lane-master".to_string(),
             role: "master".to_string(),
-            objective: "Review the change using the declared context and synthesize the final artifact.".to_string(),
+            objective:
+                "Review the change using the declared context and synthesize the final artifact."
+                    .to_string(),
             scope,
             allowed_context_tier: context_tier,
             substrate: execution_plan.harness.clone(),
             model: telemetry.model.clone(),
             cost_budget_usd: None,
-            stop_condition: "Stop after a validated ReviewArtifact.v1 is emitted or the substrate fails.".to_string(),
+            stop_condition:
+                "Stop after a validated ReviewArtifact.v1 is emitted or the substrate fails."
+                    .to_string(),
             expected_output: "ReviewArtifact.v1".to_string(),
         },
-        child_lanes: Vec::new(),
-        synthesis: SynthesisPlan {
+        child_lanes,
+        synthesis: synthesis_plan_for_tier(diff_tier),
+    })
+}
+
+/// Build a tier-accurate `SynthesisPlan`. Tier 0 keeps the pre-existing
+/// single-master notes; Tier 1 says what actually happened at this point in
+/// the pipeline -- floor-satisfying lanes were *planned and admitted*, not
+/// launched -- rather than reusing the Tier 0 "no child lanes" language,
+/// which reads as contradicting a populated `child_lanes` list.
+fn synthesis_plan_for_tier(tier: DiffTier) -> SynthesisPlan {
+    match tier {
+        DiffTier::Tier0 => SynthesisPlan {
             strategy: "single_master_synthesis".to_string(),
             artifact_contract: "ReviewArtifact.v1".to_string(),
             validation_gate: "validate_artifact_for_request".to_string(),
             notes: vec![
-                "No child lanes were launched in this run.".to_string(),
+                "Tier 0 diff: the seat-policy floor is empty, so no child lanes were planned or launched in this run.".to_string(),
                 "Future child-lane evidence must be captured as ReviewerLaneReceipt.v1, synthesized into the same artifact receipts, and cannot bypass validation.".to_string(),
             ],
         },
-    })
+        DiffTier::Tier1 => SynthesisPlan {
+            strategy: "seat_policy_admitted_planned_lanes".to_string(),
+            artifact_contract: "ReviewArtifact.v1".to_string(),
+            validation_gate: "validate_artifact_for_request".to_string(),
+            notes: vec![
+                "Tier 1 diff: seat-policy-floor-satisfying child lanes were planned and admitted (see child_lanes and lane_decision), but launch remains disabled until the reviewer-lane substrate lands (see launch_planned_child_lanes).".to_string(),
+                "Future child-lane evidence must be captured as ReviewerLaneReceipt.v1, synthesized into the same artifact receipts, and cannot bypass validation.".to_string(),
+            ],
+        },
+    }
+}
+
+/// Build the declared lane decision + child-lane set for one review, and
+/// admit it against the seat-policy floor (ADR 0004). On Tier 0 the floor
+/// is empty and the run stays single-master. On Tier 1, this constructs one
+/// planned (not yet launched -- see \`launch_planned_child_lanes\`) lane per
+/// required floor seat, naming only the seat's role label; it never fills
+/// in a model (\`model: None\`), matching the ADR's "the master decides the
+/// model" rule.
+///
+/// Admission is re-checked here as a defense-in-depth self-check: this
+/// function is currently the only "master" that declares lanes (the
+/// reviewer-lane substrate that would let an external master submit its
+/// own plan has not landed yet), so a rejection here means a bug in this
+/// function itself, not an external caller -- fail closed rather than
+/// silently emit a floor-violating plan.
+fn plan_seat_admitted_lanes(
+    tier: DiffTier,
+    seat_policy: &SeatPolicy,
+    scope: &[String],
+    context_tier: &str,
+    harness: &str,
+) -> Result<(LaneDecision, Vec<ReviewerLanePlan>)> {
+    match tier {
+        DiffTier::Tier0 => Ok((
+            LaneDecision {
+                mode: LaneDecisionMode::SingleMaster,
+                reason: "Tier 0 diff (no meaningful content change; see seat_policy::classify_diff_tier): the seat-policy floor is empty, so only the master lane runs.".to_string(),
+                stop_condition: "Emit exactly one ReviewArtifact.v1 candidate and pass validate_artifact_for_request, or fail closed.".to_string(),
+                cost_budget_usd: None,
+            },
+            Vec::new(),
+        )),
+        DiffTier::Tier1 => {
+            let planned: Vec<ReviewerLanePlan> = seat_policy
+                .tier1_floor
+                .seats
+                .iter()
+                .map(|seat| ReviewerLanePlan {
+                    id: format!("lane-{}", sanitize_lane_id(&seat.role)),
+                    role: seat.role.clone(),
+                    objective: "Planned to satisfy the Tier 1 seat-policy floor; the master reviewer authors this lane's actual prompt, scope, and model at launch time.".to_string(),
+                    scope: scope.to_vec(),
+                    allowed_context_tier: context_tier.to_string(),
+                    substrate: harness.to_string(),
+                    model: None,
+                    cost_budget_usd: None,
+                    stop_condition: "Return one ReviewerLaneReceipt.v1 with evidence or a fail-closed error status.".to_string(),
+                    expected_output: "ReviewerLaneReceipt.v1".to_string(),
+                })
+                .collect();
+
+            match admit_seat_plan(tier, &seat_policy.tier1_floor, &planned) {
+                SeatAdmissionVerdict::Accepted => {}
+                SeatAdmissionVerdict::Rejected { missing_roles } => bail!(
+                    "seat policy admission rejected the planned Tier 1 lane set: missing required role(s) {}",
+                    missing_roles.join(", ")
+                ),
+            }
+
+            Ok((
+                LaneDecision {
+                    mode: LaneDecisionMode::PlannedChildLanes,
+                    reason: format!(
+                        "Tier 1 diff admitted against the seat-policy floor ({} required seat(s), {SEAT_POLICY_SCHEMA}); child lane launch remains disabled until the reviewer-lane substrate lands (see launch_planned_child_lanes).",
+                        seat_policy.tier1_floor.seat_count
+                    ),
+                    stop_condition: "Emit exactly one ReviewArtifact.v1 candidate and pass validate_artifact_for_request, or fail closed.".to_string(),
+                    cost_budget_usd: None,
+                },
+                planned,
+            ))
+        }
+    }
+}
+
+/// Delegates to `crate::request::sanitize_id` (the same lane/request id
+/// normalization already used for request ids) rather than reimplementing
+/// the same "replace anything non-alphanumeric/dash/underscore with a
+/// dash" rule a second time.
+fn sanitize_lane_id(role: &str) -> String {
+    crate::request::sanitize_id(role)
 }
 
 fn changed_surfaces(files: &[ChangedFile]) -> Vec<ChangedSurface> {
@@ -329,7 +444,7 @@ mod tests {
     use crate::validation::validate_artifact_for_request;
 
     #[test]
-    fn reviewer_plan_records_single_master_diff_understanding() {
+    fn reviewer_plan_plans_seat_policy_floor_lanes_for_tier1_diff() {
         let request = ReviewRequest {
             schema_version: crate::schema::REVIEW_REQUEST_SCHEMA.to_string(),
             request_id: "req-1".to_string(),
@@ -387,9 +502,28 @@ mod tests {
         )
         .unwrap();
 
+        let seat_policy = crate::seat_policy::load_seat_policy().unwrap();
+
         assert_eq!(plan.schema_version, REVIEWER_PLAN_SCHEMA);
-        assert_eq!(plan.lane_decision.mode, LaneDecisionMode::SingleMaster);
-        assert!(plan.child_lanes.is_empty());
+        // A Modified file is a meaningful (Tier 1) diff: the seat-policy
+        // floor applies, so the plan names one lane per required role.
+        assert_eq!(plan.lane_decision.mode, LaneDecisionMode::PlannedChildLanes);
+        assert_eq!(plan.child_lanes.len(), seat_policy.tier1_floor.seat_count);
+        let declared_roles: std::collections::HashSet<&str> = plan
+            .child_lanes
+            .iter()
+            .map(|lane| lane.role.as_str())
+            .collect();
+        let floor_roles: std::collections::HashSet<&str> = seat_policy
+            .tier1_floor
+            .seats
+            .iter()
+            .map(|seat| seat.role.as_str())
+            .collect();
+        assert_eq!(declared_roles, floor_roles);
+        // Rust never picks a model for a planned lane -- the master decides
+        // at launch time.
+        assert!(plan.child_lanes.iter().all(|lane| lane.model.is_none()));
         assert_eq!(plan.master_lane.model.as_deref(), Some("fixture-model"));
         assert_eq!(plan.master_lane.allowed_context_tier, "diff_only");
         assert_eq!(
@@ -407,12 +541,76 @@ mod tests {
     }
 
     #[test]
+    fn reviewer_plan_stays_single_master_for_tier0_diff() {
+        let request = ReviewRequest {
+            schema_version: crate::schema::REVIEW_REQUEST_SCHEMA.to_string(),
+            request_id: "req-tier0".to_string(),
+            source: Source {
+                kind: SourceKind::Fixture,
+                external_id: None,
+                repo: None,
+                uri: None,
+                metadata: serde_json::json!({}),
+            },
+            change: Change {
+                title: "rename only".to_string(),
+                description: None,
+                base_ref: None,
+                head_ref: None,
+                head_sha: None,
+                diff: Diff {
+                    format: "unified".to_string(),
+                    body: "diff --git a/src/old.rs b/src/new.rs\nsimilarity index 100%\nrename from src/old.rs\nrename to src/new.rs\n".to_string(),
+                    digest: None,
+                },
+                files: vec![ChangedFile {
+                    path: "src/new.rs".to_string(),
+                    status: FileStatus::Renamed,
+                    old_path: Some("src/old.rs".to_string()),
+                    additions: Some(0),
+                    deletions: Some(0),
+                }],
+            },
+            context: Default::default(),
+            policy: ReviewPolicy {
+                external_research: ExternalResearchPolicy::Forbid,
+                ..ReviewPolicy::default()
+            },
+        };
+        let plan = build_reviewer_plan(
+            &request,
+            &ExecutionPlan {
+                harness: "fixture".to_string(),
+                command: "fixture".to_string(),
+                args: Vec::new(),
+                cwd: ".".to_string(),
+                timeout_ms: 1000,
+                env_allowlist: Vec::new(),
+                context_capabilities: ContextCapabilities::from_request(&request),
+                prompt_transport: "fixture".to_string(),
+                private_material_in_argv: false,
+                workspace_mode: "diff_packet".to_string(),
+                runtime_transcripts: Vec::new(),
+            },
+            &ReviewTelemetry::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.lane_decision.mode, LaneDecisionMode::SingleMaster);
+        assert!(plan.child_lanes.is_empty());
+    }
+
+    #[test]
     fn lane_substrate_launches_arbitrary_planned_roles() {
         let request = request();
         let mut plan =
             build_reviewer_plan(&request, &execution_plan(&request), &Default::default()).unwrap();
         plan.lane_decision.mode = LaneDecisionMode::PlannedChildLanes;
-        plan.child_lanes.push(ReviewerLanePlan {
+        // Replace (not append to) the seat-policy floor's default planned
+        // lanes: this test proves the substrate can launch an arbitrary
+        // master-declared role, not just the floor's four -- no static
+        // roster in Rust (AGENTS.md red line 1).
+        plan.child_lanes = vec![ReviewerLanePlan {
             id: "lane-model-boundary".to_string(),
             role: "model-boundary-risk".to_string(),
             objective: "Look for deterministic heuristics where model judgment belongs."
@@ -424,7 +622,7 @@ mod tests {
             cost_budget_usd: Some("0.01".to_string()),
             stop_condition: "Return one receipt with evidence or skipped status.".to_string(),
             expected_output: "ReviewerLaneReceipt.v1".to_string(),
-        });
+        }];
 
         let receipts =
             launch_planned_child_lanes(&RecordingLaneSubstrate, &request, &plan).unwrap();

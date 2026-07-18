@@ -13,6 +13,7 @@ pub mod render;
 pub mod request;
 pub mod retry;
 pub mod schema;
+pub mod seat_policy;
 mod secrets;
 mod telemetry;
 #[cfg(test)]
@@ -51,6 +52,10 @@ pub use render::render_markdown;
 pub use retry::{retry_once, RetryAttempt, RetryError};
 pub use schema::{
     ContextCapabilities, ReviewArtifact, ReviewRequest, ReviewTelemetry, REVIEW_ARTIFACT_SCHEMA,
+};
+pub use seat_policy::{
+    admit_seat_plan, classify_diff_tier, load_seat_policy, DiffTier, RequiredSeat,
+    SeatAdmissionVerdict, SeatDimension, SeatPolicy, Tier1Floor, SEAT_POLICY_SCHEMA,
 };
 pub use validation::{validate_artifact_for_request, validate_request};
 pub use workflow_lock::{
