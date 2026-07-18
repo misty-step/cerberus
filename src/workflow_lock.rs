@@ -62,7 +62,7 @@ pub enum WorkflowLockError {
     /// from "the lock file itself is unusable" at a glance, rather than both
     /// surfacing as an indistinguishable generic `anyhow` string.
     #[error(
-        "another cerberus review workflow is already running (lock held at {path});          only one global review workflow may run at a time"
+        "another cerberus review workflow is already running (lock held at {path}); only one global review workflow may run at a time"
     )]
     Contended { path: String },
     /// The lock file could not be created, opened, or locked for a reason

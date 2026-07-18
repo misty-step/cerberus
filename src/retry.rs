@@ -40,7 +40,7 @@ pub enum RetryError<E: fmt::Debug + fmt::Display> {
     /// silently collapse required cross-family independence into a single
     /// family by retrying into it.
     #[error(
-        "refusing retry: it would reuse family {family:?}, the same family the first attempt          used, which would collapse required family diversity"
+        "refusing retry: it would reuse family {family:?}, the same family the first attempt used, which would collapse required family diversity"
     )]
     FamilyCollapse { family: String },
     /// Both the first attempt and the one bounded retry failed.
