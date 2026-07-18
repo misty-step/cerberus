@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::container::{run_container_substrate, ContainerOpencodeSubstrateConfig};
 use crate::harness::{
@@ -10,6 +10,7 @@ use crate::harness::{
 };
 use crate::orchestration::{build_reviewer_plan, ReviewerPlanReceipt};
 use crate::schema::{ReviewArtifact, ReviewRequest, ReviewTelemetry};
+use crate::workflow_lock::{acquire_workflow_lock, default_workflow_lock_path};
 
 #[derive(Debug, Clone)]
 pub struct ReviewKernel {
@@ -66,7 +67,15 @@ impl ReviewKernel {
         Self { substrate }
     }
 
+    /// Every caller-neutral entrypoint (`review`/`review-diff`/`review-pr`
+    /// in `main.rs`, and the MCP server in `mcp.rs`) funnels through this
+    /// one method, so this is the single place a global review-workflow
+    /// semaphore needs to be acquired to cover all of them. See
+    /// `crate::workflow_lock` for why the lock is host-wide (not
+    /// per-process) and non-blocking.
     pub fn review(&self, request: &ReviewRequest, run_policy: &RunPolicy) -> Result<ReviewRun> {
+        let _workflow_lock = acquire_workflow_lock(&default_workflow_lock_path())
+            .context("acquire global review workflow lock")?;
         let run = match &self.substrate {
             ReviewSubstrate::Fixture(config) => {
                 run_fixture_substrate(request, run_policy.timeout, config)?
