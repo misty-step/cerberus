@@ -1,0 +1,6 @@
+{
+  "schema_version": "cerberus.omp_pin.v1",
+  "version": "17.0.2",
+  "install": "bun install --global @oh-my-pi/pi-coding-agent@17.0.2",
+  "bump_procedure": "docs/omp-substrate.md#bumping-the-omp-pin"
+}
