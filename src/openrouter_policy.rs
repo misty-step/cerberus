@@ -204,7 +204,10 @@ pub fn require_openrouter_policy_for_substrate(
     let Some((context, model, required_scope)) = openrouter_admission_target(substrate) else {
         return Ok(());
     };
-    if !model.starts_with("openrouter/") {
+    // Case-insensitive: a substrate/model resolver that accepts
+    // "OpenRouter/..." or "OPENROUTER/..." must not bypass the deny-by-
+    // default policy just because Rust's own comparison was case-sensitive.
+    if !model.to_ascii_lowercase().starts_with("openrouter/") {
         return Ok(());
     }
     if !request
@@ -395,6 +398,23 @@ mod tests {
     }
 
     // --- non-OpenRouter models and attach substrates are unaffected -------
+
+    #[test]
+    fn openrouter_model_with_mixed_case_prefix_is_still_gated() {
+        let request = openrouter_request(vec!["OPENROUTER_API_KEY".to_string()]);
+        let substrate = ReviewSubstrate::Opencode(OpenCodeSubstrateConfig {
+            binary: "opencode".to_string(),
+            attach: None,
+            agent: Some("build".to_string()),
+            model: Some("OpenRouter/z-ai/glm-5.2".to_string()),
+        });
+        let err = require_openrouter_policy_for_substrate(&request, &substrate, None).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("denied by the subscription-first trusted review policy"),
+            "a case-varied OpenRouter prefix must not bypass the deny-by-default policy: {err}"
+        );
+    }
 
     #[test]
     fn non_openrouter_model_is_never_gated() {
