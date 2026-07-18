@@ -1,0 +1,6 @@
+{
+  "scope": "any",
+  "reason": "Fixture exception for cerberus-051 unit/integration tests.",
+  "approved_by": "cerberus-051-test-fixture",
+  "digest": "sha256:42301a3ea4c0189c43b3cb22f9464fb0451b182d9e959df7026fe763f6bb1ca1"
+}

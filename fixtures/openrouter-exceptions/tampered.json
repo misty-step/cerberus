@@ -1,0 +1,6 @@
+{
+  "scope": "any",
+  "reason": "Fixture exception scoped to the OpenCode fallback lane for cerberus-051 tests.",
+  "approved_by": "cerberus-051-test-fixture",
+  "digest": "sha256:98f3a73131b0b6c7405c460c854ca2acc3f7633aa124b1e83c602cbe1ca14429"
+}

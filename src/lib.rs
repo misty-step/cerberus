@@ -4,6 +4,7 @@ pub mod harness;
 pub mod kernel;
 pub mod mcp;
 pub mod openrouter_keys;
+pub mod openrouter_policy;
 pub mod orchestration;
 pub mod post;
 pub mod producer;
@@ -30,6 +31,9 @@ pub use openrouter_keys::{
     mint_review_key, scoped_key_name, sweep_orphaned_keys, KeyRecord, MintedKey,
     ProvisioningClient, ScopedKeyGuard, DEFAULT_BASE_URL as OPENROUTER_PROVISIONING_BASE_URL,
     REVIEW_KEY_NAME_PREFIX,
+};
+pub use openrouter_policy::{
+    require_openrouter_policy_for_substrate, OpenRouterException, OpenRouterExceptionScope,
 };
 pub use orchestration::{
     build_reviewer_plan, launch_planned_child_lanes, synthesize_lane_receipts_into_artifact,
